@@ -55,6 +55,10 @@ const Map = () => {
     setVehicles((prev) => prev.filter((v) => v.id !== id));
   };
 
+  const clearAllvehicle = () => {
+    if(window.confirm('정말 모든 마크를 지우시겠습니까?'))
+        setVehicles([])
+  }
   const MapClickHandler = () => {
     useMapEvents({
       click(e) {
@@ -92,6 +96,14 @@ const Map = () => {
         >
           🚤 보트
         </button>
+        <button
+            onClick={clearAllvehicle}
+            className="px-4 py-2 rounded font-bold bg-white text-red-600 border-2 border-red-600 hover:bg-red-50 transition-colors ml-4"
+        >
+            🗑️ 초기화
+        </button>
+        
+        
       </div>
 
       <MapContainer 
