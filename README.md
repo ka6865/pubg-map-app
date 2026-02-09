@@ -1,36 +1,20 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 🗺️ PUBG Interactive Tactical Map
 
-## Getting Started
+배틀그라운드(PUBG) 전술 지도 웹 애플리케이션입니다.
+Next.js와 Leaflet을 사용하여 제작했습니다.
 
-First, run the development server:
+## ✨ 주요 기능
+- **인터랙티브 지도:** 줌 인/아웃, 드래그가 가능한 고해상도 지도
+- **차량 위치 확인:** 에란겔의 고정 차량(e스포츠), 차고지, 보트 위치 표시
+- **필터링:** 원하는 차량 종류만 켜고 끄기 가능
+- **멀티 맵 지원:** 에란겔, 미라마 등 맵 전환 기능 (준비 중)
 
+## 🛠️ 사용 기술
+- **Framework:** Next.js 14 (App Router)
+- **Map Library:** React-Leaflet
+- **Styling:** CSS Modules / Tailwind CSS
+- **Deploy:** Vercel
+
+## 🚀 실행 방법
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
-
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
-
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
