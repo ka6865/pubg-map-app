@@ -39,3 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# 파이썬 스크립트 (서버에 올릴 필요 없음)
+*.py
+extractor.py
+
+# 참고용 원본 이미지 및 스크린샷 (용량 낭비 방지)
+source.png
