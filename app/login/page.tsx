@@ -45,7 +45,7 @@ export default function Login() {
   const handleGoogleLogin = async () => {
     // 🌟 핵심 수정 사항: 현재 브라우저의 주소를 동적으로 가져옵니다.
     // 로컬에서는 http://localhost:3000, 배포 후에는 https://...vercel.app이 됩니다.
-    const redirectTo = `${window.location.origin}/auth/callback`;
+    const redirectTo = window.location.origin;
 
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
