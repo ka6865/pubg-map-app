@@ -21,24 +21,10 @@ const svgPaths = {
 };
 
 const CATEGORY_COLORS: { [key: string]: string } = {
-  Garage: '#ef4444',     // 차고지 (빨강)
-  Random: '#f59e0b',     // 일반 차량 (노랑)
-  Esports: '#a855f7',    // 대회 고정 (보라)
-  Boat: '#3b82f6',       // 보트 (파랑)
-  EsportsBoat: '#8b5cf6',// 대회 보트 (연보라)
-  Glider: '#f97316',     // 글라이더 (주황)
-  Key: '#10b981',        // 열쇠 (초록)
+  Garage: '#ef4444', Random: '#f59e0b', Esports: '#a855f7',
+  Boat: '#3b82f6', EsportsBoat: '#8b5cf6', Glider: '#f97316', Key: '#10b981',
 };
 
-// 핀 아이콘 디자인 데이터 (SVG 경로)
-const pinSvgPaths = {
-  car: "M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z",
-  boat: "M20 21c-1.39 0-2.78-.47-4-1.32-2.44 1.71-5.56 1.71-8 0C6.78 20.53 5.39 21 4 21H2v2h2c1.38 0 2.74-.35 4-.99 2.52 1.29 5.48 1.29 8 0 1.26.65 2.62.99 4 .99h2v-2h-2zM3.95 19H4c1.6 0 3.02-.88 4-2 .98 1.12 2.4 2 4 2s3.02-.88 4-2c.98 1.12 2.4 2 4 2h.05l1.89-6.68c.08-.26.06-.54-.06-.78s-.34-.39-.6-.39H2.72c-.26 0-.5.15-.6.39s-.14.52-.06.78L3.95 19z",
-  glider: "M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z",
-  key: "M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"
-};
-
-// 지도 핀 아이콘 생성 함수 (Leaflet DivIcon)
 const createPinIcon = (colorCode: string, pathData: string) => {
   return L.divIcon({
     className: 'custom-pin-icon',
@@ -57,6 +43,13 @@ const createPinIcon = (colorCode: string, pathData: string) => {
     iconSize: [28, 38],
     iconAnchor: [14, 38],
   });
+};
+
+const pinSvgPaths = {
+  car: "M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z",
+  boat: "M20 21c-1.39 0-2.78-.47-4-1.32-2.44 1.71-5.56 1.71-8 0C6.78 20.53 5.39 21 4 21H2v2h2c1.38 0 2.74-.35 4-.99 2.52 1.29 5.48 1.29 8 0 1.26.65 2.62.99 4 .99h2v-2h-2zM3.95 19H4c1.6 0 3.02-.88 4-2 .98 1.12 2.4 2 4 2s3.02-.88 4-2c.98 1.12 2.4 2 4 2h.05l1.89-6.68c.08-.26.06-.54-.06-.78s-.34-.39-.6-.39H2.72c-.26 0-.5.15-.6.39s-.14.52-.06.78L3.95 19z",
+  glider: "M21 16v-2l-8-5V3.5c0-.83-.67-1.5-1.5-1.5S10 2.67 10 3.5V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z",
+  key: "M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"
 };
 
 const icons = {
@@ -86,6 +79,7 @@ export default function Map() {
   const [isSidebarOpen, setSidebarOpen] = useState(true);
   const [showNotiDropdown, setShowNotiDropdown] = useState(false);
   const [isMyPage, setIsMyPage] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
 
   // 데이터 상태 관리
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -94,6 +88,18 @@ export default function Map() {
   const [filters, setFilters] = useState<{ [key: string]: boolean }>({
     Garage: false, Random: false, Esports: true, Boat: false, EsportsBoat: false, Glider: false, Key: false,
   });
+
+  // 📱 모바일 환경 감지 로직
+  useEffect(() => {
+    const checkMobile = () => {
+      const mobile = window.innerWidth < 768;
+      setIsMobile(mobile);
+      if (mobile) setSidebarOpen(false); // 모바일은 기본적으로 사이드바 닫기
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
 
   const displayName = useMemo(() => {
     if (userProfile?.nickname) return userProfile.nickname;
@@ -153,38 +159,39 @@ export default function Map() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100vh', fontFamily: "'Pretendard', sans-serif", overflow: 'hidden', backgroundColor: '#121212', color: 'white' }}>
       
-      {/* 1. 상단 헤더 */}
-      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: '50px', padding: '0 15px', backgroundColor: '#F2A900', borderBottom: '2px solid #cc8b00', zIndex: 6000 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-          {activeMapId !== 'Board' && <button onClick={() => setSidebarOpen(!isSidebarOpen)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}>☰</button>}
-          <div onClick={() => handleTabClick('Erangel')} style={{ fontSize: '20px', fontWeight: '900', fontStyle: 'italic', color: 'black', cursor: 'pointer' }}>PUBG<span style={{ color: 'white' }}>MAP</span></div>
-          <nav style={{ display: 'flex', gap: '5px' }}>
+      {/* 1. 상단 헤더 (모바일 최적화) */}
+      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: '50px', padding: '0 10px', backgroundColor: '#F2A900', borderBottom: '2px solid #cc8b00', zIndex: 6000, boxSizing: 'border-box' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, overflow: 'hidden' }}>
+          {activeMapId !== 'Board' && (
+            <button onClick={() => setSidebarOpen(!isSidebarOpen)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '18px', flexShrink: 0 }}>☰</button>
+          )}
+          <div onClick={() => handleTabClick('Erangel')} style={{ fontSize: isMobile ? '16px' : '20px', fontWeight: '900', fontStyle: 'italic', color: 'black', cursor: 'pointer', flexShrink: 0 }}>
+            PUBG<span style={{ color: 'white' }}>MAP</span>
+          </div>
+          <nav style={{ display: 'flex', gap: '4px', overflowX: 'auto', scrollbarWidth: 'none', alignItems: 'center', msOverflowStyle: 'none' }}>
             {MAP_LIST.map(m => (
-              <button key={m.id} onClick={() => handleTabClick(m.id)} style={{ padding: '0 12px', height: '34px', borderRadius: '4px', fontWeight: 'bold', border: 'none', backgroundColor: activeMapId === m.id ? '#1a1a1a' : 'transparent', color: activeMapId === m.id ? 'white' : 'black', cursor: 'pointer' }}>{m.label}</button>
+              <button key={m.id} onClick={() => handleTabClick(m.id)} style={{ height: '30px', padding: '0 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap', backgroundColor: activeMapId === m.id ? '#1a1a1a' : 'transparent', color: activeMapId === m.id ? 'white' : 'black' }}>{m.label}</button>
             ))}
-            <button onClick={() => handleTabClick('Board')} style={{ padding: '0 12px', height: '34px', borderRadius: '4px', fontWeight: 'bold', border: 'none', backgroundColor: activeMapId === 'Board' ? '#1a1a1a' : 'transparent', color: activeMapId === 'Board' ? '#F2A900' : 'black', cursor: 'pointer' }}>게시판</button>
+            <button onClick={() => handleTabClick('Board')} style={{ height: '30px', padding: '0 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap', backgroundColor: activeMapId === 'Board' ? '#1a1a1a' : 'transparent', color: activeMapId === 'Board' ? '#F2A900' : 'black' }}>게시판</button>
           </nav>
         </div>
         
-        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
           {currentUser ? (
             <>
-              {/* 알림 아이콘 */}
               <div onClick={() => setShowNotiDropdown(!showNotiDropdown)} style={{ cursor: 'pointer', position: 'relative', display: 'flex', alignItems: 'center' }}>
-                <svg viewBox="0 0 24 24" width="22" height="22" fill="black"><path d={svgPaths.bell}/></svg>
+                <svg viewBox="0 0 24 24" width="20" height="20" fill="black"><path d={svgPaths.bell}/></svg>
                 {notifications.some(n => !n.is_read) && <span style={{ position: 'absolute', top: 0, right: 0, width: '8px', height: '8px', backgroundColor: 'red', borderRadius: '50%' }}></span>}
               </div>
-              
-              {/* 프로필 바로가기 */}
-              <div onClick={() => { setIsMyPage(true); router.push('/?tab=Board'); }} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                 <div style={{ width: '28px', height: '28px', borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <svg viewBox="0 0 24 24" width="18" height="18" fill="black"><path d={svgPaths.user}/></svg>
+              <div onClick={() => { setIsMyPage(true); router.push('/?tab=Board'); }} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <div style={{ width: '24px', height: '24px', borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <svg viewBox="0 0 24 24" width="16" height="16" fill="black"><path d={svgPaths.user}/></svg>
                 </div>
-                <span style={{ fontWeight: 'bold', color: 'black' }}>{displayName}</span>
+                {!isMobile && <span style={{ fontWeight: 'bold', color: 'black', fontSize: '13px' }}>{displayName}</span>}
               </div>
             </>
           ) : (
-            <Link href="/login" style={{ fontWeight: 'bold', color: 'black' }}>로그인</Link>
+            <Link href="/login" style={{ textDecoration: 'none', fontWeight: 'bold', color: 'black', fontSize: '12px', backgroundColor: 'white', padding: '5px 10px', borderRadius: '4px', border: '1px solid rgba(0,0,0,0.1)' }}>로그인</Link>
           )}
         </div>
       </header>
@@ -193,7 +200,7 @@ export default function Map() {
       <main style={{ flex: 1, display: 'flex', position: 'relative', overflow: 'hidden' }}>
         {activeMapId === 'Board' ? (
           <div style={{ width: '100%', height: '100%', overflowY: 'auto', backgroundColor: '#0d0d0d' }}>
-            <div style={{ maxWidth: '900px', margin: '0 auto', padding: '20px' }}>
+            <div style={{ maxWidth: '900px', margin: '0 auto', padding: isMobile ? '10px' : '20px' }}>
               {isMyPage ? (
                 <MyPage currentUser={currentUser} userProfile={userProfile} setIsMyPage={setIsMyPage} fetchUserProfile={fetchUserProfile} />
               ) : (
@@ -203,7 +210,18 @@ export default function Map() {
           </div>
         ) : (
           <>
-            <Sidebar isOpen={isSidebarOpen} setIsOpen={setSidebarOpen} mapLabel={currentMap?.label || ''} filters={filters} toggleFilter={toggleFilter} getCount={getCount} />
+            {/* 사이드바 (모바일 대응) */}
+            <div style={{ 
+                position: isMobile ? 'absolute' : 'relative',
+                top: 0, left: 0, bottom: 0,
+                zIndex: 5500,
+                display: isSidebarOpen ? 'flex' : 'none',
+                width: '260px',
+                backgroundColor: '#1a1a1a'
+            }}>
+              <Sidebar isOpen={isSidebarOpen} setIsOpen={setSidebarOpen} mapLabel={currentMap?.label || ''} filters={filters} toggleFilter={toggleFilter} getCount={getCount} />
+            </div>
+
             <div style={{ flex: 1, position: 'relative' }}>
                 <MapContainer 
                   key={activeMapId} 
