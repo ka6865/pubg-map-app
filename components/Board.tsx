@@ -6,6 +6,7 @@ import { supabase } from '../lib/supabase';
 import dynamic from 'next/dynamic';
 import 'react-quill-new/dist/quill.snow.css';
 
+// Quill 에디터 로드 (SSR 끔, 타입 에러 방지용 as any)
 const ReactQuill = dynamic(() => import('react-quill-new'), { ssr: false }) as any;
 
 const ADMIN_EMAIL = "ka6865@gmail.com"; 
@@ -24,14 +25,14 @@ export default function Board({ currentUser, displayName }: BoardProps) {
   const postIdParam = searchParams?.get('postId');
   const boardFilter = searchParams?.get('f') || '전체';
   
-  // 상태 관리
+  // --- 데이터 상태 ---
   const [posts, setPosts] = useState<any[]>([]);
   const [comments, setComments] = useState<any[]>([]);
   const [selectedPost, setSelectedPost] = useState<any | null>(null);
   const [isWriting, setIsWriting] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
-  // 페이지네이션 & 검색 & 모바일 상태
+  // --- UI 상태 ---
   const [page, setPage] = useState(1);
   const [totalPosts, setTotalPosts] = useState(0);
   const [searchInput, setSearchInput] = useState(''); 
@@ -39,23 +40,19 @@ export default function Board({ currentUser, displayName }: BoardProps) {
   const [searchOption, setSearchOption] = useState('all');
   const [isMobile, setIsMobile] = useState(false);
 
-  // 글쓰기 상태
+  // --- 입력 폼 상태 ---
   const [newTitle, setNewTitle] = useState('');
   const [newContent, setNewContent] = useState('');
   const [newCategory, setNewCategory] = useState('자유');
   const [newIsNotice, setNewIsNotice] = useState(false);
-  
-  // 댓글 상태
   const [newComment, setNewComment] = useState('');
   const [replyingTo, setReplyingTo] = useState<any | null>(null);
 
-  // 에디터 Ref
   const quillRef = useRef<any>(null);
-
   const isAdmin = currentUser?.email === ADMIN_EMAIL;
   const lastIncrementedId = useRef<string | null>(null);
 
-  // 📱 모바일 감지
+  // 모바일인지 아닌지 감지 (화면 너비 768px 기준)
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
     handleResize(); 
@@ -63,7 +60,7 @@ export default function Board({ currentUser, displayName }: BoardProps) {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // 작성일 포맷팅
+  // 날짜 예쁘게 보여주기 (방금 전, 1시간 전...)
   const formatTimeAgo = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
@@ -75,7 +72,7 @@ export default function Board({ currentUser, displayName }: BoardProps) {
     return date.toLocaleDateString();
   };
 
-  // 이미지 업로드 (Supabase Storage)
+  // 이미지 업로드 (Supabase Storage로 보냄)
   const uploadImage = async (file: File) => {
     try {
       const fileExt = file.name.split('.').pop();
@@ -91,7 +88,7 @@ export default function Board({ currentUser, displayName }: BoardProps) {
     }
   };
 
-  // 커스텀 이미지 핸들러
+  // 에디터 툴바의 '이미지' 버튼 눌렀을 때 작동하는 핸들러
   const imageHandler = () => {
     const input = document.createElement('input');
     input.setAttribute('type', 'file');
@@ -111,7 +108,6 @@ export default function Board({ currentUser, displayName }: BoardProps) {
     };
   };
 
-  // 에디터 툴바 설정
   const modules = useMemo(() => {
     return {
       toolbar: {
@@ -127,7 +123,7 @@ export default function Board({ currentUser, displayName }: BoardProps) {
     };
   }, []);
 
-  // 게시글 목록 가져오기
+  // 목록 불러오기 (검색 + 필터 + 페이징)
   const fetchPosts = async () => {
     setIsLoading(true);
     const from = (page - 1) * POSTS_PER_PAGE;
@@ -162,8 +158,9 @@ export default function Board({ currentUser, displayName }: BoardProps) {
 
   useEffect(() => { fetchPosts(); }, [page, boardFilter, searchQuery]);
 
+  // 상세 글 보기 처리 (URL 파라미터 감지)
   useEffect(() => {
-    if (postIdParam) {
+    if (postIdParam && posts.length > 0) {
       const post = posts.find(p => p.id.toString() === postIdParam);
       if (post) {
         setSelectedPost(post);
@@ -175,10 +172,10 @@ export default function Board({ currentUser, displayName }: BoardProps) {
       } else {
         fetchSinglePost(postIdParam);
       }
-    } else {
+    } else if (!postIdParam) {
       setSelectedPost(null); setComments([]); setReplyingTo(null); lastIncrementedId.current = null;
     }
-  }, [postIdParam, posts]);
+  }, [postIdParam, posts.length]);
 
   const fetchSinglePost = async (id: string) => {
       const { data } = await supabase.from('posts').select('*').eq('id', id).single();
@@ -194,11 +191,16 @@ export default function Board({ currentUser, displayName }: BoardProps) {
     await supabase.from('posts').update({ views: currentViews + 1 }).eq('id', postId);
   };
 
-  // 게시글 저장 (본문 첫 이미지 추출)
+  // 글 저장 (빈 내용 방지 로직 포함)
   const handleSavePost = async () => {
-    if (!newTitle.trim() || newContent.trim() === '<p><br></p>' || !currentUser) return alert('내용을 입력해주세요.');
-    setIsLoading(true);
+    // 텍스트 다 지우고 엔터만 쳤거나 빈 태그만 남은 경우 체크
+    const isContentEmpty = newContent.replace(/<[^>]*>?/gm, '').trim().length === 0 && !newContent.includes('<img');
     
+    if (!newTitle.trim() || isContentEmpty || !currentUser) {
+      return alert('제목과 내용을 모두 입력해주세요.');
+    }
+
+    setIsLoading(true);
     let finalImageUrl = '';
     const imgTagRegex = /<img[^>]+src="([^">]+)"/;
     const match = newContent.match(imgTagRegex);
@@ -232,7 +234,7 @@ export default function Board({ currentUser, displayName }: BoardProps) {
         }]);
       }
       setNewComment(''); setReplyingTo(null); fetchComments(selectedPost.id);
-      fetchPosts(); // 목록의 댓글 수 동기화
+      fetchPosts();
     }
   };
 
@@ -257,6 +259,7 @@ export default function Board({ currentUser, displayName }: BoardProps) {
 
   const handleSearch = () => { setPage(1); setSearchQuery(searchInput); };
 
+  // 대댓글 그리기 (재귀함수)
   const renderComments = (parentId: number | null = null, depth = 0) => {
     const list = comments.filter(c => c.parent_id === parentId);
     if (list.length === 0) return null;
@@ -273,13 +276,14 @@ export default function Board({ currentUser, displayName }: BoardProps) {
               <button onClick={() => { setReplyingTo(c); setNewComment(`@${c.author} `); }} style={{ background: 'none', border: 'none', color: '#aaa', fontSize: '12px', cursor: 'pointer', textDecoration: 'underline' }}>답글</button>
             )}
           </div>
-          <div style={{ fontSize: '14px', color: '#ddd', lineHeight: '1.5' }}>{c.content}</div>
+          <div style={{ fontSize: '14px', color: '#ddd', lineHeight: '1.5', wordBreak: 'break-all' }}>{c.content}</div>
         </div>
         {renderComments(c.id, depth + 1)}
       </div>
     ));
   };
 
+  // --- 1. 글쓰기 화면 ---
   if (isWriting) {
     return (
       <div style={{ backgroundColor: '#1a1a1a', padding: isMobile ? '15px' : '30px', borderRadius: '8px', border: '1px solid #333' }}>
@@ -300,24 +304,43 @@ export default function Board({ currentUser, displayName }: BoardProps) {
     );
   }
 
+  // --- 2. 상세 보기 화면 ---
   if (selectedPost) {
+    // [중요] 게시글 본문(HTML)을 렌더링하기 전에, <img> 태그만 찾아서
+    // 강제로 스타일(max-width: 100%)을 주입합니다. (치환 방식)
+    // 이렇게 하면 에디터가 무슨 짓을 해도 이미지가 화면 너비를 넘을 수 없습니다.
+    const processedContent = selectedPost.content.replace(
+      /<img/gi, 
+      '<img style="max-width:100%!important;height:auto!important;display:block;border-radius:8px;margin:10px auto;"'
+    );
+
     return (
-      <div style={{ backgroundColor: '#1a1a1a', padding: isMobile ? '15px' : '30px', borderRadius: '8px', border: '1px solid #333' }}>
+      <div style={{ backgroundColor: '#1a1a1a', padding: isMobile ? '15px' : '30px', borderRadius: '8px', border: '1px solid #333', width: '100%', boxSizing: 'border-box', overflowX: 'hidden' }}>
+        
+        {/* 헤더 영역 */}
         <div style={{ marginBottom: '20px' }}>
             <span style={{ color: '#F2A900', fontSize: '13px', fontWeight: 'bold' }}>[{selectedPost.category}]</span>
-            <h2 style={{ fontSize: isMobile ? '24px' : '32px', marginTop: '10px', color: 'white' }}>{selectedPost.title}</h2>
+            <h2 style={{ fontSize: isMobile ? '24px' : '32px', marginTop: '10px', color: 'white', wordBreak: 'break-all' }}>{selectedPost.title}</h2>
             <div style={{ fontSize: '12px', color: '#888', marginTop: '12px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                 <span>글쓴이: {selectedPost.author}</span>
                 <span>작성: {formatTimeAgo(selectedPost.created_at)}</span>
                 <span>조회: {selectedPost.views}</span>
             </div>
         </div>
-        <div style={{ borderTop: '1px solid #333', borderBottom: '1px solid #333', padding: '30px 0', minHeight: '200px', color: '#e5e5e5', overflowX: 'auto' }}>
+        
+        {/* 본문 렌더링 (치환된 HTML 사용) */}
+        <div style={{ borderTop: '1px solid #333', borderBottom: '1px solid #333', padding: '30px 0', minHeight: '200px', color: '#e5e5e5' }}>
             {selectedPost.image_url && !selectedPost.content.includes(selectedPost.image_url) && (
-                 <img src={selectedPost.image_url} alt="Thumbnail" style={{ maxWidth: '100%', maxHeight: '400px', marginBottom: '20px', display: 'block' }} />
+                 <img src={selectedPost.image_url} alt="Thumbnail" style={{ maxWidth: '100%', height: 'auto', marginBottom: '20px', display: 'block', borderRadius: '8px' }} />
             )}
-            <div dangerouslySetInnerHTML={{ __html: selectedPost.content }} style={{ whiteSpace: 'pre-wrap', fontSize: '16px', lineHeight: '1.6' }} />
+            
+            <div 
+              dangerouslySetInnerHTML={{ __html: processedContent }} 
+              style={{ fontSize: '16px', lineHeight: '1.6', whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'break-word' }}
+            />
         </div>
+        
+        {/* 댓글 & 버튼 영역 */}
         <div style={{ marginTop: '40px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                 <h3 style={{ color: '#F2A900', margin: 0 }}>댓글 ({comments.length})</h3>
@@ -347,6 +370,7 @@ export default function Board({ currentUser, displayName }: BoardProps) {
     );
   }
 
+  // --- 3. 목록 화면 ---
   return (
     <>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', alignItems: 'center', gap: '10px' }}>
@@ -359,6 +383,7 @@ export default function Board({ currentUser, displayName }: BoardProps) {
       </div>
 
       <div style={{ backgroundColor: '#1a1a1a', borderRadius: '8px', border: '1px solid #333', overflow: 'hidden' }}>
+        {/* 모바일이면 카드형, PC면 테이블형으로 보여줌 */}
         {isMobile ? (
           <div style={{ display: 'flex', flexDirection: 'column' }}>
              {posts.map(post => (
@@ -401,16 +426,7 @@ export default function Board({ currentUser, displayName }: BoardProps) {
         {posts.length === 0 && <div style={{ padding: '50px', textAlign: 'center', color: '#666' }}>글이 없습니다.</div>}
       </div>
 
-      {/* 하단 컨트롤 (검색 & 페이지네이션) */}
-      <div style={{ 
-        display: 'flex', 
-        flexDirection: isMobile ? 'column' : 'row', 
-        justifyContent: 'space-between', 
-        alignItems: 'center', 
-        marginTop: '20px', 
-        gap: '15px',
-        width: '100%' 
-      }}>
+      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px', gap: '15px', width: '100%' }}>
           <div style={{ display: 'flex', gap: '5px', width: isMobile ? '100%' : 'auto' }}>
             <select value={searchOption} onChange={(e) => setSearchOption(e.target.value)} style={{ padding: '8px', backgroundColor: '#252525', color: '#ddd', border: '1px solid #333', borderRadius: '4px', fontSize: '13px', flexShrink: 0 }}>
               <option value="all">제목+내용</option>
