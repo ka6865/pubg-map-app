@@ -18,20 +18,33 @@ export default function MyPage({ currentUser, userProfile, setIsMyPage, fetchUse
   // 1. 프로필 업데이트 (닉네임 변경)
   const handleUpdateProfile = async () => {
     if (!currentUser) return;
+
+    const newNickname = editNickname.trim();
+
+    if (newNickname.length < 2 || newNickname.length > 15) {
+      alert('닉네임은 2글자 이상 15글자 이하로 입력해주세요.');
+      return;
+    }
     
     // profiles 테이블에 upsert (있으면 덮어쓰기, 없으면 새로 만들기)
     const { error } = await supabase.from('profiles').upsert({
       id: currentUser.id,
-      nickname: editNickname,
+      nickname: newNickname,
       updated_at: new Date()
     });
 
     if (!error) {
       alert('프로필이 업데이트되었습니다.');
+      setEditNickname(newNickname); // 성공 시, trim된 닉네임으로 상태 업데이트
       // 변경 성공 시 상단 헤더 닉네임도 바로 바뀌도록 Map.tsx의 fetch 함수 실행
       fetchUserProfile(currentUser.id);
     } else {
-      alert('프로필 수정 실패: ' + error.message);
+      // 23505: unique_violation (닉네임 중복)
+      if (error.code === '23505') {
+        alert('이미 사용중인 닉네임입니다.');
+      } else {
+        alert('프로필 수정 실패: ' + error.message);
+      }
     }
   };
 
@@ -41,6 +54,32 @@ export default function MyPage({ currentUser, userProfile, setIsMyPage, fetchUse
     if (!currentUser) return;
 
     try {
+      // 0. [추가] 내가 작성한 게시글의 이미지 파일들 삭제 (스토리지 정리)
+      const { data: userPosts } = await supabase
+        .from('posts')
+        .select('content')
+        .eq('user_id', currentUser.id);
+
+      if (userPosts && userPosts.length > 0) {
+        const imgRegex = /<img[^>]+src\s*=\s*["']?([^"'\s>]+)["']?/g;
+        const allImagePaths: string[] = [];
+
+        userPosts.forEach(post => {
+          const matches = [...post.content.matchAll(imgRegex)];
+          matches.forEach(match => {
+            const src = match[1];
+            if (src.includes('/storage/v1/object/public/images/')) {
+              const path = src.split('/storage/v1/object/public/images/')[1];
+              if (path) allImagePaths.push(decodeURIComponent(path));
+            }
+          });
+        });
+
+        if (allImagePaths.length > 0) {
+          await supabase.storage.from('images').remove(allImagePaths);
+        }
+      }
+
       // 1. 내가 작성한 댓글 모두 삭제
       await supabase.from('comments').delete().eq('user_id', currentUser.id);
 

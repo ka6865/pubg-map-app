@@ -1,17 +1,16 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '../lib/supabase';
-import dynamic from 'next/dynamic';
-import 'react-quill-new/dist/quill.snow.css';
+import { Post, Comment } from '../types/board';
 
-// Quill 에디터 로드 (SSR 끔, 타입 에러 방지용 as any)
-const ReactQuill = dynamic(() => import('react-quill-new'), { ssr: false }) as any;
+import BoardList from './BoardList';
+import BoardDetail from './BoardDetail';
+import BoardWrite from './BoardWrite';
 
-const ADMIN_EMAIL = "ka6865@gmail.com"; 
-const BOARD_CATEGORIES = ['자유', '듀오/스쿼드 모집', '클럽홍보', '제보/문의'];
-const POSTS_PER_PAGE = 10; 
+const ADMIN_EMAIL = "ka6865@gmail.com";
+const POSTS_PER_PAGE = 10;
 
 interface BoardProps {
   currentUser: any;
@@ -26,9 +25,9 @@ export default function Board({ currentUser, displayName }: BoardProps) {
   const boardFilter = searchParams?.get('f') || '전체';
   
   // --- 데이터 상태 ---
-  const [posts, setPosts] = useState<any[]>([]);
-  const [comments, setComments] = useState<any[]>([]);
-  const [selectedPost, setSelectedPost] = useState<any | null>(null);
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [comments, setComments] = useState<Comment[]>([]);
+  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
   const [isWriting, setIsWriting] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   
@@ -46,13 +45,12 @@ export default function Board({ currentUser, displayName }: BoardProps) {
   const [newCategory, setNewCategory] = useState('자유');
   const [newIsNotice, setNewIsNotice] = useState(false);
   const [newComment, setNewComment] = useState('');
-  const [replyingTo, setReplyingTo] = useState<any | null>(null);
+  const [replyingTo, setReplyingTo] = useState<Comment | null>(null);
 
   const quillRef = useRef<any>(null);
   const isAdmin = currentUser?.email === ADMIN_EMAIL;
-  const lastIncrementedId = useRef<string | null>(null);
 
-  // 모바일인지 아닌지 감지 (화면 너비 768px 기준)
+  // 모바일 환경 감지
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
     handleResize(); 
@@ -60,7 +58,12 @@ export default function Board({ currentUser, displayName }: BoardProps) {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // 날짜 예쁘게 보여주기 (방금 전, 1시간 전...)
+  // 🔄 [로직] 필터나 검색어 변경 시 페이지 초기화
+  useEffect(() => {
+    setPage(1);
+  }, [boardFilter, searchQuery]);
+
+  // 날짜 포맷팅
   const formatTimeAgo = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
@@ -72,7 +75,7 @@ export default function Board({ currentUser, displayName }: BoardProps) {
     return date.toLocaleDateString();
   };
 
-  // 이미지 업로드 (Supabase Storage로 보냄)
+  // 이미지 업로드
   const uploadImage = async (file: File) => {
     try {
       const fileExt = file.name.split('.').pop();
@@ -88,7 +91,7 @@ export default function Board({ currentUser, displayName }: BoardProps) {
     }
   };
 
-  // 에디터 툴바의 '이미지' 버튼 눌렀을 때 작동하는 핸들러
+  // 에디터 이미지 핸들러
   const imageHandler = () => {
     const input = document.createElement('input');
     input.setAttribute('type', 'file');
@@ -96,40 +99,42 @@ export default function Board({ currentUser, displayName }: BoardProps) {
     input.click();
 
     input.onchange = async () => {
-      const file = input.files ? input.files[0] : null;
-      if (file) {
+      if (!input.files) return;
+      const file = input.files[0];
+      const maxSize = 3 * 1024 * 1024; // 3MB
+
+      if (file.size > maxSize) {
+        alert('이미지 파일 크기는 3MB를 초과할 수 없습니다.');
+        return;
+      }
+
+      const editor = quillRef.current.getEditor();
+      const range = editor.getSelection(true);
+      
+      try {
+        editor.enable(false);
         const url = await uploadImage(file);
-        if (url && quillRef.current) {
-          const editor = quillRef.current.getEditor();
-          const range = editor.getSelection();
-          editor.insertEmbed(range ? range.index : editor.getLength(), 'image', url);
+        
+        if (url) {
+          editor.insertEmbed(range.index, 'image', url);
+          editor.setSelection(range.index + 1); 
         }
+      } catch (e) {
+        console.error(e);
+      } finally {
+        editor.enable(true);
       }
     };
   };
 
-  const modules = useMemo(() => {
-    return {
-      toolbar: {
-        container: [
-          [{ 'header': [1, 2, false] }],
-          ['bold', 'italic', 'underline', 'strike', 'blockquote'],
-          [{'list': 'ordered'}, {'list': 'bullet'}],
-          ['link', 'image'],
-          ['clean']
-        ],
-        handlers: { image: imageHandler }
-      }
-    };
-  }, []);
-
-  // 목록 불러오기 (검색 + 필터 + 페이징)
+  // 게시글 목록 불러오기
   const fetchPosts = async () => {
     setIsLoading(true);
     const from = (page - 1) * POSTS_PER_PAGE;
     const to = from + POSTS_PER_PAGE - 1;
 
-    let query = supabase.from('posts').select('*, comments(count)', { count: 'exact' });
+    let query = supabase.from('posts')
+      .select('id, title, author, user_id, category, image_url, is_notice, created_at, views, likes, comments(count)', { count: 'exact' });
 
     if (boardFilter !== '전체' && boardFilter !== '추천') query = query.eq('category', boardFilter);
     if (boardFilter === '추천') query = query.gte('likes', 5);
@@ -158,28 +163,38 @@ export default function Board({ currentUser, displayName }: BoardProps) {
 
   useEffect(() => { fetchPosts(); }, [page, boardFilter, searchQuery]);
 
-  // 상세 글 보기 처리 (URL 파라미터 감지)
   useEffect(() => {
     if (postIdParam && posts.length > 0) {
       const post = posts.find(p => p.id.toString() === postIdParam);
       if (post) {
         setSelectedPost(post);
         fetchComments(post.id);
-        if (lastIncrementedId.current !== postIdParam) {
-           incrementViews(post.id, post.views);
-           lastIncrementedId.current = postIdParam;
+        
+        const viewedKey = `viewed_post_${post.id}`;
+        if (!sessionStorage.getItem(viewedKey)) {
+          incrementViews(post.id, post.views);
+          sessionStorage.setItem(viewedKey, 'true');
         }
       } else {
         fetchSinglePost(postIdParam);
       }
     } else if (!postIdParam) {
-      setSelectedPost(null); setComments([]); setReplyingTo(null); lastIncrementedId.current = null;
+      setSelectedPost(null); setComments([]); setReplyingTo(null);
     }
   }, [postIdParam, posts.length]);
 
   const fetchSinglePost = async (id: string) => {
       const { data } = await supabase.from('posts').select('*').eq('id', id).single();
-      if(data) { setSelectedPost(data); fetchComments(data.id); }
+      if(data) { 
+        setSelectedPost(data); 
+        fetchComments(data.id);
+        
+        const viewedKey = `viewed_post_${data.id}`;
+        if (!sessionStorage.getItem(viewedKey)) {
+          incrementViews(data.id, data.views);
+          sessionStorage.setItem(viewedKey, 'true');
+        }
+      }
   };
 
   const fetchComments = async (postId: number) => {
@@ -191,18 +206,20 @@ export default function Board({ currentUser, displayName }: BoardProps) {
     await supabase.from('posts').update({ views: currentViews + 1 }).eq('id', postId);
   };
 
-  // 글 저장 (빈 내용 방지 로직 포함)
   const handleSavePost = async () => {
-    // 텍스트 다 지우고 엔터만 쳤거나 빈 태그만 남은 경우 체크
     const isContentEmpty = newContent.replace(/<[^>]*>?/gm, '').trim().length === 0 && !newContent.includes('<img');
     
     if (!newTitle.trim() || isContentEmpty || !currentUser) {
       return alert('제목과 내용을 모두 입력해주세요.');
     }
 
+    if (newContent.includes('src="data:image')) {
+      return alert('이미지 붙여넣기 및 드래그 앤 드롭은 허용되지 않습니다.\\n에디터 상단의 📷 이미지 버튼을 눌러 업로드해주세요.');
+    }
+
     setIsLoading(true);
     let finalImageUrl = '';
-    const imgTagRegex = /<img[^>]+src="([^">]+)"/;
+    const imgTagRegex = /<img[^>]+src\s*=\s*["']?([^"'\s>]+)["']?/;
     const match = newContent.match(imgTagRegex);
     if (match && match[1]) finalImageUrl = match[1];
 
@@ -215,13 +232,14 @@ export default function Board({ currentUser, displayName }: BoardProps) {
 
     if (!error) {
       setIsWriting(false); setNewTitle(''); setNewContent('');
-      setPage(1); fetchPosts();
+      setPage(1); 
+      fetchPosts();
     } else alert('저장 실패: ' + error.message);
     setIsLoading(false);
   };
 
   const handleSaveComment = async () => {
-    if (!newComment.trim() || !currentUser) return;
+    if (!newComment.trim() || !currentUser || !selectedPost) return;
     const { error } = await supabase.from('comments').insert([{
       post_id: selectedPost.id, user_id: currentUser.id, author: displayName, content: newComment,
       parent_id: replyingTo ? replyingTo.id : null
@@ -251,202 +269,87 @@ export default function Board({ currentUser, displayName }: BoardProps) {
 
   const handleDeletePost = async (postId: number) => {
     if (!confirm('삭제하시겠습니까?')) return;
-    await supabase.from('posts').delete().eq('id', postId);
-    alert('삭제됨');
-    router.push('/?tab=Board');
-    fetchPosts();
+
+    try {
+      const { data: postData, error: fetchError } = await supabase.from('posts').select('content').eq('id', postId).single();
+      if (fetchError) throw fetchError;
+
+      if (postData?.content) {
+        const imgRegex = /<img[^>]+src\s*=\s*["']?([^"'\s>]+)["']?/g;
+        const matches = [...postData.content.matchAll(imgRegex)];
+        
+        const imagePaths = matches.map(match => {
+          const src = match[1];
+          if (src.includes('/storage/v1/object/public/images/')) {
+            const path = src.split('/storage/v1/object/public/images/')[1];
+            return path ? decodeURIComponent(path) : null;
+          }
+          return null;
+        }).filter((path): path is string => path !== null);
+
+        if (imagePaths.length > 0) {
+          await supabase.storage.from('images').remove(imagePaths);
+        }
+      }
+
+      await supabase.from('posts').delete().eq('id', postId);
+      alert('삭제됨');
+      router.push('/?tab=Board');
+      fetchPosts();
+    } catch (error: any) {
+      alert('삭제 실패: ' + error.message);
+    }
   };
 
-  const handleSearch = () => { setPage(1); setSearchQuery(searchInput); };
-
-  // 대댓글 그리기 (재귀함수)
-  const renderComments = (parentId: number | null = null, depth = 0) => {
-    const list = comments.filter(c => c.parent_id === parentId);
-    if (list.length === 0) return null;
-    return list.map(c => (
-      <div key={c.id} style={{ marginLeft: depth > 0 ? (isMobile ? '10px' : '20px') : '0', marginTop: '10px' }}>
-        <div style={{ padding: '15px', backgroundColor: depth > 0 ? '#2a2a2a' : '#222', borderRadius: '8px', borderLeft: depth > 0 ? '3px solid #F2A900' : '3px solid #34A853' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              {depth > 0 && <span style={{ color: '#F2A900', fontSize: '12px' }}>↳</span>}
-              <span style={{ fontSize: '13px', color: depth > 0 ? '#F2A900' : '#34A853', fontWeight: 'bold' }}>{c.author}</span>
-              <span style={{ fontSize: '11px', color: '#666' }}>{formatTimeAgo(c.created_at)}</span>
-            </div>
-            {currentUser && (
-              <button onClick={() => { setReplyingTo(c); setNewComment(`@${c.author} `); }} style={{ background: 'none', border: 'none', color: '#aaa', fontSize: '12px', cursor: 'pointer', textDecoration: 'underline' }}>답글</button>
-            )}
-          </div>
-          <div style={{ fontSize: '14px', color: '#ddd', lineHeight: '1.5', wordBreak: 'break-all' }}>{c.content}</div>
-        </div>
-        {renderComments(c.id, depth + 1)}
-      </div>
-    ));
+  const handleSearch = () => { 
+    setPage(1); 
+    setSearchQuery(searchInput); 
   };
 
-  // --- 1. 글쓰기 화면 ---
   if (isWriting) {
-    return (
-      <div style={{ backgroundColor: '#1a1a1a', padding: isMobile ? '15px' : '30px', borderRadius: '8px', border: '1px solid #333' }}>
-        <h2 style={{ marginBottom: '20px', color: '#F2A900', fontSize: '20px', fontWeight: 'bold' }}>새 게시글 작성</h2>
-        <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '10px', marginBottom: '15px' }}>
-          <select value={newCategory} onChange={(e) => setNewCategory(e.target.value)} style={{ padding: '10px', backgroundColor: '#252525', color: 'white', border: '1px solid #333', borderRadius: '4px' }}>{BOARD_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select>
-          <input type="text" placeholder="제목을 입력하세요" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} style={{ flex: 1, padding: '10px', backgroundColor: '#252525', color: 'white', border: '1px solid #333', borderRadius: '4px', fontSize: '16px' }} />
-        </div>
-        <div style={{ marginBottom: '50px', backgroundColor: 'white', color: 'black', borderRadius: '4px', overflow: 'hidden' }}>
-          <ReactQuill ref={quillRef} theme="snow" value={newContent} onChange={setNewContent} modules={modules} style={{ height: '350px' }} />
-        </div>
-        {isAdmin && <label style={{ display: 'flex', gap: '8px', marginBottom: '20px', color: '#F2A900' }}><input type="checkbox" checked={newIsNotice} onChange={(e) => setNewIsNotice(e.target.checked)} /> 공지사항</label>}
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-          <button onClick={() => setIsWriting(false)} style={{ padding: '10px 20px', backgroundColor: '#333', color: '#ccc', borderRadius: '4px' }}>취소</button>
-          <button onClick={handleSavePost} disabled={isLoading} style={{ padding: '10px 30px', backgroundColor: '#F2A900', color: 'black', fontWeight: 'bold', borderRadius: '4px' }}>{isLoading ? '등록 중...' : '등록하기'}</button>
-        </div>
-      </div>
-    );
+    return <BoardWrite 
+      newTitle={newTitle} setNewTitle={setNewTitle}
+      newContent={newContent} setNewContent={setNewContent}
+      newCategory={newCategory} setNewCategory={setNewCategory}
+      newIsNotice={newIsNotice} setNewIsNotice={setNewIsNotice}
+      handleSavePost={handleSavePost}
+      setIsWriting={setIsWriting}
+      isAdmin={isAdmin}
+      isLoading={isLoading}
+      isMobile={isMobile}
+      quillRef={quillRef}
+      imageHandler={imageHandler}
+    />;
   }
 
-  // --- 2. 상세 보기 화면 ---
   if (selectedPost) {
-    // [중요] 게시글 본문(HTML)을 렌더링하기 전에, <img> 태그만 찾아서
-    // 강제로 스타일(max-width: 100%)을 주입합니다. (치환 방식)
-    // 이렇게 하면 에디터가 무슨 짓을 해도 이미지가 화면 너비를 넘을 수 없습니다.
-    const processedContent = selectedPost.content.replace(
-      /<img/gi, 
-      '<img style="max-width:100%!important;height:auto!important;display:block;border-radius:8px;margin:10px auto;"'
-    );
-
-    return (
-      <div style={{ backgroundColor: '#1a1a1a', padding: isMobile ? '15px' : '30px', borderRadius: '8px', border: '1px solid #333', width: '100%', boxSizing: 'border-box', overflowX: 'hidden' }}>
-        
-        {/* 헤더 영역 */}
-        <div style={{ marginBottom: '20px' }}>
-            <span style={{ color: '#F2A900', fontSize: '13px', fontWeight: 'bold' }}>[{selectedPost.category}]</span>
-            <h2 style={{ fontSize: isMobile ? '24px' : '32px', marginTop: '10px', color: 'white', wordBreak: 'break-all' }}>{selectedPost.title}</h2>
-            <div style={{ fontSize: '12px', color: '#888', marginTop: '12px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                <span>글쓴이: {selectedPost.author}</span>
-                <span>작성: {formatTimeAgo(selectedPost.created_at)}</span>
-                <span>조회: {selectedPost.views}</span>
-            </div>
-        </div>
-        
-        {/* 본문 렌더링 (치환된 HTML 사용) */}
-        <div style={{ borderTop: '1px solid #333', borderBottom: '1px solid #333', padding: '30px 0', minHeight: '200px', color: '#e5e5e5' }}>
-            {selectedPost.image_url && !selectedPost.content.includes(selectedPost.image_url) && (
-                 <img src={selectedPost.image_url} alt="Thumbnail" style={{ maxWidth: '100%', height: 'auto', marginBottom: '20px', display: 'block', borderRadius: '8px' }} />
-            )}
-            
-            <div 
-              dangerouslySetInnerHTML={{ __html: processedContent }} 
-              style={{ fontSize: '16px', lineHeight: '1.6', whiteSpace: 'normal', wordBreak: 'break-word', overflowWrap: 'break-word' }}
-            />
-        </div>
-        
-        {/* 댓글 & 버튼 영역 */}
-        <div style={{ marginTop: '40px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-                <h3 style={{ color: '#F2A900', margin: 0 }}>댓글 ({comments.length})</h3>
-                <button onClick={() => handleLikePost(selectedPost.id, selectedPost.likes)} style={{ padding: '8px 16px', backgroundColor: '#252525', border: '1px solid #F2A900', color: '#F2A900', borderRadius: '20px', fontSize: '13px' }}>👍 추천 {selectedPost.likes}</button>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>{renderComments(null)}</div>
-            {currentUser && (
-              <div style={{ marginTop: '25px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                {replyingTo && (
-                  <div style={{ fontSize: '13px', color: '#F2A900', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <span>↳ <strong>{replyingTo.author}</strong>님에게 답글 중</span>
-                    <button onClick={() => { setReplyingTo(null); setNewComment(''); }} style={{ background: 'none', border: 'none', color: '#666', cursor: 'pointer', fontSize: '12px' }}>취소</button>
-                  </div>
-                )}
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <textarea value={newComment} onChange={(e) => setNewComment(e.target.value)} placeholder={replyingTo ? "답글 입력..." : "댓글 입력..."} style={{ flex: 1, height: '60px', padding: '10px', backgroundColor: '#111', color: 'white', border: '1px solid #333', borderRadius: '4px', resize: 'none' }} />
-                  <button onClick={handleSaveComment} style={{ backgroundColor: '#34A853', color: 'white', border: 'none', borderRadius: '4px', width: '60px', fontWeight: 'bold', fontSize: '13px' }}>{replyingTo ? '답글' : '등록'}</button>
-                </div>
-              </div>
-            )}
-        </div>
-        <div style={{ marginTop: '40px', display: 'flex', gap: '10px' }}>
-            <button onClick={() => router.push(`/?tab=Board&f=${boardFilter}`)} style={{ flex: 1, padding: '12px', backgroundColor: '#333', color: 'white', border: 'none', borderRadius: '4px' }}>목록으로</button>
-            {(currentUser?.id === selectedPost.user_id || isAdmin) && <button onClick={() => handleDeletePost(selectedPost.id)} style={{ padding: '12px 20px', backgroundColor: '#dc3545', color: 'white', border: 'none', borderRadius: '4px' }}>삭제</button>}
-        </div>
-      </div>
-    );
+    return <BoardDetail 
+      selectedPost={selectedPost}
+      comments={comments}
+      currentUser={currentUser}
+      displayName={displayName}
+      isAdmin={isAdmin}
+      isMobile={isMobile}
+      boardFilter={boardFilter}
+      newComment={newComment} setNewComment={setNewComment}
+      replyingTo={replyingTo} setReplyingTo={setReplyingTo}
+      handleSaveComment={handleSaveComment}
+      handleLikePost={handleLikePost}
+      handleDeletePost={handleDeletePost}
+      formatTimeAgo={formatTimeAgo}
+    />;
   }
 
-  // --- 3. 목록 화면 ---
-  return (
-    <>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px', alignItems: 'center', gap: '10px' }}>
-        <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-          {['전체', '추천', ...BOARD_CATEGORIES].map(f => (
-            <button key={f} onClick={() => { setPage(1); router.push(`/?tab=Board&f=${f}`); }} style={{ padding: '6px 12px', borderRadius: '20px', border: '1px solid #333', backgroundColor: boardFilter === f ? '#F2A900' : '#1a1a1a', color: boardFilter === f ? 'black' : '#aaa', whiteSpace: 'nowrap', fontSize: '13px', cursor: 'pointer', fontWeight: 'bold' }}>{f}</button>
-          ))}
-        </div>
-        <button onClick={() => setIsWriting(true)} style={{ padding: '8px 16px', backgroundColor: '#34A853', color: 'white', borderRadius: '4px', border: 'none', fontWeight: 'bold', fontSize: '13px', whiteSpace: 'nowrap', cursor: 'pointer' }}>글쓰기</button>
-      </div>
-
-      <div style={{ backgroundColor: '#1a1a1a', borderRadius: '8px', border: '1px solid #333', overflow: 'hidden' }}>
-        {/* 모바일이면 카드형, PC면 테이블형으로 보여줌 */}
-        {isMobile ? (
-          <div style={{ display: 'flex', flexDirection: 'column' }}>
-             {posts.map(post => (
-                <div key={post.id} onClick={() => router.push(`/?tab=Board&f=${boardFilter}&postId=${post.id}`)} style={{ padding: '15px', borderBottom: '1px solid #222', cursor: 'pointer', backgroundColor: post.is_notice ? 'rgba(242, 169, 0, 0.05)' : 'transparent' }}>
-                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                      <span style={{ fontSize: '11px', color: post.is_notice ? '#F2A900' : '#777', fontWeight: 'bold' }}>{post.category}</span>
-                      <span style={{ fontSize: '11px', color: '#555' }}>{formatTimeAgo(post.created_at)}</span>
-                   </div>
-                   <div style={{ fontSize: '15px', fontWeight: 'bold', color: post.is_notice ? '#F2A900' : 'white', marginBottom: '8px', lineHeight: '1.4' }}>
-                      {post.title} 
-                      {post.comment_count > 0 && <span style={{ fontSize: '12px', color: '#aaa', marginLeft: '6px' }}>💬 {post.comment_count}</span>}
-                   </div>
-                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#888' }}>
-                      <span>{post.author}</span>
-                      <span>조회 {post.views} · 추천 {post.likes}</span>
-                   </div>
-                </div>
-             ))}
-          </div>
-        ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '14px' }}>
-            <thead><tr style={{ backgroundColor: '#252525', color: '#888' }}><th style={{ padding: '15px' }}>분류</th><th style={{ padding: '15px' }}>제목</th><th style={{ padding: '15px' }}>글쓴이</th><th style={{ padding: '15px' }}>작성일</th><th style={{ padding: '15px' }}>조회</th><th style={{ padding: '15px' }}>추천</th></tr></thead>
-            <tbody>
-              {posts.map(post => (
-                <tr key={post.id} onClick={() => router.push(`/?tab=Board&f=${boardFilter}&postId=${post.id}`)} style={{ borderBottom: '1px solid #222', cursor: 'pointer', backgroundColor: post.is_notice ? 'rgba(242, 169, 0, 0.05)' : 'transparent' }}>
-                  <td style={{ padding: '15px', color: post.is_notice ? '#F2A900' : '#777', fontWeight: 'bold' }}>{post.is_notice ? '공지' : post.category}</td>
-                  <td style={{ padding: '15px', color: post.is_notice ? '#F2A900' : 'white', fontWeight: post.is_notice ? 'bold' : 'normal' }}>
-                    {post.title}
-                    {post.comment_count > 0 && <span style={{ marginLeft: '8px', fontSize: '12px', color: '#aaa' }}>💬 {post.comment_count}</span>}
-                  </td>
-                  <td style={{ padding: '15px', color: '#aaa' }}>{post.author}</td>
-                  <td style={{ padding: '15px', color: '#888', fontSize: '13px' }}>{formatTimeAgo(post.created_at)}</td>
-                  <td style={{ padding: '15px', color: '#666' }}>{post.views}</td>
-                  <td style={{ padding: '15px', color: post.likes >= 5 ? '#F2A900' : '#666', fontWeight: post.likes >= 5 ? 'bold' : 'normal' }}>{post.likes}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        {posts.length === 0 && <div style={{ padding: '50px', textAlign: 'center', color: '#666' }}>글이 없습니다.</div>}
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: '20px', gap: '15px', width: '100%' }}>
-          <div style={{ display: 'flex', gap: '5px', width: isMobile ? '100%' : 'auto' }}>
-            <select value={searchOption} onChange={(e) => setSearchOption(e.target.value)} style={{ padding: '8px', backgroundColor: '#252525', color: '#ddd', border: '1px solid #333', borderRadius: '4px', fontSize: '13px', flexShrink: 0 }}>
-              <option value="all">제목+내용</option>
-              <option value="title">제목</option>
-              <option value="author">글쓴이</option>
-            </select>
-            <div style={{ display: 'flex', backgroundColor: '#252525', borderRadius: '4px', border: '1px solid #333', padding: '0 8px', alignItems: 'center', flex: 1 }}>
-                <input type="text" placeholder="검색..." value={searchInput} onChange={(e) => setSearchInput(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && handleSearch()} style={{ background: 'none', border: 'none', color: 'white', padding: '8px', fontSize: '13px', width: '100%', minWidth: '80px' }} />
-                <button onClick={handleSearch} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#888' }}>🔍</button>
-            </div>
-          </div>
-
-          <div style={{ display: 'flex', gap: '5px', flexWrap: 'wrap', justifyContent: 'center' }}>
-              <button onClick={() => setPage(prev => Math.max(prev - 1, 1))} disabled={page === 1} style={{ padding: '8px 12px', border: '1px solid #333', backgroundColor: '#1a1a1a', color: 'white', borderRadius: '4px', opacity: page === 1 ? 0.5 : 1 }}>&lt;</button>
-              {[...Array(Math.ceil(totalPosts / POSTS_PER_PAGE))].map((_, i) => (
-                <button key={i} onClick={() => setPage(i + 1)} style={{ padding: '8px 12px', border: '1px solid #333', backgroundColor: page === i + 1 ? '#F2A900' : '#1a1a1a', color: page === i + 1 ? 'black' : 'white', borderRadius: '4px', fontWeight: page === i + 1 ? 'bold' : 'normal', fontSize: '13px' }}>{i + 1}</button>
-              ))}
-              <button onClick={() => setPage(prev => Math.min(prev + 1, Math.ceil(totalPosts / POSTS_PER_PAGE)))} disabled={page >= Math.ceil(totalPosts / POSTS_PER_PAGE) || totalPosts === 0} style={{ padding: '8px 12px', border: '1px solid #333', backgroundColor: '#1a1a1a', color: 'white', borderRadius: '4px', opacity: (page >= Math.ceil(totalPosts / POSTS_PER_PAGE) || totalPosts === 0) ? 0.5 : 1 }}>&gt;</button>
-          </div>
-      </div>
-    </>
-  );
+  return <BoardList 
+    posts={posts}
+    boardFilter={boardFilter}
+    totalPosts={totalPosts}
+    page={page} setPage={setPage}
+    searchInput={searchInput} setSearchInput={setSearchInput}
+    searchOption={searchOption} setSearchOption={setSearchOption}
+    handleSearch={handleSearch}
+    setIsWriting={setIsWriting}
+    isMobile={isMobile}
+    formatTimeAgo={formatTimeAgo}
+  />;
 }
