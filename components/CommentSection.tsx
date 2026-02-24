@@ -1,6 +1,6 @@
 'use client';
 
-import { Post, Comment } from '../types/board'; // Assuming types are moved to a separate file
+import { Post, Comment } from '../types/board'; 
 
 interface CommentSectionProps {
   comments: Comment[];
@@ -25,44 +25,68 @@ export default function CommentSection({
     const list = comments.filter(c => c.parent_id === parentId);
     if (list.length === 0) return null;
     return list.map(c => (
-      <div key={c.id} style={{ marginLeft: depth > 0 ? (isMobile ? '10px' : '20px') : '0', marginTop: '10px' }}>
-        <div style={{ padding: '15px', backgroundColor: depth > 0 ? '#2a2a2a' : '#222', borderRadius: '8px', borderLeft: depth > 0 ? '3px solid #F2A900' : '3px solid #34A853' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-              {depth > 0 && <span style={{ color: '#F2A900', fontSize: '12px' }}>↳</span>}
-              <span style={{ fontSize: '13px', color: depth > 0 ? '#F2A900' : '#34A853', fontWeight: 'bold' }}>{c.author}</span>
-              <span style={{ fontSize: '11px', color: '#666' }}>{formatTimeAgo(c.created_at)}</span>
+        <div 
+          key={c.id} 
+          className={`mt-[10px] ${depth > 0 ? (isMobile ? 'ml-[10px]' : 'ml-[20px]') : 'ml-0'}`}
+        >
+          <div className={`p-[15px] rounded-[8px] ${depth > 0 ? 'bg-[#2a2a2a] border-l-[3px] border-[#F2A900]' : 'bg-[#222] border-l-[3px] border-[#34A853]'}`}>
+            
+            <div className="flex justify-between mb-[6px]">
+              <div className="flex items-center gap-[8px] flex-wrap">
+                {depth > 0 && <span className="text-[#F2A900] text-[12px]">↳</span>}
+                <span className={`text-[13px] font-bold ${depth > 0 ? 'text-[#F2A900]' : 'text-[#34A853]'}`}>{c.author}</span>
+                <span className="text-[11px] text-[#666]">{formatTimeAgo(c.created_at)}</span>
+              </div>
+              {currentUser && (
+                <button 
+                  onClick={() => { setReplyingTo(c); setNewComment(`@${c.author} `); }} 
+                  className="bg-transparent border-none text-[#aaa] text-[12px] cursor-pointer underline hover:text-white transition-colors"
+                >
+                  답글
+                </button>
+              )}
             </div>
-            {currentUser && (
-              <button onClick={() => { setReplyingTo(c); setNewComment(`@${c.author} `); }} style={{ background: 'none', border: 'none', color: '#aaa', fontSize: '12px', cursor: 'pointer', textDecoration: 'underline' }}>답글</button>
-            )}
+            <div className="text-[14px] text-[#ddd] leading-[1.5] break-all">{c.content}</div>
           </div>
-          <div style={{ fontSize: '14px', color: '#ddd', lineHeight: '1.5', wordBreak: 'break-all' }}>{c.content}</div>
+          {renderComments(c.id, depth + 1)}
         </div>
-        {renderComments(c.id, depth + 1)}
-      </div>
     ));
   };
 
   return (
-    <div style={{ marginTop: '40px' }}>
-      <h3 style={{ color: '#F2A900', margin: '0 0 20px 0' }}>댓글 ({comments.length})</h3>
+    <div className="mt-[40px]">
+      <h3 className="text-[#F2A900] m-0 mb-[20px] font-bold text-[18px]">댓글 ({comments.length})</h3>
       
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+      <div className="flex flex-col gap-[5px]">
         {renderComments(null)}
       </div>
       
       {currentUser && (
-        <div style={{ marginTop: '25px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div className="mt-[25px] flex flex-col gap-[10px]">
           {replyingTo && (
-            <div style={{ fontSize: '13px', color: '#F2A900', display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div className="text-[13px] text-[#F2A900] flex items-center gap-[10px]">
               <span>↳ <strong>{replyingTo.author}</strong>님에게 답글 중</span>
-              <button onClick={() => { setReplyingTo(null); setNewComment(''); }} style={{ background: 'none', border: 'none', color: '#666', cursor: 'pointer', fontSize: '12px' }}>취소</button>
+              <button 
+                onClick={() => { setReplyingTo(null); setNewComment(''); }} 
+                className="bg-transparent border-none text-[#666] cursor-pointer text-[12px] hover:text-white transition-colors"
+              >
+                취소
+              </button>
             </div>
           )}
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <textarea value={newComment} onChange={(e) => setNewComment(e.target.value)} placeholder={replyingTo ? "답글 입력..." : "댓글 입력..."} style={{ flex: 1, height: '60px', padding: '10px', backgroundColor: '#111', color: 'white', border: '1px solid #333', borderRadius: '4px', resize: 'none' }} />
-            <button onClick={handleSaveComment} style={{ backgroundColor: '#34A853', color: 'white', border: 'none', borderRadius: '4px', width: '60px', fontWeight: 'bold', fontSize: '13px' }}>{replyingTo ? '답글' : '등록'}</button>
+          <div className="flex gap-[8px]">
+            <textarea 
+              value={newComment} 
+              onChange={(e) => setNewComment(e.target.value)} 
+              placeholder={replyingTo ? "답글 입력..." : "댓글 입력..."} 
+              className="flex-1 h-[60px] p-[10px] bg-[#111] text-white border border-[#333] rounded-[4px] resize-none outline-none focus:border-[#F2A900] transition-colors" 
+            />
+            <button 
+              onClick={handleSaveComment} 
+              className="bg-[#34A853] text-white border-none rounded-[4px] w-[60px] font-bold text-[13px] hover:bg-[#2a9040] transition-colors cursor-pointer"
+            >
+              {replyingTo ? '답글' : '등록'}
+            </button>
           </div>
         </div>
       )}

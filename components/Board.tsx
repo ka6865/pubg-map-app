@@ -127,14 +127,15 @@ export default function Board({ currentUser, displayName }: BoardProps) {
     };
   };
 
-  // 게시글 목록 불러오기
+  // 🌟 게시글 목록 불러오기 (여기에 content가 추가되었습니다!)
   const fetchPosts = async () => {
     setIsLoading(true);
     const from = (page - 1) * POSTS_PER_PAGE;
     const to = from + POSTS_PER_PAGE - 1;
 
     let query = supabase.from('posts')
-      .select('id, title, author, user_id, category, image_url, is_notice, created_at, views, likes, comments(count)', { count: 'exact' });
+      // 👇 아래 줄의 'title, content, author' 부분에 content를 추가했습니다!
+      .select('id, title, content, author, user_id, category, image_url, is_notice, created_at, views, likes, comments(count)', { count: 'exact' });
 
     if (boardFilter !== '전체' && boardFilter !== '추천') query = query.eq('category', boardFilter);
     if (boardFilter === '추천') query = query.gte('likes', 5);
@@ -214,7 +215,7 @@ export default function Board({ currentUser, displayName }: BoardProps) {
     }
 
     if (newContent.includes('src="data:image')) {
-      return alert('이미지 붙여넣기 및 드래그 앤 드롭은 허용되지 않습니다.\\n에디터 상단의 📷 이미지 버튼을 눌러 업로드해주세요.');
+      return alert('이미지 붙여넣기 및 드래그 앤 드롭은 허용되지 않습니다.\n에디터 상단의 📷 이미지 버튼을 눌러 업로드해주세요.');
     }
 
     setIsLoading(true);
