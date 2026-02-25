@@ -1,45 +1,50 @@
-'use client';
+'use client'; 
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '../lib/supabase';
-import { Post, Comment } from '../types/board';
+import dynamic from 'next/dynamic';
+import 'react-quill-new/dist/quill.snow.css';
+import DOMPurify from 'isomorphic-dompurify';
+
+const ReactQuill = dynamic(() => import('react-quill-new'), { ssr: false }) as any;
+
+const BOARD_CATEGORIES = ['자유', '듀오/스쿼드 모집', '클럽홍보', '제보/문의'];
+const POSTS_PER_PAGE = 10; 
+
+const sanitizeHTML = (html: string) => {
+  if (!html) return '';
+  return DOMPurify.sanitize(html);
+};
+
+interface Comment { id: number; post_id: number; user_id: string; author: string; content: string; created_at: string; parent_id: number | null; }
+interface Post { id: number; title: string; content: string; author: string; user_id: string; category: string; image_url: string; is_notice: boolean; created_at: string; views: number; likes: number; comment_count?: number; comments?: { count: number }[]; }
+interface BoardProps { currentUser: any; displayName: string; isAdmin: boolean; }
 
 import BoardList from './BoardList';
 import BoardDetail from './BoardDetail';
 import BoardWrite from './BoardWrite';
 
-const ADMIN_EMAIL = "ka6865@gmail.com";
-const POSTS_PER_PAGE = 10;
-
-interface BoardProps {
-  currentUser: any;
-  displayName: string;
-}
-
-export default function Board({ currentUser, displayName }: BoardProps) {
-  const router = useRouter();
-  const searchParams = useSearchParams();
+export default function Board({ currentUser, displayName, isAdmin }: BoardProps) {
+  const router = useRouter(); 
+  const searchParams = useSearchParams(); 
   
-  const postIdParam = searchParams?.get('postId');
-  const boardFilter = searchParams?.get('f') || '전체';
+  const postIdParam = searchParams?.get('postId'); 
+  const boardFilter = searchParams?.get('f') || '전체'; 
   
-  // --- 데이터 상태 ---
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [comments, setComments] = useState<Comment[]>([]);
-  const [selectedPost, setSelectedPost] = useState<Post | null>(null);
-  const [isWriting, setIsWriting] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [posts, setPosts] = useState<Post[]>([]); 
+  const [comments, setComments] = useState<Comment[]>([]); 
+  const [selectedPost, setSelectedPost] = useState<Post | null>(null); 
+  const [isWriting, setIsWriting] = useState(false); 
+  const [isLoading, setIsLoading] = useState(false); 
   
-  // --- UI 상태 ---
-  const [page, setPage] = useState(1);
-  const [totalPosts, setTotalPosts] = useState(0);
+  const [page, setPage] = useState(1); 
+  const [totalPosts, setTotalPosts] = useState(0); 
   const [searchInput, setSearchInput] = useState(''); 
   const [searchQuery, setSearchQuery] = useState(''); 
-  const [searchOption, setSearchOption] = useState('all');
-  const [isMobile, setIsMobile] = useState(false);
+  const [searchOption, setSearchOption] = useState('all'); 
+  const [isMobile, setIsMobile] = useState(false); 
 
-  // --- 입력 폼 상태 ---
   const [newTitle, setNewTitle] = useState('');
   const [newContent, setNewContent] = useState('');
   const [newCategory, setNewCategory] = useState('자유');
@@ -47,10 +52,6 @@ export default function Board({ currentUser, displayName }: BoardProps) {
   const [newComment, setNewComment] = useState('');
   const [replyingTo, setReplyingTo] = useState<Comment | null>(null);
 
-  const quillRef = useRef<any>(null);
-  const isAdmin = currentUser?.email === ADMIN_EMAIL;
-
-  // 모바일 환경 감지
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
     handleResize(); 
@@ -58,12 +59,10 @@ export default function Board({ currentUser, displayName }: BoardProps) {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // 🔄 [로직] 필터나 검색어 변경 시 페이지 초기화
   useEffect(() => {
     setPage(1);
   }, [boardFilter, searchQuery]);
 
-  // 날짜 포맷팅
   const formatTimeAgo = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
@@ -75,67 +74,13 @@ export default function Board({ currentUser, displayName }: BoardProps) {
     return date.toLocaleDateString();
   };
 
-  // 이미지 업로드
-  const uploadImage = async (file: File) => {
-    try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
-      const filePath = `${fileName}`;
-      const { error } = await supabase.storage.from('images').upload(filePath, file);
-      if (error) throw error;
-      const { data } = supabase.storage.from('images').getPublicUrl(filePath);
-      return data.publicUrl;
-    } catch (error: any) {
-      alert(`이미지 업로드 실패: ${error.message}`);
-      return null;
-    }
-  };
-
-  // 에디터 이미지 핸들러
-  const imageHandler = () => {
-    const input = document.createElement('input');
-    input.setAttribute('type', 'file');
-    input.setAttribute('accept', 'image/*');
-    input.click();
-
-    input.onchange = async () => {
-      if (!input.files) return;
-      const file = input.files[0];
-      const maxSize = 3 * 1024 * 1024; // 3MB
-
-      if (file.size > maxSize) {
-        alert('이미지 파일 크기는 3MB를 초과할 수 없습니다.');
-        return;
-      }
-
-      const editor = quillRef.current.getEditor();
-      const range = editor.getSelection(true);
-      
-      try {
-        editor.enable(false);
-        const url = await uploadImage(file);
-        
-        if (url) {
-          editor.insertEmbed(range.index, 'image', url);
-          editor.setSelection(range.index + 1); 
-        }
-      } catch (e) {
-        console.error(e);
-      } finally {
-        editor.enable(true);
-      }
-    };
-  };
-
-  // 🌟 게시글 목록 불러오기 (여기에 content가 추가되었습니다!)
   const fetchPosts = async () => {
     setIsLoading(true);
     const from = (page - 1) * POSTS_PER_PAGE;
     const to = from + POSTS_PER_PAGE - 1;
 
     let query = supabase.from('posts')
-      // 👇 아래 줄의 'title, content, author' 부분에 content를 추가했습니다!
-      .select('id, title, content, author, user_id, category, image_url, is_notice, created_at, views, likes, comments(count)', { count: 'exact' });
+      .select('id, title, author, user_id, category, image_url, is_notice, created_at, views, likes, comments(count)', { count: 'exact' });
 
     if (boardFilter !== '전체' && boardFilter !== '추천') query = query.eq('category', boardFilter);
     if (boardFilter === '추천') query = query.gte('likes', 5);
@@ -146,10 +91,7 @@ export default function Board({ currentUser, displayName }: BoardProps) {
       else query = query.or(`title.ilike.%${searchQuery}%,content.ilike.%${searchQuery}%`);
     }
 
-    const { data, count, error } = await query
-      .order('is_notice', { ascending: false })
-      .order('created_at', { ascending: false })
-      .range(from, to);
+    const { data, count, error } = await query.order('is_notice', { ascending: false }).order('created_at', { ascending: false }).range(from, to);
 
     if (!error && data) {
       const postsWithCount = data.map((post: any) => ({
@@ -162,27 +104,17 @@ export default function Board({ currentUser, displayName }: BoardProps) {
     setIsLoading(false);
   };
 
-  useEffect(() => { fetchPosts(); }, [page, boardFilter, searchQuery]);
+  useEffect(() => { 
+    fetchPosts(); 
+  }, [page, boardFilter, searchQuery, displayName]);
 
   useEffect(() => {
-    if (postIdParam && posts.length > 0) {
-      const post = posts.find(p => p.id.toString() === postIdParam);
-      if (post) {
-        setSelectedPost(post);
-        fetchComments(post.id);
-        
-        const viewedKey = `viewed_post_${post.id}`;
-        if (!sessionStorage.getItem(viewedKey)) {
-          incrementViews(post.id, post.views);
-          sessionStorage.setItem(viewedKey, 'true');
-        }
-      } else {
-        fetchSinglePost(postIdParam);
-      }
-    } else if (!postIdParam) {
+    if (postIdParam) {
+      fetchSinglePost(postIdParam); 
+    } else {
       setSelectedPost(null); setComments([]); setReplyingTo(null);
     }
-  }, [postIdParam, posts.length]);
+  }, [postIdParam]);
 
   const fetchSinglePost = async (id: string) => {
       const { data } = await supabase.from('posts').select('*').eq('id', id).single();
@@ -207,11 +139,20 @@ export default function Board({ currentUser, displayName }: BoardProps) {
     await supabase.from('posts').update({ views: currentViews + 1 }).eq('id', postId);
   };
 
+  // 🚨 [방어막 적용 완료] 글 저장 로직에서 제목 길이를 철저하게 검사합니다.
   const handleSavePost = async () => {
+    // 1. 앞뒤 빈칸(스페이스바 장난)을 없앤 진짜 제목 길이를 계산합니다.
+    const trimmedTitle = newTitle.trim();
     const isContentEmpty = newContent.replace(/<[^>]*>?/gm, '').trim().length === 0 && !newContent.includes('<img');
     
-    if (!newTitle.trim() || isContentEmpty || !currentUser) {
+    // 2. 제목이나 내용이 아예 없으면 튕겨냅니다.
+    if (!trimmedTitle || isContentEmpty || !currentUser) {
       return alert('제목과 내용을 모두 입력해주세요.');
+    }
+
+    // 3. 누군가 해킹으로 50자를 넘기려고 해도 여기서 가차없이 튕겨냅니다.
+    if (trimmedTitle.length > 50) {
+      return alert('제목은 50자 이내로 입력해주세요.');
     }
 
     if (newContent.includes('src="data:image')) {
@@ -219,22 +160,32 @@ export default function Board({ currentUser, displayName }: BoardProps) {
     }
 
     setIsLoading(true);
-    let finalImageUrl = '';
-    const imgTagRegex = /<img[^>]+src\s*=\s*["']?([^"'\s>]+)["']?/;
-    const match = newContent.match(imgTagRegex);
-    if (match && match[1]) finalImageUrl = match[1];
+    let finalImageUrl = ''; 
+    
+    if (newContent.includes('<img')) {
+      const imgMatch = newContent.match(/<img[^>]+src=["']([^"']+)["']/i);
+      if (imgMatch && imgMatch[1]) {
+        finalImageUrl = imgMatch[1];
+      } else {
+        finalImageUrl = 'has_image'; 
+      }
+    }
 
+    // DB에 50자 이내로 안전하게 걸러진 제목(trimmedTitle)을 저장합니다.
     const { error } = await supabase.from('posts').insert([{ 
-      title: newTitle, content: newContent, author: displayName,
-      user_id: currentUser.id, category: newCategory, 
+      title: trimmedTitle, 
+      content: newContent, 
+      author: displayName,
+      user_id: currentUser.id, 
+      category: newCategory, 
       image_url: finalImageUrl,
       is_notice: isAdmin ? newIsNotice : false
     }]);
 
     if (!error) {
-      setIsWriting(false); setNewTitle(''); setNewContent('');
+      setIsWriting(false); setNewTitle(''); setNewContent(''); 
       setPage(1); 
-      fetchPosts();
+      fetchPosts(); 
     } else alert('저장 실패: ' + error.message);
     setIsLoading(false);
   };
@@ -252,8 +203,7 @@ export default function Board({ currentUser, displayName }: BoardProps) {
           user_id: targetUserId, sender_id: currentUser.id, sender_name: displayName, type: 'comment', post_id: selectedPost.id
         }]);
       }
-      setNewComment(''); setReplyingTo(null); fetchComments(selectedPost.id);
-      fetchPosts();
+      setNewComment(''); setReplyingTo(null); fetchComments(selectedPost.id); fetchPosts();
     }
   };
 
@@ -289,7 +239,7 @@ export default function Board({ currentUser, displayName }: BoardProps) {
         }).filter((path): path is string => path !== null);
 
         if (imagePaths.length > 0) {
-          await supabase.storage.from('images').remove(imagePaths);
+          await supabase.storage.from('images').remove(imagePaths); 
         }
       }
 
@@ -302,55 +252,15 @@ export default function Board({ currentUser, displayName }: BoardProps) {
     }
   };
 
-  const handleSearch = () => { 
-    setPage(1); 
-    setSearchQuery(searchInput); 
-  };
+  const handleSearch = () => { setPage(1); setSearchQuery(searchInput); };
 
   if (isWriting) {
-    return <BoardWrite 
-      newTitle={newTitle} setNewTitle={setNewTitle}
-      newContent={newContent} setNewContent={setNewContent}
-      newCategory={newCategory} setNewCategory={setNewCategory}
-      newIsNotice={newIsNotice} setNewIsNotice={setNewIsNotice}
-      handleSavePost={handleSavePost}
-      setIsWriting={setIsWriting}
-      isAdmin={isAdmin}
-      isLoading={isLoading}
-      isMobile={isMobile}
-      quillRef={quillRef}
-      imageHandler={imageHandler}
-    />;
+    return <BoardWrite newTitle={newTitle} setNewTitle={setNewTitle} newContent={newContent} setNewContent={setNewContent} newCategory={newCategory} setNewCategory={setNewCategory} newIsNotice={newIsNotice} setNewIsNotice={setNewIsNotice} handleSavePost={handleSavePost} setIsWriting={setIsWriting} isAdmin={isAdmin} isLoading={isLoading} isMobile={isMobile} />;
   }
 
   if (selectedPost) {
-    return <BoardDetail 
-      selectedPost={selectedPost}
-      comments={comments}
-      currentUser={currentUser}
-      displayName={displayName}
-      isAdmin={isAdmin}
-      isMobile={isMobile}
-      boardFilter={boardFilter}
-      newComment={newComment} setNewComment={setNewComment}
-      replyingTo={replyingTo} setReplyingTo={setReplyingTo}
-      handleSaveComment={handleSaveComment}
-      handleLikePost={handleLikePost}
-      handleDeletePost={handleDeletePost}
-      formatTimeAgo={formatTimeAgo}
-    />;
+    return <BoardDetail selectedPost={selectedPost} comments={comments} currentUser={currentUser} displayName={displayName} isAdmin={isAdmin} isMobile={isMobile} boardFilter={boardFilter} newComment={newComment} setNewComment={setNewComment} replyingTo={replyingTo} setReplyingTo={setReplyingTo} handleSaveComment={handleSaveComment} handleLikePost={handleLikePost} handleDeletePost={handleDeletePost} formatTimeAgo={formatTimeAgo} />;
   }
 
-  return <BoardList 
-    posts={posts}
-    boardFilter={boardFilter}
-    totalPosts={totalPosts}
-    page={page} setPage={setPage}
-    searchInput={searchInput} setSearchInput={setSearchInput}
-    searchOption={searchOption} setSearchOption={setSearchOption}
-    handleSearch={handleSearch}
-    setIsWriting={setIsWriting}
-    isMobile={isMobile}
-    formatTimeAgo={formatTimeAgo}
-  />;
+  return <BoardList posts={posts} boardFilter={boardFilter} totalPosts={totalPosts} page={page} setPage={setPage} searchInput={searchInput} setSearchInput={setSearchInput} searchOption={searchOption} setSearchOption={setSearchOption} handleSearch={handleSearch} setIsWriting={setIsWriting} isMobile={isMobile} formatTimeAgo={formatTimeAgo} />;
 }

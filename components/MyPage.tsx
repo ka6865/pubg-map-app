@@ -1,21 +1,26 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 
-// Map.tsx에서 넘겨준 유저 정보와 상태 변경 함수들을 props로 받음
 interface MyPageProps {
-  currentUser: any;                      // Supabase auth.users 정보
-  userProfile: any;                      // profiles 테이블 정보 (닉네임 등)
-  setIsMyPage: (v: boolean) => void;     // 마이페이지 닫기용 함수
-  fetchUserProfile: (id: string) => void;// 닉네임 변경 후 최신화용 함수
+  currentUser: any;                      
+  userProfile: any;                      
+  setIsMyPage: (v: boolean) => void;     
+  fetchUserProfile: (user: any) => void; // id(문자)가 아니라 user(객체) 전체를 받아야 함!
+  setOptimisticNickname: (name: string) => void;
 }
 
-export default function MyPage({ currentUser, userProfile, setIsMyPage, fetchUserProfile }: MyPageProps) {
-  // 현재 닉네임으로 input 초기값 세팅
+export default function MyPage({ currentUser, userProfile, setIsMyPage, fetchUserProfile, setOptimisticNickname }: MyPageProps) {
   const [editNickname, setEditNickname] = useState(userProfile?.nickname || '');
 
-  // 1. 프로필 업데이트 (닉네임 변경)
+  // 💡 [추가된 안전장치] 마이페이지 창을 열었을 때 확실하게 최신 닉네임을 칸에 채워줍니다.
+  useEffect(() => {
+    if (userProfile?.nickname) {
+      setEditNickname(userProfile.nickname);
+    }
+  }, [userProfile]);
+
   const handleUpdateProfile = async () => {
     if (!currentUser) return;
 
@@ -26,7 +31,9 @@ export default function MyPage({ currentUser, userProfile, setIsMyPage, fetchUse
       return;
     }
     
-    // profiles 테이블에 upsert (있으면 덮어쓰기, 없으면 새로 만들기)
+    // 화면 닉네임 강제 변경 (깜빡임 방지)
+    setOptimisticNickname(newNickname); 
+
     const { error } = await supabase.from('profiles').upsert({
       id: currentUser.id,
       nickname: newNickname,
@@ -35,11 +42,18 @@ export default function MyPage({ currentUser, userProfile, setIsMyPage, fetchUse
 
     if (!error) {
       alert('프로필이 업데이트되었습니다.');
-      setEditNickname(newNickname); // 성공 시, trim된 닉네임으로 상태 업데이트
-      // 변경 성공 시 상단 헤더 닉네임도 바로 바뀌도록 Map.tsx의 fetch 함수 실행
-      fetchUserProfile(currentUser.id);
+      setEditNickname(newNickname); 
+      
+      // 🚨 [핵심 버그 수정!] currentUser.id 가 아니라 currentUser 전체를 넘겨줍니다!
+      fetchUserProfile(currentUser); 
+
+      // 내가 쓴 글, 댓글 이름 업데이트
+      await supabase.from('posts').update({ author: newNickname }).eq('user_id', currentUser.id);
+      await supabase.from('comments').update({ author: newNickname }).eq('user_id', currentUser.id);
+
+      setIsMyPage(false); 
+
     } else {
-      // 23505: unique_violation (닉네임 중복)
       if (error.code === '23505') {
         alert('이미 사용중인 닉네임입니다.');
       } else {
@@ -48,17 +62,12 @@ export default function MyPage({ currentUser, userProfile, setIsMyPage, fetchUse
     }
   };
 
-  // 2. 회원탈퇴
   const handleDeleteAccount = async () => {
     if (!confirm('정말로 탈퇴하시겠습니까?\n탈퇴 시 작성한 모든 글과 댓글, 프로필 정보가 삭제되며 복구할 수 없습니다.')) return;
     if (!currentUser) return;
 
     try {
-      // 0. [추가] 내가 작성한 게시글의 이미지 파일들 삭제 (스토리지 정리)
-      const { data: userPosts } = await supabase
-        .from('posts')
-        .select('content')
-        .eq('user_id', currentUser.id);
+      const { data: userPosts } = await supabase.from('posts').select('content').eq('user_id', currentUser.id);
 
       if (userPosts && userPosts.length > 0) {
         const imgRegex = /<img[^>]+src\s*=\s*["']?([^"'\s>]+)["']?/g;
@@ -80,21 +89,13 @@ export default function MyPage({ currentUser, userProfile, setIsMyPage, fetchUse
         }
       }
 
-      // 1. 내가 작성한 댓글 모두 삭제
       await supabase.from('comments').delete().eq('user_id', currentUser.id);
-
-      // 2. 내가 누른 추천(좋아요) 모두 삭제
       await supabase.from('post_likes').delete().eq('user_id', currentUser.id);
-
-      // 3. 내가 작성한 게시글 모두 삭제 (게시글이 지워지면 그 글에 달린 남의 댓글도 보통 같이 지워짐)
       await supabase.from('posts').delete().eq('user_id', currentUser.id);
-
-      // 4. 내 프로필 정보 삭제
       const { error: profileError } = await supabase.from('profiles').delete().eq('id', currentUser.id);
       
       if (profileError) throw profileError;
 
-      // 5. 로그인 세션 삭제 (로그아웃)
       await supabase.auth.signOut();
       
       alert('회원탈퇴가 완료되었습니다. 이용해 주셔서 감사합니다.');
@@ -126,12 +127,10 @@ export default function MyPage({ currentUser, userProfile, setIsMyPage, fetchUse
           <button onClick={() => setIsMyPage(false)} style={{ flex: 1, padding: '12px', backgroundColor: '#333', border: 'none', borderRadius: '6px', color: 'white', cursor: 'pointer' }}>돌아가기</button>
         </div>
         
-        {/* 위험 구역: 로그아웃 & 회원탈퇴 */}
         <div style={{ marginTop: '30px', paddingTop: '20px', borderTop: '1px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <button onClick={() => { supabase.auth.signOut(); setIsMyPage(false); }} style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer', fontSize: '13px', textDecoration: 'underline' }}>
                 로그아웃
             </button>
-            
             <button onClick={handleDeleteAccount} style={{ background: 'none', border: 'none', color: '#ff4d4d', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold' }}>
                 회원탈퇴
             </button>

@@ -1,26 +1,14 @@
-'use client';
+'use client'; 
 
 import { Dispatch, SetStateAction } from 'react';
 import { useRouter } from 'next/navigation';
 import { Post } from '../types/board';
 
 const BOARD_CATEGORIES = ['자유', '듀오/스쿼드 모집', '클럽홍보', '제보/문의'];
-const POSTS_PER_PAGE = 10;
+const POSTS_PER_PAGE = 10; 
 
 interface BoardListProps {
-  posts: Post[];
-  boardFilter: string;
-  totalPosts: number;
-  page: number;
-  setPage: Dispatch<SetStateAction<number>>;
-  searchInput: string;
-  setSearchInput: (input: string) => void;
-  searchOption: string;
-  setSearchOption: (option: string) => void;
-  handleSearch: () => void;
-  setIsWriting: (isWriting: boolean) => void;
-  isMobile: boolean;
-  formatTimeAgo: (dateString: string) => string;
+  posts: Post[]; boardFilter: string; totalPosts: number; page: number; setPage: Dispatch<SetStateAction<number>>; searchInput: string; setSearchInput: (input: string) => void; searchOption: string; setSearchOption: (option: string) => void; handleSearch: () => void; setIsWriting: (isWriting: boolean) => void; isMobile: boolean; formatTimeAgo: (dateString: string) => string;
 }
 
 export default function BoardList({
@@ -28,7 +16,19 @@ export default function BoardList({
   searchOption, setSearchOption, handleSearch, setIsWriting, isMobile, formatTimeAgo
 }: BoardListProps) {
 
-  const router = useRouter();
+  const router = useRouter(); 
+
+  // 글 제목 옆에 띄울 사진 아이콘입니다.
+  const ImageIcon = () => (
+    <svg 
+      className="w-[15px] h-[15px] text-[#34A853] ml-[6px] shrink-0 inline-block" 
+      fill="currentColor" 
+      viewBox="0 0 24 24" 
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path fillRule="evenodd" clipRule="evenodd" d="M1.5 6a2.25 2.25 0 012.25-2.25h16.5A2.25 2.25 0 0122.5 6v12a2.25 2.25 0 01-2.25 2.25H3.75A2.25 2.25 0 011.5 18V6zM3 16.06V18c0 .414.336.75.75.75h16.5A.75.75 0 0021 18v-1.94l-2.69-2.689a1.5 1.5 0 00-2.12 0l-.88.879.97.97a.75.75 0 11-1.06 1.06l-5.16-5.159a1.5 1.5 0 00-2.12 0L3 16.061zm10.125-7.81a1.125 1.125 0 112.25 0 1.125 1.125 0 01-2.25 0z" />
+    </svg>
+  );
 
   return (
     <>
@@ -38,8 +38,7 @@ export default function BoardList({
             <button 
               key={f} 
               onClick={() => router.push(`/?tab=Board&f=${f}`)} 
-              className={`px-[12px] py-[6px] rounded-[20px] border border-[#333] whitespace-nowrap text-[13px] cursor-pointer font-bold transition-colors
-                ${boardFilter === f ? 'bg-[#F2A900] text-black' : 'bg-[#1a1a1a] text-[#aaa] hover:bg-[#2a2a2a]'}`}
+              className={`px-[12px] py-[6px] rounded-[20px] border border-[#333] whitespace-nowrap text-[13px] cursor-pointer font-bold transition-colors ${boardFilter === f ? 'bg-[#F2A900] text-black' : 'bg-[#1a1a1a] text-[#aaa] hover:bg-[#2a2a2a]'}`}
             >
               {f}
             </button>
@@ -66,10 +65,13 @@ export default function BoardList({
                       <span className={`text-[11px] font-bold ${post.is_notice ? 'text-[#F2A900]' : 'text-[#777]'}`}>{post.category}</span>
                       <span className="text-[11px] text-[#555]">{formatTimeAgo(post.created_at)}</span>
                    </div>
-                   <div className={`text-[15px] font-bold mb-[8px] leading-[1.4] ${post.is_notice ? 'text-[#F2A900]' : 'text-white'}`}>
-                      {post.title} 
-                      {(post.comment_count || 0) > 0 && <span className="text-[12px] text-[#aaa] ml-[6px]">💬 {post.comment_count}</span>}
+                   
+                   <div className={`flex items-center flex-wrap text-[15px] font-bold mb-[8px] leading-[1.4] ${post.is_notice ? 'text-[#F2A900]' : 'text-white'}`}>
+                      <span>{post.title}</span>
+                      {post.image_url ? <ImageIcon /> : null}
+                      {(post.comment_count || 0) > 0 ? <span className="text-[12px] text-[#aaa] ml-[6px]">💬 {post.comment_count}</span> : null}
                    </div>
+
                    <div className="flex justify-between text-[11px] text-[#888]">
                       <span>{post.author}</span>
                       <span>조회 {post.views} · 추천 {post.likes}</span>
@@ -92,10 +94,15 @@ export default function BoardList({
                   className={`border-b border-[#222] cursor-pointer transition-colors hover:bg-white/5 ${post.is_notice ? 'bg-[rgba(242,169,0,0.05)]' : 'bg-transparent'}`}
                 >
                   <td className={`p-[15px] font-bold ${post.is_notice ? 'text-[#F2A900]' : 'text-[#777]'}`}>{post.is_notice ? '공지' : post.category}</td>
+                  
                   <td className={`p-[15px] ${post.is_notice ? 'text-[#F2A900] font-bold' : 'text-white font-normal'}`}>
-                    {post.title}
-                    {(post.comment_count || 0) > 0 && <span className="ml-[8px] text-[12px] text-[#aaa]">💬 {post.comment_count}</span>}
+                    <div className="flex items-center">
+                      <span>{post.title}</span>
+                      {post.image_url ? <ImageIcon /> : null}
+                      {(post.comment_count || 0) > 0 ? <span className="ml-[8px] text-[12px] text-[#aaa]">💬 {post.comment_count}</span> : null}
+                    </div>
                   </td>
+
                   <td className="p-[15px] text-[#aaa]">{post.author}</td>
                   <td className="p-[15px] text-[#888] text-[13px]">{formatTimeAgo(post.created_at)}</td>
                   <td className="p-[15px] text-[#666]">{post.views}</td>
@@ -105,7 +112,7 @@ export default function BoardList({
             </tbody>
           </table>
         )}
-        {posts.length === 0 && <div className="p-[50px] text-center text-[#666]">글이 없습니다.</div>}
+        {posts.length === 0 ? <div className="p-[50px] text-center text-[#666]">글이 없습니다.</div> : null}
       </div>
 
       <div className={`flex justify-between items-center mt-[20px] gap-[15px] w-full ${isMobile ? 'flex-col' : 'flex-row'}`}>
@@ -113,13 +120,13 @@ export default function BoardList({
             <select 
               value={searchOption} 
               onChange={(e) => setSearchOption(e.target.value)} 
-              className="p-[8px] bg-[#252525] text-[#ddd] border border-[#333] rounded-[4px] text-[13px] shrink-0 outline-none focus:border-[#F2A900] transition-colors"
+              className="p-[8px] bg-[#252525] text-[#ddd] border border-[#333] rounded-[4px] text-[13px] shrink-0 outline-none focus:border-[#F2A900]"
             >
               <option value="all">제목+내용</option>
               <option value="title">제목</option>
               <option value="author">글쓴이</option>
             </select>
-            <div className="flex bg-[#252525] rounded-[4px] border border-[#333] px-[8px] items-center flex-1 focus-within:border-[#F2A900] transition-colors">
+            <div className="flex bg-[#252525] rounded-[4px] border border-[#333] px-[8px] items-center flex-1 focus-within:border-[#F2A900]">
                 <input 
                   type="text" 
                   placeholder="검색..." 
@@ -128,7 +135,7 @@ export default function BoardList({
                   onKeyDown={(e) => e.key === 'Enter' && handleSearch()} 
                   className="bg-transparent border-none text-white p-[8px] text-[13px] w-full min-w-[80px] outline-none" 
                 />
-                <button onClick={handleSearch} className="bg-transparent border-none cursor-pointer text-[#888] hover:text-white transition-colors">🔍</button>
+                <button onClick={handleSearch} className="bg-transparent border-none cursor-pointer text-[#888] hover:text-white">🔍</button>
             </div>
           </div>
 
@@ -136,22 +143,23 @@ export default function BoardList({
               <button 
                 onClick={() => setPage(prev => Math.max(prev - 1, 1))} 
                 disabled={page === 1} 
-                className={`px-[12px] py-[8px] border border-[#333] bg-[#1a1a1a] text-white rounded-[4px] transition-colors ${page === 1 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-[#2a2a2a]'}`}
+                className={`px-[12px] py-[8px] border border-[#333] rounded-[4px] transition-colors ${page === 1 ? 'bg-[#e0e0e0] text-[#999] cursor-not-allowed' : 'bg-white text-black hover:bg-[#eee]'}`}
               >&lt;</button>
+
               {[...Array(Math.ceil(totalPosts / POSTS_PER_PAGE))].map((_, i) => (
                 <button 
                   key={i} 
                   onClick={() => setPage(i + 1)} 
-                  className={`px-[12px] py-[8px] border border-[#333] rounded-[4px] text-[13px] transition-colors
-                    ${page === i + 1 ? 'bg-[#F2A900] text-black font-bold' : 'bg-[#1a1a1a] text-white font-normal hover:bg-[#2a2a2a]'}`}
+                  className={`px-[12px] py-[8px] border border-[#333] rounded-[4px] text-[13px] transition-colors ${page === i + 1 ? 'bg-[#F2A900] text-black font-bold' : 'bg-white text-black font-normal hover:bg-[#eee]'}`}
                 >
                   {i + 1}
                 </button>
               ))}
+
               <button 
                 onClick={() => setPage(prev => Math.min(prev + 1, Math.ceil(totalPosts / POSTS_PER_PAGE)))} 
                 disabled={page >= Math.ceil(totalPosts / POSTS_PER_PAGE) || totalPosts === 0} 
-                className={`px-[12px] py-[8px] border border-[#333] bg-[#1a1a1a] text-white rounded-[4px] transition-colors ${(page >= Math.ceil(totalPosts / POSTS_PER_PAGE) || totalPosts === 0) ? 'opacity-50 cursor-not-allowed' : 'hover:bg-[#2a2a2a]'}`}
+                className={`px-[12px] py-[8px] border border-[#333] rounded-[4px] transition-colors ${(page >= Math.ceil(totalPosts / POSTS_PER_PAGE) || totalPosts === 0) ? 'bg-[#e0e0e0] text-[#999] cursor-not-allowed' : 'bg-white text-black hover:bg-[#eee]'}`}
               >&gt;</button>
           </div>
       </div>

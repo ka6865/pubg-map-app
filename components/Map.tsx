@@ -13,7 +13,7 @@ import Sidebar from './Sidebar';
 import Board from './Board';
 import MyPage from './MyPage';
 
-// 공용 아이콘 데이터 (SVG 경로)
+
 const svgPaths = {
   bell: "M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z",
   user: "M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
@@ -24,7 +24,6 @@ const CATEGORY_COLORS: { [key: string]: string } = {
   Boat: '#3b82f6', EsportsBoat: '#8b5cf6', Glider: '#f97316', Key: '#10b981',
 };
 
-// 커스텀 마커 핀 생성 함수
 const createPinIcon = (colorCode: string, pathData: string) => {
   return L.divIcon({
     className: 'custom-pin-icon',
@@ -74,58 +73,61 @@ export default function Map() {
   const router = useRouter();
   const searchParams = useSearchParams();
   
-  // URL에서 '?tab=어쩌고'를 읽어와서 어떤 맵/게시판을 띄울지 결정함
   const activeMapId = searchParams?.get('tab') || 'Erangel';
 
-  // --- UI 상태 ---
   const [isSidebarOpen, setSidebarOpen] = useState(true);
   const [showNotiDropdown, setShowNotiDropdown] = useState(false);
   const [isMyPage, setIsMyPage] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
-  // --- 유저 및 데이터 상태 ---
-  const [currentUser, setCurrentUser] = useState<any>(null); // auth.users 원본
-  const [userProfile, setUserProfile] = useState<any>(null); // profiles 테이블 데이터
+  // 💡 [핵심 추가] 초기 로딩 상태 관리! (닉네임/버튼 깜빡임 방어용 방패)
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+
+  const [currentUser, setCurrentUser] = useState<any>(null); 
+  const [userProfile, setUserProfile] = useState<any>(null); 
+  const [optimisticNickname, setOptimisticNickname] = useState<string | null>(null);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [filters, setFilters] = useState<{ [key: string]: boolean }>({
     Garage: false, Random: false, Esports: true, Boat: false, EsportsBoat: false, Glider: false, Key: false,
   });
 
-  // 1. 모바일 환경 감지 (반응형 셋업)
   useEffect(() => {
     const checkMobile = () => {
       const mobile = window.innerWidth < 768;
       setIsMobile(mobile);
-      // 폰으로 보면 기본적으로 사이드바 닫아놔서 지도 넓게 보이게 설정
-      if (mobile) setSidebarOpen(false);
     };
-    checkMobile(); // 첫 렌더링 시 실행
-    window.addEventListener('resize', checkMobile); // 창 크기 바뀔때마다 실행
+    
+    // 초기 실행 시에만 모바일이면 사이드바 닫기 (스크롤로 인한 리사이즈 시 닫힘 방지)
+    checkMobile();
+    if (window.innerWidth < 768) setSidebarOpen(false);
+
+    window.addEventListener('resize', checkMobile); 
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
-  // 상단 헤더에 보여줄 닉네임 계산 (프로필 닉네임 -> 구글 이메일 앞부분 -> 익명)
   const displayName = useMemo(() => {
+    if (optimisticNickname) return optimisticNickname;
     if (userProfile?.nickname) return userProfile.nickname;
-    if (currentUser?.email) return currentUser.email.split('@')[0];
     return '익명';
-  }, [userProfile, currentUser]);
+  }, [optimisticNickname, userProfile]);
+
+  const isAdmin = userProfile?.role === 'admin';
 
   const toggleFilter = (id: string) => setFilters(prev => ({ ...prev, [id]: !prev[id] }));
   const getCount = (type: string) => STATIC_VEHICLES.filter(v => v.mapId === activeMapId && v.type === type).length;
 
-  // 2. 인증 상태 셋업 및 리스너 등록
   useEffect(() => {
     const initAuth = async () => {
-      // 새로고침 시 로컬스토리지 토큰 읽어서 로그인 복구
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
         setCurrentUser(session.user);
-        fetchUserProfile(session.user);
+        // 💡 [핵심 수정] DB에서 닉네임(Profile)을 다 가져올 때까지 여기서 대기합니다!
+        await fetchUserProfile(session.user); 
         fetchNotifications(session.user.id);
       }
+      // 정보 다 가져왔으니 화면에 닉네임(또는 로그인 버튼) 보여줘라!
+      setIsAuthLoading(false); 
       
-      // 앱 켜져있는 동안 로그인/로그아웃 이벤트 감지해서 실시간 반영
       supabase.auth.onAuthStateChange((_event, session) => {
         if (session?.user) {
           setCurrentUser(session.user);
@@ -133,19 +135,18 @@ export default function Map() {
         } else {
           setCurrentUser(null);
           setUserProfile(null);
+          setOptimisticNickname(null);
         }
       });
     };
     initAuth();
   }, []);
 
-  // 3. 닉네임 정보 가져오기 & 없으면 이메일 앞부분 잘라서 자동 생성 (가입 시 최초 1회 작동)
   const fetchUserProfile = async (user: any) => {
     const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
     if (data) {
       setUserProfile(data);
     } else {
-      // 프로필이 없다? -> 첫 로그인이다 -> 이메일 앞부분 잘라서 닉네임으로 강제 저장
       const emailPrefix = user.email?.split('@')[0] || '익명';
       await supabase.from('profiles').insert([{ id: user.id, nickname: emailPrefix }]);
       setUserProfile({ nickname: emailPrefix });
@@ -157,9 +158,8 @@ export default function Map() {
     if (data) setNotifications(data);
   };
 
-  // 탭 클릭하면 URL 변경 (상태가 바뀌면서 컴포넌트 알아서 리렌더링됨)
   const handleTabClick = (tabId: string) => {
-    setIsMyPage(false); // 맵이나 게시판 누르면 마이페이지 닫기
+    setIsMyPage(false); 
     router.push(`/?tab=${tabId}`);
   };
 
@@ -169,16 +169,13 @@ export default function Map() {
   const bounds: [[number, number], [number, number]] = [[0, 0], [imageHeight, imageWidth]];
 
   return (
-    // 전체 뼈대: 100dvh로 모바일 주소창 대응
     <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100dvh', fontFamily: "'Pretendard', sans-serif", overflow: 'hidden', backgroundColor: '#121212', color: 'white' }}>
       
-      {/* --- 상단 헤더 영역 --- */}
       <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: '50px', padding: '0 10px', backgroundColor: '#F2A900', borderBottom: '2px solid #cc8b00', zIndex: 6000, boxSizing: 'border-box' }}>
-        {/* 왼쪽: 로고 + 맵 리스트 (모바일에서 스크롤되게 처리함) */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, overflow: 'hidden' }}>
-          {activeMapId !== 'Board' && (
+          {activeMapId !== 'Board' ? (
             <button onClick={() => setSidebarOpen(!isSidebarOpen)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '18px', flexShrink: 0 }}>☰</button>
-          )}
+          ) : null}
           <div onClick={() => handleTabClick('Erangel')} style={{ fontSize: isMobile ? '16px' : '20px', fontWeight: '900', fontStyle: 'italic', color: 'black', cursor: 'pointer', flexShrink: 0 }}>
             PUBG<span style={{ color: 'white' }}>MAP</span>
           </div>
@@ -190,21 +187,31 @@ export default function Map() {
           </nav>
         </div>
         
-        {/* 오른쪽: 로그인/유저 정보 영역 */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
-          {currentUser ? (
+          {/* 💡 [수정] 아직 DB 확인 중이면 부드러운 회색 글씨로 대기! */}
+          {isAuthLoading ? (
+            <span style={{ fontWeight: 'bold', color: 'rgba(0,0,0,0.5)', fontSize: '13px' }}>정보 확인 중...</span>
+          ) : currentUser ? (
             <>
-              {/* 알림 아이콘 (안읽은 알림 있으면 빨간점) */}
+              {isAdmin && (
+                <Link href="/map-editor" style={{ textDecoration: 'none' }}>
+                  <button style={{ 
+                    marginRight: '10px', padding: '6px 12px', backgroundColor: '#1a1a1a', color: '#F2A900', 
+                    border: '1px solid #333', borderRadius: '4px', fontWeight: 'bold', fontSize: '11px', cursor: 'pointer' 
+                  }}>
+                    관리자페이지
+                  </button>
+                </Link>
+              )}
               <div onClick={() => setShowNotiDropdown(!showNotiDropdown)} style={{ cursor: 'pointer', position: 'relative', display: 'flex', alignItems: 'center' }}>
                 <svg viewBox="0 0 24 24" width="20" height="20" fill="black"><path d={svgPaths.bell}/></svg>
-                {notifications.some(n => !n.is_read) && <span style={{ position: 'absolute', top: 0, right: 0, width: '8px', height: '8px', backgroundColor: 'red', borderRadius: '50%' }}></span>}
+                {notifications.some(n => !n.is_read) ? <span style={{ position: 'absolute', top: 0, right: 0, width: '8px', height: '8px', backgroundColor: 'red', borderRadius: '50%' }}></span> : null}
               </div>
-              {/* 마이페이지 진입 버튼 */}
               <div onClick={() => { setIsMyPage(true); router.push('/?tab=Board'); }} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
                 <div style={{ width: '24px', height: '24px', borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <svg viewBox="0 0 24 24" width="16" height="16" fill="black"><path d={svgPaths.user}/></svg>
                 </div>
-                {!isMobile && <span style={{ fontWeight: 'bold', color: 'black', fontSize: '13px' }}>{displayName}</span>}
+                {!isMobile ? <span style={{ fontWeight: 'bold', color: 'black', fontSize: '13px' }}>{displayName}</span> : null}
               </div>
             </>
           ) : (
@@ -213,23 +220,25 @@ export default function Map() {
         </div>
       </header>
 
-      {/* --- 메인 콘텐츠 (지도 or 게시판) --- */}
       <main style={{ flex: 1, display: 'flex', position: 'relative', overflow: 'hidden' }}>
         {activeMapId === 'Board' ? (
-          // 게시판 또는 마이페이지 렌더링
           <div style={{ width: '100%', height: '100%', overflowY: 'auto', backgroundColor: '#0d0d0d' }}>
             <div style={{ maxWidth: '900px', margin: '0 auto', padding: isMobile ? '10px' : '20px' }}>
               {isMyPage ? (
-                <MyPage currentUser={currentUser} userProfile={userProfile} setIsMyPage={setIsMyPage} fetchUserProfile={fetchUserProfile} />
+                <MyPage 
+                  currentUser={currentUser} 
+                  userProfile={userProfile} 
+                  setIsMyPage={setIsMyPage} 
+                  fetchUserProfile={fetchUserProfile}
+                  setOptimisticNickname={setOptimisticNickname}
+                />
               ) : (
-                <Board currentUser={currentUser} displayName={displayName} />
+                <Board currentUser={currentUser} displayName={displayName} isAdmin={isAdmin} />
               )}
             </div>
           </div>
         ) : (
-          // 지도 렌더링
           <>
-            {/* 왼쪽 사이드바: 모바일일땐 absolute로 지도 위로 띄워서 화면 가림 방지 */}
             <div style={{ 
                 position: isMobile ? 'absolute' : 'relative',
                 top: 0, left: 0, bottom: 0,
@@ -241,20 +250,18 @@ export default function Map() {
               <Sidebar isOpen={isSidebarOpen} setIsOpen={setSidebarOpen} mapLabel={currentMap?.label || ''} filters={filters} toggleFilter={toggleFilter} getCount={getCount} />
             </div>
 
-            {/* 실제 Leaflet 지도 컨테이너 */}
             <div style={{ flex: 1, position: 'relative' }}>
                 <MapContainer 
-                  key={activeMapId} // 맵 바뀔때마다 초기화
+                  key={activeMapId} 
                   center={[imageHeight / 2, imageWidth / 2]} 
                   zoom={-3} 
                   minZoom={-4} 
                   maxZoom={2} 
-                  crs={CRS.Simple} // 지구 좌표계 대신 평면 이미지 좌표계 사용
+                  crs={CRS.Simple} 
                   style={{ height: '100%', width: '100%', background: '#0b0f19' }} 
                   zoomControl={false}
                 >
-                    {currentMap && <ImageOverlay url={currentMap.imageUrl} bounds={bounds} />}
-                    {/* filters[v.type]이 true인 마커들만 뽑아서 지도에 뿌려줌 */}
+                    {currentMap ? <ImageOverlay url={currentMap.imageUrl} bounds={bounds} /> : null}
                     {STATIC_VEHICLES.filter(v => v.mapId === activeMapId && filters[v.type]).map(v => (
                         <Marker key={v.id} position={[v.y, v.x]} icon={icons[v.type as keyof typeof icons]}>
                             <Popup>{v.name}</Popup>
