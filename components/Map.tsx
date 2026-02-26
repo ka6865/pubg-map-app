@@ -5,14 +5,13 @@ import { useState, useEffect, useMemo } from 'react';
 import { MapContainer, ImageOverlay, Marker, Popup } from 'react-leaflet';
 import L, { CRS } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import { STATIC_VEHICLES } from '../data/vehicles';
 import Link from 'next/link';
 import { supabase } from '../lib/supabase';
 
 import Sidebar from './Sidebar';
 import Board from './Board';
 import MyPage from './MyPage';
-
+import { La_Belle_Aurore } from 'next/font/google';
 
 const svgPaths = {
   bell: "M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z",
@@ -67,6 +66,7 @@ const MAP_LIST = [
   { id: 'Taego', label: '태이고', imageUrl: '/Taego.jpg' },
   { id: 'Rondo', label: '론도', imageUrl: '/Rondo.jpg' },
   { id: 'Vikendi', label: '비켄디', imageUrl: '/Vikendi.jpg' },
+  { id: 'Deston', label: '데스턴', imageUrl: '/Deston.jpg' },
 ];
 
 export default function Map() {
@@ -79,8 +79,6 @@ export default function Map() {
   const [showNotiDropdown, setShowNotiDropdown] = useState(false);
   const [isMyPage, setIsMyPage] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
-
-  // 💡 [핵심 추가] 초기 로딩 상태 관리! (닉네임/버튼 깜빡임 방어용 방패)
   const [isAuthLoading, setIsAuthLoading] = useState(true);
 
   const [currentUser, setCurrentUser] = useState<any>(null); 
@@ -91,13 +89,14 @@ export default function Map() {
     Garage: false, Random: false, Esports: true, Boat: false, EsportsBoat: false, Glider: false, Key: false,
   });
 
+  const [dbVehicles, setDbVehicles] = useState<any[]>([]);
+
   useEffect(() => {
     const checkMobile = () => {
       const mobile = window.innerWidth < 768;
       setIsMobile(mobile);
     };
     
-    // 초기 실행 시에만 모바일이면 사이드바 닫기 (스크롤로 인한 리사이즈 시 닫힘 방지)
     checkMobile();
     if (window.innerWidth < 768) setSidebarOpen(false);
 
@@ -114,24 +113,27 @@ export default function Map() {
   const isAdmin = userProfile?.role === 'admin';
 
   const toggleFilter = (id: string) => setFilters(prev => ({ ...prev, [id]: !prev[id] }));
-  const getCount = (type: string) => STATIC_VEHICLES.filter(v => v.mapId === activeMapId && v.type === type).length;
+  const getCount = (type: string) => dbVehicles.filter(v => v.mapId === activeMapId && v.type === type).length;
 
   useEffect(() => {
-    const initAuth = async () => {
+    const initAuthAndMap = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
         setCurrentUser(session.user);
-        // 💡 [핵심 수정] DB에서 닉네임(Profile)을 다 가져올 때까지 여기서 대기합니다!
         await fetchUserProfile(session.user); 
         fetchNotifications(session.user.id);
       }
-      // 정보 다 가져왔으니 화면에 닉네임(또는 로그인 버튼) 보여줘라!
       setIsAuthLoading(false); 
       
-      supabase.auth.onAuthStateChange((_event, session) => {
+      const { data: markers } = await supabase.from('map_markers').select('*');
+      if (markers) {
+        setDbVehicles(markers.map(m => ({ ...m, mapId: m.map_id })));
+      }
+      
+      supabase.auth.onAuthStateChange(async (_event, session) => {
         if (session?.user) {
           setCurrentUser(session.user);
-          fetchUserProfile(session.user);
+          await fetchUserProfile(session.user);
         } else {
           setCurrentUser(null);
           setUserProfile(null);
@@ -139,7 +141,7 @@ export default function Map() {
         }
       });
     };
-    initAuth();
+    initAuthAndMap();
   }, []);
 
   const fetchUserProfile = async (user: any) => {
@@ -183,12 +185,14 @@ export default function Map() {
             {MAP_LIST.map(m => (
               <button key={m.id} onClick={() => handleTabClick(m.id)} style={{ height: '30px', padding: '0 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap', backgroundColor: activeMapId === m.id ? '#1a1a1a' : 'transparent', color: activeMapId === m.id ? 'white' : 'black' }}>{m.label}</button>
             ))}
+            
+            <div style={{ width: '2px', height: '16px', backgroundColor: 'rgba(0,0,0,0.3)', margin: '0 4px', borderRadius: '2px' }} />
+            
             <button onClick={() => handleTabClick('Board')} style={{ height: '30px', padding: '0 8px', borderRadius: '4px', fontWeight: 'bold', fontSize: '12px', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap', backgroundColor: activeMapId === 'Board' ? '#1a1a1a' : 'transparent', color: activeMapId === 'Board' ? '#F2A900' : 'black' }}>게시판</button>
           </nav>
         </div>
         
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
-          {/* 💡 [수정] 아직 DB 확인 중이면 부드러운 회색 글씨로 대기! */}
           {isAuthLoading ? (
             <span style={{ fontWeight: 'bold', color: 'rgba(0,0,0,0.5)', fontSize: '13px' }}>정보 확인 중...</span>
           ) : currentUser ? (
@@ -262,7 +266,7 @@ export default function Map() {
                   zoomControl={false}
                 >
                     {currentMap ? <ImageOverlay url={currentMap.imageUrl} bounds={bounds} /> : null}
-                    {STATIC_VEHICLES.filter(v => v.mapId === activeMapId && filters[v.type]).map(v => (
+                    {dbVehicles.filter(v => v.mapId === activeMapId && filters[v.type]).map(v => (
                         <Marker key={v.id} position={[v.y, v.x]} icon={icons[v.type as keyof typeof icons]}>
                             <Popup>{v.name}</Popup>
                         </Marker>

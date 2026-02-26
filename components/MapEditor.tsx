@@ -6,9 +6,7 @@ import { MapContainer, ImageOverlay, Marker, useMapEvents } from 'react-leaflet'
 import L, { CRS } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { supabase } from '../lib/supabase';
-import { STATIC_VEHICLES } from '../data/vehicles';
-
-// --- [1. 아이콘 디자인 설정 (사이즈 조정됨: 24x32)] ---
+//import { STATIC_VEHICLES } from '../data/vehicles';
 
 const svgPaths = {
   car: "M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z",
@@ -51,6 +49,7 @@ const MAP_LIST = [
   { id: 'Taego', label: '태이고', imageUrl: '/Taego.jpg' },
   { id: 'Rondo', label: '론도', imageUrl: '/Rondo.jpg' },
   { id: 'Vikendi', label: '비켄디', imageUrl: '/Vikendi.jpg' },
+  { id: 'Deston', label: '데스턴', imageUrl: '/Deston.jpg' },
 ];
 
 const MapEvents = ({ onClick }: { onClick: (e: L.LeafletMouseEvent) => void }) => {
@@ -58,10 +57,11 @@ const MapEvents = ({ onClick }: { onClick: (e: L.LeafletMouseEvent) => void }) =
   return null;
 };
 
-const Map = () => {
+const MapEditorComponent = () => {
   const router = useRouter();
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [activeMapId, setActiveMapId] = useState('Erangel');
+  const [isSaving, setIsSaving] = useState(false);
   
   const currentMap = MAP_LIST.find(m => m.id === activeMapId);
   const mapImageUrl = currentMap?.imageUrl || '/Erangel.jpg';
@@ -102,18 +102,21 @@ const Map = () => {
       }
 
       setIsAuthorized(true);
+
+      const { data } = await supabase.from('map_markers').select('*');
+      if (data && data.length > 0) {
+        setVehicles(data.map(v => ({ ...v, mapId: v.map_id })));
+      } else {
+        const savedData = localStorage.getItem('pubg-vehicles');
+        if (savedData) {
+          setVehicles(JSON.parse(savedData));
+        }
+      }
+      setIsLoaded(true);
     };
 
     checkAdmin();
   }, [router]);
-
-  useEffect(() => {
-    const savedData = localStorage.getItem('pubg-vehicles');
-    if (savedData) {
-      setVehicles(JSON.parse(savedData));
-    }
-    setIsLoaded(true);
-  }, []);
 
   useEffect(() => {
     if (isLoaded) {
@@ -126,7 +129,7 @@ const Map = () => {
   };
 
   const clearAllVehicles = () => {
-    if (window.confirm(`⚠️ 현재 찍힌 마커 ${vehicles.length}개를 모두 삭제하시겠습니까? (복구 불가)`)) {
+    if (window.confirm(`⚠️ 현재 찍힌 마커 ${vehicles.length}개를 모두 삭제하시겠습니까? (서버 저장 전까지는 복구 가능)`)) {
       setVehicles([]);
     }
   };
@@ -141,61 +144,66 @@ const Map = () => {
     setFilters((prev) => ({ ...prev, [type]: !prev[type] }));
   };
 
-  // 🔢 [NEW] 개수 세기 도우미 함수
   const getCount = (type: string) => vehicles.filter(v => v.type === type).length;
-  // 전체 개수
   const totalCount = vehicles.length;
 
-  const handleExportJSON = () => {
-    const exportData = vehicles.map(v => ({
-      mapId: v.mapId || activeMapId,
-      id: v.id,
-      name: v.name,
-      x: Math.round(v.x),
-      y: Math.round(v.y),
-      type: v.type
-    }));
-
-    const jsonString = JSON.stringify(exportData, null, 2);
-    const blob = new Blob([jsonString], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "vehicles.json";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
-
-  const handleExportTS = () => {
-    const exportData = vehicles.map(v => ({
-      mapId: v.mapId || activeMapId,
-      id: v.id,
-      name: v.name,
-      x: Math.round(v.x),
-      y: Math.round(v.y),
-      type: v.type
-    }));
-
-    const tsContent = `// data/vehicles.ts
-export interface VehicleData { id: number; mapId?: string; name: string; x: number; y: number; type: string; }
-export const STATIC_VEHICLES: VehicleData[] = ${JSON.stringify(exportData, null, 2)};`;
-
-    const blob = new Blob([tsContent], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "vehicles.ts";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-  };
-
-  const loadOriginalData = () => {
-    if (window.confirm('기존 vehicles.ts 데이터로 초기화하시겠습니까?\n현재 작업 중인 내용은 사라집니다.')) {
-       setVehicles(JSON.parse(JSON.stringify(STATIC_VEHICLES)));
+  // 🌟 [안전성 강화 버전] 에러 감지 및 500개씩 쪼개서 넣기
+  const handleSaveToDB = async () => {
+    if(!confirm('진짜로 서버(유저 화면)에 마커 데이터를 반영하시겠습니까?')) return;
+    
+    setIsSaving(true);
+    console.log('--- [서버 저장 시작] ---');
+    
+    try {
+      console.log('1. 기존 데이터 삭제 요청 중...');
+      // 💡 [핵심 수정] 숫자 크기 비교 대신 "id가 비어있지 않은 것(전부 다) 지워라"로 가장 안전하게 변경했습니다.
+      const { error: deleteError } = await supabase.from('map_markers').delete().not('id', 'is', null);
+      
+      if (deleteError) {
+        console.error('🚨 삭제 중 에러:', deleteError);
+        throw deleteError;
+      }
+      console.log('✅ 1. 기존 데이터 삭제 완료!');
+      
+      console.log('2. 새 데이터 변환 중...');
+      const insertData = vehicles.map(v => ({
+        id: Number(v.id),
+        map_id: String(v.mapId || activeMapId),
+        name: String(v.name),
+        type: String(v.type),
+        x: Math.round(v.x),
+        y: Math.round(v.y)
+      }));
+      console.log(`✅ 2. 변환된 데이터 개수: ${insertData.length}개`);
+      
+      if (insertData.length > 0) {
+        console.log('3. 새 데이터 서버로 전송 중...');
+        const chunkSize = 500;
+        
+        for (let i = 0; i < insertData.length; i += chunkSize) {
+          const chunk = insertData.slice(i, i + chunkSize);
+          console.log(`   -> ${i + 1} ~ ${i + chunk.length}개 전송 중...`);
+          
+          const { error: insertError } = await supabase.from('map_markers').insert(chunk);
+          
+          if (insertError) {
+            console.error('🚨 삽입 중 에러:', insertError);
+            throw insertError;
+          }
+        }
+        console.log('✅ 3. 새 데이터 전송 완료!');
+      } else {
+        console.log('✅ 3. 전송할 새 마커가 없습니다 (삭제만 되었습니다).');
+      }
+      
+      alert(`🎉 총 ${insertData.length}개의 마커가 서버에 성공적으로 저장되었습니다!`);
+      
+    } catch (error: any) {
+      console.error('🚨 최종 에러 발생:', error);
+      alert('저장 실패: ' + (error.message || '알 수 없는 오류 발생. F12 콘솔 창을 확인해주세요.'));
+    } finally {
+      console.log('--- [서버 저장 종료 (상태 초기화)] ---');
+      setIsSaving(false);
     }
   };
 
@@ -223,8 +231,6 @@ export const STATIC_VEHICLES: VehicleData[] = ${JSON.stringify(exportData, null,
 
   return (
     <div className="flex flex-col w-full h-screen bg-[#0f172a]">
-      
-      {/* 상단 헤더 (탭 UI) */}
       <header className="flex items-center justify-between h-[50px] px-4 bg-[#F2A900] border-b-2 border-[#cc8b00] z-[6000] shrink-0">
         <div className="flex items-center gap-4">
           <div className="text-xl font-black italic text-black select-none cursor-default">
@@ -249,46 +255,38 @@ export const STATIC_VEHICLES: VehicleData[] = ${JSON.stringify(exportData, null,
       </header>
       
       <div className="flex-1 relative w-full h-full overflow-hidden">
-        {/* --- [상단 컨트롤 패널 (카운트 기능 추가)] --- */}
         <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-[1000] flex flex-wrap gap-2 bg-white/95 p-3 rounded-xl shadow-2xl items-center justify-center max-w-[90vw]">
         
-        {/* 🏠 차고 */}
         <button onClick={() => { setActiveType('Garage'); if (activeType === 'Garage') toggleFilter('Garage'); }}
           className={`flex items-center gap-1 px-3 py-2 rounded-lg font-bold text-sm transition-all border ${filters.Garage ? 'bg-red-50 text-red-600 border-red-200' : 'bg-gray-50 text-gray-400 border-gray-100 opacity-60'} ${activeType === 'Garage' ? 'ring-2 ring-red-500 ring-offset-1' : ''}`}>
           🏠 차고 ({getCount('Garage')})
         </button>
 
-        {/* 🚕 랜덤 */}
         <button onClick={() => { setActiveType('Random'); if (activeType === 'Random') toggleFilter('Random'); }}
           className={`flex items-center gap-1 px-3 py-2 rounded-lg font-bold text-sm transition-all border ${filters.Random ? 'bg-yellow-50 text-yellow-600 border-yellow-200' : 'bg-gray-50 text-gray-400 border-gray-100 opacity-60'} ${activeType === 'Random' ? 'ring-2 ring-yellow-500 ring-offset-1' : ''}`}>
           🚕 랜덤 ({getCount('Random')})
         </button>
 
-        {/* 🏆 고정 차 */}
         <button onClick={() => { setActiveType('Esports'); if (activeType === 'Esports') toggleFilter('Esports'); }}
           className={`flex items-center gap-1 px-3 py-2 rounded-lg font-bold text-sm transition-all border ${filters.Esports ? 'bg-purple-50 text-purple-600 border-purple-200' : 'bg-gray-50 text-gray-400 border-gray-100 opacity-60'} ${activeType === 'Esports' ? 'ring-2 ring-purple-500 ring-offset-1' : ''}`}>
           🏆 고정 ({getCount('Esports')})
         </button>
 
-        {/* 🪂 글라이더 */}
         <button onClick={() => { setActiveType('Glider'); if (activeType === 'Glider') toggleFilter('Glider'); }}
           className={`flex items-center gap-1 px-3 py-2 rounded-lg font-bold text-sm transition-all border ${filters.Glider ? 'bg-orange-50 text-orange-600 border-orange-200' : 'bg-gray-50 text-gray-400 border-gray-100 opacity-60'} ${activeType === 'Glider' ? 'ring-2 ring-orange-500 ring-offset-1' : ''}`}>
           🪂 글라이더 ({getCount('Glider')})
         </button>
 
-        {/* 🚤 보트 (랜덤) */}
         <button onClick={() => { setActiveType('Boat'); if (activeType === 'Boat') toggleFilter('Boat'); }}
           className={`flex items-center gap-1 px-3 py-2 rounded-lg font-bold text-sm transition-all border ${filters.Boat ? 'bg-blue-50 text-blue-600 border-blue-200' : 'bg-gray-50 text-gray-400 border-gray-100 opacity-60'} ${activeType === 'Boat' ? 'ring-2 ring-blue-500 ring-offset-1' : ''}`}>
           🚤 보트 ({getCount('Boat')})
         </button>
 
-        {/* 🛥️ 고정 보트 */}
         <button onClick={() => { setActiveType('EsportsBoat'); if (activeType === 'EsportsBoat') toggleFilter('EsportsBoat'); }}
           className={`flex items-center gap-1 px-3 py-2 rounded-lg font-bold text-sm transition-all border ${filters.EsportsBoat ? 'bg-purple-50 text-purple-600 border-purple-200' : 'bg-gray-50 text-gray-400 border-gray-100 opacity-60'} ${activeType === 'EsportsBoat' ? 'ring-2 ring-purple-500 ring-offset-1' : ''}`}>
           🏆 보트(E) ({getCount('EsportsBoat')})
         </button>
 
-        {/* 🔑 열쇠 */}
         <button onClick={() => { setActiveType('Key'); if (activeType === 'Key') toggleFilter('Key'); }}
           className={`flex items-center gap-1 px-3 py-2 rounded-lg font-bold text-sm transition-all border ${filters.Key ? 'bg-green-50 text-green-600 border-green-200' : 'bg-gray-50 text-gray-400 border-gray-100 opacity-60'} ${activeType === 'Key' ? 'ring-2 ring-green-500 ring-offset-1' : ''}`}>
           🔑 열쇠 ({getCount('Key')})
@@ -296,19 +294,12 @@ export const STATIC_VEHICLES: VehicleData[] = ${JSON.stringify(exportData, null,
 
         <div className="w-px h-6 bg-gray-300 mx-1"></div>
 
-        {/* 전체 삭제 및 총 개수 */}
         <button onClick={clearAllVehicles} className="flex items-center gap-1 text-gray-400 hover:text-red-600 px-2 py-1 transition-colors rounded hover:bg-red-50" title="전체 삭제">
           🗑️ <span className="text-xs font-medium">({totalCount})</span>
         </button>
 
-        {/* 초기 데이터 로드 */}
-        <button onClick={loadOriginalData} className="flex items-center gap-1 text-gray-500 hover:text-black px-2 py-1 transition-colors rounded hover:bg-gray-100" title="vehicles.ts 데이터 불러오기">
-          🔄 <span className="text-xs font-bold">초기화</span>
-        </button>
-
-        {/* TS 파일 내보내기 */}
-        <button onClick={handleExportTS} className="flex items-center gap-1 text-blue-500 hover:text-blue-700 px-2 py-1 transition-colors rounded hover:bg-blue-50" title="vehicles.ts 파일로 저장">
-          💾 <span className="text-xs font-bold">TS 저장</span>
+        <button onClick={handleSaveToDB} disabled={isSaving} className={`flex items-center gap-1 px-3 py-1 transition-colors rounded font-bold text-xs ${isSaving ? 'bg-gray-300 text-gray-500' : 'bg-[#34A853] text-white hover:bg-[#2a9040]'}`} title="서버 DB에 즉시 반영">
+          {isSaving ? '저장 중...' : '💾 서버에 저장'}
         </button>
       </div>
 
@@ -364,4 +355,4 @@ export const STATIC_VEHICLES: VehicleData[] = ${JSON.stringify(exportData, null,
   );
 };
 
-export default Map;
+export default MapEditorComponent;

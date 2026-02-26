@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { supabase } from '../lib/supabase';
+import { validatePost, extractImageUrl, sanitizeTitle } from '../lib/board-utils';
 import dynamic from 'next/dynamic';
 import 'react-quill-new/dist/quill.snow.css';
 import DOMPurify from 'isomorphic-dompurify';
@@ -141,37 +142,15 @@ export default function Board({ currentUser, displayName, isAdmin }: BoardProps)
 
   // 🚨 [방어막 적용 완료] 글 저장 로직에서 제목 길이를 철저하게 검사합니다.
   const handleSavePost = async () => {
-    // 1. 앞뒤 빈칸(스페이스바 장난)을 없앤 진짜 제목 길이를 계산합니다.
-    const trimmedTitle = newTitle.trim();
-    const isContentEmpty = newContent.replace(/<[^>]*>?/gm, '').trim().length === 0 && !newContent.includes('<img');
-    
-    // 2. 제목이나 내용이 아예 없으면 튕겨냅니다.
-    if (!trimmedTitle || isContentEmpty || !currentUser) {
-      return alert('제목과 내용을 모두 입력해주세요.');
-    }
-
-    // 3. 누군가 해킹으로 50자를 넘기려고 해도 여기서 가차없이 튕겨냅니다.
-    if (trimmedTitle.length > 50) {
-      return alert('제목은 50자 이내로 입력해주세요.');
-    }
-
-    if (newContent.includes('src="data:image')) {
-      return alert('이미지 붙여넣기 및 드래그 앤 드롭은 허용되지 않습니다.\n에디터 상단의 📷 이미지 버튼을 눌러 업로드해주세요.');
+    const validationError = validatePost(newTitle, newContent, currentUser);
+    if (validationError) {
+      return alert(validationError);
     }
 
     setIsLoading(true);
-    let finalImageUrl = ''; 
-    
-    if (newContent.includes('<img')) {
-      const imgMatch = newContent.match(/<img[^>]+src=["']([^"']+)["']/i);
-      if (imgMatch && imgMatch[1]) {
-        finalImageUrl = imgMatch[1];
-      } else {
-        finalImageUrl = 'has_image'; 
-      }
-    }
+    const trimmedTitle = sanitizeTitle(newTitle);
+    const finalImageUrl = extractImageUrl(newContent);
 
-    // DB에 50자 이내로 안전하게 걸러진 제목(trimmedTitle)을 저장합니다.
     const { error } = await supabase.from('posts').insert([{ 
       title: trimmedTitle, 
       content: newContent, 
