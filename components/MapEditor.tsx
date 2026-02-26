@@ -6,7 +6,6 @@ import { MapContainer, ImageOverlay, Marker, useMapEvents } from 'react-leaflet'
 import L, { CRS } from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { supabase } from '../lib/supabase';
-//import { STATIC_VEHICLES } from '../data/vehicles';
 
 const svgPaths = {
   car: "M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z",
@@ -147,25 +146,15 @@ const MapEditorComponent = () => {
   const getCount = (type: string) => vehicles.filter(v => v.type === type).length;
   const totalCount = vehicles.length;
 
-  // 🌟 [안전성 강화 버전] 에러 감지 및 500개씩 쪼개서 넣기
   const handleSaveToDB = async () => {
     if(!confirm('진짜로 서버(유저 화면)에 마커 데이터를 반영하시겠습니까?')) return;
     
     setIsSaving(true);
-    console.log('--- [서버 저장 시작] ---');
     
     try {
-      console.log('1. 기존 데이터 삭제 요청 중...');
-      // 💡 [핵심 수정] 숫자 크기 비교 대신 "id가 비어있지 않은 것(전부 다) 지워라"로 가장 안전하게 변경했습니다.
       const { error: deleteError } = await supabase.from('map_markers').delete().not('id', 'is', null);
+      if (deleteError) throw deleteError;
       
-      if (deleteError) {
-        console.error('🚨 삭제 중 에러:', deleteError);
-        throw deleteError;
-      }
-      console.log('✅ 1. 기존 데이터 삭제 완료!');
-      
-      console.log('2. 새 데이터 변환 중...');
       const insertData = vehicles.map(v => ({
         id: Number(v.id),
         map_id: String(v.mapId || activeMapId),
@@ -174,35 +163,22 @@ const MapEditorComponent = () => {
         x: Math.round(v.x),
         y: Math.round(v.y)
       }));
-      console.log(`✅ 2. 변환된 데이터 개수: ${insertData.length}개`);
       
       if (insertData.length > 0) {
-        console.log('3. 새 데이터 서버로 전송 중...');
         const chunkSize = 500;
-        
         for (let i = 0; i < insertData.length; i += chunkSize) {
           const chunk = insertData.slice(i, i + chunkSize);
-          console.log(`   -> ${i + 1} ~ ${i + chunk.length}개 전송 중...`);
-          
           const { error: insertError } = await supabase.from('map_markers').insert(chunk);
-          
-          if (insertError) {
-            console.error('🚨 삽입 중 에러:', insertError);
-            throw insertError;
-          }
+          if (insertError) throw insertError;
         }
-        console.log('✅ 3. 새 데이터 전송 완료!');
-      } else {
-        console.log('✅ 3. 전송할 새 마커가 없습니다 (삭제만 되었습니다).');
       }
       
       alert(`🎉 총 ${insertData.length}개의 마커가 서버에 성공적으로 저장되었습니다!`);
       
     } catch (error: any) {
-      console.error('🚨 최종 에러 발생:', error);
-      alert('저장 실패: ' + (error.message || '알 수 없는 오류 발생. F12 콘솔 창을 확인해주세요.'));
+      console.error('🚨 서버 저장 에러:', error);
+      alert('저장 실패: ' + (error.message || '알 수 없는 오류 발생.'));
     } finally {
-      console.log('--- [서버 저장 종료 (상태 초기화)] ---');
       setIsSaving(false);
     }
   };
