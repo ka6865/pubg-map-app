@@ -165,6 +165,31 @@ export default function Map() {
     router.push(`/?tab=${tabId}`);
   };
 
+  const formatNotiTime = (dateString: string) => {
+    const diff = (new Date().getTime() - new Date(dateString).getTime()) / 1000;
+    if (diff < 60) return '방금 전';
+    if (diff < 3600) return `${Math.floor(diff / 60)}분 전`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}시간 전`;
+    if (diff < 604800) return `${Math.floor(diff / 86400)}일 전`;
+    return new Date(dateString).toLocaleDateString();
+  };
+
+  const handleNotiClick = async (noti: any) => {
+    if (!noti.is_read) {
+      await supabase.from('notifications').update({ is_read: true }).eq('id', noti.id);
+      setNotifications(prev => prev.map(n => n.id === noti.id ? { ...n, is_read: true } : n));
+    }
+    setShowNotiDropdown(false);
+    setIsMyPage(false); 
+    router.push(`/?tab=Board&postId=${noti.post_id}`);
+  };
+
+  const markAllAsRead = async () => {
+    if (!currentUser) return;
+    await supabase.from('notifications').update({ is_read: true }).eq('user_id', currentUser.id).eq('is_read', false);
+    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+  };
+
   const currentMap = MAP_LIST.find(m => m.id === activeMapId);
   const imageWidth = 8192; 
   const imageHeight = 8192;
@@ -207,10 +232,87 @@ export default function Map() {
                   </button>
                 </Link>
               )}
-              <div onClick={() => setShowNotiDropdown(!showNotiDropdown)} style={{ cursor: 'pointer', position: 'relative', display: 'flex', alignItems: 'center' }}>
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="black"><path d={svgPaths.bell}/></svg>
-                {notifications.some(n => !n.is_read) ? <span style={{ position: 'absolute', top: 0, right: 0, width: '8px', height: '8px', backgroundColor: 'red', borderRadius: '50%' }}></span> : null}
+              
+              <div style={{ position: 'relative' }}>
+                <div onClick={() => setShowNotiDropdown(!showNotiDropdown)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                  <svg viewBox="0 0 24 24" width="20" height="20" fill="black"><path d={svgPaths.bell}/></svg>
+                  {notifications.some(n => !n.is_read) ? <span style={{ position: 'absolute', top: '-2px', right: '-2px', width: '8px', height: '8px', backgroundColor: 'red', borderRadius: '50%' }}></span> : null}
+                </div>
+
+                {showNotiDropdown && (
+                  <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 6999 }} onClick={() => setShowNotiDropdown(false)} />
+                )}
+
+                {showNotiDropdown && (
+                  <div style={{
+                    position: 'absolute', top: '30px', right: '-10px', width: '280px', backgroundColor: '#1a1a1a',
+                    border: '1px solid #333', borderRadius: '8px', boxShadow: '0 4px 12px rgba(0,0,0,0.5)', 
+                    zIndex: 7000, display: 'flex', flexDirection: 'column', maxHeight: '350px', overflow: 'hidden'
+                  }}>
+                    <div style={{ padding: '12px 15px', borderBottom: '1px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#252525' }}>
+                      <span style={{ fontWeight: 'bold', fontSize: '13px', color: '#F2A900' }}>알림 내역</span>
+                      {notifications.some(n => !n.is_read) && (
+                        <button onClick={markAllAsRead} style={{ background: 'none', border: 'none', color: '#aaa', fontSize: '11px', cursor: 'pointer', fontWeight: 'bold' }}>모두 읽음</button>
+                      )}
+                    </div>
+                    
+                    {/* 💡 [수정된 알림 목록 렌더링 부분] */}
+                    <div style={{ overflowY: 'auto', flex: 1, backgroundColor: '#1a1a1a' }}>
+                      {notifications.length === 0 ? (
+                        <div style={{ padding: '30px 20px', textAlign: 'center', color: '#666', fontSize: '12px' }}>새로운 알림이 없습니다.</div>
+                      ) : (
+                        notifications.map(noti => (
+                          <div 
+                            key={noti.id} 
+                            onClick={() => handleNotiClick(noti)} 
+                            style={{ 
+                              padding: '12px 15px', borderBottom: '1px solid #222', cursor: 'pointer', 
+                              backgroundColor: noti.is_read ? 'transparent' : 'rgba(242, 169, 0, 0.08)', 
+                              transition: 'background-color 0.2s',
+                              display: 'flex', flexDirection: 'column', gap: '6px'
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                              <div style={{ fontSize: '13px', color: noti.is_read ? '#777' : '#fff', lineHeight: '1.4', flex: 1, wordBreak: 'keep-all' }}>
+                                <strong style={{ color: noti.is_read ? '#888' : '#F2A900' }}>{noti.sender_name}</strong>님이 
+                                {noti.type === 'reply' ? ' 내 댓글에 답글을 남겼습니다.' : ' 내 글에 댓글을 남겼습니다.'}
+                              </div>
+
+                              {noti.preview_text && (
+                                <div style={{
+                                  maxWidth: '90px', 
+                                  fontSize: '11px',
+                                  color: noti.is_read ? '#555' : '#aaa',
+                                  backgroundColor: noti.is_read ? 'transparent' : 'rgba(255,255,255,0.05)',
+                                  padding: '4px 6px',
+                                  borderRadius: '4px',
+                                  border: '1px solid #333',
+                                  flexShrink: 0,
+                                  lineHeight: '1.4', /* 두 줄일 때 글씨가 겹치지 않게 줄간격 살짝 추가 */
+                                  
+                                  display: '-webkit-box',
+                                  WebkitBoxOrient: 'vertical',
+                                  WebkitLineClamp: 2, /* 이 프리뷰 두줄 */
+                                  overflow: 'hidden',
+                                  textOverflow: 'ellipsis',
+                                  whiteSpace: 'normal', 
+                                }}>
+                                  {noti.preview_text}
+                                </div>
+                              )}
+                            </div>
+                            
+                            <div style={{ fontSize: '11px', color: '#555' }}>
+                              {formatNotiTime(noti.created_at)}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
+
               <div onClick={() => { setIsMyPage(true); router.push('/?tab=Board'); }} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '5px' }}>
                 <div style={{ width: '24px', height: '24px', borderRadius: '50%', backgroundColor: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   <svg viewBox="0 0 24 24" width="16" height="16" fill="black"><path d={svgPaths.user}/></svg>

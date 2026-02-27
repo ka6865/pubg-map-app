@@ -140,7 +140,6 @@ export default function Board({ currentUser, displayName, isAdmin }: BoardProps)
     await supabase.from('posts').update({ views: currentViews + 1 }).eq('id', postId);
   };
 
-  // 🚨 [방어막 적용 완료] 글 저장 로직에서 제목 길이를 철저하게 검사합니다.
   const handleSavePost = async () => {
     const validationError = validatePost(newTitle, newContent, currentUser);
     if (validationError) {
@@ -171,15 +170,28 @@ export default function Board({ currentUser, displayName, isAdmin }: BoardProps)
 
   const handleSaveComment = async () => {
     if (!newComment.trim() || !currentUser || !selectedPost) return;
+    
+    const finalComment = replyingTo ? `@${replyingTo.author} ${newComment}` : newComment;
+
     const { error } = await supabase.from('comments').insert([{
-      post_id: selectedPost.id, user_id: currentUser.id, author: displayName, content: newComment,
+      post_id: selectedPost.id, user_id: currentUser.id, author: displayName, content: finalComment,
       parent_id: replyingTo ? replyingTo.id : null
     }]);
+
     if (!error) {
       const targetUserId = replyingTo ? replyingTo.user_id : selectedPost.user_id;
       if (targetUserId !== currentUser.id) {
+        
+        const notiType = replyingTo ? 'reply' : 'comment';
+        const previewText = replyingTo ? replyingTo.content : selectedPost.title;
+        
         await supabase.from('notifications').insert([{
-          user_id: targetUserId, sender_id: currentUser.id, sender_name: displayName, type: 'comment', post_id: selectedPost.id
+          user_id: targetUserId, 
+          sender_id: currentUser.id, 
+          sender_name: displayName, 
+          type: notiType, 
+          post_id: selectedPost.id,
+          preview_text: previewText 
         }]);
       }
       setNewComment(''); setReplyingTo(null); fetchComments(selectedPost.id); fetchPosts();
