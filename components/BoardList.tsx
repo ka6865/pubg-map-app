@@ -18,6 +18,7 @@ export default function BoardList({
 
   const router = useRouter(); 
 
+  // 이미지 아이콘 컴포넌트
   const ImageIcon = () => (
     <svg className="w-[15px] h-[15px] text-[#34A853] ml-[6px] shrink-0 inline-block" fill="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
       <path fillRule="evenodd" clipRule="evenodd" d="M1.5 6a2.25 2.25 0 012.25-2.25h16.5A2.25 2.25 0 0122.5 6v12a2.25 2.25 0 01-2.25 2.25H3.75A2.25 2.25 0 011.5 18V6zM3 16.06V18c0 .414.336.75.75.75h16.5A.75.75 0 0021 18v-1.94l-2.69-2.689a1.5 1.5 0 00-2.12 0l-.88.879.97.97a.75.75 0 11-1.06 1.06l-5.16-5.159a1.5 1.5 0 00-2.12 0L3 16.061zm10.125-7.81a1.125 1.125 0 112.25 0 1.125 1.125 0 01-2.25 0z" />
@@ -26,6 +27,7 @@ export default function BoardList({
 
   return (
     <>
+      {/* 상단 필터 및 글쓰기 버튼 영역 */}
       <div className="flex justify-between mb-[20px] items-center gap-[10px]">
         <div className="flex gap-[8px] overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden flex-1">
           {['전체', '추천', ...BOARD_CATEGORIES].map(f => (
@@ -54,6 +56,7 @@ export default function BoardList({
         </button>
       </div>
 
+      {/* 게시글 목록 영역 (모바일/데스크탑 분기) */}
       <div className="bg-[#1a1a1a] rounded-[8px] border border-[#333] overflow-hidden">
         {isMobile ? (
           <div className="flex flex-col">
@@ -109,6 +112,7 @@ export default function BoardList({
         {posts.length === 0 ? <div className="p-[50px] text-center" style={{ color: '#666666' }}>글이 없습니다.</div> : null}
       </div>
 
+      {/* 하단 검색 및 페이지네이션 영역 */}
       <div className={`flex justify-between items-center mt-[20px] gap-[15px] w-full ${isMobile ? 'flex-col' : 'flex-row'}`}>
           <div className={`flex gap-[5px] ${isMobile ? 'w-full' : 'w-auto'}`}>
             <select value={searchOption} onChange={(e) => setSearchOption(e.target.value)} className="p-[8px] bg-[#252525] border border-[#333] rounded-[4px] text-[13px] shrink-0 outline-none focus:border-[#F2A900]" style={{ color: '#dddddd', WebkitAppearance: 'none' }}>

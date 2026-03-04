@@ -13,16 +13,19 @@ import Board from './Board';
 import MyPage from './MyPage';
 import { La_Belle_Aurore } from 'next/font/google';
 
+// 공용 아이콘 데이터 (SVG 경로: 알림 벨, 유저 아이콘)
 const svgPaths = {
   bell: "M12 22c1.1 0 2-.9 2-2h-4c0 1.1.89 2 2 2zm6-6v-5c0-3.07-1.64-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.63 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z",
   user: "M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"
 };
 
+// 카테고리별 핀 색상 매핑
 const CATEGORY_COLORS: { [key: string]: string } = {
   Garage: '#ef4444', Random: '#f59e0b', Esports: '#a855f7',
   Boat: '#3b82f6', EsportsBoat: '#8b5cf6', Glider: '#f97316', Key: '#10b981',
 };
 
+// 커스텀 마커 핀 생성 함수 (SVG를 포함한 DivIcon 반환)
 const createPinIcon = (colorCode: string, pathData: string) => {
   return L.divIcon({
     className: 'custom-pin-icon',
@@ -43,6 +46,7 @@ const createPinIcon = (colorCode: string, pathData: string) => {
   });
 };
 
+// 핀 내부 아이콘 SVG 경로 데이터
 const pinSvgPaths = {
   car: "M18.92 6.01C18.72 5.42 18.16 5 17.5 5h-11c-.66 0-1.21.42-1.42 1.01L3 12v8c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h12v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-8l-2.08-5.99zM6.5 16c-.83 0-1.5-.67-1.5-1.5S5.67 13 6.5 13s1.5.67 1.5 1.5S7.33 16 6.5 16zm11 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM5 11l1.5-4.5h11L19 11H5z",
   boat: "M20 21c-1.39 0-2.78-.47-4-1.32-2.44 1.71-5.56 1.71-8 0C6.78 20.53 5.39 21 4 21H2v2h2c1.38 0 2.74-.35 4-.99 2.52 1.29 5.48 1.29 8 0 1.26.65 2.62.99 4 .99h2v-2h-2zM3.95 19H4c1.6 0 3.02-.88 4-2 .98 1.12 2.4 2 4 2s3.02-.88 4-2c.98 1.12 2.4 2 4 2h.05l1.89-6.68c.08-.26.06-.54-.06-.78s-.34-.39-.6-.39H2.72c-.26 0-.5.15-.6.39s-.14.52-.06.78L3.95 19z",
@@ -50,6 +54,7 @@ const pinSvgPaths = {
   key: "M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"
 };
 
+// 카테고리별 아이콘 객체 생성
 const icons = {
   Garage: createPinIcon(CATEGORY_COLORS.Garage, pinSvgPaths.car),
   Random: createPinIcon(CATEGORY_COLORS.Random, pinSvgPaths.car),
@@ -60,6 +65,7 @@ const icons = {
   Key: createPinIcon(CATEGORY_COLORS.Key, pinSvgPaths.key),
 };
 
+// 맵 리스트 데이터 (ID, 라벨, 이미지 경로)
 const MAP_LIST = [
   { id: 'Erangel', label: '에란겔', imageUrl: '/Erangel.jpg' },
   { id: 'Miramar', label: '미라마', imageUrl: '/Miramar.jpg' },
@@ -72,15 +78,18 @@ const MAP_LIST = [
 export default function Map() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  
+
+  // URL 쿼리 파라미터에서 현재 탭(맵 ID 또는 Board) 가져오기
   const activeMapId = searchParams?.get('tab') || 'Erangel';
 
+  // UI 상태 관리 (사이드바, 알림창, 마이페이지, 모바일 여부)
   const [isSidebarOpen, setSidebarOpen] = useState(true);
   const [showNotiDropdown, setShowNotiDropdown] = useState(false);
   const [isMyPage, setIsMyPage] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
 
+  // 사용자 및 데이터 상태 관리
   const [currentUser, setCurrentUser] = useState<any>(null); 
   const [userProfile, setUserProfile] = useState<any>(null); 
   const [optimisticNickname, setOptimisticNickname] = useState<string | null>(null);
@@ -89,6 +98,7 @@ export default function Map() {
     Garage: false, Random: false, Esports: true, Boat: false, EsportsBoat: false, Glider: false, Key: false,
   });
 
+  // DB에서 가져온 마커 데이터
   const [dbVehicles, setDbVehicles] = useState<any[]>([]);
 
   useEffect(() => {
@@ -104,17 +114,21 @@ export default function Map() {
     return () => window.removeEventListener('resize', checkMobile);
   }, []);
 
+  // 표시할 닉네임 결정 (프로필 닉네임 > 이메일 앞부분 > 익명)
   const displayName = useMemo(() => {
     if (optimisticNickname) return optimisticNickname;
     if (userProfile?.nickname) return userProfile.nickname;
     return '익명';
   }, [optimisticNickname, userProfile]);
 
+  // 관리자 여부 확인
   const isAdmin = userProfile?.role === 'admin';
 
+  // 필터 토글 및 개수 계산 함수
   const toggleFilter = (id: string) => setFilters(prev => ({ ...prev, [id]: !prev[id] }));
   const getCount = (type: string) => dbVehicles.filter(v => v.mapId === activeMapId && v.type === type).length;
 
+  // 초기 인증 상태 확인 및 데이터 로드
   useEffect(() => {
     const initAuthAndMap = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -144,6 +158,7 @@ export default function Map() {
     initAuthAndMap();
   }, []);
 
+  // 사용자 프로필 가져오기 (없으면 생성)
   const fetchUserProfile = async (user: any) => {
     const { data } = await supabase.from('profiles').select('*').eq('id', user.id).single();
     if (data) {
@@ -155,16 +170,19 @@ export default function Map() {
     }
   };
 
+  // 알림 가져오기
   const fetchNotifications = async (userId: string) => {
     const { data } = await supabase.from('notifications').select('*').eq('user_id', userId).order('created_at', { ascending: false });
     if (data) setNotifications(data);
   };
 
+  // 탭 변경 핸들러
   const handleTabClick = (tabId: string) => {
     setIsMyPage(false); 
     router.push(`/?tab=${tabId}`);
   };
 
+  // 알림 시간 포맷팅
   const formatNotiTime = (dateString: string) => {
     const diff = (new Date().getTime() - new Date(dateString).getTime()) / 1000;
     if (diff < 60) return '방금 전';
@@ -174,6 +192,7 @@ export default function Map() {
     return new Date(dateString).toLocaleDateString();
   };
 
+  // 알림 클릭 핸들러 (읽음 처리 및 해당 글로 이동)
   const handleNotiClick = async (noti: any) => {
     if (!noti.is_read) {
       await supabase.from('notifications').update({ is_read: true }).eq('id', noti.id);
@@ -184,6 +203,7 @@ export default function Map() {
     router.push(`/?tab=Board&postId=${noti.post_id}`);
   };
 
+  // 모든 알림 읽음 처리
   const markAllAsRead = async () => {
     if (!currentUser) return;
     await supabase.from('notifications').update({ is_read: true }).eq('user_id', currentUser.id).eq('is_read', false);
@@ -196,6 +216,7 @@ export default function Map() {
   const bounds: [[number, number], [number, number]] = [[0, 0], [imageHeight, imageWidth]];
 
   return (
+    // 전체 뼈대: 100dvh로 모바일 주소창 대응
     <div style={{ display: 'flex', flexDirection: 'column', width: '100%', height: '100dvh', fontFamily: "'Pretendard', sans-serif", overflow: 'hidden', backgroundColor: '#121212', color: 'white' }}>
       
       <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: '50px', padding: '0 10px', backgroundColor: '#F2A900', borderBottom: '2px solid #cc8b00', zIndex: 6000, boxSizing: 'border-box' }}>
@@ -256,6 +277,7 @@ export default function Map() {
                       )}
                     </div>
                     
+                    {/* 알림 목록 렌더링 */}
                     {/* 💡 [수정된 알림 목록 렌더링 부분] */}
                     <div style={{ overflowY: 'auto', flex: 1, backgroundColor: '#1a1a1a' }}>
                       {notifications.length === 0 ? (
@@ -327,6 +349,7 @@ export default function Map() {
       </header>
 
       <main style={{ flex: 1, display: 'flex', position: 'relative', overflow: 'hidden' }}>
+        {/* 탭에 따라 게시판/마이페이지 또는 지도 렌더링 */}
         {activeMapId === 'Board' ? (
           <div style={{ width: '100%', height: '100%', overflowY: 'auto', backgroundColor: '#0d0d0d' }}>
             <div style={{ maxWidth: '900px', margin: '0 auto', padding: isMobile ? '10px' : '20px' }}>

@@ -12,6 +12,7 @@ interface MyPageProps {
 }
 
 export default function MyPage({ currentUser, userProfile, setIsMyPage, fetchUserProfile, setOptimisticNickname }: MyPageProps) {
+  // 닉네임 수정 상태
   const [editNickname, setEditNickname] = useState(userProfile?.nickname || '');
 
   // 💡 [추가된 안전장치] 마이페이지 창을 열었을 때 확실하게 최신 닉네임을 칸에 채워줍니다.
@@ -21,6 +22,7 @@ export default function MyPage({ currentUser, userProfile, setIsMyPage, fetchUse
     }
   }, [userProfile]);
 
+  // 프로필 업데이트 핸들러 (닉네임 변경 및 관련 데이터 업데이트)
   const handleUpdateProfile = async () => {
     if (!currentUser) return;
 
@@ -62,6 +64,7 @@ export default function MyPage({ currentUser, userProfile, setIsMyPage, fetchUse
     }
   };
 
+  // 회원 탈퇴 핸들러 (데이터 삭제 및 로그아웃)
   const handleDeleteAccount = async () => {
     if (!confirm('정말로 탈퇴하시겠습니까?\n탈퇴 시 작성한 모든 글과 댓글, 프로필 정보가 삭제되며 복구할 수 없습니다.')) return;
     if (!currentUser) return;

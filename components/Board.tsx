@@ -10,9 +10,11 @@ import DOMPurify from 'isomorphic-dompurify';
 
 const ReactQuill = dynamic(() => import('react-quill-new'), { ssr: false }) as any;
 
+// 게시판 카테고리 및 페이지당 게시글 수 설정
 const BOARD_CATEGORIES = ['자유', '듀오/스쿼드 모집', '클럽홍보', '제보/문의'];
 const POSTS_PER_PAGE = 10; 
 
+// HTML 정화 함수 (XSS 방지)
 const sanitizeHTML = (html: string) => {
   if (!html) return '';
   return DOMPurify.sanitize(html);
@@ -30,9 +32,11 @@ export default function Board({ currentUser, displayName, isAdmin }: BoardProps)
   const router = useRouter(); 
   const searchParams = useSearchParams(); 
   
+  // URL 파라미터에서 게시글 ID와 필터 가져오기
   const postIdParam = searchParams?.get('postId'); 
   const boardFilter = searchParams?.get('f') || '전체'; 
   
+  // 상태 관리: 게시글, 댓글, 선택된 글, 작성 모드, 로딩
   const [posts, setPosts] = useState<Post[]>([]); 
   const [comments, setComments] = useState<Comment[]>([]); 
   const [selectedPost, setSelectedPost] = useState<Post | null>(null); 
@@ -46,13 +50,16 @@ export default function Board({ currentUser, displayName, isAdmin }: BoardProps)
   const [searchOption, setSearchOption] = useState('all'); 
   const [isMobile, setIsMobile] = useState(false); 
 
+  // 글 작성/수정 관련 상태
   const [newTitle, setNewTitle] = useState('');
   const [newContent, setNewContent] = useState('');
   const [newCategory, setNewCategory] = useState('자유');
   const [newIsNotice, setNewIsNotice] = useState(false);
   const [newComment, setNewComment] = useState('');
   const [replyingTo, setReplyingTo] = useState<Comment | null>(null);
+  const [editingPostId, setEditingPostId] = useState<number | null>(null);
 
+  // 모바일 환경 감지
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
     handleResize(); 
@@ -60,10 +67,12 @@ export default function Board({ currentUser, displayName, isAdmin }: BoardProps)
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // 필터나 검색어 변경 시 1페이지로 초기화
   useEffect(() => {
     setPage(1);
   }, [boardFilter, searchQuery]);
 
+  // 시간 포맷팅 함수 (예: 방금 전, 1시간 전)
   const formatTimeAgo = (dateString: string) => {
     const date = new Date(dateString);
     const now = new Date();
@@ -75,6 +84,7 @@ export default function Board({ currentUser, displayName, isAdmin }: BoardProps)
     return date.toLocaleDateString();
   };
 
+  // 게시글 목록 불러오기 (페이지네이션, 필터, 검색 적용)
   const fetchPosts = async () => {
     setIsLoading(true);
     const from = (page - 1) * POSTS_PER_PAGE;
@@ -105,10 +115,12 @@ export default function Board({ currentUser, displayName, isAdmin }: BoardProps)
     setIsLoading(false);
   };
 
+  // 데이터 로드 트리거
   useEffect(() => { 
     fetchPosts(); 
   }, [page, boardFilter, searchQuery, displayName]);
 
+  // URL 파라미터에 따른 단일 게시글 로드 처리
   useEffect(() => {
     if (postIdParam) {
       fetchSinglePost(postIdParam); 
@@ -117,6 +129,7 @@ export default function Board({ currentUser, displayName, isAdmin }: BoardProps)
     }
   }, [postIdParam]);
 
+  // 단일 게시글 상세 정보 불러오기
   const fetchSinglePost = async (id: string) => {
       const { data } = await supabase.from('posts').select('*').eq('id', id).single();
       if(data) { 
@@ -131,15 +144,18 @@ export default function Board({ currentUser, displayName, isAdmin }: BoardProps)
       }
   };
 
+  // 댓글 불러오기
   const fetchComments = async (postId: number) => {
     const { data } = await supabase.from('comments').select('*').eq('post_id', postId).order('created_at', { ascending: true });
     if (data) setComments(data);
   };
 
+  // 조회수 증가 처리
   const incrementViews = async (postId: number, currentViews: number) => {
     await supabase.from('posts').update({ views: currentViews + 1 }).eq('id', postId);
   };
 
+  // 게시글 저장 (작성 및 수정)
   const handleSavePost = async () => {
     const validationError = validatePost(newTitle, newContent, currentUser);
     if (validationError) {
@@ -150,27 +166,50 @@ export default function Board({ currentUser, displayName, isAdmin }: BoardProps)
     const trimmedTitle = sanitizeTitle(newTitle);
     const finalImageUrl = extractImageUrl(newContent);
 
-    const { error } = await supabase.from('posts').insert([{ 
-      title: trimmedTitle, 
-      content: newContent, 
-      author: displayName,
-      user_id: currentUser.id, 
-      category: newCategory, 
-      image_url: finalImageUrl,
-      is_notice: isAdmin ? newIsNotice : false
-    }]);
+    //  수정 모드일 때는  기존 글을 업데이트
+    if (editingPostId) {
+      const { error } = await supabase.from('posts').update({ 
+        title: trimmedTitle, 
+        content: newContent, 
+        category: newCategory, 
+        image_url: finalImageUrl,
+        is_notice: isAdmin ? newIsNotice : false
+      }).eq('id', editingPostId);
 
-    if (!error) {
-      setIsWriting(false); setNewTitle(''); setNewContent(''); 
-      setPage(1); 
-      fetchPosts(); 
-    } else alert('저장 실패: ' + error.message);
+      if (!error) {
+        setIsWriting(false); 
+        setEditingPostId(null);
+        setNewTitle(''); setNewContent(''); 
+        fetchPosts(); 
+        fetchSinglePost(String(editingPostId)); 
+      } else alert('수정 실패: ' + error.message);
+      
+    } else {
+      // 💡 기존의 새 글 작성 로직 (INSERT)
+      const { error } = await supabase.from('posts').insert([{ 
+        title: trimmedTitle, 
+        content: newContent, 
+        author: displayName,
+        user_id: currentUser.id, 
+        category: newCategory, 
+        image_url: finalImageUrl,
+        is_notice: isAdmin ? newIsNotice : false
+      }]);
+
+      if (!error) {
+        setIsWriting(false); setNewTitle(''); setNewContent(''); 
+        setPage(1); 
+        fetchPosts(); 
+      } else alert('저장 실패: ' + error.message);
+    }
+    
     setIsLoading(false);
   };
 
+  // 댓글 저장
   const handleSaveComment = async () => {
     if (!newComment.trim() || !currentUser || !selectedPost) return;
-    
+  
     const finalComment = replyingTo ? `@${replyingTo.author} ${newComment}` : newComment;
 
     const { error } = await supabase.from('comments').insert([{
@@ -182,22 +221,19 @@ export default function Board({ currentUser, displayName, isAdmin }: BoardProps)
       const targetUserId = replyingTo ? replyingTo.user_id : selectedPost.user_id;
       if (targetUserId !== currentUser.id) {
         
+        // 알림 미리보기 로직 
         const notiType = replyingTo ? 'reply' : 'comment';
         const previewText = replyingTo ? replyingTo.content : selectedPost.title;
-        
+
         await supabase.from('notifications').insert([{
-          user_id: targetUserId, 
-          sender_id: currentUser.id, 
-          sender_name: displayName, 
-          type: notiType, 
-          post_id: selectedPost.id,
-          preview_text: previewText 
+          user_id: targetUserId, sender_id: currentUser.id, sender_name: displayName, type: notiType, post_id: selectedPost.id, preview_text: previewText
         }]);
       }
       setNewComment(''); setReplyingTo(null); fetchComments(selectedPost.id); fetchPosts();
     }
   };
 
+  // 게시글 추천 처리
   const handleLikePost = async (postId: number, currentLikes: number) => {
     if (!currentUser) return alert('로그인 필요!');
     const { data } = await supabase.from('post_likes').select('*').eq('post_id', postId).eq('user_id', currentUser.id).single();
@@ -209,6 +245,7 @@ export default function Board({ currentUser, displayName, isAdmin }: BoardProps)
     alert('추천 완료!');
   };
 
+  // 게시글 삭제 처리 (이미지 파일 포함)
   const handleDeletePost = async (postId: number) => {
     if (!confirm('삭제하시겠습니까?')) return;
 
@@ -243,15 +280,42 @@ export default function Board({ currentUser, displayName, isAdmin }: BoardProps)
     }
   };
 
+  // 검색 실행 핸들러
   const handleSearch = () => { setPage(1); setSearchQuery(searchInput); };
 
+  // 렌더링 분기: 글쓰기 모드
   if (isWriting) {
-    return <BoardWrite newTitle={newTitle} setNewTitle={setNewTitle} newContent={newContent} setNewContent={setNewContent} newCategory={newCategory} setNewCategory={setNewCategory} newIsNotice={newIsNotice} setNewIsNotice={setNewIsNotice} handleSavePost={handleSavePost} setIsWriting={setIsWriting} isAdmin={isAdmin} isLoading={isLoading} isMobile={isMobile} />;
+    // 에디터에 지금이 수정 상태인지 아닌지(isEditing) 전달
+    return <BoardWrite newTitle={newTitle} setNewTitle={setNewTitle} newContent={newContent} setNewContent={setNewContent} newCategory={newCategory} setNewCategory={setNewCategory} newIsNotice={newIsNotice} setNewIsNotice={setNewIsNotice} handleSavePost={handleSavePost} setIsWriting={setIsWriting} isAdmin={isAdmin} isLoading={isLoading} isMobile={isMobile} isEditing={!!editingPostId} />;
   }
 
+  // 렌더링 분기: 상세 보기 모드
   if (selectedPost) {
-    return <BoardDetail selectedPost={selectedPost} comments={comments} currentUser={currentUser} displayName={displayName} isAdmin={isAdmin} isMobile={isMobile} boardFilter={boardFilter} newComment={newComment} setNewComment={setNewComment} replyingTo={replyingTo} setReplyingTo={setReplyingTo} handleSaveComment={handleSaveComment} handleLikePost={handleLikePost} handleDeletePost={handleDeletePost} formatTimeAgo={formatTimeAgo} />;
+    // 상세 화면에서 수정 버튼을 누르면 제목/내용을 싹 다 채워 넣고 에디터 창을 열기
+    return <BoardDetail selectedPost={selectedPost} comments={comments} currentUser={currentUser} displayName={displayName} isAdmin={isAdmin} isMobile={isMobile} boardFilter={boardFilter} newComment={newComment} setNewComment={setNewComment} replyingTo={replyingTo} setReplyingTo={setReplyingTo} handleSaveComment={handleSaveComment} handleLikePost={handleLikePost} handleDeletePost={handleDeletePost} formatTimeAgo={formatTimeAgo} 
+      handleEditClick={() => {
+        setEditingPostId(selectedPost.id);          
+        setNewTitle(selectedPost.title);            
+        setNewContent(selectedPost.content || '');        
+        setNewCategory(selectedPost.category);      
+        setNewIsNotice(selectedPost.is_notice);     
+        setIsWriting(true);                         
+      }} 
+    />;
   }
 
-  return <BoardList posts={posts} boardFilter={boardFilter} totalPosts={totalPosts} page={page} setPage={setPage} searchInput={searchInput} setSearchInput={setSearchInput} searchOption={searchOption} setSearchOption={setSearchOption} handleSearch={handleSearch} setIsWriting={setIsWriting} isMobile={isMobile} formatTimeAgo={formatTimeAgo} />;
+  // 렌더링 분기: 목록 보기 모드
+  return <BoardList posts={posts} boardFilter={boardFilter} totalPosts={totalPosts} page={page} setPage={setPage} searchInput={searchInput} setSearchInput={setSearchInput} searchOption={searchOption} setSearchOption={setSearchOption} handleSearch={handleSearch} isMobile={isMobile} formatTimeAgo={formatTimeAgo} 
+    setIsWriting={(v) => {
+      //  새 글 쓰기를 누르면 혹시 남아있던 수정 기록을 싹 비우기
+      if (v) {
+        setEditingPostId(null);
+        setNewTitle('');
+        setNewContent('');
+        setNewCategory('자유');
+        setNewIsNotice(false);
+      }
+      setIsWriting(v);
+    }} 
+  />;
 }

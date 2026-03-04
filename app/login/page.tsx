@@ -3,6 +3,8 @@
 import { supabase } from '../../lib/supabase';
 
 export default function Login() {
+  // 로그인 페이지 컴포넌트: 사용자가 소셜 계정을 통해 서비스에 접속할 수 있도록 합니다.
+
   // 소셜 로그인 처리 함수 (구글, 카카오 공용)
   const handleSocialLogin = async (provider: 'google' | 'kakao') => {
     // [핵심] 로그인 끝나고 돌아올 주소를 현재 도메인으로 자동 설정
@@ -10,6 +12,7 @@ export default function Login() {
     const redirectTo = window.location.origin;
 
     const { error } = await supabase.auth.signInWithOAuth({
+      // 선택한 소셜 제공자(provider)를 통해 인증 프로세스를 시작합니다.
       provider,
       options: {
         redirectTo,
@@ -26,6 +29,7 @@ export default function Login() {
   };
 
   return (
+    // 전체 화면 컨테이너: 모바일 환경을 고려하여 100dvh를 사용해 뷰포트 높이를 맞춥니다.
     <div style={{ 
       display: 'flex', 
       justifyContent: 'center', 
@@ -36,6 +40,7 @@ export default function Login() {
       color: 'white',
       padding: '20px'
     }}>
+      {/* 로그인 카드 컨테이너: 중앙에 위치하며 그림자 효과로 입체감을 줍니다. */}
       <div style={{ 
         width: '100%', 
         maxWidth: '360px', 
@@ -46,7 +51,7 @@ export default function Login() {
         textAlign: 'center',
         boxShadow: '0 10px 30px rgba(0,0,0,0.5)'
       }}>
-        {/* 서비스 로고 영역 */}
+        {/* 서비스 로고 영역: 텍스트 그림자를 활용하여 강조 효과를 적용했습니다. */}
         <h2 style={{ 
           marginBottom: '15px', 
           fontSize: '32px', 
@@ -59,6 +64,7 @@ export default function Login() {
           PUBG<span style={{ color: 'white', textShadow: 'none' }}>MAP</span>
         </h2>
         
+        {/* 안내 문구 */}
         <p style={{ color: '#888', fontSize: '15px', marginBottom: '40px', lineHeight: '1.5' }}>
           복잡한 가입 절차 없이<br />
           <strong>SNS 계정</strong>으로 3초 만에 시작하세요.
@@ -67,7 +73,7 @@ export default function Login() {
         {/* 로그인 버튼 목록 */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           
-          {/* 🟡 카카오 로그인 버튼 */}
+          {/* 🟡 카카오 로그인 버튼: 카카오 브랜드 컬러(#FEE500) 사용 */}
           <button 
             onClick={() => handleSocialLogin('kakao')}
             style={{ 
@@ -81,7 +87,7 @@ export default function Login() {
             카카오로 계속하기
           </button>
 
-          {/* ⚪ 구글 로그인 버튼 */}
+          {/* ⚪ 구글 로그인 버튼: 흰색 배경에 구글 로고 사용 */}
           <button 
             onClick={() => handleSocialLogin('google')}
             style={{ 
@@ -96,6 +102,7 @@ export default function Login() {
           </button>
         </div>
 
+        {/* 하단 이용약관 안내 */}
         <div style={{ marginTop: '30px', fontSize: '12px', color: '#555' }}>
           로그인 시 이용약관 및 개인정보처리방침에 동의하게 됩니다.
         </div>

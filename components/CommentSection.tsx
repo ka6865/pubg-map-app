@@ -21,6 +21,7 @@ export default function CommentSection({
   replyingTo, setReplyingTo, handleSaveComment, isMobile, formatTimeAgo,
 }: CommentSectionProps) {
 
+  // 댓글 렌더링 함수 (대댓글 구조 처리를 위한 재귀 호출)
   const renderComments = (parentId: number | null = null, depth = 0) => {
     const list = comments.filter(c => c.parent_id === parentId);
     if (list.length === 0) return null; 
@@ -55,12 +56,15 @@ export default function CommentSection({
 
   return (
     <div className="mt-[40px]">
+      {/* 댓글 헤더 */}
       <h3 className="text-[#F2A900] m-0 mb-[20px] font-bold text-[18px]">댓글 ({comments.length})</h3>
       
+      {/* 댓글 목록 */}
       <div className="flex flex-col gap-[5px]">
         {renderComments(null)}
       </div>
       
+      {/* 댓글 작성 폼 (로그인 시 표시) */}
       {currentUser && (
         <div className="mt-[25px] flex flex-col gap-[10px]">
           {replyingTo && (

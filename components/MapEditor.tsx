@@ -51,6 +51,7 @@ const MAP_LIST = [
   { id: 'Deston', label: '데스턴', imageUrl: '/Deston.jpg' },
 ];
 
+// 맵 클릭 이벤트 핸들러 컴포넌트
 const MapEvents = ({ onClick }: { onClick: (e: L.LeafletMouseEvent) => void }) => {
   useMapEvents({ click: onClick });
   return null;
@@ -58,6 +59,7 @@ const MapEvents = ({ onClick }: { onClick: (e: L.LeafletMouseEvent) => void }) =
 
 const MapEditorComponent = () => {
   const router = useRouter();
+  // 권한 및 맵 상태
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [activeMapId, setActiveMapId] = useState('Erangel');
   const [isSaving, setIsSaving] = useState(false);
@@ -69,15 +71,18 @@ const MapEditorComponent = () => {
   const imageHeight = 8192;
   const bounds: [[number, number], [number, number]] = [[0, 0], [imageHeight, imageWidth]];
 
+  // 현재 선택된 마커 타입 및 필터 상태
   const [activeType, setActiveType] = useState<'Garage' | 'Random' | 'Esports' | 'Boat' | 'EsportsBoat' | 'Glider' | 'Key'>('Garage');
   
   const [filters, setFilters] = useState({
     Garage: true, Random: true, Esports: true, Boat: true, EsportsBoat: true, Glider: true, Key: true,
   });
 
+  // 마커 데이터 상태
   const [isLoaded, setIsLoaded] = useState(false);
   const [vehicles, setVehicles] = useState<any[]>([]);
 
+  // 관리자 권한 확인 및 초기 데이터 로드
   useEffect(() => {
     const checkAdmin = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -117,35 +122,42 @@ const MapEditorComponent = () => {
     checkAdmin();
   }, [router]);
 
+  // 로컬 스토리지에 작업 내용 자동 저장
   useEffect(() => {
     if (isLoaded) {
       localStorage.setItem('pubg-vehicles', JSON.stringify(vehicles));
     }
   }, [vehicles, isLoaded]);
 
+  // 마커 삭제 함수
   const removeVehicle = (id: number) => {
     setVehicles((prev) => prev.filter((v) => v.id !== id));
   };
 
+  // 모든 마커 삭제 함수
   const clearAllVehicles = () => {
     if (window.confirm(`⚠️ 현재 찍힌 마커 ${vehicles.length}개를 모두 삭제하시겠습니까? (서버 저장 전까지는 복구 가능)`)) {
       setVehicles([]);
     }
   };
 
+  // 마커 위치 업데이트 함수 (드래그 종료 시)
   const updateVehiclePos = (id: number, newY: number, newX: number) => {
     setVehicles((prev) => 
       prev.map((v) => (v.id === id ? { ...v, y: newY, x: newX } : v))
     );
   };
 
+  // 필터 토글 함수
   const toggleFilter = (type: 'Garage' | 'Random' | 'Esports' | 'Boat' | 'EsportsBoat' | 'Glider' | 'Key') => {
     setFilters((prev) => ({ ...prev, [type]: !prev[type] }));
   };
 
+  // 마커 개수 계산 함수
   const getCount = (type: string) => vehicles.filter(v => v.type === type).length;
   const totalCount = vehicles.length;
 
+  // DB에 변경 사항 저장 함수
   const handleSaveToDB = async () => {
     if(!confirm('진짜로 서버(유저 화면)에 마커 데이터를 반영하시겠습니까?')) return;
     
@@ -183,6 +195,7 @@ const MapEditorComponent = () => {
     }
   };
 
+  // 맵 클릭 시 새 마커 추가 함수
   const handleMapClick = (e: L.LeafletMouseEvent) => {
     const newVehicle = {
       id: Date.now(),
