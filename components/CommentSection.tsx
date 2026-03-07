@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo } from 'react';
 import { Post, Comment } from '../types/board'; 
 
 interface CommentSectionProps {
@@ -21,10 +22,21 @@ export default function CommentSection({
   replyingTo, setReplyingTo, handleSaveComment, isMobile, formatTimeAgo,
 }: CommentSectionProps) {
 
+  // [최적화] 댓글을 부모 ID별로 미리 그룹화하여 렌더링 시 filter 연산 비용 제거 (O(N^2) -> O(N))
+  const commentsByParent = useMemo(() => {
+    const map = new Map<number | null, Comment[]>();
+    comments.forEach(c => {
+      const pid = c.parent_id || null;
+      if (!map.has(pid)) map.set(pid, []);
+      map.get(pid)!.push(c);
+    });
+    return map;
+  }, [comments]);
+
   // 댓글 렌더링 함수 (대댓글 구조 처리를 위한 재귀 호출)
   const renderComments = (parentId: number | null = null, depth = 0) => {
-    const list = comments.filter(c => c.parent_id === parentId);
-    if (list.length === 0) return null; 
+    const list = commentsByParent.get(parentId);
+    if (!list || list.length === 0) return null; 
     
     return list.map(c => (
         <div key={c.id} className={`mt-[10px] ${depth > 0 ? (isMobile ? 'ml-[10px]' : 'ml-[20px]') : 'ml-0'}`}>

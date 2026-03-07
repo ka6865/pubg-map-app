@@ -139,10 +139,6 @@ export default function Map() {
       }
       setIsAuthLoading(false); 
       
-      const { data: markers } = await supabase.from('map_markers').select('*');
-      if (markers) {
-        setDbVehicles(markers.map(m => ({ ...m, mapId: m.map_id })));
-      }
       
       supabase.auth.onAuthStateChange(async (_event, session) => {
         if (session?.user) {
@@ -157,6 +153,25 @@ export default function Map() {
     };
     initAuthAndMap();
   }, []);
+
+  // 맵이 변경될 때마다 해당 맵의 마커만 불러오기 (성능 최적화)
+  useEffect(() => {
+    const fetchMarkers = async () => {
+      if (activeMapId === 'Board') return;
+      
+      const { data } = await supabase.from('map_markers').select('*').eq('map_id', activeMapId);
+      
+      if (data) {
+        setDbVehicles(data.map(m => ({ ...m, mapId: m.map_id })));
+      }
+    };
+    fetchMarkers();
+  }, [activeMapId]);
+
+  // [최적화] 필터링된 마커 목록을 메모이제이션 (불필요한 재연산 방지)
+  const visibleVehicles = useMemo(() => {
+    return dbVehicles.filter(v => filters[v.type]);
+  }, [dbVehicles, filters]);
 
   // 사용자 프로필 가져오기 (없으면 생성)
   const fetchUserProfile = async (user: any) => {
@@ -391,7 +406,7 @@ export default function Map() {
                   zoomControl={false}
                 >
                     {currentMap ? <ImageOverlay url={currentMap.imageUrl} bounds={bounds} /> : null}
-                    {dbVehicles.filter(v => v.mapId === activeMapId && filters[v.type]).map(v => (
+                    {visibleVehicles.map(v => (
                         <Marker key={v.id} position={[v.y, v.x]} icon={icons[v.type as keyof typeof icons]}>
                             <Popup>{v.name}</Popup>
                         </Marker>

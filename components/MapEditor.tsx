@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { MapContainer, ImageOverlay, Marker, useMapEvents } from 'react-leaflet';
 import L, { CRS } from 'leaflet';
@@ -129,15 +129,24 @@ const MapEditorComponent = () => {
     }
   }, [vehicles, isLoaded]);
 
+  // [최적화] 렌더링 시마다 실행되는 필터링 로직을 메모이제이션하여 성능 향상
+  const visibleVehicles = useMemo(() => {
+    return vehicles.filter((v) => 
+      (v.mapId === activeMapId || (!v.mapId && activeMapId === 'Erangel')) && 
+      filters[v.type as keyof typeof filters]
+    );
+  }, [vehicles, activeMapId, filters]);
+
   // 마커 삭제 함수
   const removeVehicle = (id: number) => {
     setVehicles((prev) => prev.filter((v) => v.id !== id));
   };
 
-  // 모든 마커 삭제 함수
+  // 현재 맵의 모든 마커 삭제 함수
   const clearAllVehicles = () => {
-    if (window.confirm(`⚠️ 현재 찍힌 마커 ${vehicles.length}개를 모두 삭제하시겠습니까? (서버 저장 전까지는 복구 가능)`)) {
-      setVehicles([]);
+    const currentMapCount = vehicles.filter(v => v.mapId === activeMapId || (!v.mapId && activeMapId === 'Erangel')).length;
+    if (window.confirm(`⚠️ 현재 '${currentMap?.label}' 맵의 마커 ${currentMapCount}개를 모두 삭제하시겠습니까? (다른 맵의 마커는 유지됩니다)`)) {
+      setVehicles((prev) => prev.filter(v => !(v.mapId === activeMapId || (!v.mapId && activeMapId === 'Erangel'))));
     }
   };
 
@@ -154,23 +163,48 @@ const MapEditorComponent = () => {
   };
 
   // 마커 개수 계산 함수
-  const getCount = (type: string) => vehicles.filter(v => v.type === type).length;
-  const totalCount = vehicles.length;
+  const getCount = (type: string) => vehicles.filter(v => 
+    (v.mapId === activeMapId || (!v.mapId && activeMapId === 'Erangel')) && 
+    v.type === type
+  ).length;
+  
+  const totalCount = vehicles.filter(v => 
+    v.mapId === activeMapId || (!v.mapId && activeMapId === 'Erangel')
+  ).length;
 
   // DB에 변경 사항 저장 함수
   const handleSaveToDB = async () => {
-    if(!confirm('진짜로 서버(유저 화면)에 마커 데이터를 반영하시겠습니까?')) return;
+    if(!confirm(`'${currentMap?.label}' 맵의 변경사항을 서버에 저장하시겠습니까?`)) return;
     
     setIsSaving(true);
     
     try {
-      const { error: deleteError } = await supabase.from('map_markers').delete().not('id', 'is', null);
-      if (deleteError) throw deleteError;
+      // [최적화] 1. 현재 편집 중인 맵의 마커 ID만 가져옵니다. (전체 로드 방지)
+      const { data: dbMarkers } = await supabase
+        .from('map_markers')
+        .select('id')
+        .eq('map_id', activeMapId);
+        
+      const dbIds = dbMarkers?.map(m => m.id) || [];
       
-      const insertData = vehicles.map(v => ({
+      // 2. 현재 에디터 상태에서 해당 맵의 마커들만 추출
+      const currentMapVehicles = vehicles.filter(v => v.mapId === activeMapId || (!v.mapId && activeMapId === 'Erangel'));
+      const currentIds = currentMapVehicles.map(v => v.id);
+
+      // 3. DB에는 있는데 에디터(현재 맵)에는 없는 ID = 삭제된 마커
+      const idsToDelete = dbIds.filter(id => !currentIds.includes(id));
+
+      // 4. 삭제된 마커들 DB에서 제거
+      if (idsToDelete.length > 0) {
+        const { error: deleteError } = await supabase.from('map_markers').delete().in('id', idsToDelete);
+        if (deleteError) throw deleteError;
+      }
+      
+      // 5. 현재 맵의 마커들만 Upsert (변경된 내용 반영)
+      const insertData = currentMapVehicles.map(v => ({
         id: Number(v.id),
         map_id: String(v.mapId || activeMapId),
-        name: String(v.name),
+        name: String(v.name || ''),
         type: String(v.type),
         x: Math.round(v.x),
         y: Math.round(v.y)
@@ -180,12 +214,12 @@ const MapEditorComponent = () => {
         const chunkSize = 500;
         for (let i = 0; i < insertData.length; i += chunkSize) {
           const chunk = insertData.slice(i, i + chunkSize);
-          const { error: insertError } = await supabase.from('map_markers').insert(chunk);
+          const { error: insertError } = await supabase.from('map_markers').upsert(chunk);
           if (insertError) throw insertError;
         }
       }
       
-      alert(`🎉 총 ${insertData.length}개의 마커가 서버에 성공적으로 저장되었습니다!`);
+      alert(`🎉 '${currentMap?.label}' 맵의 마커 ${insertData.length}개가 저장되었습니다!`);
       
     } catch (error: any) {
       console.error('🚨 서버 저장 에러:', error);
@@ -304,9 +338,7 @@ const MapEditorComponent = () => {
         
         <MapEvents onClick={handleMapClick} />
 
-        {vehicles
-          .filter((v) => (v.mapId === activeMapId || (!v.mapId && activeMapId === 'Erangel')) && filters[v.type as 'Garage' | 'Random' | 'Esports' | 'Boat' | 'EsportsBoat' | 'Glider' | 'Key'])
-          .map((vehicle) => (
+        {visibleVehicles.map((vehicle) => (
           <Marker
             key={vehicle.id}
             position={[vehicle.y, vehicle.x]}

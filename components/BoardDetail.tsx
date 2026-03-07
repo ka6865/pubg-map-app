@@ -1,5 +1,6 @@
 'use client';
 
+import { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import DOMPurify from 'isomorphic-dompurify'; 
 import CommentSection from './CommentSection'; 
@@ -41,12 +42,14 @@ export default function BoardDetail({
   const router = useRouter();
   
   // 본문 내용 정화 및 이미지 스타일 처리
-  const sanitizedContent = sanitizeHTML(selectedPost.content || '');
-  
-  const processedContent = sanitizedContent.replace(
-    /<img/gi, 
-    '<img style="max-width:100%!important;height:auto!important;display:block;border-radius:8px;margin:10px auto;"'
-  );
+  // [최적화] 렌더링될 때마다 무거운 sanitize 및 replace 작업이 실행되지 않도록 메모이제이션
+  const processedContent = useMemo(() => {
+    const sanitizedContent = sanitizeHTML(selectedPost.content || '');
+    return sanitizedContent.replace(
+      /<img/gi, 
+      '<img style="max-width:100%!important;height:auto!important;display:block;border-radius:8px;margin:10px auto;"'
+    );
+  }, [selectedPost.content]);
 
   return (
     <div className={`bg-[#1a1a1a] rounded-[8px] border border-[#333] w-full box-border overflow-x-hidden ${isMobile ? 'p-[15px]' : 'p-[30px]'}`}>

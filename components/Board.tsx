@@ -131,16 +131,23 @@ export default function Board({ currentUser, displayName, isAdmin }: BoardProps)
 
   // 단일 게시글 상세 정보 불러오기
   const fetchSinglePost = async (id: string) => {
-      const { data } = await supabase.from('posts').select('*').eq('id', id).single();
-      if(data) { 
-        setSelectedPost(data); 
-        fetchComments(data.id);
+      const postPromise = supabase.from('posts').select('*').eq('id', id).single();
+      const commentPromise = supabase.from('comments').select('*').eq('post_id', id).order('created_at', { ascending: true });
+
+      const [postResult, commentResult] = await Promise.all([postPromise, commentPromise]);
+
+      if(postResult.data) { 
+        setSelectedPost(postResult.data); 
         
-        const viewedKey = `viewed_post_${data.id}`;
+        const viewedKey = `viewed_post_${postResult.data.id}`;
         if (!sessionStorage.getItem(viewedKey)) {
-          incrementViews(data.id, data.views);
+          incrementViews(postResult.data.id, postResult.data.views);
           sessionStorage.setItem(viewedKey, 'true');
         }
+      }
+      
+      if(commentResult.data) {
+        setComments(commentResult.data);
       }
   };
 
