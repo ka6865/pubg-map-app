@@ -45,4 +45,7 @@ next-env.d.ts
 extractor.py
 
 # 참고용 원본 이미지 및 스크린샷 (용량 낭비 방지)
-source.png
+*source.png
+
+#로컬데이터
+vehicles_*

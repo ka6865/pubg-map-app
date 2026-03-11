@@ -111,8 +111,8 @@ export default function BoardWrite({
   // 작성 취소 핸들러 (작성 중이던 이미지 정리)
   const handleCancel = async () => {
     try {
-      // 새로 쓴 글에서 취소할 때만 임시 업로드된 이미지를 지웁니다!
-      if (!isEditing && uploadedImagesRef.current.length > 0) {
+      //  새 글 작성이든, 수정 모드이든 '이번 창을 열고 나서 추가로 업로드한' 이미지는 전부 삭제
+      if (uploadedImagesRef.current.length > 0) {
         const { error } = await supabase.storage.from('images').remove(uploadedImagesRef.current);
         if (error) console.error('🚨 스토리지 삭제 실패:', error);
       }

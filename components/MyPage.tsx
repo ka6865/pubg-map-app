@@ -15,7 +15,7 @@ export default function MyPage({ currentUser, userProfile, setIsMyPage, fetchUse
   // 닉네임 수정 상태
   const [editNickname, setEditNickname] = useState(userProfile?.nickname || '');
 
-  // 💡 [추가된 안전장치] 마이페이지 창을 열었을 때 확실하게 최신 닉네임을 칸에 채워줍니다.
+  // 마이페이지 창을 열었을 때 확실하게 최신 닉네임
   useEffect(() => {
     if (userProfile?.nickname) {
       setEditNickname(userProfile.nickname);
@@ -45,8 +45,6 @@ export default function MyPage({ currentUser, userProfile, setIsMyPage, fetchUse
     if (!error) {
       alert('프로필이 업데이트되었습니다.');
       setEditNickname(newNickname); 
-      
-      // 🚨 [핵심 버그 수정!] currentUser.id 가 아니라 currentUser 전체를 넘겨줍니다!
       fetchUserProfile(currentUser); 
 
       // 내가 쓴 글, 댓글 이름 업데이트

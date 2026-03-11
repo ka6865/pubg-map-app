@@ -173,8 +173,33 @@ export default function Board({ currentUser, displayName, isAdmin }: BoardProps)
     const trimmedTitle = sanitizeTitle(newTitle);
     const finalImageUrl = extractImageUrl(newContent);
 
-    //  수정 모드일 때는  기존 글을 업데이트
+    // 💡 수정 모드일 때는 기존 글을 업데이트
     if (editingPostId) {
+      
+      // 기존 본문과 새 본문을 비교해서 "지워진 이미지"를 찾아 스토리지에서 완벽 삭제!
+      if (selectedPost && selectedPost.content) {
+        const imgRegex = /<img[^>]+src\s*=\s*["']?([^"'\s>]+)["']?/g;
+        // 1. 기존 본문에 있던 이미지 주소들 수집
+        const oldImages = [...selectedPost.content.matchAll(imgRegex)].map(m => m[1]);
+        // 2. 현재(수정된) 본문에 있는 이미지 주소들 수집
+        const newImages = [...newContent.matchAll(imgRegex)].map(m => m[1]);
+        // 3. 기존에는 있었는데 새 본문에는 없는 주소 찾기 (삭제된 이미지)
+        const deletedImages = oldImages.filter(src => !newImages.includes(src));
+        
+        const imagePathsToDelete = deletedImages.map(src => {
+          if (src.includes('/storage/v1/object/public/images/')) {
+            const path = src.split('/storage/v1/object/public/images/')[1];
+            return path ? decodeURIComponent(path) : null;
+          }
+          return null;
+        }).filter((path): path is string => path !== null);
+
+        // 4. 지워진 이미지가 있다면 스토리지 서버에서도 영구 삭제
+        if (imagePathsToDelete.length > 0) {
+          await supabase.storage.from('images').remove(imagePathsToDelete);
+        }
+      }
+
       const { error } = await supabase.from('posts').update({ 
         title: trimmedTitle, 
         content: newContent, 
@@ -192,7 +217,7 @@ export default function Board({ currentUser, displayName, isAdmin }: BoardProps)
       } else alert('수정 실패: ' + error.message);
       
     } else {
-      // 💡 기존의 새 글 작성 로직 (INSERT)
+      // 기존의 새 글 작성 로직 (INSERT)
       const { error } = await supabase.from('posts').insert([{ 
         title: trimmedTitle, 
         content: newContent, 
