@@ -1,7 +1,7 @@
 'use client';
 
-import { useMemo } from 'react';
-import { Post, Comment } from '../types/board'; 
+import { useMemo } from 'react'; // 변수 캐싱 및 성능 최적화 훅 로드
+import { Post, Comment } from '../types/board'; // 댓글 관련 데이터 구조 타입 매핑 로드
 
 interface CommentSectionProps {
   comments: Comment[];
@@ -17,12 +17,13 @@ interface CommentSectionProps {
   formatTimeAgo: (dateString: string) => string;
 }
 
+// 게시물 상세 화면 내 하위 댓글 및 대댓글 UI 출력 컴포넌트
 export default function CommentSection({
   comments, selectedPost, currentUser, displayName, newComment, setNewComment,
   replyingTo, setReplyingTo, handleSaveComment, isMobile, formatTimeAgo,
 }: CommentSectionProps) {
 
-  // [최적화] 댓글을 부모 ID별로 미리 그룹화하여 렌더링 시 filter 연산 비용 제거 (O(N^2) -> O(N))
+  // 다중 계층 렌더링 성능 향상을 위한 부모 ID(parent_id) 기준 데이터 Map 구조화
   const commentsByParent = useMemo(() => {
     const map = new Map<number | null, Comment[]>();
     comments.forEach(c => {
@@ -33,8 +34,8 @@ export default function CommentSection({
     return map;
   }, [comments]);
 
-  // 댓글 렌더링 함수 (대댓글 구조 처리를 위한 재귀 호출)
-  const renderComments = (parentId: number | null = null, depth = 0) => {
+  // 대댓글 출력용 재귀 함수. 배열의 하위 노드 존재 시 Depth를 1씩 증가시키며 HTML 반환
+  const renderComments = (parentId: number | null, depth = 0) => {
     const list = commentsByParent.get(parentId);
     if (!list || list.length === 0) return null; 
     
@@ -44,7 +45,7 @@ export default function CommentSection({
             
             <div className="flex justify-between mb-[6px]">
               <div className="flex items-center gap-[8px] flex-wrap">
-                {depth > 0 && <span className="text-[#F2A900] text-[12px]">↳</span>} 
+                {depth > 0 && <span className="text-[#F2A900] text-[12px]">ㄴ</span>} 
                 <span className={`text-[13px] font-bold ${depth > 0 ? 'text-[#F2A900]' : 'text-[#34A853]'}`}>{c.author}</span>
                 <span className="text-[11px] text-[#666]">{formatTimeAgo(c.created_at)}</span>
               </div>
@@ -68,20 +69,17 @@ export default function CommentSection({
 
   return (
     <div className="mt-[40px]">
-      {/* 댓글 헤더 */}
       <h3 className="text-[#F2A900] m-0 mb-[20px] font-bold text-[18px]">댓글 ({comments.length})</h3>
       
-      {/* 댓글 목록 */}
       <div className="flex flex-col gap-[5px]">
-        {renderComments(null)}
+        {renderComments(null, 0)}
       </div>
       
-      {/* 댓글 작성 폼 (로그인 시 표시) */}
       {currentUser && (
         <div className="mt-[25px] flex flex-col gap-[10px]">
           {replyingTo && (
             <div className="text-[13px] text-[#F2A900] flex items-center gap-[10px]">
-              <span>↳ <strong>{replyingTo.author}</strong>님에게 답글 중</span>
+              <span>ㄴ <strong>{replyingTo.author}</strong>님에게 답글 중</span>
               <button 
                 onClick={() => { setReplyingTo(null); setNewComment(''); }} 
                 className="bg-transparent border-none text-[#666] cursor-pointer text-[12px] hover:text-white transition-colors"

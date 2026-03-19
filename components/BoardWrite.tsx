@@ -1,168 +1,276 @@
-'use client';
+"use client";
 
-import { useMemo, useRef, useState } from 'react';
-import dynamic from 'next/dynamic';
-import { supabase } from '../lib/supabase';
-import 'react-quill-new/dist/quill.snow.css';
+import { useMemo, useRef, useState, useEffect } from "react"; // React 상태 관리 및 참조 훅
+import dynamic from "next/dynamic"; // Next.js 동적 임포트 모듈
+import { supabase } from "../lib/supabase"; // DB 및 스토리지 연동용 Supabase 클라이언트
+import "react-quill-new/dist/quill.snow.css"; // Quill 에디터 코어 스타일시트
 
-const ReactQuill = dynamic(() => import('react-quill-new'), { ssr: false }) as any;
+// React-Quill 라이브러리 브라우저 window 객체 필수 의존으로 인한 SSR 렌더링 무효화 래퍼
+const ReactQuill = dynamic(() => import("react-quill-new"), {
+  ssr: false,
+}) as any;
 
-const BOARD_CATEGORIES = ['자유', '듀오/스쿼드 모집', '클럽홍보', '제보/문의'];
+const BOARD_CATEGORIES = ["자유", "듀오/스쿼드 모집", "클럽홍보", "제보/문의"];
 
 interface BoardWriteProps {
-  newTitle: string; setNewTitle: (title: string) => void;
-  newContent: string; setNewContent: (content: string) => void;
-  newCategory: string; setNewCategory: (category: string) => void;
-  newIsNotice: boolean; setNewIsNotice: (isNotice: boolean) => void;
-  handleSavePost: () => void; setIsWriting: (isWriting: boolean) => void;
-  isAdmin: boolean; isLoading: boolean; isMobile: boolean;
+  newTitle: string;
+  setNewTitle: (title: string) => void;
+  newContent: string;
+  setNewContent: (content: string) => void;
+  newCategory: string;
+  setNewCategory: (category: string) => void;
+  newIsNotice: boolean;
+  setNewIsNotice: (isNotice: boolean) => void;
+  handleSavePost: () => Promise<boolean>;
+  setIsWriting: (isWriting: boolean) => void;
+  isAdmin: boolean;
+  isLoading: boolean;
+  isMobile: boolean;
   isEditing?: boolean;
 }
 
+// 게시글 텍스트 및 이미지 편집 에디터 UI 컴포넌트
 export default function BoardWrite({
-  newTitle, setNewTitle, newContent, setNewContent, newCategory, setNewCategory,
-  newIsNotice, setNewIsNotice, handleSavePost, setIsWriting, isAdmin, isLoading, isMobile, isEditing
+  newTitle,
+  setNewTitle,
+  newContent,
+  setNewContent,
+  newCategory,
+  setNewCategory,
+  newIsNotice,
+  setNewIsNotice,
+  handleSavePost,
+  setIsWriting,
+  isAdmin,
+  isLoading,
+  isMobile,
+  isEditing,
 }: BoardWriteProps) {
+  const quillRef = useRef<any>(null); // Quill 에디터 인스턴스 접근용 Ref
 
-  // 에디터 Ref 및 업로드된 이미지 추적 Ref
-  const quillRef = useRef<any>(null);
-  const uploadedImagesRef = useRef<string[]>([]);
-  
-  const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const uploadedImagesRef = useRef<string[]>([]); // 현재 작성 세션 중 업로드된 이미지 경로 추적용 Ref
+  const [isUploadingImage, setIsUploadingImage] = useState(false); // 이미지 업로드 중 로딩 상태
 
-  // 이미지 파일을 스토리지에 업로드하고 URL 반환
+  // 컴포넌트 파괴 감지 시 현재 작성 세션에 남은 미사용 스토리지 이미지 일괄 정리
+  useEffect(() => {
+    return () => {
+      if (uploadedImagesRef.current.length > 0) {
+        supabase.storage.from("images").remove(uploadedImagesRef.current);
+      }
+    };
+  }, []);
+
+  // 선택한 로컬 이미지를 Supabase 스토리지에 전달 및 public 접속 URL 반환
   const uploadImage = async (file: File) => {
     try {
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
-      const { error } = await supabase.storage.from('images').upload(fileName, file);
+      const fileExt = file.name.split(".").pop();
+      const fileName = `${Date.now()}_${Math.random()
+        .toString(36)
+        .substring(2, 15)}.${fileExt}`;
+      const { error } = await supabase.storage
+        .from("images")
+        .upload(fileName, file);
       if (error) throw error;
-      
+
       uploadedImagesRef.current.push(fileName);
-      const { data } = supabase.storage.from('images').getPublicUrl(fileName);
+      const { data } = supabase.storage.from("images").getPublicUrl(fileName);
       return data.publicUrl;
     } catch (error: any) {
-      alert(`이미지 업로드 실패: ${error.message}`);
-      return null;
+      console.error("게시글 업로드 에러:", error);
+      alert("일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
     }
   };
 
-  // 에디터 이미지 버튼 핸들러 (커스텀 업로드 로직)
+  // 에디터 상단 이미지 첨부 아이콘 클릭 트리거 오버라이딩 커스텀 핸들러
   const imageHandler = () => {
-    const existingInputs = document.querySelectorAll('.quill-image-input');
-    existingInputs.forEach(el => el.remove());
+    const existingInputs = document.querySelectorAll(".quill-image-input");
+    existingInputs.forEach((el) => el.remove());
 
-    const input = document.createElement('input');
-    input.setAttribute('type', 'file');
-    input.setAttribute('accept', 'image/*');
-    input.classList.add('quill-image-input'); 
-    
-    input.style.display = 'none'; 
-    input.style.position = 'absolute';
-    input.style.left = '-9999px';
+    const input = document.createElement("input");
+    input.setAttribute("type", "file");
+    input.setAttribute("accept", "image/*");
+    input.classList.add("quill-image-input");
 
-    document.body.appendChild(input); 
+    input.style.display = "none";
+    input.style.position = "absolute";
+    input.style.left = "-9999px";
+
+    document.body.appendChild(input);
     input.click();
 
     input.onchange = async () => {
       if (!input.files || input.files.length === 0) {
-        if (document.body.contains(input)) document.body.removeChild(input); 
+        if (document.body.contains(input)) document.body.removeChild(input);
         return;
       }
-      
+
       const file = input.files[0];
-      const maxSize = 3 * 1024 * 1024; 
+      const maxSize = 3 * 1024 * 1024;
 
       if (file.size > maxSize) {
-        alert('이미지 파일 크기는 3MB를 초과할 수 없습니다.');
+        alert("이미지 파일 크기는 3MB를 초과할 수 없습니다.");
         if (document.body.contains(input)) document.body.removeChild(input);
         return;
       }
 
       const editor = quillRef.current.getEditor();
       const range = editor.getSelection(true) || { index: editor.getLength() };
-      
+
       try {
-        setIsUploadingImage(true); 
-        editor.enable(false); 
-        
+        setIsUploadingImage(true);
+        editor.enable(false);
+
         const url = await uploadImage(file);
-        
+
         if (url) {
-          editor.insertEmbed(range.index, 'image', url); 
-          editor.setSelection(range.index + 1); 
+          editor.insertEmbed(range.index, "image", url);
+          editor.setSelection(range.index + 1);
         } else {
-          alert('이미지 업로드에 실패했습니다. 네트워크 상태를 확인해 주세요.');
+          alert("이미지 업로드에 실패했습니다. 네트워크 상태를 확인해 주세요.");
         }
       } catch (e) {
-        console.error('🚨 에디터 이미지 삽입 에러:', e);
-        alert('이미지 처리 중 예기치 못한 오류가 발생했습니다.');
+        console.error("에디터 이미지 삽입 에러:", e);
+        alert("이미지 처리 중 예기치 못한 오류가 발생했습니다.");
       } finally {
-        editor.enable(true); 
-        setIsUploadingImage(false); 
-        
+        editor.enable(true);
+        setIsUploadingImage(false);
+
         if (document.body.contains(input)) {
-          document.body.removeChild(input); 
+          document.body.removeChild(input);
         }
       }
     };
   };
 
-  // 작성 취소 핸들러 (작성 중이던 이미지 정리)
+  // 작성 창 수동 취소 시 현재까지 업로드된 임시 이미지 URL 완전 폐기
   const handleCancel = async () => {
     try {
-      //  새 글 작성이든, 수정 모드이든 '이번 창을 열고 나서 추가로 업로드한' 이미지는 전부 삭제
       if (uploadedImagesRef.current.length > 0) {
-        const { error } = await supabase.storage.from('images').remove(uploadedImagesRef.current);
-        if (error) console.error('🚨 스토리지 삭제 실패:', error);
+        const { error } = await supabase.storage
+          .from("images")
+          .remove(uploadedImagesRef.current);
+        if (error) {
+          console.error("스토리지 삭제 실패:", error);
+          alert("임시 이미지 삭제 중 오류가 발생했습니다.");
+        }
       }
     } catch (err) {
-      console.error('🚨 예기치 못한 에러:', err);
+      console.error("예기치 못한 에러:", err);
     } finally {
-      setNewTitle('');
-      setNewContent('');
-      setIsWriting(false); 
+      setIsWriting(false);
     }
   };
 
-  // Quill 에디터 모듈 설정 (툴바 등)
-  const modules = useMemo(() => ({
-    toolbar: {
-      container: [
-        [{ 'header': [1, 2, false] }],
-        ['bold', 'italic', 'underline', 'strike', 'blockquote'],
-        [{'list': 'ordered'}, {'list': 'bullet'}],
-        ['link', 'image'],
-        ['clean']
-      ],
-      handlers: { image: imageHandler }
+  // 폼 저장 시 본문 문자열 검증을 통해 삭제된 이미지 파악 및 스토리지 동반 제거
+  const onSaveClick = async () => {
+    const unusedImages = uploadedImagesRef.current.filter(
+      (fileName) => !newContent.includes(fileName)
+    );
+
+    if (unusedImages.length > 0) {
+      await supabase.storage.from("images").remove(unusedImages);
+      uploadedImagesRef.current = uploadedImagesRef.current.filter(
+        (f) => !unusedImages.includes(f)
+      );
     }
-  }), []);
+
+    const success = await handleSavePost();
+    if (success) {
+      uploadedImagesRef.current = [];
+    }
+  };
+
+  // Quill 에디터 툴바 설정 메모이제이션
+  const modules = useMemo(
+    () => ({
+      toolbar: {
+        container: [
+          [{ header: [1, 2, false] }],
+          ["bold", "italic", "underline", "strike", "blockquote"],
+          [{ list: "ordered" }, { list: "bullet" }],
+          ["link", "image"],
+          ["clean"],
+        ],
+        handlers: { image: imageHandler },
+      },
+    }),
+    []
+  );
 
   return (
-    <div style={{ backgroundColor: '#1a1a1a', padding: isMobile ? '15px' : '30px', borderRadius: '8px', border: '1px solid #333' }}>
-      
-      {/* isEditing 값에 따라 제목이 바뀜 */}
-      <h2 style={{ marginBottom: '20px', color: '#F2A900', fontSize: '20px', fontWeight: 'bold' }}>
-        {isEditing ? '게시글 수정' : '새 게시글 작성'}
+    <div
+      style={{
+        backgroundColor: "#1a1a1a",
+        padding: isMobile ? "15px" : "30px",
+        borderRadius: "8px",
+        border: "1px solid #333",
+      }}
+    >
+      <h2
+        style={{
+          marginBottom: "20px",
+          color: "#F2A900",
+          fontSize: "20px",
+          fontWeight: "bold",
+        }}
+      >
+        {isEditing ? "게시글 수정" : "새 게시글 작성"}
       </h2>
-      
-      <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '10px', marginBottom: '15px' }}>
-        <select value={newCategory} onChange={(e) => setNewCategory(e.target.value)} style={{ padding: '10px', backgroundColor: '#252525', color: 'white', border: '1px solid #333', borderRadius: '4px' }}>
-          {BOARD_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+
+      <div
+        style={{
+          display: "flex",
+          flexDirection: isMobile ? "column" : "row",
+          gap: "10px",
+          marginBottom: "15px",
+        }}
+      >
+        <select
+          value={newCategory}
+          onChange={(e) => setNewCategory(e.target.value)}
+          style={{
+            padding: "10px",
+            backgroundColor: "#252525",
+            color: "white",
+            border: "1px solid #333",
+            borderRadius: "4px",
+          }}
+        >
+          {BOARD_CATEGORIES.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
         </select>
-        
-        <input 
-          type="text" 
-          placeholder="제목을 입력하세요 (최대 50자)" 
-          value={newTitle} 
-          onChange={(e) => setNewTitle(e.target.value)} 
-          maxLength={50} 
-          style={{ flex: 1, padding: '10px', backgroundColor: '#252525', color: 'white', border: '1px solid #333', borderRadius: '4px', fontSize: '16px' }} 
+
+        <input
+          type="text"
+          placeholder="제목을 입력하세요 (최대 50자)"
+          value={newTitle}
+          onChange={(e) => setNewTitle(e.target.value)}
+          maxLength={50}
+          style={{
+            flex: 1,
+            padding: "10px",
+            backgroundColor: "#252525",
+            color: "white",
+            border: "1px solid #333",
+            borderRadius: "4px",
+            fontSize: "16px",
+          }}
         />
       </div>
-      
-      <div className="quill-wrapper" style={{ marginBottom: '50px', backgroundColor: 'white', color: 'black', borderRadius: '4px', position: 'relative' }}>
+
+      <div
+        className="quill-wrapper"
+        style={{
+          marginBottom: "50px",
+          backgroundColor: "white",
+          color: "black",
+          borderRadius: "4px",
+          position: "relative",
+        }}
+      >
         <style>{`
           .quill-wrapper .ql-toolbar {
             position: sticky;
@@ -183,38 +291,85 @@ export default function BoardWrite({
         `}</style>
 
         {isUploadingImage && (
-          <div style={{
-            position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-            backgroundColor: 'rgba(255, 255, 255, 0.8)',
-            zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: '18px', fontWeight: 'bold', color: '#F2A900', borderRadius: '4px'
-          }}>
-            📷 이미지를 서버에 업로드 중입니다...
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: "rgba(255, 255, 255, 0.8)",
+              zIndex: 2000,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "18px",
+              fontWeight: "bold",
+              color: "#F2A900",
+              borderRadius: "4px",
+            }}
+          >
+            이미지를 서버에 업로드 중입니다...
           </div>
         )}
-        
-        <ReactQuill 
-          ref={quillRef} 
-          theme="snow" 
-          value={newContent} 
-          onChange={setNewContent} 
-          modules={modules} 
+
+        <ReactQuill
+          ref={quillRef}
+          theme="snow"
+          value={newContent}
+          onChange={setNewContent}
+          modules={modules}
         />
       </div>
-      
+
       {isAdmin ? (
-        <label style={{ display: 'flex', gap: '8px', marginBottom: '20px', color: '#F2A900' }}>
-          <input type="checkbox" checked={newIsNotice} onChange={(e) => setNewIsNotice(e.target.checked)} /> 공지사항
+        <label
+          style={{
+            display: "flex",
+            gap: "8px",
+            marginBottom: "20px",
+            color: "#F2A900",
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={newIsNotice}
+            onChange={(e) => setNewIsNotice(e.target.checked)}
+          />{" "}
+          공지사항
         </label>
       ) : null}
-      
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-        <button onClick={handleCancel} style={{ padding: '10px 20px', backgroundColor: '#333', color: '#ccc', borderRadius: '4px', border: 'none', cursor: 'pointer' }}>취소</button>
-        <button onClick={handleSavePost} disabled={isLoading} style={{ padding: '10px 30px', backgroundColor: '#F2A900', color: 'black', fontWeight: 'bold', borderRadius: '4px', border: 'none', cursor: 'pointer' }}>
-          {isLoading ? '처리 중...' : (isEditing ? '수정하기' : '등록하기')}
+
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+        <button
+          onClick={handleCancel}
+          style={{
+            padding: "10px 20px",
+            backgroundColor: "#333",
+            color: "#ccc",
+            borderRadius: "4px",
+            border: "none",
+            cursor: "pointer",
+          }}
+        >
+          취소
+        </button>
+        <button
+          onClick={onSaveClick}
+          disabled={isLoading}
+          style={{
+            padding: "10px 30px",
+            backgroundColor: "#F2A900",
+            color: "black",
+            fontWeight: "bold",
+            borderRadius: "4px",
+            border: "none",
+            cursor: "pointer",
+          }}
+        >
+          {isLoading ? "처리 중..." : isEditing ? "수정하기" : "등록하기"}
         </button>
       </div>
-
     </div>
   );
 }

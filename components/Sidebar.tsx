@@ -1,19 +1,20 @@
 'use client';
 
-import { CATEGORY_INFO, MAP_CATEGORIES } from '../lib/map_config';
+import { CATEGORY_INFO, MAP_CATEGORIES } from '../lib/map_config';// 지도 내 카테고리 정보 및 속성 설정 객체 로드
 
 interface SidebarProps {
   isOpen: boolean;
   setIsOpen: (v: boolean) => void;
   mapLabel: string;
-  activeMapId: string; // 💡 맵 ID를 추가로 받습니다.
+  activeMapId: string; 
   filters: { [key: string]: boolean };
   toggleFilter: (id: string) => void;
   getCount: (id: string) => number;
 }
 
+// 맵 좌측 영역 마커 카테고리 필터링 제어 패널 컴포넌트
 export default function Sidebar({ isOpen, setIsOpen, mapLabel, activeMapId, filters, toggleFilter, getCount }: SidebarProps) {
-  // 현재 맵에 해당하는 카테고리 배열 가져오기 (없으면 에란겔 기준)
+  
   const currentCategories = MAP_CATEGORIES[activeMapId] || MAP_CATEGORIES['Erangel'];
 
   return (
@@ -23,11 +24,10 @@ export default function Sidebar({ isOpen, setIsOpen, mapLabel, activeMapId, filt
       }}>
       <div style={{ padding: '20px 15px', borderBottom: '1px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h2 style={{ margin: 0, fontSize: '20px', color: '#F2A900', fontWeight: '900', letterSpacing: '-0.5px' }}>{mapLabel}</h2>
-        <button onClick={() => setIsOpen(false)} style={{ background: 'none', border: 'none', color: '#666', cursor: 'pointer', fontSize: '20px' }}>✕</button>
+        <button onClick={() => setIsOpen(false)} style={{ background: 'none', border: 'none', color: '#666', cursor: 'pointer', fontSize: '20px' }}>X</button>
       </div>
 
       <div style={{ padding: '12px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-        {/* 설정집에서 가져온 데이터로 동적 렌더링 */}
         {currentCategories.map(id => {
           const item = CATEGORY_INFO[id];
           if (!item) return null;

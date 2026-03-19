@@ -1,10 +1,11 @@
+// Supabase 클라이언트 생성 모듈 로드
 import { createClient } from '@supabase/supabase-js';
 
+// 프로젝트 환경 변수 내 Supabase 접속 URL 및 권한 키 할당
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-// ⚠️ 빌드 타임에 환경 변수가 없어도 에러가 나지 않도록 빈 문자열이나 임시 값을 넣어줍니다.
-// 실제 브라우저에서 실행될 때는 1단계에서 설정한 값이 들어갑니다.
+// DB, 스토리지, 사용자 인증 통신을 위한 단일 Supabase 인스턴스 내보내기
 export const supabase = createClient(
   supabaseUrl || 'https://placeholder.supabase.co', 
   supabaseAnonKey || 'placeholder'

@@ -1,4 +1,5 @@
-// 📝 [타입] 데이터 구조 정의
+// 게시글 및 하위 댓글 데이터 구조 타입 명세 인터페이스
+
 export interface Comment {
   id: number;
   post_id: number;
