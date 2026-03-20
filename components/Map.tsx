@@ -802,6 +802,21 @@ export default function Map() {
           </div>
         ) : (
           <>
+            {/* 모바일 환경에서 사이드바가 열려있을 때 바깥 영역 터치 시 닫히도록 오버레이 추가 */}
+            {isMobile && isSidebarOpen && (
+              <div
+                onClick={() => setSidebarOpen(false)}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  backgroundColor: "rgba(0,0,0,0.5)",
+                  zIndex: 5499,
+                }}
+              />
+            )}
             <div
               style={{
                 position: "absolute",

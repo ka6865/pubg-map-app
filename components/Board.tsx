@@ -285,7 +285,11 @@ export default function Board({
 
   // 하단 댓글/대댓글 DB 맵핑 기록 및 대상 타겟 유저 알림 객체 삽입
   const handleSaveComment = async () => {
-    if (!newComment.trim() || !currentUser || !selectedPost) return;
+    if (!currentUser || !selectedPost) return;
+    if (!newComment.trim()) {
+      alert("댓글 내용을 입력해주세요.");
+      return;
+    }
 
     const finalComment = replyingTo
       ? `@${replyingTo.author} ${newComment}`
@@ -351,8 +355,29 @@ export default function Board({
     alert("추천 완료!");
   };
 
+  // 개별 댓글 및 답글 삭제
+  const handleDeleteComment = async (commentId: number) => {
+    if (!confirm("댓글을 삭제하시겠습니까?")) return;
+    const { error } = await supabase
+      .from("comments")
+      .delete()
+      .eq("id", commentId);
+    if (!error && selectedPost) {
+      fetchComments(selectedPost.id);
+      fetchPosts();
+    } else if (error) {
+      alert("댓글 삭제 실패: " + error.message);
+    }
+  };
+
   // 본문 이미지 주소 정규식 색출 및 스토리지 할당 파일 동반 DB 삭제 수행
   const handleDeletePost = async (postId: number) => {
+    // 관리자가 아니면서 댓글이 존재하는 경우 삭제 차단
+    if (comments.length > 0 && !isAdmin) {
+      alert("댓글이 작성된 게시글은 삭제할 수 없습니다.");
+      return;
+    }
+
     if (!confirm("삭제하시겠습니까?")) return;
 
     try {
@@ -440,6 +465,7 @@ export default function Board({
         handleLikePost={handleLikePost}
         handleDeletePost={handleDeletePost}
         formatTimeAgo={formatTimeAgo}
+        handleDeleteComment={handleDeleteComment}
         handleEditClick={() => {
           setEditingPostId(selectedPost.id);
           setNewTitle(selectedPost.title);

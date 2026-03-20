@@ -343,13 +343,14 @@ export default function BoardWrite({
       <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
         <button
           onClick={handleCancel}
+          disabled={isLoading || isUploadingImage}
           style={{
             padding: "10px 20px",
-            backgroundColor: "#333",
-            color: "#ccc",
+            backgroundColor: isLoading || isUploadingImage ? "#222" : "#333",
+            color: isLoading || isUploadingImage ? "#666" : "#ccc",
             borderRadius: "4px",
             border: "none",
-            cursor: "pointer",
+            cursor: isLoading || isUploadingImage ? "not-allowed" : "pointer",
           }}
         >
           취소

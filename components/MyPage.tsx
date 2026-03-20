@@ -34,6 +34,11 @@ export default function MyPage({
 
     const newNickname = editNickname.trim();
 
+    if (newNickname === userProfile?.nickname) {
+      alert("변경된 내용이 없습니다.");
+      return;
+    }
+
     if (newNickname.length < 2 || newNickname.length > 15) {
       alert("닉네임은 2글자 이상 15글자 이하로 입력해주세요.");
       return;
@@ -182,7 +187,7 @@ export default function MyPage({
               border: "1px solid #444",
               color: "white",
               borderRadius: "6px",
-              fontSize: "14px",
+              fontSize: "16px",
               boxSizing: "border-box",
             }}
           />

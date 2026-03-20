@@ -26,7 +26,8 @@ export async function GET(request: Request) {
       { status: 400 }
     );
 
-  const apiKey = process.env.PUBG_API_KEY;
+  // 환경 변수에서 불필요한 공백 및 텍스트(예: "Rate Limit 10 RPM...")를 제거하고 진짜 토큰만 추출
+  const apiKey = (process.env.PUBG_API_KEY || "").split(" ")[0];
   const headers = {
     Authorization: `Bearer ${apiKey}`,
     Accept: "application/vnd.api+json",

@@ -294,7 +294,7 @@ export default function BoardList({
             />
             <button
               onClick={handleSearch}
-              className="bg-transparent border-none cursor-pointer hover:text-white"
+              className="bg-transparent border-none cursor-pointer hover:text-white whitespace-nowrap shrink-0"
               style={{ color: "#888888" }}
             >
               조회

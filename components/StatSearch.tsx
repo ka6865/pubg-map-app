@@ -734,6 +734,7 @@ export default function StatSearch() {
           gap: "10px",
           maxWidth: "800px",
           position: "relative",
+          flexWrap: "wrap",
           margin: "0 auto 30px auto",
         }}
       >
@@ -746,12 +747,13 @@ export default function StatSearch() {
             color: "white",
             border: "1px solid #444",
             borderRadius: "6px",
+            fontSize: "16px",
           }}
         >
           <option value="steam">스팀 (Steam)</option>
           <option value="kakao">카카오 (Kakao)</option>
         </select>
-        <div style={{ position: "relative", flex: 1 }}>
+        <div style={{ position: "relative", flex: "1 1 200px" }}>
           <input
             type="text"
             placeholder="정확한 대소문자 닉네임을 입력하세요"
@@ -768,6 +770,7 @@ export default function StatSearch() {
               border: "1px solid #444",
               borderRadius: "6px",
               boxSizing: "border-box",
+              fontSize: "16px",
             }}
           />
           {showDropdown && (
@@ -845,6 +848,9 @@ export default function StatSearch() {
             fontWeight: "bold",
             border: "none",
             borderRadius: "6px",
+            fontSize: "16px",
+            whiteSpace: "nowrap",
+            flexShrink: 0,
             cursor: loading || cooldown ? "not-allowed" : "pointer",
           }}
         >
