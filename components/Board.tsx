@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react"; // React 상태 및 생명주기 관리 훅
+import { useState, useEffect, useCallback } from "react"; // React 상태 및 생명주기 관리 훅
 import { useRouter, useSearchParams } from "next/navigation"; // Next.js 라우터 및 쿼리 파라미터 로드 모듈
 import { supabase } from "../lib/supabase"; // DB 통신용 Supabase 클라이언트
 import {
@@ -423,6 +423,29 @@ export default function Board({
     setSearchQuery(searchInput);
   };
 
+  // 🌟 [최적화] 하위 컴포넌트(게시글 상세, 목록) 리렌더링 방지를 위한 콜백 캐싱
+  const handleEditClick = useCallback(() => {
+    if (selectedPost) {
+      setEditingPostId(selectedPost.id);
+      setNewTitle(selectedPost.title);
+      setNewContent(selectedPost.content || "");
+      setNewCategory(selectedPost.category);
+      setNewIsNotice(selectedPost.is_notice);
+      setIsWriting(true);
+    }
+  }, [selectedPost]);
+
+  const handleSetIsWriting = useCallback((v: boolean) => {
+    if (v) {
+      setEditingPostId(null);
+      setNewTitle("");
+      setNewContent("");
+      setNewCategory("자유");
+      setNewIsNotice(false);
+    }
+    setIsWriting(v);
+  }, []);
+
   if (isWriting || editingPostId) {
     return (
       <BoardWrite
@@ -466,14 +489,7 @@ export default function Board({
         handleDeletePost={handleDeletePost}
         formatTimeAgo={formatTimeAgo}
         handleDeleteComment={handleDeleteComment}
-        handleEditClick={() => {
-          setEditingPostId(selectedPost.id);
-          setNewTitle(selectedPost.title);
-          setNewContent(selectedPost.content || "");
-          setNewCategory(selectedPost.category);
-          setNewIsNotice(selectedPost.is_notice);
-          setIsWriting(true);
-        }}
+        handleEditClick={handleEditClick}
       />
     );
   }
@@ -492,16 +508,7 @@ export default function Board({
       handleSearch={handleSearch}
       isMobile={isMobile}
       formatTimeAgo={formatTimeAgo}
-      setIsWriting={(v) => {
-        if (v) {
-          setEditingPostId(null);
-          setNewTitle("");
-          setNewContent("");
-          setNewCategory("자유");
-          setNewIsNotice(false);
-        }
-        setIsWriting(v);
-      }}
+      setIsWriting={handleSetIsWriting}
     />
   );
 }

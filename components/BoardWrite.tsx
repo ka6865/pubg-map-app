@@ -12,6 +12,28 @@ const ReactQuill = dynamic(() => import("react-quill-new"), {
 
 const BOARD_CATEGORIES = ["자유", "듀오/스쿼드 모집", "클럽홍보", "제보/문의"];
 
+// 🌟 [최적화] 타이핑 시마다 스타일이 재계산되지 않도록 컴포넌트 외부로 분리
+const QuillGlobalStyles = (
+  <style>{`
+    .quill-wrapper .ql-toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 1000;
+      background-color: #f3f4f6;
+      border-top-left-radius: 4px;
+      border-top-right-radius: 4px;
+    }
+    .quill-wrapper .ql-container {
+      min-height: 350px;
+      max-height: 50vh;
+      overflow-y: auto;
+      border-bottom-left-radius: 4px;
+      border-bottom-right-radius: 4px;
+      font-size: 16px;
+    }
+  `}</style>
+);
+
 interface BoardWriteProps {
   newTitle: string;
   setNewTitle: (title: string) => void;
@@ -271,24 +293,7 @@ export default function BoardWrite({
           position: "relative",
         }}
       >
-        <style>{`
-          .quill-wrapper .ql-toolbar {
-            position: sticky;
-            top: 0;
-            z-index: 1000;
-            background-color: #f3f4f6;
-            border-top-left-radius: 4px;
-            border-top-right-radius: 4px;
-          }
-          .quill-wrapper .ql-container {
-            min-height: 350px;
-            max-height: 50vh;
-            overflow-y: auto;
-            border-bottom-left-radius: 4px;
-            border-bottom-right-radius: 4px;
-            font-size: 16px;
-          }
-        `}</style>
+        {QuillGlobalStyles}
 
         {isUploadingImage && (
           <div
