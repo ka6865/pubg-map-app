@@ -72,6 +72,9 @@ export function useMapData(activeMapId: string) {
     const fetchMarkers = async () => {
       if (activeMapId === "Board") return;
 
+      // 맵 전환 시 이전 마커 잔상을 제거하기 위해 즉시 초기화
+      setDbVehicles([]);
+
       const { data } = await supabase
         .from("map_markers")
         .select("*")

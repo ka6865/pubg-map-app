@@ -10,10 +10,12 @@ const MatchCard = ({
   matchId,
   nickname,
   platform,
+  isMobile,
 }: {
   matchId: string;
   nickname: string;
   platform: string;
+  isMobile: boolean;
 }) => {
   const [matchData, setMatchData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -106,18 +108,33 @@ const MatchCard = ({
         {/* 1️⃣ 등수 & 모드 (좌측) */}
         <div
           style={{
-            width: "90px",
-            textAlign: "center",
+            minWidth: isMobile ? "20px" : "80px",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            justifyContent: "center",
             borderRight: "1px solid #333",
-            paddingRight: "15px",
+            paddingRight: isMobile ? "8px" : "12px",
+            flexShrink: 0,
           }}
         >
           <div
-            style={{ fontSize: "22px", fontWeight: "900", color: borderColor }}
+            style={{
+              fontSize: isMobile ? "14px" : "20px",
+              fontWeight: "900",
+              color: borderColor,
+            }}
           >
             #{stats.winPlace}
           </div>
-          <div style={{ fontSize: "12px", color: "#888", marginTop: "4px" }}>
+          <div
+            style={{
+              fontSize: isMobile ? "9px" : "11px",
+              color: "#888",
+              marginTop: "4px",
+              whiteSpace: "nowrap",
+            }}
+          >
             {gameMode}
           </div>
         </div>
@@ -126,52 +143,66 @@ const MatchCard = ({
         <div
           style={{
             flex: 1,
-            paddingLeft: "20px",
+            paddingLeft: isMobile ? "10px" : "15px",
             display: "flex",
-            gap: "30px",
+            gap: isMobile ? "10px" : "15px",
             alignItems: "center",
           }}
         >
           <div>
             <div
-              style={{ fontSize: "18px", fontWeight: "bold", color: "#fff" }}
+              style={{
+                fontSize: isMobile ? "15px" : "18px",
+                fontWeight: "bold",
+                color: "#fff",
+              }}
             >
               {stats.kills}{" "}
               <span
                 style={{
                   color: "#666",
-                  fontSize: "12px",
+                  fontSize: isMobile ? "10px" : "12px",
                   fontWeight: "normal",
                 }}
               >
                 킬
               </span>
-              <span style={{ color: "#555", margin: "0 6px" }}>/</span>
+              <span
+                style={{ color: "#555", margin: isMobile ? "0 4px" : "0 6px" }}
+              >
+                /
+              </span>
               {stats.assists}{" "}
               <span
                 style={{
                   color: "#666",
-                  fontSize: "12px",
+                  fontSize: isMobile ? "10px" : "12px",
                   fontWeight: "normal",
                 }}
               >
                 어시
               </span>
             </div>
-            <div style={{ fontSize: "13px", color: "#aaa", margin: "4px 0" }}>
+            <div
+              style={{
+                fontSize: isMobile ? "11px" : "13px",
+                color: "#aaa",
+                margin: "4px 0",
+              }}
+            >
               딜량{" "}
               <span style={{ fontWeight: "bold", color: "#ddd" }}>
                 {Math.floor(stats.damageDealt)}
               </span>
             </div>
           </div>
-          <div style={{ color: "#888", fontSize: "12px" }}>
+          <div style={{ color: "#888", fontSize: isMobile ? "10px" : "12px" }}>
             <div
               style={{
                 fontWeight: "bold",
                 color: "#ccc",
                 marginBottom: "4px",
-                fontSize: "13px",
+                fontSize: isMobile ? "11px" : "13px",
               }}
             >
               {mapName}
@@ -183,8 +214,8 @@ const MatchCard = ({
         {/* 3️⃣ 팀원 닉네임 리스트 & 펼치기 화살표 (우측) */}
         <div
           style={{
-            width: "160px",
-            paddingLeft: "20px",
+            width: isMobile ? "80px" : "160px",
+            paddingLeft: isMobile ? "6px" : "10px",
             borderLeft: "1px solid #333",
             display: "flex",
             justifyContent: "space-between",
@@ -203,7 +234,7 @@ const MatchCard = ({
               <div
                 key={member.name}
                 style={{
-                  fontSize: "12px",
+                  fontSize: isMobile ? "10px" : "12px",
                   color: member.name === nickname ? "#fff" : "#888",
                   fontWeight: member.name === nickname ? "bold" : "normal",
                   whiteSpace: "nowrap",
@@ -218,7 +249,7 @@ const MatchCard = ({
           <div
             style={{
               color: "#888",
-              fontSize: "18px",
+              fontSize: isMobile ? "14px" : "18px",
               transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)",
               transition: "transform 0.2s",
             }}
@@ -241,31 +272,32 @@ const MatchCard = ({
           <div
             style={{
               display: "flex",
-              gap: "30px",
+              gap: isMobile ? "15px" : "30px",
               marginBottom: "20px",
               paddingBottom: "15px",
               borderBottom: "1px dashed #333",
+              flexWrap: "wrap",
             }}
           >
-            <div>
-              <span style={{ color: "#888", fontSize: "12px" }}>팀 총 킬:</span>{" "}
+            <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: isMobile ? "2px" : "8px" }}>
+              <span style={{ color: "#888", fontSize: "12px" }}>팀 총 킬:</span>
               <span style={{ fontWeight: "bold", color: "#F2A900" }}>
                 {totalTeamKills}
               </span>
             </div>
-            <div>
+            <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: isMobile ? "2px" : "8px" }}>
               <span style={{ color: "#888", fontSize: "12px" }}>
                 팀 총 데미지:
-              </span>{" "}
+              </span>
               <span style={{ fontWeight: "bold", color: "#34A853" }}>
                 {Math.floor(totalTeamDamage)}
               </span>
             </div>
-            <div>
+            <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: isMobile ? "2px" : "8px" }}>
               <span style={{ color: "#888", fontSize: "12px" }}>
                 팀 생존 시간:
-              </span>{" "}
-              <span style={{ fontWeight: "bold", color: "#fff" }}>
+              </span>
+              <span style={{ fontWeight: "bold", color: "#fff", whiteSpace: "nowrap" }}>
                 {Math.floor(stats.timeSurvived / 60)}분{" "}
                 {stats.timeSurvived % 60}초
               </span>
@@ -276,7 +308,7 @@ const MatchCard = ({
           <table
             style={{
               width: "100%",
-              fontSize: "13px",
+              fontSize: isMobile ? "11px" : "13px",
               color: "#ccc",
               borderCollapse: "collapse",
               textAlign: "center",
@@ -347,6 +379,14 @@ export default function StatSearch() {
   const [favorites, setFavorites] = useState<string[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
   const [activeTab, setActiveTab] = useState<"recent" | "favorites">("recent");
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   useEffect(() => {
     const savedRecent = localStorage.getItem(STORAGE_KEY_RECENT);
@@ -968,6 +1008,7 @@ export default function StatSearch() {
                     matchId={matchId}
                     nickname={result.nickname}
                     platform={result.platform}
+                    isMobile={isMobile}
                   />
                 ))}
               </div>

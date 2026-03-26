@@ -36,7 +36,7 @@ export async function GET(request: Request) {
   try {
     const res = await fetch(
       `https://api.pubg.com/shards/${platform}/matches/${matchId}`,
-      { headers, cache: "no-store" }
+      { headers, next: { revalidate: 60 } }
     );
     if (!res.ok) throw new Error("매치 정보를 불러올 수 없습니다.");
     const data = await res.json();

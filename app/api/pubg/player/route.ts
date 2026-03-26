@@ -23,7 +23,7 @@ export async function GET(request: Request) {
   try {
     const playerRes = await fetch(
       `https://api.pubg.com/shards/${platform}/players?filter[playerNames]=${nickname}`,
-      { headers, cache: "no-store" }
+      { headers, next: { revalidate: 60 } }
     );
     if (!playerRes.ok)
       throw new Error(
@@ -40,7 +40,7 @@ export async function GET(request: Request) {
 
     const seasonRes = await fetch(
       `https://api.pubg.com/shards/${platform}/seasons`,
-      { headers, cache: "no-store" }
+      { headers, next: { revalidate: 60 } }
     );
     const seasonData = await seasonRes.json();
     const pcSeasons = seasonData.data
@@ -55,11 +55,11 @@ export async function GET(request: Request) {
     const [rankedRes, normalRes] = await Promise.all([
       fetch(
         `https://api.pubg.com/shards/${platform}/players/${accountId}/seasons/${targetSeasonId}/ranked`,
-        { headers, cache: "no-store" }
+        { headers, next: { revalidate: 60 } }
       ),
       fetch(
         `https://api.pubg.com/shards/${platform}/players/${accountId}/seasons/${targetSeasonId}`,
-        { headers, cache: "no-store" }
+        { headers, next: { revalidate: 60 } }
       ),
     ]);
 

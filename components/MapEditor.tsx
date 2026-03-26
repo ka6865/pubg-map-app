@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"; // Next.js 라우터
 import {
   MapContainer,
   ImageOverlay,
+  TileLayer,
   Marker,
   useMapEvents,
 } from "react-leaflet"; // Leaflet 지도 렌더링 컴포넌트 모음
@@ -397,9 +398,23 @@ const MapEditorComponent = () => {
           minZoom={-4}
           maxZoom={5}
           crs={CRS.Simple}
+          maxBounds={bounds}
+          maxBoundsViscosity={1.0}
           style={{ height: "100%", width: "100%", background: "transparent" }}
         >
-          <ImageOverlay key={activeMapId} url={mapImageUrl} bounds={bounds} />
+          {activeMapId === "Erangel" ? (
+            <TileLayer
+              url={`/tiles/Erangel/{z}/{x}/{y}.jpg`}
+              minZoom={-4}
+              maxZoom={5}
+              maxNativeZoom={0}
+              zoomOffset={5}
+              bounds={bounds}
+              noWrap={true}
+            />
+          ) : (
+            <ImageOverlay key={activeMapId} url={mapImageUrl} bounds={bounds} />
+          )}
           <MapEvents onClick={handleMapClick} />
           {visibleVehicles.map((vehicle) => (
             <Marker
