@@ -1,19 +1,20 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react"; // React 상태 및 생명주기 관리 훅
-import { useRouter } from "next/navigation"; // Next.js 라우터
+import { useState, useEffect, useMemo } from "react";
+import { useRouter, useSearchParams } from "next/navigation"; // 🌟 useSearchParams 추가
 import {
   MapContainer,
   ImageOverlay,
   TileLayer,
   Marker,
   useMapEvents,
-} from "react-leaflet"; // Leaflet 지도 렌더링 컴포넌트 모음
-import L, { CRS } from "leaflet"; // Leaflet 코어 객체 및 좌표계
-import "leaflet/dist/leaflet.css"; // Leaflet 기본 스타일시트
-import { supabase } from "../lib/supabase"; // DB 통신용 Supabase 클라이언트
-import { CATEGORY_INFO, MAP_CATEGORIES } from "../lib/map_config"; // 마커 카테고리 매핑 설정 로드
-import { LOCAL_MARKERS } from "../lib/local_data"; // 로컬 테스트용 고정 데이터 로드
+  useMap, // 🌟 지도 화면 이동을 위한 훅 추가
+} from "react-leaflet";
+import L, { CRS } from "leaflet";
+import "leaflet/dist/leaflet.css";
+import { supabase } from "../lib/supabase";
+import { CATEGORY_INFO, MAP_CATEGORIES } from "../lib/map_config";
+import { LOCAL_MARKERS } from "../lib/local_data";
 
 // SVG 경로와 색상을 조합해 커스텀 지도 마커 아이콘 객체 생성
 const createPinIcon = (colorCode: string, pathData: string) => {
@@ -32,11 +33,10 @@ const createPinIcon = (colorCode: string, pathData: string) => {
       </div>
     `,
     iconSize: [28, 38],
-    iconAnchor: [14, 38], // 마커 하단 중앙을 좌표 기준점으로 고정
+    iconAnchor: [14, 38],
   });
 };
 
-// 앱에서 지원하는 지도 목록 및 이미지 경로 정의
 const MAP_LIST = [
   { id: "Erangel", label: "에란겔", imageUrl: "/Erangel.jpg" },
   { id: "Miramar", label: "미라마", imageUrl: "/Miramar.jpg" },
@@ -46,7 +46,6 @@ const MAP_LIST = [
   { id: "Deston", label: "데스턴", imageUrl: "/Deston.jpg" },
 ];
 
-// 지도 클릭 이벤트를 감지하여 상위 컴포넌트로 전달하는 브릿지 컴포넌트
 const MapEvents = ({
   onClick,
 }: {
@@ -56,18 +55,32 @@ const MapEvents = ({
   return null;
 };
 
-// 관리자용 마커 편집기 메인 컴포넌트
+// 🌟 [추가] 초기 로딩 시 URL 좌표로 화면을 이동시켜주는 내부 컴포넌트
+const MapController = ({
+  center,
+  zoom,
+}: {
+  center: [number, number];
+  zoom: number;
+}) => {
+  const map = useMap();
+  useEffect(() => {
+    map.setView(center, zoom, { animate: true });
+  }, [center, zoom, map]);
+  return null;
+};
+
 const MapEditorComponent = () => {
   const router = useRouter();
+  const searchParams = useSearchParams(); // 🌟 URL 파라미터 읽기
 
-  const [isAuthorized, setIsAuthorized] = useState(false); // 관리자 권한 보유 여부 상태
-  const [activeMapId, setActiveMapId] = useState("Erangel"); // 현재 편집 중인 맵 ID
-  const [isSaving, setIsSaving] = useState(false); // 서버 동기화(저장) 진행 중 여부 상태
+  const [isAuthorized, setIsAuthorized] = useState(false);
+  const [activeMapId, setActiveMapId] = useState("Erangel");
+  const [isSaving, setIsSaving] = useState(false);
 
   const currentMap = MAP_LIST.find((m) => m.id === activeMapId);
   const mapImageUrl = currentMap?.imageUrl || "/Erangel.jpg";
 
-  // 실제 이미지 픽셀 크기와 Leaflet 좌표계 범위 동기화
   const imageWidth = 8192;
   const imageHeight = 8192;
   const bounds: [[number, number], [number, number]] = [
@@ -75,7 +88,18 @@ const MapEditorComponent = () => {
     [imageHeight, imageWidth],
   ];
 
-  // 렌더링 최적화를 위한 마커 아이콘 객체 사전 생성 및 메모이제이션
+  // 🌟 URL 쿼리에 넘어온 디스코드 제보 좌표 파싱
+  const latParam = searchParams?.get("lat");
+  const lngParam = searchParams?.get("lng");
+
+  const initialCenter: [number, number] =
+    latParam && lngParam
+      ? [Number(latParam), Number(lngParam)]
+      : [imageHeight / 2, imageWidth / 2];
+
+  // 좌표가 넘어왔다면 줌인(0) 상태로, 아니라면 전체 맵(-3) 상태로 띄움
+  const initialZoom = latParam && lngParam ? 0 : -3;
+
   const icons = useMemo(() => {
     const res: Record<string, L.DivIcon> = {};
     Object.keys(CATEGORY_INFO).forEach((key) => {
@@ -87,21 +111,19 @@ const MapEditorComponent = () => {
     return res;
   }, []);
 
-  const [activeType, setActiveType] = useState<string>("Esports"); // 현재 선택된 생성용 마커 카테고리 타입
+  const [activeType, setActiveType] = useState<string>("Esports");
   const [filters, setFilters] = useState<Record<string, boolean>>(() => {
-    // 에디터 내 마커 필터 상태 (보임/숨김)
     const init: Record<string, boolean> = {};
     Object.keys(CATEGORY_INFO).forEach((k) => (init[k] = true));
     return init;
   });
 
-  const [isLoaded, setIsLoaded] = useState(false); // 데이터 로드 완료 여부 상태
-  const [vehicles, setVehicles] = useState<any[]>([]); // 편집 중인 마커 데이터 목록 상태
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [vehicles, setVehicles] = useState<any[]>([]);
 
   const allowedCategories =
     MAP_CATEGORIES[activeMapId] || MAP_CATEGORIES["Erangel"];
 
-  // 맵 변경 시 미지원 마커 타입이 선택되어 있다면 지원 타입으로 초기화
   useEffect(() => {
     if (
       !allowedCategories.includes(activeType) &&
@@ -111,7 +133,6 @@ const MapEditorComponent = () => {
     }
   }, [activeMapId, activeType, allowedCategories]);
 
-  // 접속자 권한 검증 및 전체 마커 데이터 취합 로드
   useEffect(() => {
     const checkAdmin = async () => {
       const {
@@ -128,6 +149,7 @@ const MapEditorComponent = () => {
         .select("role")
         .eq("id", session.user.id)
         .single();
+
       if (profile?.role !== "admin") {
         alert("관리자 권한이 없습니다.");
         router.push("/");
@@ -136,33 +158,42 @@ const MapEditorComponent = () => {
 
       setIsAuthorized(true);
 
-      const { data } = await supabase.from("map_markers").select("*");
-      let combined = data ? data.map((v) => ({ ...v, mapId: v.map_id })) : [];
+      // 현재 활성화된 맵의 마커만 DB에서 가져옵니다.
+      const { data: dbMarkers, error: fetchError } = await supabase
+        .from("map_markers")
+        .select("*")
+        .eq("map_id", activeMapId); // 현재 맵 ID로 필터링
 
-      LOCAL_MARKERS.forEach((lm) => {
-        if (!combined.find((v) => v.id === lm.id)) {
-          combined.push(lm);
-        }
-      });
-
-      if (combined.length === 0) {
-        const savedData = localStorage.getItem("pubg-vehicles");
-        if (savedData) combined = JSON.parse(savedData);
+      if (fetchError) {
+        console.error("Error fetching map markers:", fetchError);
+        alert("마커 데이터를 불러오는 데 실패했습니다.");
+        return;
       }
 
-      setVehicles(combined);
-      setIsLoaded(true);
+      let currentMapMarkers = dbMarkers
+        ? dbMarkers.map((v) => ({ ...v, mapId: v.map_id }))
+        : [];
+
+      // LOCAL_MARKERS도 현재 맵에 해당하는 것만 추가
+      LOCAL_MARKERS.forEach((lm) => {
+        if (
+          lm.mapId === activeMapId &&
+          !currentMapMarkers.find((v) => v.id === lm.id)
+        ) {
+          currentMapMarkers.push(lm);
+        }
+      });
+      setVehicles(currentMapMarkers); // 현재 맵 마커만 설정
+      setIsLoaded(true); // 데이터 로드 완료
     };
     checkAdmin();
-  }, [router]);
+  }, [router, activeMapId]); // activeMapId가 변경될 때마다 다시 로드
 
-  // 마커 데이터 변경 시 브라우저 로컬스토리지에 임시 백업
   useEffect(() => {
     if (isLoaded)
       localStorage.setItem("pubg-vehicles", JSON.stringify(vehicles));
   }, [vehicles, isLoaded]);
 
-  // 활성화된 맵과 필터 조건에 부합하는 마커만 화면 렌더링용으로 추출
   const visibleVehicles = useMemo(() => {
     return vehicles.filter(
       (v) =>
@@ -171,11 +202,9 @@ const MapEditorComponent = () => {
     );
   }, [vehicles, activeMapId, filters]);
 
-  // 특정 ID 마커 개별 삭제
   const removeVehicle = (id: number) =>
     setVehicles((prev) => prev.filter((v) => v.id !== id));
 
-  // 현재 화면 맵에 존재하는 모든 마커 일괄 삭제
   const clearAllVehicles = () => {
     const currentMapCount = vehicles.filter(
       (v) => v.mapId === activeMapId || (!v.mapId && activeMapId === "Erangel")
@@ -197,29 +226,26 @@ const MapEditorComponent = () => {
     }
   };
 
-  // 마커 드래그 앤 드롭 완료 시 신규 좌표값 반영
   const updateVehiclePos = (id: number, newY: number, newX: number) => {
     setVehicles((prev) =>
       prev.map((v) => (v.id === id ? { ...v, y: newY, x: newX } : v))
     );
   };
 
-  // 상단 카테고리 필터 온오프 상태 반전
   const toggleFilter = (type: string) =>
     setFilters((prev) => ({ ...prev, [type]: !prev[type] }));
-  // 현재 맵 내 특정 카테고리 마커 개수 산출
+
   const getCount = (type: string) =>
     vehicles.filter(
       (v) =>
         (v.mapId === activeMapId || (!v.mapId && activeMapId === "Erangel")) &&
         v.type === type
     ).length;
-  // 현재 맵 전체 마커 개수 산출
+
   const totalCount = vehicles.filter(
     (v) => v.mapId === activeMapId || (!v.mapId && activeMapId === "Erangel")
   ).length;
 
-  // 에디터 화면의 마커 변동 내역을 DB 서버에 반영
   const handleSaveToDB = async () => {
     if (
       !confirm(
@@ -241,7 +267,6 @@ const MapEditorComponent = () => {
       );
       const currentIds = currentMapVehicles.map((v) => v.id);
 
-      // DB에는 존재하나 화면에서는 삭제된 마커 추적 및 DB 데이터 삭제
       const idsToDelete = dbIds.filter((id) => !currentIds.includes(id));
       if (idsToDelete.length > 0) {
         const { error: deleteError } = await supabase
@@ -260,7 +285,6 @@ const MapEditorComponent = () => {
         y: Math.round(v.y),
       }));
 
-      // 대량 데이터 저장 오류 방지를 위한 500건 단위 분할 저장
       if (insertData.length > 0) {
         const chunkSize = 500;
         for (let i = 0; i < insertData.length; i += chunkSize) {
@@ -282,7 +306,6 @@ const MapEditorComponent = () => {
     }
   };
 
-  // 맵 빈 공간 클릭 시 지정된 타입의 신규 마커 객체 생성
   const handleMapClick = (e: L.LeafletMouseEvent) => {
     const newVehicle = {
       id: Date.now(),
@@ -328,7 +351,6 @@ const MapEditorComponent = () => {
         <button
           onClick={() => router.push("/")}
           className="flex items-center gap-1 text-black hover:text-white px-3 py-1 transition-colors rounded hover:bg-black/20 font-bold text-xs"
-          title="메인으로 나가기"
         >
           나가기
         </button>
@@ -386,15 +408,14 @@ const MapEditorComponent = () => {
                 ? "bg-gray-600 text-gray-400"
                 : "bg-[#34A853] text-white hover:bg-[#2a9040]"
             }`}
-            title="서버 DB에 즉시 반영"
           >
             {isSaving ? "저장 중..." : "서버에 저장"}
           </button>
         </div>
 
         <MapContainer
-          center={[imageHeight / 2, imageWidth / 2]}
-          zoom={-3}
+          center={initialCenter}
+          zoom={initialZoom}
           minZoom={-4}
           maxZoom={5}
           crs={CRS.Simple}
@@ -402,19 +423,19 @@ const MapEditorComponent = () => {
           maxBoundsViscosity={1.0}
           style={{ height: "100%", width: "100%", background: "transparent" }}
         >
-          {activeMapId === "Erangel" ? (
-            <TileLayer
-              url={`/tiles/Erangel/{z}/{x}/{y}.jpg`}
-              minZoom={-4}
-              maxZoom={5}
-              maxNativeZoom={0}
-              zoomOffset={5}
-              bounds={bounds}
-              noWrap={true}
-            />
-          ) : (
-            <ImageOverlay key={activeMapId} url={mapImageUrl} bounds={bounds} />
-          )}
+          {/* 🌟 URL 변경 시 화면을 이동시켜주는 컴포넌트 삽입 */}
+          <MapController center={initialCenter} zoom={initialZoom} />
+
+          <TileLayer
+             key={activeMapId}
+             url={`/tiles/${activeMapId}/{z}/{x}/{y}.jpg`}
+             minZoom={-4}
+             maxZoom={5}
+             maxNativeZoom={0}
+             zoomOffset={5}
+             bounds={bounds}
+             noWrap={true}
+          />
           <MapEvents onClick={handleMapClick} />
           {visibleVehicles.map((vehicle) => (
             <Marker

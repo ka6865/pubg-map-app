@@ -71,6 +71,7 @@ export default function Map() {
     optimisticNickname,
     notifications,
     dbVehicles,
+    pendingVehicles, // 🌟 제보 데이터 로드
     isAuthLoading,
     setOptimisticNickname,
     setNotifications,
@@ -94,7 +95,7 @@ export default function Map() {
   }, []);
 
   const [filters, setFilters] = useState<MapFilters>(() => {
-    const init: Record<string, boolean> = {};
+    const init: Record<string, boolean> = { pending: false }; //
     Object.keys(CATEGORY_INFO).forEach((k) => (init[k] = false));
     return init;
   });
@@ -286,6 +287,8 @@ export default function Map() {
             onToggleFilter={toggleFilter}
             onGetCount={getCount}
             onEnableDefaultVehicleFilters={enableDefaultVehicleFilters}
+            currentUser={currentUser}
+            pendingVehicles={pendingVehicles} // 🌟 자식에게 제보 데이터 넘김
           />
         )}
       </main>

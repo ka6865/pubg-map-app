@@ -16,6 +16,25 @@ export interface UserProfile {
   role?: string;
 }
 
+export interface AuthUser {
+  id: string;
+  email?: string;
+}
+
+export interface PendingVehicle {
+  id: string | number;
+  x: number;
+  y: number;
+  map_name: string;
+  marker_type: string;
+  weight?: number;
+  contributor_ids?: string[];
+  down_weight?: number;
+  downvoter_ids?: string[];
+  is_down_notified?: boolean;
+  [key: string]: unknown;
+}
+
 export interface NotificationItem {
   id: string | number;
   user_id: string;

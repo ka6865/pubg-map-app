@@ -1,9 +1,18 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@config "../tailwind.config.ts";
 
 .leaflet-div-icon {
   background: transparent;
   border: none;
 }
 
+/* 제보 팝업창 기본 스타일 초기화 */
+.custom-report-popup .leaflet-popup-content-wrapper,
+.custom-report-popup .leaflet-popup-tip {
+  background: transparent !important;
+  box-shadow: none !important;
+  padding: 0 !important;
+}
+.custom-report-popup .leaflet-popup-content {
+  margin: 0 !important;
+}

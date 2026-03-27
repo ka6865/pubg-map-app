@@ -3,6 +3,7 @@
 import { useMemo } from "react"; // 컴포넌트 렌더링 최적화 훅
 import { useRouter } from "next/navigation"; // Next.js 페이지 라우터 모듈
 import DOMPurify from "isomorphic-dompurify"; // XSS 해킹 방지용 HTML 소독 라이브러리 로드
+import Image from "next/image"; // Next.js 이미지 최적화
 import CommentSection from "./CommentSection"; // 게시물 하단 대댓글 시스템 컴포넌트 로드
 import { Post, Comment } from "../types/board"; // 게시판 및 댓글 데이터 타입 명세서 로드
 
@@ -90,10 +91,13 @@ export default function BoardDetail({
       <div className="border-y border-[#333] py-[30px] min-h-[200px] text-[#e5e5e5]">
         {selectedPost.image_url &&
           !(selectedPost.content || "").includes(selectedPost.image_url) && (
-            <img
+            <Image
               src={selectedPost.image_url}
               alt="Thumbnail"
-              className="max-w-full h-auto mb-[20px] block rounded-[8px]"
+              width={800}
+              height={450}
+              priority
+              className="w-full h-auto mb-[20px] block rounded-[8px]"
             />
           )}
 
