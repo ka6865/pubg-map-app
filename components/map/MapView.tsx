@@ -10,6 +10,7 @@ import {
   Tooltip,
   CircleMarker, // 🌟 [추가]
   useMapEvents,
+  useMap,
 } from "react-leaflet";
 import L, { CRS } from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -144,6 +145,18 @@ const MapInteraction = ({
   return null;
 };
 
+const MapResizer = () => {
+  const map = useMap();
+  React.useEffect(() => {
+    const resizeObserver = new ResizeObserver(() => {
+      map.invalidateSize();
+    });
+    resizeObserver.observe(map.getContainer());
+    return () => resizeObserver.disconnect();
+  }, [map]);
+  return null;
+};
+
 interface MapViewProps {
   activeMapId: string;
   currentMap: MapTab | undefined;
@@ -264,6 +277,7 @@ const MapView = memo(
             noWrap={true}
           />
         )}
+        <MapResizer />
         {isGridOn && <PUBGGrid />}
         <MapInteraction
           activeMode={activeMode}

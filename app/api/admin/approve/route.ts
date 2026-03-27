@@ -23,7 +23,7 @@ export async function POST(request: Request) {
     if (authError || !user) return NextResponse.json({ error: "로그인이 만료되었거나 유효하지 않습니다." }, { status: 401 });
 
     // 4. DB에서 진짜 Admin 뱃지가 있는지 검증 (가장 중요!)
-    const { data: profile } = await supabaseAdmin.from("profiles").select("role").eq("id", user.id).single();
+    const { data: profile } = await supabaseAdmin.from("profiles").select("nickname, role").eq("id", user.id).single();
     if (profile?.role !== "admin") return NextResponse.json({ error: "관리자 권한이 없습니다." }, { status: 403 });
 
     // --- 이후 승인 로직 (기존과 동일) ---
@@ -61,6 +61,28 @@ export async function POST(request: Request) {
 
     if (insertError) throw insertError;
     await supabaseAdmin.from("pending_markers").delete().eq("id", id);
+
+    // 🌟 디스코드 알림 전송 (승인 완료)
+    const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
+    if (webhookUrl) {
+      const embed = {
+        title: "✅ [관제탑 처리 완료] 제보 승인 및 DB 등록",
+        description: `관리자 **${profile?.nickname || "알 수 없음"}**님이 제보를 확인하여 정식 지도 마커로 등록했습니다.`,
+        color: 0x10b981, // 초록색
+        fields: [
+          { name: "🗺️ 맵", value: pending.map_name, inline: true },
+          { name: "🚙 종류", value: pending.marker_type, inline: true },
+          { name: "📍 좌표", value: `${pending.x.toFixed(1)}, ${pending.y.toFixed(1)}`, inline: true },
+        ],
+        timestamp: new Date().toISOString(),
+      };
+      
+      await fetch(webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ embeds: [embed] }),
+      }).catch(err => console.error("Discord send error:", err));
+    }
 
     return NextResponse.json({ success: true, newId });
   } catch (error: any) {
