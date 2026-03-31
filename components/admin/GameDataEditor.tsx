@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 import { toast } from "sonner";
-import { ItemCategory, GameItem } from "@/types/game-data";
+import { ItemCategory, GameItem, Vehicle, Weapon } from "@/types/game-data";
 
 export default function GameDataEditor() {
   const router = useRouter();
@@ -49,7 +49,7 @@ export default function GameDataEditor() {
     if (error) {
       console.error("Fetch error:", error);
     } else {
-      setItems(data || []);
+      setItems((data as GameItem[]) || []);
       setSelectedItem(null);
     }
   }, [activeCategory]);
@@ -126,7 +126,7 @@ export default function GameDataEditor() {
         name: "새 항목", 
         patch_notes: "", 
         trunk_capacity: 200 
-      } as GameItem);
+      } as Vehicle);
     } else {
       setSelectedItem({ 
         id: newId, 
@@ -142,7 +142,6 @@ export default function GameDataEditor() {
 
   return (
     <div className="flex flex-col h-screen text-gray-200">
-      {/* 상단 네비게이션 */}
       <header className="flex items-center justify-between h-[60px] px-6 bg-[#1a1a1a] border-b border-[#333]">
         <div className="flex items-center gap-6">
           <div className="text-xl font-black text-[#F2A900] italic">배그<span className="text-white"> 데이터 관리자</span></div>
@@ -173,7 +172,6 @@ export default function GameDataEditor() {
       </header>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* 사이드바: 아이템 목록 */}
         <aside className="w-[300px] bg-[#141414] border-r border-[#333] flex flex-col">
           <div className="p-4 border-b border-[#222]">
             <input
@@ -206,7 +204,6 @@ export default function GameDataEditor() {
           </div>
         </aside>
 
-        {/* 메인: 편집 폼 */}
         <main className="flex-1 bg-[#0d0d0d] p-8 overflow-y-auto">
           {selectedItem ? (
             <div className="max-w-[700px] mx-auto">
@@ -248,8 +245,8 @@ export default function GameDataEditor() {
                     <input
                       type="number"
                       required
-                      value={selectedItem.trunk_capacity}
-                      onChange={(e) => setSelectedItem({...selectedItem, trunk_capacity: Number(e.target.value)})}
+                      value={(selectedItem as Vehicle).trunk_capacity || 0}
+                      onChange={(e) => setSelectedItem({...selectedItem, trunk_capacity: Number(e.target.value)} as Vehicle)}
                       className="w-full bg-[#1a1a1a] border border-[#333] rounded px-4 py-2.5 text-sm focus:outline-none focus:border-[#F2A900]"
                     />
                   </div>
@@ -261,20 +258,20 @@ export default function GameDataEditor() {
                         type="number"
                         step="0.1"
                         required
-                        value={selectedItem.weight}
+                        value={selectedItem.weight || 0}
                         onChange={(e) => setSelectedItem({...selectedItem, weight: Number(e.target.value)})}
                         className="w-full bg-[#1a1a1a] border border-[#333] rounded px-4 py-2.5 text-sm focus:outline-none focus:border-[#F2A900]"
                       />
                     </div>
-                    <div className="col-span-1">
-                      <label className="block text-xs font-bold text-gray-500 mb-2 flex items-center gap-2">
+                    <div className="col-span-1 pt-6">
+                      <label className="flex items-center gap-2 cursor-pointer">
                         <input
                           type="checkbox"
-                          checked={selectedItem.can_be_in_backpack}
+                          checked={selectedItem.can_be_in_backpack || false}
                           onChange={(e) => setSelectedItem({...selectedItem, can_be_in_backpack: e.target.checked})}
-                          className="w-4 h-4 rounded border-[#333] bg-[#1a1a1a] checked:bg-[#F2A900]"
+                          className="w-4 h-4 rounded border-[#333] bg-[#1a1a1a] text-[#F2A900] focus:ring-[#F2A900]"
                         />
-                        배낭 수납 가능
+                        <span className="text-xs font-bold text-gray-500">배낭 수납 가능</span>
                       </label>
                     </div>
                   </>
@@ -286,8 +283,8 @@ export default function GameDataEditor() {
                       <label className="block text-xs font-bold text-gray-500 mb-2">공격력 (Damage)</label>
                       <input
                         type="number"
-                        value={selectedItem.damage || 0}
-                        onChange={(e) => setSelectedItem({...selectedItem, damage: Number(e.target.value)})}
+                        value={(selectedItem as Weapon).damage || 0}
+                        onChange={(e) => setSelectedItem({...selectedItem, damage: Number(e.target.value)} as Weapon)}
                         className="w-full bg-[#1a1a1a] border border-[#333] rounded px-4 py-2.5 text-sm focus:outline-none focus:border-[#F2A900]"
                       />
                     </div>
@@ -295,8 +292,8 @@ export default function GameDataEditor() {
                       <label className="block text-xs font-bold text-gray-500 mb-2">탄약 종류</label>
                       <input
                         type="text"
-                        value={selectedItem.ammo || ""}
-                        onChange={(e) => setSelectedItem({...selectedItem, ammo: e.target.value})}
+                        value={(selectedItem as Weapon).ammo || ""}
+                        onChange={(e) => setSelectedItem({...selectedItem, ammo: e.target.value} as Weapon)}
                         className="w-full bg-[#1a1a1a] border border-[#333] rounded px-4 py-2.5 text-sm focus:outline-none focus:border-[#F2A900]"
                       />
                     </div>
@@ -304,7 +301,7 @@ export default function GameDataEditor() {
                 )}
 
                 <div className="col-span-2">
-                  <label className="block text-xs font-bold text-gray-500 mb-2">패치 노트 / 설명</label>
+                  <label className="block text-xs font-bold text-gray-500 mb-2">패치 노 트 / 설명</label>
                   <textarea
                     rows={4}
                     value={selectedItem.patch_notes || ""}
