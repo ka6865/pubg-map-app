@@ -3,18 +3,20 @@
 import { useState, useEffect, useCallback } from "react"; // React 상태 및 생명주기 관리 훅
 import { useRouter, useSearchParams } from "next/navigation"; // Next.js 라우터 및 쿼리 파라미터 로드 모듈
 import { supabase } from "../lib/supabase"; // DB 통신용 Supabase 클라이언트
-import {
-  validatePost,
-  extractImageUrl,
-  sanitizeTitle,
-} from "../lib/board-utils"; // 게시글 유효성 및 텍스트 데이터 가공 유틸리티 함수 로드
+import { validatePost, extractImageUrl, sanitizeTitle } from "../lib/board-utils"; // 게시글 유효성 및 텍스트 데이터 가공 유틸리티 함수 로드
 import { Post, Comment } from "../types/board"; // 게시판 관련 타입 명세 인터페이스 로드
+import type { CurrentUser } from "../types/map";
+import { toast } from "sonner";
 
-const BOARD_CATEGORIES = ["자유", "듀오/스쿼드 모집", "클럽홍보", "제보/문의"];
-const POSTS_PER_PAGE = 10;
+// 게시판 설정 상수
+const BOARD_CONFIG = {
+  POSTS_PER_PAGE: 10,
+  MIN_LIKES_FOR_RECOMMENDED: 5,
+  MOBILE_BREAKPOINT: 768,
+} as const;
 
 interface BoardProps {
-  currentUser: any;
+  currentUser: CurrentUser | null;
   displayName: string;
   isAdmin: boolean;
 }
@@ -85,8 +87,8 @@ export default function Board({
   // 사용자 지정 필터 및 검색 조건 매핑 기반 게시물 목록 DB Fetch 동작
   const fetchPosts = async () => {
     setIsLoading(true);
-    const from = (page - 1) * POSTS_PER_PAGE;
-    const to = from + POSTS_PER_PAGE - 1;
+    const from = (page - 1) * BOARD_CONFIG.POSTS_PER_PAGE;
+    const to = from + BOARD_CONFIG.POSTS_PER_PAGE - 1;
 
     let query = supabase
       .from("posts")
@@ -97,7 +99,7 @@ export default function Board({
 
     if (boardFilter !== "전체" && boardFilter !== "추천")
       query = query.eq("category", boardFilter);
-    if (boardFilter === "추천") query = query.gte("likes", 5);
+    if (boardFilter === "추천") query = query.gte("likes", BOARD_CONFIG.MIN_LIKES_FOR_RECOMMENDED);
 
     if (searchQuery) {
       if (searchOption === "title")
@@ -129,6 +131,7 @@ export default function Board({
 
   useEffect(() => {
     fetchPosts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, boardFilter, searchQuery, displayName]);
 
   // URL 내 postId 파라미터 유무 식별을 통한 상세 뷰 진입 여부 판별 트리거
@@ -140,6 +143,7 @@ export default function Board({
       setComments([]);
       setReplyingTo(null);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [postIdParam]);
 
   // 단일 게시글 객체 및 귀속된 댓글 리스트 병렬 DB 로드
@@ -165,7 +169,7 @@ export default function Board({
 
       const viewedKey = `viewed_post_${postResult.data.id}`;
       if (!sessionStorage.getItem(viewedKey)) {
-        incrementViews(postResult.data.id, postResult.data.views);
+        incrementViews(postResult.data.id);
         sessionStorage.setItem(viewedKey, "true");
       }
     }
@@ -186,7 +190,7 @@ export default function Board({
   };
 
   // 특정 게시물 DB의 조회수 컬럼 카운트 1 상향 업데이트
-  const incrementViews = async (postId: number, currentViews: number) => {
+  const incrementViews = async (postId: number) => {
     await supabase.rpc("increment_views", { row_id: postId });
   };
 
@@ -194,7 +198,11 @@ export default function Board({
   const handleSavePost = async (): Promise<boolean> => {
     const validationError = validatePost(newTitle, newContent, currentUser);
     if (validationError) {
-      alert(validationError);
+      toast.error(validationError);
+      return false;
+    }
+    if (!currentUser?.id) {
+      toast.error("로그인이 필요합니다.");
       return false;
     }
 
@@ -248,9 +256,10 @@ export default function Board({
         fetchPosts();
         fetchSinglePost(String(editingPostId));
         setIsLoading(false);
+        toast.success("게시글이 성공적으로 수정되었습니다.");
         return true;
       } else {
-        alert("수정 실패: " + error.message);
+        toast.error("수정 실패: " + error.message);
         setIsLoading(false);
         return false;
       }
@@ -274,9 +283,10 @@ export default function Board({
         setPage(1);
         fetchPosts();
         setIsLoading(false);
+        toast.success("새 게시글이 등록되었습니다.");
         return true;
       } else {
-        alert("저장 실패: " + error.message);
+        toast.error("저장 실패: " + error.message);
         setIsLoading(false);
         return false;
       }
@@ -287,7 +297,7 @@ export default function Board({
   const handleSaveComment = async () => {
     if (!currentUser || !selectedPost) return;
     if (!newComment.trim()) {
-      alert("댓글 내용을 입력해주세요.");
+      toast.warning("댓글 내용을 입력해주세요.");
       return;
     }
 
@@ -335,14 +345,14 @@ export default function Board({
 
   // 개별 계정 종속형 게시글 추천 데이터 삽입 검증 및 좋아요 카운트 갱신
   const handleLikePost = async (postId: number, currentLikes: number) => {
-    if (!currentUser) return alert("로그인 필요!");
+    if (!currentUser) return toast.error("로그인 후 이용 가능합니다.");
     const { data } = await supabase
       .from("post_likes")
       .select("*")
       .eq("post_id", postId)
       .eq("user_id", currentUser.id)
       .single();
-    if (data) return alert("이미 추천하셨습니다!");
+    if (data) return toast.info("이미 추천하신 게시글입니다.");
 
     await supabase
       .from("post_likes")
@@ -352,7 +362,7 @@ export default function Board({
     if (selectedPost?.id === postId)
       setSelectedPost({ ...selectedPost, likes: currentLikes + 1 });
     fetchPosts();
-    alert("추천 완료!");
+    toast.success("게시글을 추천했습니다!");
   };
 
   // 개별 댓글 및 답글 삭제
@@ -365,8 +375,9 @@ export default function Board({
     if (!error && selectedPost) {
       fetchComments(selectedPost.id);
       fetchPosts();
+      toast.success("댓글이 삭제되었습니다.");
     } else if (error) {
-      alert("댓글 삭제 실패: " + error.message);
+      toast.error("댓글 삭제 실패: " + error.message);
     }
   };
 
@@ -374,11 +385,11 @@ export default function Board({
   const handleDeletePost = async (postId: number) => {
     // 관리자가 아니면서 댓글이 존재하는 경우 삭제 차단
     if (comments.length > 0 && !isAdmin) {
-      alert("댓글이 작성된 게시글은 삭제할 수 없습니다.");
+      toast.warning("댓글이 작성된 게시글은 삭제할 수 없습니다.");
       return;
     }
 
-    if (!confirm("삭제하시겠습니까?")) return;
+    if (!confirm("정말 이 게시물을 삭제하시겠습니까?")) return;
 
     try {
       const { data: postData, error: fetchError } = await supabase
@@ -409,11 +420,11 @@ export default function Board({
       }
 
       await supabase.from("posts").delete().eq("id", postId);
-      alert("삭제되었습니다.");
+      toast.success("게시글이 성공적으로 삭제되었습니다.");
       router.push("/?tab=Board");
       fetchPosts();
     } catch (error: any) {
-      alert("삭제 실패: " + error.message);
+      toast.error("삭제 실패: " + error.message);
     }
   };
 
@@ -476,7 +487,6 @@ export default function Board({
         selectedPost={selectedPost}
         comments={comments}
         currentUser={currentUser}
-        displayName={displayName}
         isAdmin={isAdmin}
         isMobile={isMobile}
         boardFilter={boardFilter}

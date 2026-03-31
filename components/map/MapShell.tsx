@@ -15,7 +15,6 @@ interface MapShellProps {
   isMobile: boolean;
   isSidebarOpen: boolean;
   filters: Record<string, boolean>;
-  onCloseSidebar: () => void;
   onSetSidebarOpen: (isOpen: boolean) => void;
   onToggleFilter: (id: string) => void;
   onGetCount: (id: string) => number;
@@ -70,7 +69,6 @@ const MapShell = memo(
     isMobile,
     isSidebarOpen,
     filters,
-    onCloseSidebar,
     onSetSidebarOpen,
     onToggleFilter,
     onGetCount,

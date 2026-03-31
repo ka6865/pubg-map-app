@@ -282,7 +282,6 @@ export default function Map() {
             icons={icons}
             imageHeight={8192}
             imageWidth={8192}
-            onCloseSidebar={() => setSidebarOpen(false)}
             onSetSidebarOpen={setSidebarOpen}
             onToggleFilter={toggleFilter}
             onGetCount={getCount}

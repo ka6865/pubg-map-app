@@ -1,13 +1,12 @@
 "use client";
 
 import { useMemo } from "react"; // 변수 캐싱 및 성능 최적화 훅 로드
-import { Post, Comment } from "../types/board"; // 댓글 관련 데이터 구조 타입 매핑 로드
+import { Comment } from "../types/board"; // 댓글 관련 데이터 구조 타입 매핑 로드
+import type { CurrentUser } from "../types/map";
 
 interface CommentSectionProps {
   comments: Comment[];
-  selectedPost: Post;
-  currentUser: any;
-  displayName: string;
+  currentUser: CurrentUser | null;
   newComment: string;
   setNewComment: (comment: string) => void;
   replyingTo: Comment | null;
@@ -22,9 +21,7 @@ interface CommentSectionProps {
 // 게시물 상세 화면 내 하위 댓글 및 대댓글 UI 출력 컴포넌트
 export default function CommentSection({
   comments,
-  selectedPost,
   currentUser,
-  displayName,
   newComment,
   setNewComment,
   replyingTo,

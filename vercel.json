@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/patch-notes?secret=[010121]",
+      "schedule": "0 * * * 3"
+    }
+  ]
+}

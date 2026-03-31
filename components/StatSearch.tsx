@@ -6,6 +6,34 @@ import { useState, useEffect } from "react";
 const STORAGE_KEY_RECENT = "pubg_recent_searches_v2";
 const STORAGE_KEY_FAVORITES = "pubg_favorites_v2";
 
+interface MatchStats {
+  winPlace: number;
+  kills: number;
+  assists: number;
+  damageDealt: number;
+  timeSurvived: number;
+}
+
+interface MatchTeamMember {
+  name: string;
+  kills: number;
+  assists: number;
+  damageDealt: number;
+  DBNOs: number;
+  revives: number;
+  deaths?: number;
+}
+
+interface MatchData {
+  stats: MatchStats;
+  mapName: string;
+  createdAt: string;
+  gameMode: string;
+  team: MatchTeamMember[];
+  totalTeamKills: number;
+  totalTeamDamage: number;
+}
+
 const MatchCard = ({
   matchId,
   nickname,
@@ -17,8 +45,9 @@ const MatchCard = ({
   platform: string;
   isMobile: boolean;
 }) => {
-  const [matchData, setMatchData] = useState<any>(null);
+  const [matchData, setMatchData] = useState<MatchData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
 
   useEffect(() => {
@@ -27,7 +56,19 @@ const MatchCard = ({
     )
       .then((res) => res.json())
       .then((data) => {
-        if (!data.error) setMatchData(data);
+        if (data?.error) {
+          setFetchError(data.error as string);
+          setMatchData(null);
+        } else {
+          setMatchData(data as MatchData);
+        }
+      })
+      .catch((err: unknown) => {
+        console.error("매치 데이터 로드 실패:", err);
+        setFetchError("매치 정보를 불러오는 중 오류가 발생했습니다.");
+        setMatchData(null);
+      })
+      .finally(() => {
         setLoading(false);
       });
   }, [matchId, nickname, platform]);
@@ -50,8 +91,32 @@ const MatchCard = ({
       </div>
     );
 
-  //  에러가 나서 matchData가 비어있을 때 터지지 않게 막는 안전장치
-  if (!matchData) return null;
+  // 에러가 나서 matchData가 비어있을 때 터지지 않게 막는 안전장치
+  if (!matchData) {
+    if (fetchError) {
+      return (
+        <div
+          style={{
+            height: "100px",
+            backgroundColor: "#1a1a1a",
+            border: "1px solid #333",
+            borderRadius: "8px",
+            marginBottom: "10px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "#f87171",
+            fontSize: "12px",
+            padding: "0 8px",
+            textAlign: "center",
+          }}
+        >
+          {fetchError}
+        </div>
+      );
+    }
+    return null;
+  }
 
   const {
     stats,
@@ -230,7 +295,7 @@ const MatchCard = ({
               overflow: "hidden",
             }}
           >
-            {team.map((member: any) => (
+            {team.map((member) => (
               <div
                 key={member.name}
                 style={{
@@ -325,8 +390,9 @@ const MatchCard = ({
             </thead>
             <tbody>
               {team
-                .sort((a: any, b: any) => b.kills - a.kills)
-                .map((member: any) => (
+                .slice()
+                .sort((a, b) => b.kills - a.kills)
+                .map((member: MatchTeamMember) => (
                   <tr
                     key={member.name}
                     style={{

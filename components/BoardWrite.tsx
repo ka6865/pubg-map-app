@@ -1,17 +1,19 @@
 "use client";
 
-import { useMemo, useRef, useState, useEffect } from "react"; // React 상태 관리 및 참조 훅
+import { useMemo, useRef, useState, useEffect, useCallback } from "react"; // React 상태 관리 및 참조 훅
 import dynamic from "next/dynamic"; // Next.js 동적 임포트 모듈
 import { supabase } from "../lib/supabase"; // DB 및 스토리지 연동용 Supabase 클라이언트
 import "react-quill-new/dist/quill.snow.css"; // Quill 에디터 코어 스타일시트
 import imageCompression from "browser-image-compression"; // 이미지 압축 라이브러리
+import { toast } from "sonner";
 
-// React-Quill 라이브러리 브라우저 window 객체 필수 의존으로 인한 SSR 렌더링 무효화 래퍼
-const ReactQuill = dynamic(() => import("react-quill-new"), {
-  ssr: false,
-}) as any;
-
+// 글쓰기 설정 상수
 const BOARD_CATEGORIES = ["자유", "듀오/스쿼드 모집", "클럽홍보", "제보/문의"];
+const IMAGE_CONFIG = {
+  MAX_FILE_SIZE_MB: 20, // 에디터 허용 최대 파일 크기
+  COMPRESSION_MAX_SIZE_MB: 1, // 압축 후 목표 파일 크기
+  COMPRESSION_MAX_WIDTH_OR_HEIGHT: 1920, // 압축 후 최대 해상도
+} as const;
 
 // 🌟 [최적화] 타이핑 시마다 스타일이 재계산되지 않도록 컴포넌트 외부로 분리
 const QuillGlobalStyles = (
@@ -86,14 +88,14 @@ export default function BoardWrite({
   // 선택한 로컬 이미지를 Supabase 스토리지에 전달 및 public 접속 URL 반환
   const uploadImage = async (file: File) => {
     try {
-      // 1. 이미지 압축 옵션 설정 (최대 1MB, 가로세로 최대 1920px)
+      // 1. 이미지 압축 옵션 설정
       const options = {
-        maxSizeMB: 1,
-        maxWidthOrHeight: 1920,
+        maxSizeMB: IMAGE_CONFIG.COMPRESSION_MAX_SIZE_MB,
+        maxWidthOrHeight: IMAGE_CONFIG.COMPRESSION_MAX_WIDTH_OR_HEIGHT,
         useWebWorker: true,
       };
 
-      // 2. 압축 실행! (10MB 사진이 순식간에 200~500KB로 쪼그라듭니다)
+      // 2. 압축 실행!
       const compressedFile = await imageCompression(file, options);
 
       const fileExt = compressedFile.name.split(".").pop() || "jpeg";
@@ -113,12 +115,12 @@ export default function BoardWrite({
       return data.publicUrl;
     } catch (error: any) {
       console.error("게시글 업로드/압축 에러:", error);
-      alert("일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
+      toast.error("이미지 업로드 중 오류가 발생했습니다. 다시 시도해주세요.");
     }
   };
 
   // 에디터 상단 이미지 첨부 아이콘 클릭 트리거 오버라이딩 커스텀 핸들러
-  const imageHandler = () => {
+  const imageHandler = useCallback(() => {
     const existingInputs = document.querySelectorAll(".quill-image-input");
     existingInputs.forEach((el) => el.remove());
 
@@ -141,10 +143,10 @@ export default function BoardWrite({
       }
 
       const file = input.files[0];
-      const maxSize = 20 * 1024 * 1024;
+      const maxSize = IMAGE_CONFIG.MAX_FILE_SIZE_MB * 1024 * 1024;
 
       if (file.size > maxSize) {
-        alert("이미지 파일 크기는 20MB를 초과할 수 없습니다.");
+        toast.warning(`이미지 파일 크기는 ${IMAGE_CONFIG.MAX_FILE_SIZE_MB}MB를 초과할 수 없습니다.`);
         if (document.body.contains(input)) document.body.removeChild(input);
         return;
       }
@@ -162,11 +164,11 @@ export default function BoardWrite({
           editor.insertEmbed(range.index, "image", url);
           editor.setSelection(range.index + 1);
         } else {
-          alert("이미지 업로드에 실패했습니다. 네트워크 상태를 확인해 주세요.");
+          toast.error("이미지 업로드에 실패했습니다. 네트워크 상태를 확인해 주세요.");
         }
       } catch (e) {
         console.error("에디터 이미지 삽입 에러:", e);
-        alert("이미지 처리 중 예기치 못한 오류가 발생했습니다.");
+        toast.error("이미지 처리 중 예기치 못한 오류가 발생했습니다.");
       } finally {
         editor.enable(true);
         setIsUploadingImage(false);
@@ -176,7 +178,7 @@ export default function BoardWrite({
         }
       }
     };
-  };
+  }, []);
 
   // 작성 창 수동 취소 시 현재까지 업로드된 임시 이미지 URL 완전 폐기
   const handleCancel = async () => {
@@ -187,7 +189,7 @@ export default function BoardWrite({
           .remove(uploadedImagesRef.current);
         if (error) {
           console.error("스토리지 삭제 실패:", error);
-          alert("임시 이미지 삭제 중 오류가 발생했습니다.");
+          toast.error("임시 이미지 삭제 중 오류가 발생했습니다.");
         }
       }
     } catch (err) {
@@ -230,7 +232,7 @@ export default function BoardWrite({
         handlers: { image: imageHandler },
       },
     }),
-    []
+    [imageHandler]
   );
 
   return (

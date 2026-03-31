@@ -1,14 +1,15 @@
 import React, { memo } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import NotificationDropdown from "./NotificationDropdown";
-import type { MapTab, NotificationItem } from "../../types/map";
+import type { MapTab, NotificationItem, CurrentUser } from "../../types/map";
 
 interface MapHeaderProps {
   activeMapId: string;
   isMobile: boolean;
   isAuthLoading: boolean;
   isAdmin: boolean;
-  currentUser: any;
+  currentUser: CurrentUser | null;
   notifications: NotificationItem[];
   showNotiDropdown: boolean;
   displayName: string;
@@ -44,6 +45,10 @@ const MapHeader = memo(({
   onMyPageClick,
   formatNotiTime,
 }: MapHeaderProps) => {
+  const pathname = usePathname();
+  const isWeaponsActive = pathname === "/weapons";
+  const isBackpackActive = pathname === "/backpack";
+
   return (
     <header
       style={{
@@ -170,6 +175,42 @@ const MapHeader = memo(({
           >
             전적검색
           </button>
+          <Link href="/weapons" style={{ textDecoration: "none" }}>
+            <button
+              style={{
+                height: "30px",
+                padding: "0 8px",
+                borderRadius: "4px",
+                fontWeight: "bold",
+                fontSize: "12px",
+                border: "none",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+                backgroundColor: isWeaponsActive ? "#1a1a1a" : "transparent",
+                color: isWeaponsActive ? "#F2A900" : "black",
+              }}
+            >
+              무기 도감
+            </button>
+          </Link>
+          <Link href="/backpack" style={{ textDecoration: "none" }}>
+            <button
+              style={{
+                height: "30px",
+                padding: "0 8px",
+                borderRadius: "4px",
+                fontWeight: "bold",
+                fontSize: "12px",
+                border: "none",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+                backgroundColor: isBackpackActive ? "#1a1a1a" : "transparent",
+                color: isBackpackActive ? "#F2A900" : "black",
+              }}
+            >
+              가방 시뮬
+            </button>
+          </Link>
         </nav>
       </div>
 
@@ -190,23 +231,40 @@ const MapHeader = memo(({
         ) : currentUser ? (
           <>
             {isAdmin && (
-              <Link href="/map-editor" style={{ textDecoration: "none" }}>
-                <button
-                  style={{
-                    marginRight: "10px",
-                    padding: "6px 12px",
-                    backgroundColor: "#1a1a1a",
-                    color: "#F2A900",
-                    border: "1px solid #333",
-                    borderRadius: "4px",
-                    fontWeight: "bold",
-                    fontSize: "11px",
-                    cursor: "pointer",
-                  }}
-                >
-                  관리자페이지
-                </button>
-              </Link>
+              <div className="flex gap-2 mr-[10px]">
+                <Link href="/map-editor" style={{ textDecoration: "none" }}>
+                  <button
+                    style={{
+                      padding: "6px 12px",
+                      backgroundColor: "#1a1a1a",
+                      color: "#F2A900",
+                      border: "1px solid #333",
+                      borderRadius: "4px",
+                      fontWeight: "bold",
+                      fontSize: "11px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    맵 에디터
+                  </button>
+                </Link>
+                <Link href="/admin/game-data" style={{ textDecoration: "none" }}>
+                  <button
+                    style={{
+                      padding: "6px 12px",
+                      backgroundColor: "#34A853",
+                      color: "white",
+                      border: "1px solid #2d8a46",
+                      borderRadius: "4px",
+                      fontWeight: "bold",
+                      fontSize: "11px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    데이터 관리
+                  </button>
+                </Link>
+              </div>
             )}
 
             <div style={{ position: "relative" }}>

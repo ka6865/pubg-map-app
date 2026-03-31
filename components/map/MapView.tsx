@@ -1,7 +1,6 @@
 import React, { memo } from "react";
 import {
   MapContainer,
-  ImageOverlay,
   TileLayer,
   Marker,
   Popup,
@@ -17,6 +16,7 @@ import "leaflet/dist/leaflet.css";
 import type { MapTab, MapMarker, AuthUser, PendingVehicle } from "../../types/map";
 import ReportForm from "./ReportForm";
 import { supabase } from "../../lib/supabase";
+import { toast } from "sonner";
 
 const mortarStartIcon = L.divIcon({
   className: "custom-mortar",
@@ -218,12 +218,12 @@ const MapView = memo(
       markerId: string | number,
       voteType: "up" | "down"
     ) => {
-      if (!currentUser) return alert("로그인 후 참여 가능합니다.");
+      if (!currentUser) return toast.error("로그인 후 참여 가능합니다.");
 
       const {
         data: { session },
       } = await supabase.auth.getSession();
-      if (!session) return alert("인증 정보가 만료되었습니다. 다시 로그인 해 주세요.");
+      if (!session) return toast.warning("인증 정보가 만료되었습니다. 다시 로그인 해 주세요.");
 
       try {
         const res = await fetch("/api/report/vote", {
@@ -238,7 +238,9 @@ const MapView = memo(
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "처리 오류");
 
-        alert(`[${voteType === "up" ? "진실" : "거짓"}] 평가 완료! 3초 후 자동 적용됩니다.`);
+        toast.success(`[${voteType === "up" ? "진실" : "거짓"}] 평가 완료!`, {
+          description: "2초 후 지도에 반영됩니다.",
+        });
         setTimeout(() => window.location.reload(), 2000);
 
         if (data.triggerNotify) {
@@ -249,7 +251,7 @@ const MapView = memo(
           }).catch(console.error);
         }
       } catch (e: any) {
-        alert(e.message);
+        toast.error(e.message || "평가 중 오류가 발생했습니다.");
       }
     };
 

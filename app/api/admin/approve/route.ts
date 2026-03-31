@@ -84,6 +84,36 @@ export async function POST(request: Request) {
       }).catch(err => console.error("Discord send error:", err));
     }
 
+    // 🌟 [추가] 커뮤니티 전용 감사 로그 (유저 대상)
+    const communityWebhookUrl = process.env.DISCORD_COMMUNITY_WEBHOOK_URL;
+    if (communityWebhookUrl && pending.contributor_ids && pending.contributor_ids.length > 0) {
+      const { data: contributors } = await supabaseAdmin
+        .from("profiles")
+        .select("nickname")
+        .in("id", pending.contributor_ids);
+
+      if (contributors && contributors.length > 0) {
+        const nicknames = contributors.map(c => `**${c.nickname}**`).join(", ");
+        const communityEmbed = {
+          title: "🙌 지도가 더 정확해졌습니다! (제보 승인)",
+          description: `${nicknames} 님의 제보가 관리자의 검토를 거쳐 공식 지도에 등록되었습니다.\n기여해주셔서 감사합니다!`,
+          color: 0xffd700, // 골드색
+          fields: [
+            { name: "🗺️ 맵", value: pending.map_name, inline: true },
+            { name: "🚙 종류", value: pending.marker_type, inline: true },
+          ],
+          timestamp: new Date().toISOString(),
+          footer: { text: "PUBG 통합 지도 커뮤니티" }
+        };
+
+        await fetch(communityWebhookUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ embeds: [communityEmbed] }),
+        }).catch(err => console.error("Community Discord send error:", err));
+      }
+    }
+
     return NextResponse.json({ success: true, newId });
   } catch (error: any) {
     console.error("승인 API 에러:", error);

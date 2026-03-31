@@ -43,15 +43,9 @@ const ReportForm = ({
     setIsSubmitting(true);
 
     try {
-      console.log("🚀 1. 제보 프로세스 시작", {
-        activeMapId,
-        selectedType,
-        location,
-      });
       const clickX = location.lng;
       const clickY = location.lat;
 
-      console.log("🔍 2. 기존 대기 중인 제보 데이터 조회 요청");
       const { data: existingReports, error: fetchError } = await supabase
         .from("pending_markers")
         .select("*")
@@ -65,10 +59,6 @@ const ReportForm = ({
         );
       }
 
-      console.log(
-        "✅ 3. 조회 완료! 기존 데이터 수:",
-        existingReports?.length || 0
-      );
 
       const nearbyReport = existingReports?.find((report) => {
         const distance = calculateDistanceInMeters(
@@ -81,12 +71,11 @@ const ReportForm = ({
       });
 
       if (nearbyReport) {
-        console.log("🛠️ 4-A. 반경 20m 이내 데이터 발견! 신규 제보 차단 안내", nearbyReport);
         alert("근처 반경 20m 내에 똑같은 차량의 제보가 이미 진행 중입니다!\n지도 위에 표시된 동그란 '제보 진행 중' 마커를 클릭하신 뒤, [👍 여기에 있어요] 버튼을 눌러 교차 검증에 참여해 주세요!");
         setIsSubmitting(false);
         return;
       } else {
-        console.log("🆕 4-B. 주변 데이터 없음! 신규 제보(Insert) 진행");
+        // 🆕 주변 데이터 없음! 신규 제보(Insert) 진행
 
         // 🌟 단일 객체 삽입 방식으로 변경하고 .select()를 붙입니다.
         const { error: insertError } = await supabase
@@ -113,7 +102,6 @@ const ReportForm = ({
         alert("🎉 새로운 제보가 접수되었습니다!");
       }
 
-      console.log("🏁 5. 프로세스 완료 및 폼 닫기");
       onClose();
     } catch (error: any) {
       // 🌟 아무리 치명적인 에러가 나도 이 안에서 잡아서 무한 로딩을 풀어줍니다.

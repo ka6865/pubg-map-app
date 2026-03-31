@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
-import { LOCAL_MARKERS } from "../lib/local_data";
 import type { MapMarker, NotificationItem, UserProfile, AuthUser, PendingVehicle } from "../types/map";
 
 export function useMapData(activeMapId: string) {
@@ -59,16 +58,19 @@ export function useMapData(activeMapId: string) {
       }
       setIsAuthLoading(false);
 
-      supabase.auth.onAuthStateChange(async (_event, session) => {
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
         if (session?.user) {
           setCurrentUser(session.user);
           await fetchUserProfile(session.user);
+          fetchNotifications(session.user.id);
         } else {
           setCurrentUser(null);
           setUserProfile(null);
           setOptimisticNickname(null);
         }
       });
+
+      return () => subscription.unsubscribe();
     };
     initAuth();
   }, []);
@@ -91,11 +93,6 @@ export function useMapData(activeMapId: string) {
         ? mapData.map((m: Record<string, any>) => ({ ...m, mapId: m.map_id || activeMapId }) as MapMarker)
         : [];
 
-      LOCAL_MARKERS.forEach((lm: MapMarker) => {
-        if (lm.mapId === activeMapId && !combined.find((v) => v.id === lm.id)) {
-          combined.push(lm as MapMarker);
-        }
-      });
       setDbVehicles(combined);
 
       // 2. 🌟 대기 중인 제보(pending_markers) 불러오기

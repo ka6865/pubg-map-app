@@ -4,7 +4,6 @@ import { useState, useEffect, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation"; // 🌟 useSearchParams 추가
 import {
   MapContainer,
-  ImageOverlay,
   TileLayer,
   Marker,
   useMapEvents,
@@ -14,7 +13,6 @@ import L, { CRS } from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { supabase } from "../lib/supabase";
 import { CATEGORY_INFO, MAP_CATEGORIES } from "../lib/map_config";
-import { LOCAL_MARKERS } from "../lib/local_data";
 
 // SVG 경로와 색상을 조합해 커스텀 지도 마커 아이콘 객체 생성
 const createPinIcon = (colorCode: string, pathData: string) => {
@@ -79,7 +77,6 @@ const MapEditorComponent = () => {
   const [isSaving, setIsSaving] = useState(false);
 
   const currentMap = MAP_LIST.find((m) => m.id === activeMapId);
-  const mapImageUrl = currentMap?.imageUrl || "/Erangel.jpg";
 
   const imageWidth = 8192;
   const imageHeight = 8192;
@@ -170,19 +167,10 @@ const MapEditorComponent = () => {
         return;
       }
 
-      let currentMapMarkers = dbMarkers
+      const currentMapMarkers = dbMarkers
         ? dbMarkers.map((v) => ({ ...v, mapId: v.map_id }))
         : [];
 
-      // LOCAL_MARKERS도 현재 맵에 해당하는 것만 추가
-      LOCAL_MARKERS.forEach((lm) => {
-        if (
-          lm.mapId === activeMapId &&
-          !currentMapMarkers.find((v) => v.id === lm.id)
-        ) {
-          currentMapMarkers.push(lm);
-        }
-      });
       setVehicles(currentMapMarkers); // 현재 맵 마커만 설정
       setIsLoaded(true); // 데이터 로드 완료
     };

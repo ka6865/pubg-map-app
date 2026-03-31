@@ -2,9 +2,17 @@
 
 import { useState, useEffect } from "react"; // React 상태 제어 훅 로드
 import { supabase } from "../lib/supabase"; // DB 및 인증 서버 통신용 Supabase 클라이언트 로드
+import type { CurrentUser } from "../types/map";
+import { toast } from "sonner";
+
+// 유저 설정 상수
+const USER_CONFIG = {
+  MIN_NICKNAME_LENGTH: 2,
+  MAX_NICKNAME_LENGTH: 15,
+} as const;
 
 interface MyPageProps {
-  currentUser: any;
+  currentUser: CurrentUser | null;
   userProfile: any;
   setIsMyPage: (v: boolean) => void;
   fetchUserProfile: (user: any) => void;
@@ -35,12 +43,12 @@ export default function MyPage({
     const newNickname = editNickname.trim();
 
     if (newNickname === userProfile?.nickname) {
-      alert("변경된 내용이 없습니다.");
+      toast.info("변경된 내용이 없습니다.");
       return;
     }
 
-    if (newNickname.length < 2 || newNickname.length > 15) {
-      alert("닉네임은 2글자 이상 15글자 이하로 입력해주세요.");
+    if (newNickname.length < USER_CONFIG.MIN_NICKNAME_LENGTH || newNickname.length > USER_CONFIG.MAX_NICKNAME_LENGTH) {
+      toast.warning(`닉네임은 ${USER_CONFIG.MIN_NICKNAME_LENGTH}글자 이상 ${USER_CONFIG.MAX_NICKNAME_LENGTH}글자 이하로 입력해주세요.`);
       return;
     }
 
@@ -53,7 +61,7 @@ export default function MyPage({
     });
 
     if (!error) {
-      alert("프로필이 업데이트되었습니다.");
+      toast.success("프로필이 업데이트되었습니다.");
       setEditNickname(newNickname);
       fetchUserProfile(currentUser);
 
@@ -73,9 +81,9 @@ export default function MyPage({
       setIsMyPage(false);
     } else {
       if (error.code === "23505") {
-        alert("이미 사용중인 닉네임입니다.");
+        toast.error("이미 사용 중인 닉네임입니다.");
       } else {
-        alert("프로필 수정 실패: " + error.message);
+        toast.error("프로필 수정 실패: " + error.message);
       }
     }
   };
@@ -128,11 +136,11 @@ export default function MyPage({
 
       await supabase.auth.signOut();
 
-      alert("회원탈퇴가 완료되었습니다. 이용해 주셔서 감사합니다.");
+      toast.success("회원 탈퇴가 완료되었습니다. 그동안 이용해 주셔서 감사합니다.");
       setIsMyPage(false);
       window.location.reload();
     } catch (error: any) {
-      alert("탈퇴 처리 중 오류가 발생했습니다: " + error.message);
+      toast.error("탈퇴 처리 중 오류가 발생했습니다: " + error.message);
     }
   };
 

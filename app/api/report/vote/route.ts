@@ -48,8 +48,8 @@ export async function POST(request: Request) {
     let newUpWeight = pending.weight || 1;
     let newDownWeight = pending.down_weight || 0;
     
-    let updatedUpIds = [...upIds];
-    let updatedDownIds = [...downIds];
+    const updatedUpIds = [...upIds];
+    const updatedDownIds = [...downIds];
 
     if (voteType === "up") {
       newUpWeight += 1;

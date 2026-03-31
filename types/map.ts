@@ -21,6 +21,13 @@ export interface AuthUser {
   email?: string;
 }
 
+// 앱 전반에서 사용하는 공통 유저 타입 (Supabase User와 호환)
+export interface CurrentUser {
+  id: string;
+  email?: string;
+  nickname?: string;
+}
+
 export interface PendingVehicle {
   id: string | number;
   x: number;

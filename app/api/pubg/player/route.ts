@@ -63,7 +63,7 @@ export async function GET(request: Request) {
       ),
     ]);
 
-    let rankedStats = { solo: null, duo: null, squad: null };
+    const rankedStats = { solo: null, duo: null, squad: null };
     if (rankedRes.ok) {
       const rankedData = await rankedRes.json();
       const allStats = rankedData.data.attributes.rankedGameModeStats;
@@ -72,7 +72,7 @@ export async function GET(request: Request) {
       rankedStats.squad = allStats["squad"] || null;
     }
 
-    let normalStats = { solo: null, duo: null, squad: null };
+    const normalStats = { solo: null, duo: null, squad: null };
     if (normalRes.ok) {
       const normalData = await normalRes.json();
       const allStats = normalData.data.attributes.gameModeStats;
