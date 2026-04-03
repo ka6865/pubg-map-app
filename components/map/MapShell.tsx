@@ -1,8 +1,15 @@
 import React, { memo, useState, useEffect } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import L from "leaflet";
 import Sidebar from "../Sidebar";
+import MobileBottomSheet from "./MobileBottomSheet";
 import MapView from "./MapView";
 import type { MapTab, MapMarker, AuthUser, PendingVehicle } from "../../types/map";
+import { useTelemetry } from "../../hooks/useTelemetry";
+import TelemetryPlayer from "./TelemetryPlayer";
+import KillFeed from "./KillFeed";
+import ZoneTimer from "./ZoneTimer";
+import HomeNotice from "./HomeNotice";
 
 interface MapShellProps {
   activeMapId: string;
@@ -74,8 +81,32 @@ const MapShell = memo(
     onGetCount,
     onEnableDefaultVehicleFilters,
     currentUser,
-    pendingVehicles, // 🌟 받기
+    pendingVehicles,
   }: MapShellProps) => {
+    const router = useRouter();
+    const searchParams = useSearchParams();
+
+    // 🌟 텔레메트리 관련 쿼리 파라미터 확인 및 상태 가져오기
+    const playbackId = searchParams?.get("playback") || null;
+    const playbackNickname = searchParams?.get("nickname") || null;
+    
+    const {
+      events: telemetryEvents,
+      teammates: telemetryTeammates,
+      loading: telemetryLoading,
+      error: telemetryError,
+      isPlaying,
+      setIsPlaying,
+      playbackSpeed,
+      setPlaybackSpeed,
+      currentTimeMs,
+      setCurrentTimeMs,
+      maxTimeMs,
+      currentStates,
+      teamNames,
+      zoneEvents,
+    } = useTelemetry(playbackId, playbackNickname, activeMapId);
+
     const [activeMode, setActiveMode] = useState<
       "none" | "mortar" | "flight" | "report"
     >("none");
@@ -85,6 +116,12 @@ const MapShell = memo(
     const [isVehicleFilterOn, setIsVehicleFilterOn] = useState(false);
     const [isGridOn, setIsGridOn] = useState(true);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
+    const [showZone, setShowZone] = useState(true);
+    const [showCombatDots, setShowCombatDots] = useState(false);  // 교전 흐적 점 (default OFF)
+    const [showShotDots, setShowShotDots] = useState(true);      // 아군 발사 위치 점 (default ON)
+    const [hiddenPlayers, setHiddenPlayers] = useState<string[]>([]); // 숨겨진 플레이어 목록
+    const [showPlayerNames, setShowPlayerNames] = useState(true); // 플레이어 이름 표시 여부
+    const [showPlayerPaths, setShowPlayerPaths] = useState(true); // 플레이어 이동 경로 표시 여부
 
     useEffect(() => {
       // 컴포넌트 마운트/업데이트 초기화 관련 로직 (의도적으로 상위에서 제어)
@@ -93,8 +130,8 @@ const MapShell = memo(
       setIsMenuOpen(false);
     }, [activeMapId]);
 
-    const mapScale = 8000 / imageWidth;
-    const pxPerMeter = imageWidth / 8000;
+    const mapScale = 8192 / imageWidth;
+    const pxPerMeter = imageWidth / 8192;
 
     const handleModeToggle = (mode: "mortar" | "flight" | "report") => {
       setActiveMode(activeMode === mode ? "none" : mode);
@@ -148,17 +185,30 @@ const MapShell = memo(
 
     return (
       <div className="flex w-full h-full overflow-hidden">
-        <Sidebar
-          isOpen={isSidebarOpen}
-          setIsOpen={onSetSidebarOpen}
-          mapLabel={currentMap?.label || "지도"}
-          activeMapId={activeMapId}
-          filters={filters}
-          toggleFilter={onToggleFilter}
-          getCount={onGetCount}
-        />
+        {!isMobile ? (
+          <Sidebar
+            isOpen={isSidebarOpen}
+            setIsOpen={onSetSidebarOpen}
+            mapLabel={currentMap?.label || "지도"}
+            activeMapId={activeMapId}
+            filters={filters}
+            toggleFilter={onToggleFilter}
+            getCount={onGetCount}
+          />
+        ) : (
+          <MobileBottomSheet
+            isOpen={isSidebarOpen}
+            setIsOpen={onSetSidebarOpen}
+            mapLabel={currentMap?.label || "지도"}
+            activeMapId={activeMapId}
+            filters={filters}
+            toggleFilter={onToggleFilter}
+            getCount={onGetCount}
+          />
+        )}
 
         <div className="relative flex-1 h-full">
+          <HomeNotice />
           <div className={`absolute z-[1000] flex flex-col gap-[10px] items-end ${isMobile ? 'bottom-[80px] right-[10px]' : 'top-[15px] right-[15px]'}`}>
             <button
               onClick={() => setIsMenuOpen(!isMenuOpen)}
@@ -245,9 +295,84 @@ const MapShell = memo(
             setReportLocation={setReportLocation}
             reportLocation={reportLocation}
             currentUser={currentUser}
-            pendingVehicles={pendingVehicles} // 🌟 넘겨주기
+            pendingVehicles={playbackId ? [] : pendingVehicles} // 🌟 넘겨주기
             filters={filters} // 🌟 사이드바 토글 상태 체크용
+            telemetryData={{
+              isActive: !!playbackId,
+              mapName: activeMapId || "Erangel",
+              events: telemetryEvents,
+              currentTimeMs,
+              currentStates,
+              teamNames,
+              zoneEvents,
+              showZone,
+              showCombatDots,
+              showShotDots,
+              hiddenPlayers,
+              showPlayerNames,
+              showPlayerPaths,
+              teammates: telemetryTeammates
+            }}
           />
+
+          {/* 🌟 텔레메트리 재생 컨트롤러 렌더링 */}
+          {playbackId && (
+            <TelemetryPlayer
+              events={telemetryEvents}
+              teamNames={teamNames}
+              isPlaying={isPlaying}
+              setIsPlaying={setIsPlaying}
+              playbackSpeed={playbackSpeed}
+              setPlaybackSpeed={setPlaybackSpeed}
+              currentTimeMs={currentTimeMs}
+              setCurrentTimeMs={setCurrentTimeMs}
+              maxTimeMs={maxTimeMs}
+              loading={telemetryLoading}
+              error={telemetryError}
+              showZone={showZone}
+              onToggleZone={() => setShowZone((p) => !p)}
+              showCombatDots={showCombatDots}
+              onToggleCombatDots={() => setShowCombatDots((p) => !p)}
+              showShotDots={showShotDots}
+              onToggleShotDots={() => setShowShotDots((p) => !p)}
+              hiddenPlayers={hiddenPlayers}
+              onTogglePlayer={(name) => {
+                setHiddenPlayers(prev => 
+                  prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]
+                );
+              }}
+              showPlayerNames={showPlayerNames}
+              onTogglePlayerNames={() => setShowPlayerNames(p => !p)}
+              showPlayerPaths={showPlayerPaths}
+              onTogglePlayerPaths={() => setShowPlayerPaths(p => !p)}
+              onClose={() => {
+                const newParams = new URLSearchParams(searchParams?.toString() || "");
+                newParams.delete("playback");
+                newParams.delete("nickname");
+                router.push(`/?${newParams.toString()}`);
+              }}
+            />
+          )}
+
+          {/* 🔫 실시간 킬로그 피드 (우측 상단 오버레이) */}
+          {playbackId && telemetryEvents.length > 0 && (
+            <KillFeed
+              events={telemetryEvents}
+              currentTimeMs={currentTimeMs}
+              teamNames={teamNames}
+              playbackSpeed={playbackSpeed}
+            />
+          )}
+
+          {/* 🔵 자기장 타이머 (상단 중앙) */}
+          {playbackId && zoneEvents.length > 0 && (
+            <ZoneTimer
+              zoneEvents={zoneEvents}
+              currentTimeMs={currentTimeMs}
+              showZone={showZone}
+            />
+          )}
+
         </div>
       </div>
     );
