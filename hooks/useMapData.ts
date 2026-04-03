@@ -2,6 +2,13 @@ import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
 import type { MapMarker, NotificationItem, UserProfile, AuthUser, PendingVehicle } from "../types/map";
 
+/**
+ * 현재 활성화된 맵(activeMapId)에 따라 사용자 인증 상태, 프로필 정보, 그리고
+ * 해당 맵에 배치된 마커(DB 데이터 및 대기 중인 사용자 제보 데이터)를 가져오고 관리하는 커스텀 훅입니다.
+ *
+ * @param activeMapId - 데이터를 불러올 대상이 되는 현재 지도 ID
+ * @returns 사용자 정보, 맵 마커 상태, 로딩 상태 및 상태 업데이트 함수들
+ */
 export function useMapData(activeMapId: string) {
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);

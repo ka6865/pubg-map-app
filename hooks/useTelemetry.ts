@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef } from "react";
 
+/**
+ * 텔레메트리 데이터(교전, 이동, 자기장 등)에서 발생하는 이벤트의 단일 레코드를 정의하는 인터페이스입니다.
+ */
 export interface TelemetryEvent {
   type: "position" | "enemy_position" | "ride" | "leave" | "kill" | "groggy" | "took_damage" | "shot" | "revive" | "create";
   time: string;
@@ -22,6 +25,9 @@ export interface TelemetryEvent {
   relativeTimeMs: number;  // 전처리 시 추가됨
 }
 
+/**
+ * 타임라인 재생 시 특정 시점에서의 개별 플레이어 상태(위치, 생존 여부, 탑승 여부 등)를 나타내는 인터페이스입니다.
+ */
 export interface PlayerState {
   name: string;
   x: number;
@@ -37,6 +43,15 @@ export interface PlayerState {
   deathY?: number; // 🌟 사망 지점 Y
 }
 
+/**
+ * 특정 매치의 텔레메트리 데이터를 서버로부터 불러오고, 재생(Playback) 타임라인에 맞춰
+ * 플레이어들의 상태 및 각종 교전/이벤트 정보를 증분(Incremental) 업데이트하여 제공하는 커스텀 훅입니다.
+ *
+ * @param matchId - 조회할 PUBG 매치의 고유 ID
+ * @param nickname - 기준이 되는 플레이어(보통 본인)의 닉네임
+ * @param mapName - 매치가 진행된 맵 이름 (좌표 스케일링용)
+ * @returns 텔레메트리 렌더링에 필요한 이벤트 배열, 현재 플레이어 상태 합본, 재생 제어 상태 등
+ */
 export function useTelemetry(matchId: string | null, nickname: string | null, mapName: string) {
   const [events, setEvents] = useState<TelemetryEvent[]>([]);
   const [teammates, setTeammates] = useState<string[]>([]);

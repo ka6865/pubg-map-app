@@ -1,4 +1,7 @@
-// Supabase 클라이언트 생성 모듈 로드
+/**
+ * @fileoverview Supabase 클라이언트 인스턴스를 생성하고 내보내는 유틸리티 파일입니다.
+ * 브라우저 환경에서 Next.js와 Supabase를 연동하여 인증 및 DB 작업에 사용됩니다.
+ */
 import { createBrowserClient } from '@supabase/ssr';
 
 // 프로젝트 환경 변수 내 Supabase 접속 URL 및 권한 키 할당
