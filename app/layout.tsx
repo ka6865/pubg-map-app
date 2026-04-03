@@ -3,6 +3,7 @@ import "./globals.css"; // 전역 스타일시트
 import { AuthProvider } from "@/components/AuthProvider";
 import { Toaster } from "sonner";
 import BottomNav from "@/components/common/BottomNav";
+import { Suspense } from "react";
 
 // 브라우저 탭 제목, 설명, 파비콘 메타데이터 정의
 export const metadata: Metadata = {
@@ -52,7 +53,9 @@ export default function RootLayout({
             <main className="flex-grow pb-14 md:pb-0">
               {children}
             </main>
-            <BottomNav />
+            <Suspense fallback={<div className="h-14 bg-[#121212]"></div>}>
+              <BottomNav />
+            </Suspense>
           </div>
           <Toaster theme="dark" position="top-center" richColors />
         </AuthProvider>
