@@ -9,21 +9,24 @@ const COLORS = ["#F2A900", "#34A853", "#3b82f6", "#ef4444"];
  * 교전 렌더러 컴포넌트: 실제 교전 위치 타격 이펙트 및 공격자/피해자 교전 흔적(점)을 그립니다.
  */
 export const CombatRenderer = ({ telemetryData }: { telemetryData: any }) => {
-  if (telemetryData?.isActive === false || !telemetryData.events) return null;
-
-  const teamNames: string[] = telemetryData.teamNames ?? [];
+  const events = telemetryData?.events;
+  const currentTimeMs = telemetryData?.currentTimeMs;
+  const showCombatDots = telemetryData?.showCombatDots;
+  const teamNames = useMemo(() => telemetryData?.teamNames ?? [], [telemetryData?.teamNames]);
+  const isActive = telemetryData?.isActive !== false && !!events;
 
   // 교전 타격 이펙트 렌더링 노드 생성
   const strikeNodes = useMemo(() => {
-    const combatEvs = telemetryData.events.filter((ev: any) => {
+    if (!isActive) return null;
+    const combatEvs = events.filter((ev: any) => {
       if (ev.type !== "kill" && ev.type !== "groggy") return false;
       if (ev.x == null || ev.y == null) return false;
-      const diff = telemetryData.currentTimeMs - ev.relativeTimeMs;
+      const diff = currentTimeMs - ev.relativeTimeMs;
       return diff >= 0 && diff <= COMBAT_WINDOW_MS;
     });
 
     return combatEvs.map((ev: any, i: number) => {
-      const age = telemetryData.currentTimeMs - ev.relativeTimeMs;
+      const age = currentTimeMs - ev.relativeTimeMs;
       const lifeRatio = age / COMBAT_WINDOW_MS;
       const opacity = Math.max(0, 1 - lifeRatio);
 
@@ -62,15 +65,15 @@ export const CombatRenderer = ({ telemetryData }: { telemetryData: any }) => {
         />
       );
     });
-  }, [telemetryData.events, telemetryData.currentTimeMs, teamNames]);
+  }, [isActive, events, currentTimeMs, teamNames]);
 
   // 교전 흔적(점) 렌더링 노드 생성
   const dotNodes = useMemo(() => {
-    if (telemetryData.showCombatDots === false) return null;
+    if (!isActive || showCombatDots === false) return null;
 
-    const allCombat = telemetryData.events.filter((ev: any) =>
+    const allCombat = events.filter((ev: any) =>
       (ev.type === "kill" || ev.type === "groggy") &&
-      ev.relativeTimeMs <= telemetryData.currentTimeMs
+      ev.relativeTimeMs <= currentTimeMs
     );
 
     const markers: React.ReactNode[] = [];
@@ -130,7 +133,9 @@ export const CombatRenderer = ({ telemetryData }: { telemetryData: any }) => {
     });
 
     return markers;
-  }, [telemetryData.events, telemetryData.currentTimeMs, telemetryData.showCombatDots, teamNames]);
+  }, [isActive, events, currentTimeMs, showCombatDots, teamNames]);
+
+  if (!isActive) return null;
 
   return (
     <>

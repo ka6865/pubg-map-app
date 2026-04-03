@@ -9,13 +9,16 @@ const VEHICLE_THRESHOLD = 400;
  * 플레이어 마커 렌더러 (사망, 기절, 도보, 차량 탑승)
  */
 export const PlayerMarkerRenderer = ({ telemetryData }: { telemetryData: any }) => {
-  if (telemetryData?.isActive === false || !telemetryData.currentStates) return null;
-
-  const teamNames: string[] = telemetryData.teamNames ?? [];
-  const showNames = telemetryData.showPlayerNames !== false;
+  const currentStates = telemetryData?.currentStates;
+  const hiddenPlayers = telemetryData?.hiddenPlayers;
+  const teamNames = useMemo(() => telemetryData?.teamNames ?? [], [telemetryData?.teamNames]);
+  const showNames = telemetryData?.showPlayerNames !== false;
+  const isActive = telemetryData?.isActive !== false && !!currentStates;
 
   const { deadNodes, groggyNodes, footNodes, vehicleNodes } = useMemo(() => {
-    const allPlayers = Object.values(telemetryData.currentStates) as any[];
+    if (!isActive) return { deadNodes: [], groggyNodes: [], footNodes: [], vehicleNodes: [] };
+
+    const allPlayers = Object.values(currentStates) as any[];
     
     const deadPlayers = allPlayers.filter((p) => p.isDead);
     const groggyPlayers = allPlayers.filter((p) => !p.isDead && p.isGroggy);
@@ -105,7 +108,7 @@ export const PlayerMarkerRenderer = ({ telemetryData }: { telemetryData: any }) 
     const footNodes = footPlayers.map((player) => {
       const ni = teamNames.indexOf(player.name);
       const color = player.isEnemy ? "#000000" : COLORS[(ni >= 0 ? ni : 0) % COLORS.length];
-      const isHidden = (telemetryData.hiddenPlayers ?? []).includes(player.name);
+      const isHidden = (hiddenPlayers ?? []).includes(player.name);
       if (isHidden) return null;
       return (
         <CircleMarker
@@ -190,7 +193,9 @@ export const PlayerMarkerRenderer = ({ telemetryData }: { telemetryData: any }) 
     });
 
     return { deadNodes, groggyNodes, footNodes, vehicleNodes };
-  }, [telemetryData.currentStates, telemetryData.hiddenPlayers, showNames, teamNames]);
+  }, [isActive, currentStates, hiddenPlayers, showNames, teamNames]);
+
+  if (!isActive) return null;
 
   return (
     <>

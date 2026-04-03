@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 export default function HomeNotice() {
   const [latestNotice, setLatestNotice] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isVisible, setIsVisible] = useState(true);
   const router = useRouter();
 
   useEffect(() => {
@@ -17,9 +18,14 @@ export default function HomeNotice() {
         .eq('is_notice', true)
         .order('created_at', { ascending: false })
         .limit(1)
-        .single();
+        .maybeSingle();
       
       if (!error && data) {
+        // localStorage에서 숨김 처리된 ID 확인
+        const dismissedNoticeId = localStorage.getItem('dismissed_notice_id');
+        if (dismissedNoticeId === data.id.toString()) {
+          setIsVisible(false);
+        }
         setLatestNotice(data);
       }
       setIsLoading(false);
@@ -33,6 +39,7 @@ export default function HomeNotice() {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'posts' }, (payload) => {
         if (payload.new.is_notice) {
           setLatestNotice(payload.new);
+          setIsVisible(true); // 새 공지가 오면 다시 표시
         }
       })
       .subscribe();
@@ -42,10 +49,18 @@ export default function HomeNotice() {
     };
   }, []);
 
-  if (isLoading || !latestNotice) return null;
+  if (isLoading || !latestNotice || !isVisible) return null;
 
   const handleNoticeClick = () => {
     router.push(`/?tab=Board&postId=${latestNotice.id}`);
+  };
+
+  const handleDismiss = (e: React.MouseEvent) => {
+    e.stopPropagation(); // 부모 클릭 이벤트(이동) 방지
+    if (latestNotice) {
+      localStorage.setItem('dismissed_notice_id', latestNotice.id.toString());
+      setIsVisible(false);
+    }
   };
 
   return (
@@ -64,8 +79,22 @@ export default function HomeNotice() {
           </div>
         </div>
 
-        <div className="flex-shrink-0 text-[10px] font-bold text-gray-500 group-hover:text-gray-400 transition-colors uppercase">
-          자세히 보기 <span className="ml-0.5 italic">→</span>
+        <div className="flex items-center gap-3">
+          <div className="flex-shrink-0 text-[10px] font-bold text-gray-500 group-hover:text-gray-400 transition-colors uppercase">
+            자세히 보기 <span className="ml-0.5 italic">→</span>
+          </div>
+          
+          {/* 구분선 */}
+          <div className="w-[1px] h-3 bg-white/10" />
+          
+          {/* 닫기(더이상 보지 않기) 버튼 */}
+          <button 
+            onClick={handleDismiss}
+            className="flex-shrink-0 text-[10px] font-bold text-gray-500 hover:text-white px-1 py-0.5 rounded transition-colors"
+            title="더이상 보지 않기"
+          >
+            오늘 숨김
+          </button>
         </div>
       </div>
 

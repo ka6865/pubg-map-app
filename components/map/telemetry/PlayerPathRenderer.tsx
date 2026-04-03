@@ -7,22 +7,26 @@ const COLORS = ["#F2A900", "#34A853", "#3b82f6", "#ef4444"];
  * 플레이어 이동 경로(꼬리)를 렌더링하는 컴포넌트
  */
 export const PlayerPathRenderer = ({ telemetryData }: { telemetryData: any }) => {
-  if (telemetryData?.isActive === false || telemetryData.showPlayerPaths === false || !telemetryData.currentStates) return null;
-
-  const teamNames: string[] = telemetryData.teamNames ?? [];
+  const currentStates = telemetryData?.currentStates;
+  const events = telemetryData?.events;
+  const currentTimeMs = telemetryData?.currentTimeMs;
+  const hiddenPlayers = telemetryData?.hiddenPlayers;
+  const teamNames = useMemo(() => telemetryData?.teamNames ?? [], [telemetryData?.teamNames]);
+  const isActive = telemetryData?.isActive !== false && telemetryData?.showPlayerPaths !== false && !!currentStates;
 
   const pathNodes = useMemo(() => {
-    return Object.values(telemetryData.currentStates).map((player: any, idx: number) => {
+    if (!isActive) return null;
+    return Object.values(currentStates).map((player: any, idx: number) => {
       const playerName = player.name;
-      if ((telemetryData.hiddenPlayers ?? []).includes(playerName)) return null;
+      if ((hiddenPlayers ?? []).includes(playerName)) return null;
 
       const teamIdx = teamNames.indexOf(playerName);
       const trColor = player.isEnemy ? "#000000" : COLORS[(teamIdx >= 0 ? teamIdx : idx) % COLORS.length];
 
-      const playerEvs = (telemetryData.events || []).filter((e: any) => 
+      const playerEvs = (events || []).filter((e: any) => 
         (e.type === "position" || e.type === "enemy_position") && 
         e.name === playerName && 
-        e.relativeTimeMs <= telemetryData.currentTimeMs
+        e.relativeTimeMs <= currentTimeMs
       );
       
       const fullPoints = playerEvs.map((e: any) => [e.y, e.x] as [number, number]);
@@ -31,7 +35,7 @@ export const PlayerPathRenderer = ({ telemetryData }: { telemetryData: any }) =>
       
       // 적군은 15초, 아군은 60초 꼬리
       const TAIL_DURATION_MS = player.isEnemy ? 15000 : 60000; 
-      const recentEvs = playerEvs.filter((e: any) => e.relativeTimeMs >= telemetryData.currentTimeMs - TAIL_DURATION_MS);
+      const recentEvs = playerEvs.filter((e: any) => e.relativeTimeMs >= currentTimeMs - TAIL_DURATION_MS);
       const recentPoints = recentEvs.map((e: any) => [e.y, e.x] as [number, number]);
       
       if (player.y !== undefined && player.x !== undefined && recentPoints.length >= 1) {
@@ -60,7 +64,8 @@ export const PlayerPathRenderer = ({ telemetryData }: { telemetryData: any }) =>
         </React.Fragment>
       );
     });
-  }, [telemetryData.currentStates, telemetryData.events, telemetryData.currentTimeMs, telemetryData.hiddenPlayers, teamNames]);
+  }, [isActive, currentStates, events, currentTimeMs, hiddenPlayers, teamNames]);
 
+  if (!isActive) return null;
   return <>{pathNodes}</>;
 };
