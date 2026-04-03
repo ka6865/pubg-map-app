@@ -4,7 +4,7 @@ import { Dispatch, SetStateAction } from "react"; // React 상태 제어 함수 
 import { useRouter } from "next/navigation"; // Next.js 라우터 모듈
 import { Post } from "../types/board"; // 게시글 객체 타입 명세
 
-const BOARD_CATEGORIES = ["자유", "듀오/스쿼드 모집", "클럽홍보", "제보/문의"];
+const BOARD_CATEGORIES = ["패치노트", "자유", "듀오/스쿼드 모집", "클럽홍보", "제보/문의"];
 const POSTS_PER_PAGE = 10;
 const MAX_VISIBLE_PAGES = 5; // 한 번에 보여줄 최대 페이지 버튼 수
 

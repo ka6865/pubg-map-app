@@ -12,6 +12,6 @@ export default function robots(): MetadataRoute.Robots {
         '/api',
       ],
     },
-    sitemap: 'https://pubg-map.app/sitemap.xml', // 본인 도메인이 생기면 변경 권장
+    sitemap: 'https://bgmap.kr/sitemap.xml', // BGMAP.kr 도메인 반영
   };
 }

@@ -31,23 +31,29 @@ const svgPaths = {
   user: "M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z",
 };
 
-const createPinIcon = (colorCode: string, pathData: string) => {
+const createPinIcon = (colorCode: string, pathData: string, scale: number = 1) => {
+  const width = 28 * scale;
+  const height = 38 * scale;
+  const iconWidth = 16 * scale;
+  const iconHeight = 16 * scale;
+  const innerTopOffset = 26 * (height / 38);
+
   return L.divIcon({
     className: "custom-pin-icon",
     html: `
-      <div style="position: relative; width: 28px; height: 38px;">
+      <div style="position: relative; width: ${width}px; height: ${height}px;">
         <svg viewBox="0 0 30 42" style="width: 100%; height: 100%; filter: drop-shadow(0 3px 4px rgba(0,0,0,0.8));">
           <path d="M15 0C6.7 0 0 6.7 0 15c0 8.3 15 27 15 27s15-18.7 15-27C30 6.7 23.3 0 15 0z" fill="${colorCode}" stroke="#ffffff" stroke-width="2"/>
         </svg>
-        <div style="position: absolute; top: 0; left: 0; width: 100%; height: 26px; display: flex; align-items: center; justify-content: center;">
-          <svg viewBox="0 0 24 24" style="width: 16px; height: 16px; fill: white;">
+        <div style="position: absolute; top: 0; left: 0; width: 100%; height: ${innerTopOffset}px; display: flex; align-items: center; justify-content: center;">
+          <svg viewBox="0 0 24 24" style="width: ${iconWidth}px; height: ${iconHeight}px; fill: white;">
             <path d="${pathData}"/>
           </svg>
         </div>
       </div>
     `,
-    iconSize: [28, 38],
-    iconAnchor: [14, 38],
+    iconSize: [width, height],
+    iconAnchor: [width / 2, height],
   });
 };
 
@@ -85,14 +91,16 @@ export default function Map() {
 
   const icons = useMemo(() => {
     const res: Record<string, L.DivIcon> = {};
+    const scale = isMobile ? 1.25 : 1; // 모바일에서 마커 25% 확대
     Object.keys(CATEGORY_INFO).forEach((key) => {
       res[key] = createPinIcon(
         CATEGORY_INFO[key].color,
-        CATEGORY_INFO[key].path
+        CATEGORY_INFO[key].path,
+        scale
       );
     });
     return res;
-  }, []);
+  }, [isMobile]);
 
   const [filters, setFilters] = useState<MapFilters>(() => {
     const init: Record<string, boolean> = { pending: false }; //

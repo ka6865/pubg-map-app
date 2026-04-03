@@ -1,7 +1,7 @@
 import { MetadataRoute } from 'next';
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const baseUrl = 'https://pubg-map.app'; // 실제 도메인이 있다면 수정 필요
+  const baseUrl = 'https://bgmap.kr'; // BGMAP.kr 도메인 반영
   const lastModified = new Date();
 
   // 기본 페이지들

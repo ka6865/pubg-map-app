@@ -13,6 +13,7 @@ import L, { CRS } from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { supabase } from "../lib/supabase";
 import { CATEGORY_INFO, MAP_CATEGORIES } from "../lib/map_config";
+import { toast } from "sonner";
 
 // SVG 경로와 색상을 조합해 커스텀 지도 마커 아이콘 객체 생성
 const createPinIcon = (colorCode: string, pathData: string) => {
@@ -136,7 +137,7 @@ const MapEditorComponent = () => {
         data: { session },
       } = await supabase.auth.getSession();
       if (!session) {
-        alert("관리자 로그인이 필요합니다.");
+        toast.error("관리자 로그인이 필요합니다.");
         router.push("/login");
         return;
       }
@@ -148,7 +149,7 @@ const MapEditorComponent = () => {
         .single();
 
       if (profile?.role !== "admin") {
-        alert("관리자 권한이 없습니다.");
+        toast.warning("관리자 권한이 없습니다.");
         router.push("/");
         return;
       }
@@ -163,7 +164,7 @@ const MapEditorComponent = () => {
 
       if (fetchError) {
         console.error("Error fetching map markers:", fetchError);
-        alert("마커 데이터를 불러오는 데 실패했습니다.");
+        toast.error("마커 데이터를 불러오는 데 실패했습니다.");
         return;
       }
 
@@ -283,12 +284,12 @@ const MapEditorComponent = () => {
           if (insertError) throw insertError;
         }
       }
-      alert(
+      toast.success(
         `'${currentMap?.label}' 맵의 마커 ${insertData.length}개가 저장되었습니다!`
       );
     } catch (error: any) {
       console.error("서버 저장 에러:", error);
-      alert("저장 실패: " + (error.message || "알 수 없는 오류 발생."));
+      toast.error("저장 실패: " + (error.message || "알 수 없는 오류 발생."));
     } finally {
       setIsSaving(false);
     }

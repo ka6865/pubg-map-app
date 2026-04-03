@@ -18,13 +18,13 @@ export default function Home() {
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "WebApplication",
-    "name": "배틀그라운드 통합 지도",
-    "description": "에란겔, 미라마, 태이고 등 배틀그라운드 모든 맵의 차량 스폰 위치 및 전략 정보를 제공하는 도구입니다.",
+    "name": "BGMAP.kr (배그맵)",
+    "description": "에란겔, 미라마, 태이고 론도 등 배틀그라운드 모든 맵의 차량 스폰 위치 및 텔레메트리 복기 정보를 제공하는 전용 전술 플랫폼입니다.",
     "applicationCategory": "GameApplication",
     "operatingSystem": "Web",
     "author": {
       "@type": "Organization",
-      "name": "PUBG Map Team"
+      "name": "BGMAP Team"
     },
     "offers": {
       "@type": "Offer",
@@ -36,7 +36,7 @@ export default function Home() {
   return (
     <main style={{ width: '100%', height: '100vh', overflow: 'hidden' }}>
       {/* SEO용 숨김 제목 */}
-      <h1 className="sr-only">배틀그라운드 모든 맵 차량 스폰 위치 및 전략 지도</h1>
+      <h1 className="sr-only">BGMAP.kr | 배틀그라운드(PUBG) 통합 지도 및 전술 분석 도구</h1>
       
       {/* 구조화된 데이터 (JSON-LD) */}
       <script

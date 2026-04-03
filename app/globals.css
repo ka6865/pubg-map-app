@@ -29,3 +29,9 @@
   white-space: nowrap;
   border-width: 0;
 }
+/* 텔레메트리 이름표 숨김 처리 (에러 방지를 위해 제거가 아닌 가시성 조절) */
+.hidden-tooltip {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}

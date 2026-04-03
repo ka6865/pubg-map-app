@@ -30,7 +30,8 @@ interface BoardDetailProps {
 // 악성 스크립트 실행 방지를 위한 DOMPurify 라이브러리 기반 텍스트 소독 함수
 const sanitizeHTML = (html: string) => {
   if (!html) return "";
-  return DOMPurify.sanitize(html);
+  // 새 창 열기(target="_blank")를 가능하게 하기 위해 target, rel 속성을 허용합니다.
+  return DOMPurify.sanitize(html, { ADD_ATTR: ["target", "rel"] });
 };
 
 // 개별 게시글 본문 조회 화면 및 작성자 컨트롤 UI 컴포넌트

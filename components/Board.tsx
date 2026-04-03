@@ -419,8 +419,22 @@ export default function Board({
         }
       }
 
-      await supabase.from("posts").delete().eq("id", postId);
-      toast.success("게시글이 성공적으로 삭제되었습니다.");
+      // 관리자라면 서버사이드 강제 삭제 API 호출 (RLS 우회)
+      if (isAdmin) {
+        const adminRes = await fetch(`/api/admin/posts/delete?postId=${postId}`, { method: "DELETE" });
+        const adminResult = await adminRes.json();
+        
+        if (!adminRes.ok) throw new Error(adminResult.error || "관리자 삭제 실패");
+        
+        toast.success("관리자 권한으로 게시글을 강제 삭제했습니다.");
+      } else {
+        // 일반 사용자는 기존 RLS 삭제 시도
+        const { error: deleteError } = await supabase.from("posts").delete().eq("id", postId);
+        if (deleteError) throw deleteError;
+        
+        toast.success("게시글이 성공적으로 삭제되었습니다.");
+      }
+
       router.push("/?tab=Board");
       fetchPosts();
     } catch (error: any) {

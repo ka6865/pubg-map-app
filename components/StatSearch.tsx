@@ -369,6 +369,35 @@ const MatchCard = ({
             </div>
           </div>
 
+          {/* 🚀 매치 복기 (텔레메트리 뷰어) 버튼 추가 */}
+          <div style={{ marginBottom: "20px", display: "flex", justifyContent: "center" }}>
+            <a
+              href={`/?tab=${encodeURIComponent(
+                { 에란겔: "Erangel", 미라마: "Miramar", 태이고: "Taego", 론도: "Rondo", 비켄디: "Vikendi", 데스턴: "Deston" }[mapName] || "Erangel"
+              )}&playback=${matchId}&nickname=${encodeURIComponent(nickname)}`}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
+                backgroundColor: "rgba(242, 169, 0, 0.15)",
+                border: "1px solid #F2A900",
+                color: "#F2A900",
+                padding: "10px 20px",
+                borderRadius: "8px",
+                fontWeight: "bold",
+                fontSize: "14px",
+                textDecoration: "none",
+                transition: "all 0.2s",
+              }}
+              className="hover:bg-[#F2A900] hover:text-black"
+            >
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+              매치 궤적 복기 (BETA)
+            </a>
+          </div>
+
           {/* 팀원 상세 스탯 테이블 */}
           <table
             style={{

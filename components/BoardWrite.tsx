@@ -13,7 +13,7 @@ const ReactQuill = dynamic(() => import("react-quill-new"), {
 }) as any;
 
 // 글쓰기 설정 상수
-const BOARD_CATEGORIES = ["자유", "듀오/스쿼드 모집", "클럽홍보", "제보/문의"];
+const BOARD_CATEGORIES = ["패치노트", "자유", "듀오/스쿼드 모집", "클럽홍보", "제보/문의"];
 const IMAGE_CONFIG = {
   MAX_FILE_SIZE_MB: 20, // 에디터 허용 최대 파일 크기
   COMPRESSION_MAX_SIZE_MB: 1, // 압축 후 목표 파일 크기
@@ -279,7 +279,7 @@ export default function BoardWrite({
             borderRadius: "4px",
           }}
         >
-          {BOARD_CATEGORIES.map((c) => (
+          {BOARD_CATEGORIES.filter((c) => isAdmin || c !== "패치노트").map((c) => (
             <option key={c} value={c}>
               {c}
             </option>
