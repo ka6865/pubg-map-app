@@ -127,6 +127,28 @@ export default function GameDataEditor() {
         patch_notes: "", 
         trunk_capacity: 200 
       } as Vehicle);
+    } else if (activeCategory === "weapons") {
+      setSelectedItem({ 
+        id: newId, 
+        name: "새 항목", 
+        patch_notes: "", 
+        weight: 0, 
+        can_be_in_backpack: true,
+        type: "AR",
+        damage: 0,
+        ammo: "5.56mm",
+        bullet_speed: 0,
+        availability: "월드 스폰"
+      } as Weapon);
+    } else if (activeCategory === "ammo") {
+      setSelectedItem({ 
+        id: newId, 
+        name: "새 항목", 
+        patch_notes: "", 
+        weight: 0, 
+        can_be_in_backpack: true,
+        type: "탄약"
+      } as GameItem);
     } else {
       setSelectedItem({ 
         id: newId, 
@@ -166,9 +188,37 @@ export default function GameDataEditor() {
             ))}
           </nav>
         </div>
-        <button onClick={() => router.push("/")} className="text-sm font-bold text-gray-400 hover:text-white transition-colors">
-          나가기
-        </button>
+        <div className="flex items-center gap-4">
+          <button 
+            onClick={async () => {
+              setIsSaving(true);
+              try {
+                const res = await fetch("/api/admin/patch-notes/sync", { method: "POST" });
+                const result = await res.json();
+                if (result.success) {
+                  toast.success(result.message);
+                } else {
+                  toast.error("연동 실패: " + (result.error || "알 수 없는 오류"));
+                }
+              } catch {
+                toast.error("통신 오류 발생");
+              } finally {
+                setIsSaving(false);
+              }
+            }}
+            disabled={isSaving}
+            className={`px-3 py-1.5 rounded text-[11px] font-bold border transition-all ${
+              isSaving 
+                ? "bg-gray-800 border-gray-700 text-gray-500 cursor-not-allowed" 
+                : "bg-blue-600/10 border-blue-600/30 text-blue-400 hover:bg-blue-600/20"
+            }`}
+          >
+            {isSaving ? "⏳ 동기화 중..." : "🔄 패치노트 동기화"}
+          </button>
+          <button onClick={() => router.push("/")} className="text-sm font-bold text-gray-400 hover:text-white transition-colors">
+            나가기
+          </button>
+        </div>
       </header>
 
       <div className="flex flex-1 overflow-hidden">
@@ -297,8 +347,49 @@ export default function GameDataEditor() {
                         className="w-full bg-[#1a1a1a] border border-[#333] rounded px-4 py-2.5 text-sm focus:outline-none focus:border-[#F2A900]"
                       />
                     </div>
+                    <div className="col-span-1">
+                      <label className="block text-xs font-bold text-gray-500 mb-2">무기 분류</label>
+                      <select
+                        value={(selectedItem as Weapon).type || "AR"}
+                        onChange={(e) => setSelectedItem({...selectedItem, type: e.target.value} as Weapon)}
+                        className="w-full bg-[#1a1a1a] border border-[#333] rounded px-4 py-2.5 text-sm focus:outline-none focus:border-[#F2A900]"
+                      >
+                        {["AR", "DMR", "SR", "SMG", "SG", "HG", "LMG", "Melee", "Other"].map(t => (
+                          <option key={t} value={t}>{t}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="col-span-1">
+                      <label className="block text-xs font-bold text-gray-500 mb-2">탄속 (Bullet Speed)</label>
+                      <input
+                        type="number"
+                        value={(selectedItem as Weapon).bullet_speed || 0}
+                        onChange={(e) => setSelectedItem({...selectedItem, bullet_speed: Number(e.target.value)} as Weapon)}
+                        className="w-full bg-[#1a1a1a] border border-[#333] rounded px-4 py-2.5 text-sm focus:outline-none focus:border-[#F2A900]"
+                      />
+                    </div>
+                    <div className="col-span-1">
+                      <label className="block text-xs font-bold text-gray-500 mb-2">획득처 (Availability)</label>
+                      <input
+                        type="text"
+                        value={(selectedItem as Weapon).availability || ""}
+                        onChange={(e) => setSelectedItem({...selectedItem, availability: e.target.value} as Weapon)}
+                        className="w-full bg-[#1a1a1a] border border-[#333] rounded px-4 py-2.5 text-sm focus:outline-none focus:border-[#F2A900]"
+                      />
+                    </div>
                   </>
                 )}
+
+                <div className="col-span-2">
+                  <label className="block text-xs font-bold text-gray-500 mb-2">항목 분류 (Type)</label>
+                  <input
+                    type="text"
+                    value={(selectedItem as any).type || ""}
+                    onChange={(e) => setSelectedItem({...selectedItem, type: e.target.value} as any)}
+                    placeholder="아이템의 세부 분류를 입력하세요 (예: 탄약, 탄창, 손잡이 등)"
+                    className="w-full bg-[#1a1a1a] border border-[#333] rounded px-4 py-2.5 text-sm focus:outline-none focus:border-[#F2A900]"
+                  />
+                </div>
 
                 <div className="col-span-2">
                   <label className="block text-xs font-bold text-gray-500 mb-2">패치 노 트 / 설명</label>

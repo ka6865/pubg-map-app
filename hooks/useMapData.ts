@@ -83,23 +83,20 @@ export function useMapData(activeMapId: string) {
       setDbVehicles([]);
       setPendingVehicles([]); // 🌟 대기소 초기화 추가
 
-      // 1. 기존 승인된 마커(map_markers) 불러오기
-      const { data: mapData } = await supabase
-        .from("map_markers")
-        .select("*")
-        .eq("map_id", activeMapId);
+      // 1. 병렬 처리를 통해 렌더링 속도 최적화 (폭포수 현상 제거)
+      const [mapResponse, pendingResponse] = await Promise.all([
+        supabase.from("map_markers").select("*").eq("map_id", activeMapId),
+        supabase.from("pending_markers").select("*").eq("map_name", activeMapId)
+      ]);
+
+      const mapData = mapResponse.data;
+      const pendingData = pendingResponse.data;
 
       const combined: MapMarker[] = mapData
         ? mapData.map((m: Record<string, any>) => ({ ...m, mapId: m.map_id || activeMapId }) as MapMarker)
         : [];
 
       setDbVehicles(combined);
-
-      // 2. 🌟 대기 중인 제보(pending_markers) 불러오기
-      const { data: pendingData } = await supabase
-        .from("pending_markers")
-        .select("*")
-        .eq("map_name", activeMapId);
 
       if (pendingData) {
         setPendingVehicles(pendingData);

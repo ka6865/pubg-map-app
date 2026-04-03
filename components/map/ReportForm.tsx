@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import L from "leaflet";
 import { supabase } from "../../lib/supabase";
 import { MAP_CATEGORIES, CATEGORY_INFO } from "../../lib/map_config";
+import { toast } from "sonner";
 
 interface ReportFormProps {
   location: L.LatLng;
@@ -36,8 +37,14 @@ const ReportForm = ({
 
   const handleSubmit = async () => {
     // 유효성 검사
-    if (!currentUser?.id) return alert("로그인 정보가 유효하지 않습니다.");
-    if (!selectedType) return alert("제보할 종류를 선택해 주세요!");
+    if (!currentUser?.id) {
+      toast.error("로그인 정보가 유효하지 않습니다.");
+      return;
+    }
+    if (!selectedType) {
+      toast.error("제보할 종류를 선택해 주세요!");
+      return;
+    }
     if (isSubmitting) return;
 
     setIsSubmitting(true);
@@ -71,7 +78,10 @@ const ReportForm = ({
       });
 
       if (nearbyReport) {
-        alert("근처 반경 20m 내에 똑같은 차량의 제보가 이미 진행 중입니다!\n지도 위에 표시된 동그란 '제보 진행 중' 마커를 클릭하신 뒤, [👍 여기에 있어요] 버튼을 눌러 교차 검증에 참여해 주세요!");
+        toast.warning(
+          "근처 20m 내에 동일한 차량 제보가 있습니다! 기존 마커의 교차 검증에 참여해 주세요.",
+          { duration: 5000 }
+        );
         setIsSubmitting(false);
         return;
       } else {
@@ -99,7 +109,7 @@ const ReportForm = ({
           );
         }
 
-        alert("🎉 새로운 제보가 접수되었습니다!");
+        toast.success("새로운 제보가 접수되었습니다!");
       }
 
       onClose();
@@ -109,7 +119,7 @@ const ReportForm = ({
       const errorMsg =
         error?.message ||
         "알 수 없는 오류가 발생했습니다. 개발자 도구(F12) 콘솔을 확인해주세요.";
-      alert(`⚠️ 제보 전송 중 오류가 발생했습니다:\n${errorMsg}`);
+      toast.error(`제보 전송 중 오류 발생: ${errorMsg}`);
     } finally {
       // 🌟 정상 처리되든, 에러가 나든 반드시 전송 중 상태를 해제합니다.
       setIsSubmitting(false);
