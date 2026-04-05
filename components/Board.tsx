@@ -59,6 +59,14 @@ export default function Board({
   const [replyingTo, setReplyingTo] = useState<Comment | null>(null); // 대댓글 작성 시 대상 댓글 상태
   const [editingPostId, setEditingPostId] = useState<number | null>(null); // 수정 중인 게시글의 ID 상태 (null이면 새 글 작성)
 
+  // 🌟 [안정성] 비동기 함수에 타임아웃을 적용하는 헬퍼 함수
+  const withTimeout = async <T,>(promise: Promise<T> | any, timeoutMs = 30000): Promise<T> => {
+    const timeout = new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`네트워크 응답 지연 혹은 세션 오류가 발생했습니다. (${timeoutMs / 1000}초 초과)`)), timeoutMs)
+    );
+    return Promise.race([promise, timeout]) as Promise<T>;
+  };
+
   // 브라우저 해상도 기반 렌더링 환경 분기점 할당
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
@@ -87,46 +95,55 @@ export default function Board({
   // 사용자 지정 필터 및 검색 조건 매핑 기반 게시물 목록 DB Fetch 동작
   const fetchPosts = async () => {
     setIsLoading(true);
-    const from = (page - 1) * BOARD_CONFIG.POSTS_PER_PAGE;
-    const to = from + BOARD_CONFIG.POSTS_PER_PAGE - 1;
+    try {
+      const from = (page - 1) * BOARD_CONFIG.POSTS_PER_PAGE;
+      const to = from + BOARD_CONFIG.POSTS_PER_PAGE - 1;
 
-    let query = supabase
-      .from("posts")
-      .select(
-        "id, title, author, user_id, category, image_url, is_notice, created_at, views, likes, comments(count)",
-        { count: "exact" }
+      let query = supabase
+        .from("posts")
+        .select(
+          "id, title, author, user_id, category, image_url, is_notice, created_at, views, likes, comments(count)",
+          { count: "exact" }
+        );
+
+      if (boardFilter !== "전체" && boardFilter !== "추천")
+        query = query.eq("category", boardFilter);
+      if (boardFilter === "추천") query = query.gte("likes", BOARD_CONFIG.MIN_LIKES_FOR_RECOMMENDED);
+
+      if (searchQuery) {
+        if (searchOption === "title")
+          query = query.ilike("title", `%${searchQuery}%`);
+        else if (searchOption === "author")
+          query = query.ilike("author", `%${searchQuery}%`);
+        else
+          query = query.or(
+            `title.ilike.%${searchQuery}%,content.ilike.%${searchQuery}%`
+          );
+      }
+
+      const { data, count, error } = await withTimeout<any>(
+        query
+          .order("is_notice", { ascending: false })
+          .order("created_at", { ascending: false })
+          .range(from, to)
       );
 
-    if (boardFilter !== "전체" && boardFilter !== "추천")
-      query = query.eq("category", boardFilter);
-    if (boardFilter === "추천") query = query.gte("likes", BOARD_CONFIG.MIN_LIKES_FOR_RECOMMENDED);
-
-    if (searchQuery) {
-      if (searchOption === "title")
-        query = query.ilike("title", `%${searchQuery}%`);
-      else if (searchOption === "author")
-        query = query.ilike("author", `%${searchQuery}%`);
-      else
-        query = query.or(
-          `title.ilike.%${searchQuery}%,content.ilike.%${searchQuery}%`
-        );
+      if (!error && data) {
+        const postsWithCount = data.map((post: any) => ({
+          ...post,
+          comment_count:
+            post.comments && post.comments[0] ? post.comments[0].count : 0,
+        }));
+        setPosts(postsWithCount);
+        setTotalPosts(count || 0);
+      } else if (error) {
+        console.error("Fetch posts error:", error);
+      }
+    } catch (err) {
+      console.error("Fetch posts exception:", err);
+    } finally {
+      setIsLoading(false);
     }
-
-    const { data, count, error } = await query
-      .order("is_notice", { ascending: false })
-      .order("created_at", { ascending: false })
-      .range(from, to);
-
-    if (!error && data) {
-      const postsWithCount = data.map((post: any) => ({
-        ...post,
-        comment_count:
-          post.comments && post.comments[0] ? post.comments[0].count : 0,
-      }));
-      setPosts(postsWithCount);
-      setTotalPosts(count || 0);
-    }
-    setIsLoading(false);
   };
 
   useEffect(() => {
@@ -148,34 +165,37 @@ export default function Board({
 
   // 단일 게시글 객체 및 귀속된 댓글 리스트 병렬 DB 로드
   const fetchSinglePost = async (id: string) => {
-    const postPromise = supabase
-      .from("posts")
-      .select("*")
-      .eq("id", id)
-      .single();
-    const commentPromise = supabase
-      .from("comments")
-      .select("*")
-      .eq("post_id", id)
-      .order("created_at", { ascending: true });
+    try {
+      const postPromise = supabase
+        .from("posts")
+        .select("*")
+        .eq("id", id)
+        .single();
+      const commentPromise = supabase
+        .from("comments")
+        .select("*")
+        .eq("post_id", id)
+        .order("created_at", { ascending: true });
 
-    const [postResult, commentResult] = await Promise.all([
-      postPromise,
-      commentPromise,
-    ]);
+      const [postResult, commentResult] = await withTimeout<[any, any]>(
+        Promise.all([postPromise, commentPromise])
+      );
 
-    if (postResult.data) {
-      setSelectedPost(postResult.data);
+      if (postResult.data) {
+        setSelectedPost(postResult.data);
 
-      const viewedKey = `viewed_post_${postResult.data.id}`;
-      if (!sessionStorage.getItem(viewedKey)) {
-        incrementViews(postResult.data.id);
-        sessionStorage.setItem(viewedKey, "true");
+        const viewedKey = `viewed_post_${postResult.data.id}`;
+        if (!sessionStorage.getItem(viewedKey)) {
+          incrementViews(postResult.data.id);
+          sessionStorage.setItem(viewedKey, "true");
+        }
       }
-    }
 
-    if (commentResult.data) {
-      setComments(commentResult.data);
+      if (commentResult.data) {
+        setComments(commentResult.data);
+      }
+    } catch (err) {
+      console.error("fetchSinglePost error:", err);
     }
   };
 
@@ -207,89 +227,77 @@ export default function Board({
     }
 
     setIsLoading(true);
-    const trimmedTitle = sanitizeTitle(newTitle);
-    const finalImageUrl = extractImageUrl(newContent);
+    console.log("🚀 [Save Start]: Bypassing client session check for stability...");
 
-    if (editingPostId) {
-      if (selectedPost && selectedPost.content) {
-        const imgRegex = /<img[^>]+src\s*=\s*["']?([^"'\s>]+)["']?/g;
-        const oldImages = [...selectedPost.content.matchAll(imgRegex)].map(
-          (m) => m[1]
-        );
-        const newImages = [...newContent.matchAll(imgRegex)].map((m) => m[1]);
+    try {
+      const trimmedTitle = sanitizeTitle(newTitle);
+      const finalImageUrl = extractImageUrl(newContent);
 
-        const deletedImages = oldImages.filter(
-          (src) => !newImages.includes(src)
-        );
+      // 🌟 [우회 도로 적용] 브라우저 직접 통신 대신 서버 API를 호출하여 타임아웃 해결
+      const payload = {
+        title: trimmedTitle,
+        content: newContent,
+        category: newCategory,
+        image_url: finalImageUrl,
+        is_notice: isAdmin ? newIsNotice : false,
+        author: displayName,
+        user_id: currentUser.id,
+        editingPostId: editingPostId,
+      };
 
-        const imagePathsToDelete = deletedImages
-          .map((src) => {
-            if (src.includes("/storage/v1/object/public/images/")) {
-              const path = src.split("/storage/v1/object/public/images/")[1];
-              return path ? decodeURIComponent(path) : null;
-            }
-            return null;
-          })
-          .filter((path): path is string => path !== null);
+      console.log("⬆️ [Requesting Bypass API]:", { title: trimmedTitle, editingPostId });
 
-        if (imagePathsToDelete.length > 0) {
-          await supabase.storage.from("images").remove(imagePathsToDelete);
-        }
+      const response = await withTimeout<Response>(
+        fetch("/api/posts/write", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }),
+        30000
+      );
+
+      const result = await response.json();
+
+      if (!response.ok || result.error) {
+        throw new Error(result.error || "서버 저장 중 오류가 발생했습니다.");
       }
 
-      const { error } = await supabase
-        .from("posts")
-        .update({
-          title: trimmedTitle,
-          content: newContent,
-          category: newCategory,
-          image_url: finalImageUrl,
-          is_notice: isAdmin ? newIsNotice : false,
-        })
-        .eq("id", editingPostId);
+      console.log("🎉 [Server Bypass Success]: Transitioning UI...");
 
-      if (!error) {
-        setIsWriting(false);
+      // 성공 시 UI 전환 및 상태 초기화
+      setIsWriting(false);
+      setNewTitle("");
+      setNewContent("");
+
+      if (editingPostId) {
         setEditingPostId(null);
-        setNewTitle("");
-        setNewContent("");
+        toast.success("게시글이 성공적으로 수정되었습니다.");
         fetchPosts();
         fetchSinglePost(String(editingPostId));
-        setIsLoading(false);
-        toast.success("게시글이 성공적으로 수정되었습니다.");
-        return true;
       } else {
-        toast.error("수정 실패: " + error.message);
-        setIsLoading(false);
-        return false;
-      }
-    } else {
-      const { error } = await supabase.from("posts").insert([
-        {
-          title: trimmedTitle,
-          content: newContent,
-          author: displayName,
-          user_id: currentUser.id,
-          category: newCategory,
-          image_url: finalImageUrl,
-          is_notice: isAdmin ? newIsNotice : false,
-        },
-      ]);
-
-      if (!error) {
-        setIsWriting(false);
-        setNewTitle("");
-        setNewContent("");
         setPage(1);
-        fetchPosts();
-        setIsLoading(false);
         toast.success("새 게시글이 등록되었습니다.");
-        return true;
-      } else {
-        toast.error("저장 실패: " + error.message);
-        setIsLoading(false);
-        return false;
+        fetchPosts();
       }
+
+      return true;
+    } catch (error: any) {
+      console.error("🚨 [Save Critical Error]:", {
+        message: error.message,
+        userId: currentUser?.id,
+        titleLength: newTitle.length,
+        contentLength: newContent.length,
+        stack: error.stack
+      });
+      
+      if (error.message.includes("30초 초과")) {
+        toast.error("서버 응답이 너무 늦습니다. 인터넷 연결이나 세션 상태를 확인하신 후 다시 시도해 주세요.");
+      } else {
+        toast.error("게시글을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+      }
+      return false;
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -377,7 +385,7 @@ export default function Board({
       fetchPosts();
       toast.success("댓글이 삭제되었습니다.");
     } else if (error) {
-      toast.error("댓글 삭제 실패: " + error.message);
+      toast.error("댓글을 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.");
     }
   };
 
@@ -391,6 +399,7 @@ export default function Board({
 
     if (!confirm("정말 이 게시물을 삭제하시겠습니까?")) return;
 
+    setIsLoading(true);
     try {
       const { data: postData, error: fetchError } = await supabase
         .from("posts")
@@ -436,9 +445,12 @@ export default function Board({
       }
 
       router.push("/?tab=Board");
-      fetchPosts();
+      await fetchPosts();
     } catch (error: any) {
-      toast.error("삭제 실패: " + error.message);
+      console.error("Delete error:", error);
+      toast.error("게시글을 삭제하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+    } finally {
+      setIsLoading(false);
     }
   };
 

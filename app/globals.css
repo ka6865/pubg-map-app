@@ -1,6 +1,13 @@
 @import "tailwindcss";
 @config "../tailwind.config.ts";
 
+@layer base {
+  html, body {
+    @apply bg-[#121212] overflow-x-hidden;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
 .leaflet-div-icon {
   background: transparent;
   border: none;

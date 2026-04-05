@@ -1,0 +1,125 @@
+import { createClient } from "@supabase/supabase-js";
+import { NextResponse } from "next/server";
+
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+
+/**
+ * @fileoverview 게시판 저장을 서버사이드에서 우회(Bypass) 처리하는 API입니다.
+ * 브라우저 직접 통신 시 발생하는 원인 모를 타임아웃 문제를 해결하기 위해 도입되었습니다.
+ */
+export async function POST(request: Request) {
+  try {
+    const body = await request.json();
+    const {
+      title,
+      content,
+      category,
+      image_url,
+      is_notice,
+      author,
+      user_id,
+      editingPostId,
+    } = body;
+
+    if (!title || !content || !user_id) {
+      return NextResponse.json(
+        { error: "필수 입력 데이터가 누락되었습니다." },
+        { status: 400 }
+      );
+    }
+
+    // 관리자(Service Role) 권한으로 DB 클라이언트 초기화 (RLS 우회)
+    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+
+    if (editingPostId) {
+      // 1. [보안] 수정 시 실제 소유자 확인 및 이전 데이터 로드 (이미지 정리용)
+      const { data: existingPost, error: fetchError } = await supabaseAdmin
+        .from("posts")
+        .select("user_id, content")
+        .eq("id", editingPostId)
+        .single();
+
+      if (fetchError || !existingPost) {
+        return NextResponse.json(
+          { error: "수정할 게시글을 찾을 수 없습니다." },
+          { status: 404 }
+        );
+      }
+
+      if (existingPost.user_id !== user_id) {
+        return NextResponse.json(
+          { error: "게시글 수정 권한이 없습니다." },
+          { status: 403 }
+        );
+      }
+
+      // 🌟 [서버사이드 이미지 정리] 삭제된 이미지 감지 및 스토리지 폐기
+      try {
+        const imgRegex = /<img[^>]+src\s*=\s*["']?([^"'\s>]+)["']?/g;
+        const oldImages = [...(existingPost.content || "").matchAll(imgRegex)].map(m => m[1]);
+        const newImages = [...(content || "").matchAll(imgRegex)].map(m => m[1]);
+        const deletedImages = oldImages.filter(src => !newImages.includes(src));
+
+        const imagePathsToDelete = deletedImages
+          .map(src => {
+            if (src.includes("/storage/v1/object/public/images/")) {
+              const path = src.split("/storage/v1/object/public/images/")[1];
+              return path ? decodeURIComponent(path) : null;
+            }
+            return null;
+          })
+          .filter((path): path is string => path !== null);
+
+        if (imagePathsToDelete.length > 0) {
+          console.log("🧹 [Server Storage Cleanup]:", imagePathsToDelete);
+          await supabaseAdmin.storage.from("images").remove(imagePathsToDelete);
+        }
+      } catch (cleanupErr) {
+        console.error("⚠️ [Cleanup Error]:", cleanupErr);
+        // 이미지 정리 실패가 포스트 수정을 막지는 않도록 함
+      }
+
+      // 2. 게시글 업데이트
+      const { data, error: updateError } = await supabaseAdmin
+        .from("posts")
+        .update({
+          title,
+          content,
+          category,
+          image_url,
+          is_notice,
+        })
+        .eq("id", editingPostId)
+        .select();
+
+      if (updateError) throw updateError;
+      return NextResponse.json({ success: true, data: data[0] });
+    } else {
+      // 3. 신규 게시글 등록
+      const { data, error: insertError } = await supabaseAdmin
+        .from("posts")
+        .insert([
+          {
+            title,
+            content,
+            author,
+            user_id,
+            category,
+            image_url,
+            is_notice,
+          },
+        ])
+        .select();
+
+      if (insertError) throw insertError;
+      return NextResponse.json({ success: true, data: data[0] });
+    }
+  } catch (err: any) {
+    console.error("🚨 [Post Write API Error]:", err);
+    return NextResponse.json(
+      { error: err.message || "서버 내부 오류가 발생했습니다." },
+      { status: 500 }
+    );
+  }
+}

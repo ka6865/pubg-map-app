@@ -105,6 +105,18 @@ export default function BoardDetail({
           dangerouslySetInnerHTML={{ __html: processedContent }}
           className="text-[16px] leading-[1.6] whitespace-normal break-words"
         />
+
+        {selectedPost.category === "패치노트" && (
+          <div className="mt-[40px] p-[20px] bg-[#222] border-l-4 border-[#F2A900] rounded-[4px]">
+            <p className="text-[14px] text-[#aaa] leading-[1.5]">
+              <strong className="text-[#F2A900] block mb-1">📢 안내사항</strong>
+              본 게시물은 PUBG 공식 패치노트를 AI로 요약한 정보성 콘텐츠입니다. 
+              정확한 수치나 세부 변경 사항은 반드시 아래 공식 홈페이지를 통해 확인하시기 바랍니다.
+              <br />
+              이 서비스는 팬 메이드 서비스이며 KRAFTON/PUBG의 공식 입장을 대변하지 않습니다.
+            </p>
+          </div>
+        )}
       </div>
 
       <div className="flex justify-end mt-[20px]">

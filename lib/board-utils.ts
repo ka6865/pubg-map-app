@@ -28,8 +28,15 @@ export function validatePost(
     return "제목은 50자 이내로 입력해주세요.";
   }
 
-  if (content.includes('src="data:image')) {
-    return "이미지 붙여넣기 및 드래그 앤 드롭은 허용되지 않습니다.\n에디터 상단의 이미지 버튼을 눌러 업로드해주세요.";
+  // 🌟 [보안/성능] Base64 이미지(직접 붙여넣기) 감지 정규식 (싱글/더블 쿼터 및 대소문자 대응)
+  const base64Regex = /src\s*=\s*["']?\s*data:image\/[^;]+;base64[^"'>\s]*["']?/gi;
+  if (base64Regex.test(content)) {
+    return "이미지 직접 붙여넣기는 허용되지 않습니다.\n에디터 상단의 '이미지 전용 업로드' 버튼을 이용해 주세요.";
+  }
+
+  // 🌟 [안정성] 본문 데이터 전송 크기 제한 (약 50만 자, 한글 기준 약 1MB 수준)
+  if (content.length > 500000) {
+    return "게시글 내용이 너무 큽니다. 불필요한 이미지 데이터를 제거해 주세요.";
   }
 
   return null;

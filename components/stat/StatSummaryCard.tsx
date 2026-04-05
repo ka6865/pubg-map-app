@@ -3,6 +3,7 @@ import React from "react";
 const getKDA = (k: number, a: number, d: number) => ((k + a) / (d || 1)).toFixed(2);
 const getWinRate = (w: number, p: number) => (p > 0 ? ((w / p) * 100).toFixed(1) : "0.0");
 const getAvgDmg = (dmg: number, p: number) => (p > 0 ? (dmg / p).toFixed(0) : "0");
+const getAvgKnockouts = (dbno: number, p: number) => (p > 0 ? (dbno / p).toFixed(1) : "0.0");
 const getHeadshot = (h: number, k: number) => (k > 0 ? ((h / k) * 100).toFixed(1) : "0.0");
 const getSurvivalTime = (time: number, p: number) => {
   if (p === 0) return "0분 0초";
@@ -98,6 +99,16 @@ export const StatSummaryCard = ({
         <div>
           <div style={{ color: "#888", fontSize: "12px", marginBottom: "5px" }}>Top10</div>
           <div style={{ fontSize: "18px", fontWeight: "bold" }}>{top10}%</div>
+        </div>
+        <div>
+          <div style={{ color: "#888", fontSize: "12px", marginBottom: "5px" }}>우승 횟수</div>
+          <div style={{ fontSize: "18px", fontWeight: "bold", color: "#F2A900" }}>{data.wins}회</div>
+        </div>
+        <div>
+          <div style={{ color: "#888", fontSize: "12px", marginBottom: "5px" }}>평균 기절</div>
+          <div style={{ fontSize: "18px", fontWeight: "bold", color: "#34A853" }}>
+            {getAvgKnockouts(data.dBNOs, data.roundsPlayed)}
+          </div>
         </div>
         <div>
           <div style={{ color: "#888", fontSize: "12px", marginBottom: "5px" }}>평균 딜량</div>
