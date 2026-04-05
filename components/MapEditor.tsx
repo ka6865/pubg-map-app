@@ -6,8 +6,10 @@ import {
   MapContainer,
   TileLayer,
   Marker,
+  CircleMarker,
+  Tooltip,
   useMapEvents,
-  useMap, // 🌟 지도 화면 이동을 위한 훅 추가
+  useMap,
 } from "react-leaflet";
 import L, { CRS } from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -118,6 +120,7 @@ const MapEditorComponent = () => {
 
   const [isLoaded, setIsLoaded] = useState(false);
   const [vehicles, setVehicles] = useState<any[]>([]);
+  const [pendingVehicles, setPendingVehicles] = useState<any[]>([]);
 
   const allowedCategories =
     MAP_CATEGORIES[activeMapId] || MAP_CATEGORIES["Erangel"];
@@ -172,7 +175,15 @@ const MapEditorComponent = () => {
         ? dbMarkers.map((v) => ({ ...v, mapId: v.map_id }))
         : [];
 
-      setVehicles(currentMapMarkers); // 현재 맵 마커만 설정
+      setVehicles(currentMapMarkers);
+
+      const { data: pendingData } = await supabase
+        .from("pending_markers")
+        .select("*")
+        .eq("map_name", activeMapId);
+        
+      setPendingVehicles(pendingData || []);
+
       setIsLoaded(true); // 데이터 로드 완료
     };
     checkAdmin();
@@ -449,6 +460,28 @@ const MapEditorComponent = () => {
               }}
             />
           ))}
+
+          {pendingVehicles.map((v) => {
+            const weight = v.weight || 1;
+            const radius = 15 + weight * 4;
+            const color = weight >= 5 ? "#ef4444" : "#f59e0b";
+            return (
+              <CircleMarker
+                key={`pending-${v.id}`}
+                center={[v.y, v.x]}
+                radius={radius}
+                color={color}
+                fillColor={color}
+                fillOpacity={0.4}
+                weight={2}
+                interactive={false}
+              >
+                <Tooltip direction="top" opacity={0.9} permanent>
+                  👀제보: {v.marker_type}
+                </Tooltip>
+              </CircleMarker>
+            );
+          })}
         </MapContainer>
       </div>
     </div>

@@ -41,7 +41,7 @@ export const CATEGORY_INFO: Record<string, { label: string; color: string; path:
  * 각 맵 고유의 특성에 따라 렌더링될 카테고리 목록 (예: 에란겔에는 빙하/스노우모빌이 없음)
  */
 export const MAP_CATEGORIES: Record<string, string[]> = {
-    Erangel: ['Garage', 'Esports', 'Boat', 'EsportsBoat', 'Glider', 'Key'],
+    Erangel: ['Garage', 'Esports', 'EsportsBoat', 'Glider', 'Key'],
     Miramar: ['GoldenMirado', 'EsportsMirado', 'EsportsPickup', 'EsportsBoat', 'Glider'], 
     Taego: ['Garage', 'Porter', 'Boat', 'SecretRoom'],
     Deston: ['Garage', 'PoliceCar', 'Boat', 'Glider'],

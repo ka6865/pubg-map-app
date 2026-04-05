@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import L from "leaflet";
 import { supabase } from "../../lib/supabase";
 import { MAP_CATEGORIES, CATEGORY_INFO } from "../../lib/map_config";
@@ -31,6 +31,7 @@ const ReportForm = ({
 }: ReportFormProps) => {
   const [selectedType, setSelectedType] = useState<string>("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const isSubmittingRef = useRef(false);
 
   const availableCategories =
     MAP_CATEGORIES[activeMapId] || MAP_CATEGORIES["Erangel"];
@@ -45,8 +46,9 @@ const ReportForm = ({
       toast.error("제보할 종류를 선택해 주세요!");
       return;
     }
-    if (isSubmitting) return;
+    if (isSubmittingRef.current) return;
 
+    isSubmittingRef.current = true;
     setIsSubmitting(true);
 
     try {
@@ -82,7 +84,10 @@ const ReportForm = ({
           "근처 20m 내에 동일한 차량 제보가 있습니다! 기존 마커의 교차 검증에 참여해 주세요.",
           { duration: 5000 }
         );
-        setIsSubmitting(false);
+        sessionStorage.setItem("showPendingReports", "true");
+        setTimeout(() => {
+          window.location.reload();
+        }, 1500);
         return;
       } else {
         // 🆕 주변 데이터 없음! 신규 제보(Insert) 진행
@@ -110,19 +115,18 @@ const ReportForm = ({
         }
 
         toast.success("새로운 제보가 접수되었습니다!");
+        sessionStorage.setItem("showPendingReports", "true");
+        setTimeout(() => {
+          window.location.reload();
+        }, 1000);
       }
 
       onClose();
     } catch (error: any) {
-      // 🌟 아무리 치명적인 에러가 나도 이 안에서 잡아서 무한 로딩을 풀어줍니다.
       console.error("💥 최종 에러 포착:", error);
-      const errorMsg =
-        error?.message ||
-        "알 수 없는 오류가 발생했습니다. 개발자 도구(F12) 콘솔을 확인해주세요.";
-      toast.error(`제보 전송 중 오류 발생: ${errorMsg}`);
-    } finally {
-      // 🌟 정상 처리되든, 에러가 나든 반드시 전송 중 상태를 해제합니다.
+      toast.error("제보 내용을 보내지 못했습니다. 잠시 후 다시 시도해 주세요.");
       setIsSubmitting(false);
+      isSubmittingRef.current = false;
     }
   };
 

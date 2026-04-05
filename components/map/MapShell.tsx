@@ -27,6 +27,7 @@ interface MapShellProps {
   onGetCount: (id: string) => number;
   onEnableDefaultVehicleFilters?: () => void;
   currentUser: AuthUser | null;
+  isAdmin?: boolean;
   pendingVehicles: PendingVehicle[]; // 🌟 추가
 }
 
@@ -81,6 +82,7 @@ const MapShell = memo(
     onGetCount,
     onEnableDefaultVehicleFilters,
     currentUser,
+    isAdmin,
     pendingVehicles,
   }: MapShellProps) => {
     const router = useRouter();
@@ -179,7 +181,9 @@ const MapShell = memo(
           p2.lng,
           p2.lat
         );
-        return distPx * mapScale <= 500;
+        const radiusMeters = distPx * mapScale;
+        const isNotVehicleStr = v.type === "Key" || v.type === "SecretRoom" || v.type === "SecurityCard";
+        return radiusMeters <= 1000 && !isNotVehicleStr;
       });
     }
 
@@ -253,7 +257,7 @@ const MapShell = memo(
                     }}
                     className={`px-3 py-2 border-none rounded-[20px] font-black text-[12px] cursor-pointer ${isVehicleFilterOn ? "bg-[#F2A900] text-black" : "bg-[#252525] text-[#888]"}`}
                   >
-                    🚗 주변 500m 탈것 찾기 {isVehicleFilterOn ? "ON" : "OFF"}
+                    🚗 주변 1km 차량/보트 찾기 {isVehicleFilterOn ? "ON" : "OFF"}
                   </button>
                 )}
               </div>
@@ -295,6 +299,7 @@ const MapShell = memo(
             setReportLocation={setReportLocation}
             reportLocation={reportLocation}
             currentUser={currentUser}
+            isAdmin={isAdmin}
             pendingVehicles={playbackId ? [] : pendingVehicles} // 🌟 넘겨주기
             filters={filters} // 🌟 사이드바 토글 상태 체크용
             telemetryData={{

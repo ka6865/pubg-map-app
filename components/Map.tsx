@@ -103,10 +103,21 @@ export default function Map() {
   }, [isMobile]);
 
   const [filters, setFilters] = useState<MapFilters>(() => {
-    const init: Record<string, boolean> = { pending: false }; //
-    Object.keys(CATEGORY_INFO).forEach((k) => (init[k] = false));
+    const init: Record<string, boolean> = { pending: false };
+    if (typeof window !== "undefined" && sessionStorage.getItem("showPendingReports") === "true") {
+      init.pending = true;
+    }
+    Object.keys(CATEGORY_INFO).forEach((k) => {
+      if (!init.hasOwnProperty(k)) init[k] = false;
+    });
     return init;
   });
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && sessionStorage.getItem("showPendingReports") === "true") {
+      sessionStorage.removeItem("showPendingReports");
+    }
+  }, []);
 
   useEffect(() => {
     const checkMobile = () => {
@@ -242,7 +253,7 @@ export default function Map() {
             }}
           >
             <div style={{ width: "100%", maxWidth: "1200px" }}>
-              <StatSearch />
+              <StatSearch userProfile={userProfile} />
             </div>
           </div>
         ) : activeMapId === "Board" ? (
@@ -295,6 +306,7 @@ export default function Map() {
             onGetCount={getCount}
             onEnableDefaultVehicleFilters={enableDefaultVehicleFilters}
             currentUser={currentUser}
+            isAdmin={isAdmin}
             pendingVehicles={pendingVehicles} // 🌟 자식에게 제보 데이터 넘김
           />
         )}

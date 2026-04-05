@@ -1,4 +1,4 @@
-import React, { memo } from "react";
+import React, { memo, useRef } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -187,6 +187,7 @@ interface MapViewProps {
   setReportLocation: React.Dispatch<React.SetStateAction<L.LatLng | null>>;
   reportLocation: L.LatLng | null;
   currentUser: AuthUser | null;
+  isAdmin?: boolean;
   pendingVehicles: PendingVehicle[];
   filters: Record<string, boolean>;
   telemetryData?: any; 
@@ -214,10 +215,13 @@ const MapView = memo(
     setReportLocation,
     reportLocation,
     currentUser,
+    isAdmin,
     pendingVehicles,
     filters,
     telemetryData, 
   }: MapViewProps) => {
+    const isActionRunningRef = useRef(false);
+
     const handleCloseReport = () => {
       setReportLocation(null);
       setActiveMode("none");
@@ -227,12 +231,21 @@ const MapView = memo(
       markerId: string | number,
       voteType: "up" | "down"
     ) => {
-      if (!currentUser) return toast.error("로그인 후 참여 가능합니다.");
+      if (isActionRunningRef.current) return;
+      isActionRunningRef.current = true;
+
+      if (!currentUser) {
+        isActionRunningRef.current = false;
+        return toast.error("로그인 후 참여 가능합니다.");
+      }
 
       const {
         data: { session },
       } = await supabase.auth.getSession();
-      if (!session) return toast.warning("인증 정보가 만료되었습니다. 다시 로그인 해 주세요.");
+      if (!session) {
+        isActionRunningRef.current = false;
+        return toast.warning("인증 정보가 만료되었습니다. 다시 로그인 해 주세요.");
+      }
 
       try {
         const res = await fetch("/api/report/vote", {
@@ -250,6 +263,7 @@ const MapView = memo(
         toast.success(`[${voteType === "up" ? "진실" : "거짓"}] 평가 완료!`, {
           description: "2초 후 지도에 반영됩니다.",
         });
+        sessionStorage.setItem("showPendingReports", "true");
         setTimeout(() => window.location.reload(), 2000);
 
         if (data.triggerNotify) {
@@ -260,7 +274,45 @@ const MapView = memo(
           }).catch(console.error);
         }
       } catch (e: any) {
-        toast.error(e.message || "평가 중 오류가 발생했습니다.");
+        toast.error("투표 결과를 반영하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+        isActionRunningRef.current = false;
+      }
+    };
+
+    const handleAdminAction = async (markerId: string | number, action: "approve" | "reject") => {
+      if (isActionRunningRef.current) return;
+      isActionRunningRef.current = true;
+
+      if (!currentUser) {
+        isActionRunningRef.current = false;
+        return toast.error("로그인 후 참여 가능합니다.");
+      }
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        isActionRunningRef.current = false;
+        return toast.warning("인증 정보가 만료되었습니다. 다시 로그인 해 주세요.");
+      }
+
+      try {
+        const res = await fetch(`/api/admin/${action}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          body: JSON.stringify({ id: markerId }),
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "처리 오류");
+
+        toast.success(`관리자 권한으로 ${action === "approve" ? "승인(데이터베이스 반영)" : "파기(삭제)"} 되었습니다!`);
+        sessionStorage.setItem("showPendingReports", "true");
+        setTimeout(() => window.location.reload(), 1000);
+      } catch (error: any) {
+        toast.error("정보를 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+        isActionRunningRef.current = false;
       }
     };
 
@@ -393,6 +445,30 @@ const MapView = memo(
                         👎 거짓 ({v.down_weight || 0})
                       </button>
                     </div>
+                    {isAdmin && (
+                      <div style={{ display: "flex", gap: "8px", justifyContent: "center", marginTop: "8px", paddingTop: "8px", borderTop: "1px dashed #ccc" }}>
+                        <button
+                          onClick={() => handleAdminAction(v.id, "approve")}
+                          style={{
+                            flex: 1, backgroundColor: "#3b82f6", color: "white",
+                            border: "none", borderRadius: "4px", padding: "4px 0",
+                            cursor: "pointer", fontWeight: "bold", fontSize: "11px"
+                          }}
+                        >
+                          ✅ 관리자 승인
+                        </button>
+                        <button
+                          onClick={() => handleAdminAction(v.id, "reject")}
+                          style={{
+                            flex: 1, backgroundColor: "#d93025", color: "white",
+                            border: "none", borderRadius: "4px", padding: "4px 0",
+                            cursor: "pointer", fontWeight: "bold", fontSize: "11px"
+                          }}
+                        >
+                          🗑️ 관리자 파기
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </Popup>
               </CircleMarker>
