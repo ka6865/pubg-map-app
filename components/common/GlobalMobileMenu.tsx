@@ -68,7 +68,7 @@ export default function GlobalMobileMenu({ isOpen, setIsOpen, activeMapId }: Glo
         <div className="flex items-center justify-between p-5 border-b border-[#222]">
           <div className="w-12 h-1.5 bg-[#333] rounded-full absolute top-2 left-1/2 -translate-x-1/2" />
           <h2 className="text-[#F2A900] font-black text-xl italic tracking-tighter uppercase">
-            BGMAP.kr Menu
+            BGMS Menu
           </h2>
           <button onClick={() => setIsOpen(false)} className="p-1 bg-[#222] rounded-full text-[#666]">
             <X size={20} />
@@ -85,7 +85,7 @@ export default function GlobalMobileMenu({ isOpen, setIsOpen, activeMapId }: Glo
                 </div>
                 <div className="flex flex-col">
                   <span className="text-white font-black text-lg">{user ? (displayName || "게이머") : "익명 사용자"}</span>
-                  <span className="text-[#666] text-xs">BGMAP.kr에 오신 것을 환영합니다</span>
+                  <span className="text-[#666] text-xs">BGMS에 오신 것을 환영합니다</span>
                 </div>
               </div>
               <div className="flex gap-2">

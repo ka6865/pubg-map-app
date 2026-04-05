@@ -98,7 +98,7 @@ export async function POST() {
     const { error: insertError } = await supabase.from('posts').insert([{
       title: title,
       content: formattedContent,
-      author: 'BGMAP 시스템',
+      author: 'BGMS 시스템',
       category: '패치노트',
       is_notice: true,
       image_url: null,

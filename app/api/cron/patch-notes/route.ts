@@ -130,7 +130,7 @@ export async function GET(request: Request) {
         url: fullUrl,
         thumbnail: thumbnail ? { url: thumbnail } : undefined,
         color: 0xf2a900, 
-        footer: { text: "PUBG 통합 지도 봇 | 패치노트 알리미" },
+        footer: { text: "BGMS 통합 지도 봇 | 패치노트 알리미" },
         timestamp: new Date().toISOString(),
       };
 
@@ -165,7 +165,7 @@ export async function GET(request: Request) {
       await supabaseAdmin.from("posts").insert([{
         title: title,
         content: formattedContent,
-        author: "BGMAP 시스템",
+        author: "BGMS 시스템",
         category: "패치노트",
         is_notice: true,
         image_url: null,

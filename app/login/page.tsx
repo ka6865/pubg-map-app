@@ -57,7 +57,7 @@ export default function Login() {
           textShadow: '-1px -1px 0 #F2A900, 1px -1px 0 #F2A900, -1px 1px 0 #F2A900, 1px 1px 0 #F2A900',
           letterSpacing: '-1px'
         }}>
-          PUBG<span style={{ color: 'white', textShadow: 'none' }}>MAP</span>
+          BG<span style={{ color: 'white', textShadow: 'none' }}>MS</span>
         </h2>
         
         <p style={{ color: '#888', fontSize: '15px', marginBottom: '40px', lineHeight: '1.5' }}>

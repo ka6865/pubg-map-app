@@ -101,7 +101,7 @@ const MapHeader = memo(({
             letterSpacing: "-1px"
           }}
         >
-          BG<span style={{ color: "white" }}>MAP.kr</span>
+          BG<span style={{ color: "white" }}>MS.kr</span>
         </div>
         
         {!isMobile && (
