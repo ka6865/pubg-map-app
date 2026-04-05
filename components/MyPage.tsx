@@ -4,6 +4,7 @@ import { useState, useEffect } from "react"; // React 상태 제어 훅 로드
 import { supabase } from "../lib/supabase"; // DB 및 인증 서버 통신용 Supabase 클라이언트 로드
 import type { CurrentUser } from "../types/map";
 import { toast } from "sonner";
+import MiniStatWidget from "./stat/MiniStatWidget";
 
 // 유저 설정 상수
 const USER_CONFIG = {
@@ -28,12 +29,14 @@ export default function MyPage({
   setOptimisticNickname,
 }: MyPageProps) {
   const [editNickname, setEditNickname] = useState(userProfile?.nickname || ""); // 닉네임 수정 입력값 상태
+  const [editPubgNickname, setEditPubgNickname] = useState(userProfile?.pubg_nickname || ""); // 배틀그라운드 닉네임 연동 상태
+  const [editPubgPlatform, setEditPubgPlatform] = useState(userProfile?.pubg_platform || "steam"); // 플랫폼 선택 상태 (기본값 스팀)
 
   // 진입 시점 사용자 프로필 데이터를 참조하여 닉네임 입력 폼 초기화
   useEffect(() => {
-    if (userProfile?.nickname) {
-      setEditNickname(userProfile.nickname);
-    }
+    if (userProfile?.nickname) setEditNickname(userProfile.nickname);
+    if (userProfile?.pubg_nickname) setEditPubgNickname(userProfile.pubg_nickname);
+    if (userProfile?.pubg_platform) setEditPubgPlatform(userProfile.pubg_platform);
   }, [userProfile]);
 
   // 닉네임 변경 검증, DB 프로필 테이블 갱신 및 기존 게시물/댓글 작성자명 동기화 처리
@@ -41,8 +44,14 @@ export default function MyPage({
     if (!currentUser) return;
 
     const newNickname = editNickname.trim();
+    const newPubgNickname = editPubgNickname.trim();
+    const newPubgPlatform = editPubgPlatform;
 
-    if (newNickname === userProfile?.nickname) {
+    if (
+      newNickname === userProfile?.nickname && 
+      newPubgNickname === (userProfile?.pubg_nickname || "") &&
+      newPubgPlatform === (userProfile?.pubg_platform || "steam")
+    ) {
       toast.info("변경된 내용이 없습니다.");
       return;
     }
@@ -54,15 +63,35 @@ export default function MyPage({
 
     setOptimisticNickname(newNickname);
 
-    const { error } = await supabase.from("profiles").upsert({
-      id: currentUser.id,
-      nickname: newNickname,
-      updated_at: new Date(),
-    });
+    // [디버그] 업데이트 전, 현재 내 프로필 데이터가 DB에 실제로 존재하는지, 그리고 RLS 열람 권한이 있는지 확인
+    const { data: existingProfile, error: checkError } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", currentUser.id)
+      .single();
 
-    if (!error) {
+    if (checkError || !existingProfile) {
+      console.error("🔍 DB 프로필 존재 확인 실패:", checkError);
+      toast.error("프로필 정보를 불러올 수 없습니다. 다시 로그인해 보시기 바랍니다.");
+      return;
+    }
+
+    const { error, data: updatedProfiles } = await supabase
+      .from("profiles")
+      .update({
+        nickname: newNickname,
+        pubg_nickname: newPubgNickname || null,
+        pubg_platform: newPubgPlatform,
+        updated_at: new Date(),
+      })
+      .eq("id", currentUser.id)
+      .select();
+
+    if (!error && updatedProfiles && updatedProfiles.length > 0) {
       toast.success("프로필이 업데이트되었습니다.");
       setEditNickname(newNickname);
+      setEditPubgNickname(newPubgNickname);
+      setEditPubgPlatform(newPubgPlatform);
       fetchUserProfile(currentUser);
 
       await supabase
@@ -80,10 +109,12 @@ export default function MyPage({
 
       setIsMyPage(false);
     } else {
-      if (error.code === "23505") {
+      if (error?.code === "23505") {
         toast.error("이미 사용 중인 닉네임입니다.");
+      } else if (!updatedProfiles || updatedProfiles.length === 0) {
+        toast.error("저장할 프로필 정보가 데이터베이스에 존재하지 않습니다.");
       } else {
-        toast.error("프로필 수정 실패: " + error.message);
+        toast.error("프로필 정보를 수정하는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.");
       }
     }
   };
@@ -200,6 +231,71 @@ export default function MyPage({
             }}
           />
         </div>
+
+        <div>
+          <label
+            style={{
+              display: "block",
+              marginBottom: "8px",
+              fontSize: "13px",
+              color: "#888",
+              fontWeight: "bold",
+            }}
+          >
+            배틀그라운드 인게임 닉네임 연동
+          </label>
+          <input
+            type="text"
+            value={editPubgNickname}
+            onChange={(e) => setEditPubgNickname(e.target.value)}
+            placeholder="인게임 닉네임을 정확히 입력하세요"
+            style={{
+              width: "100%",
+              padding: "12px",
+              backgroundColor: "#252525",
+              border: "1px solid #444",
+              color: "white",
+              borderRadius: "6px",
+              fontSize: "16px",
+              boxSizing: "border-box",
+            }}
+          />
+          <p style={{ fontSize: "12px", color: "#666", marginTop: "6px" }}>
+            * 연동 시 대시보드 위젯과 메인 전적 탭에서 내 기록을 즉시 조회할 수 있습니다.
+          </p>
+
+          <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
+            {(["steam", "kakao"] as const).map((p) => (
+              <button
+                key={p}
+                onClick={() => setEditPubgPlatform(p)}
+                style={{
+                  flex: 1,
+                  padding: "10px",
+                  backgroundColor: editPubgPlatform === p ? "#F2A900" : "#252525",
+                  color: editPubgPlatform === p ? "black" : "#888",
+                  border: `1px solid ${editPubgPlatform === p ? "#F2A900" : "#444"}`,
+                  borderRadius: "6px",
+                  fontWeight: "bold",
+                  fontSize: "13px",
+                  cursor: "pointer",
+                  transition: "all 0.2s ease",
+                }}
+              >
+                {p.toUpperCase()}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {userProfile?.pubg_nickname && (
+          <div className="mt-2">
+            <MiniStatWidget 
+              pubgNickname={userProfile.pubg_nickname} 
+              platform={userProfile.pubg_platform || "steam"}
+            />
+          </div>
+        )}
 
         <div style={{ display: "flex", gap: "10px", marginTop: "20px" }}>
           <button

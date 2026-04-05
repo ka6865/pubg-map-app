@@ -8,12 +8,18 @@ import { StatSummaryCard } from "./stat/StatSummaryCard";
 const STORAGE_KEY_RECENT = "pubg_recent_searches_v2";
 const STORAGE_KEY_FAVORITES = "pubg_favorites_v2";
 
+import type { UserProfile } from "../types/map";
+
+interface StatSearchProps {
+  userProfile?: UserProfile | null;
+}
+
 /**
  * 전적 검색 메인 컴포넌트
  * 플레이어 닉네임, 플랫폼을 기반으로 PUBG API를 호출하여 
  * 요약 데이터(StatSummaryCard)와 매치 히스토리(MatchCard)를 화면에 렌더링합니다.
  */
-export default function StatSearch() {
+export default function StatSearch({ userProfile }: StatSearchProps = {}) {
   const [platform, setPlatform] = useState("steam");
   const [nickname, setNickname] = useState("");
   const [loading, setLoading] = useState(false);
@@ -43,15 +49,27 @@ export default function StatSearch() {
     if (savedFavorites) setFavorites(JSON.parse(savedFavorites));
   }, []);
 
+  // 유저 프로필에 연동된 배그 닉네임이 있다면 초기 마운트 시 자동 검색
+  useEffect(() => {
+    if (userProfile?.pubg_nickname && !result && !loading) {
+      const userPlatform = userProfile.pubg_platform || "steam";
+      setNickname(userProfile.pubg_nickname);
+      setPlatform(userPlatform);
+      handleSearch(selectedSeason, userProfile.pubg_nickname, userPlatform);
+    }
+  }, [userProfile]);
+
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_FAVORITES, JSON.stringify(favorites));
   }, [favorites]);
 
   const handleSearch = async (
     targetSeason = selectedSeason,
-    overrideNickname?: string
+    overrideNickname?: string,
+    overridePlatform?: string
   ) => {
     const searchName = overrideNickname || nickname;
+    const searchPlatform = overridePlatform || platform;
     if (!searchName.trim() || cooldown) return;
 
     setLoading(true);
@@ -61,7 +79,7 @@ export default function StatSearch() {
 
     try {
       const res = await fetch(
-        `/api/pubg/player?nickname=${searchName}&platform=${platform}&season=${targetSeason}`
+        `/api/pubg/player?nickname=${searchName}&platform=${searchPlatform}&season=${targetSeason}`
       );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);

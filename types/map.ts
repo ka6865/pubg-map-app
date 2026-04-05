@@ -13,6 +13,8 @@ export interface MapMarker {
 export interface UserProfile {
   id?: string;
   nickname: string;
+  pubg_nickname?: string;
+  pubg_platform?: string;
   role?: string;
 }
 
@@ -26,6 +28,8 @@ export interface CurrentUser {
   id: string;
   email?: string;
   nickname?: string;
+  pubg_nickname?: string;
+  pubg_platform?: string;
 }
 
 export interface PendingVehicle {
