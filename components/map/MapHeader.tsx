@@ -75,6 +75,7 @@ const MapHeader = memo(({
         {activeMapId !== "Stats" && activeMapId !== "Board" && !isMobile && (
           <button
             onClick={onToggleSidebar}
+            aria-label="사이드바 열기/닫기"
             style={{
               background: "none",
               border: "none",
@@ -340,6 +341,8 @@ const MapHeader = memo(({
             <div style={{ position: "relative" }}>
               <div
                 onClick={onToggleNoti}
+                role="button"
+                aria-label="알림 목록 보기"
                 style={{ cursor: "pointer", display: "flex", alignItems: "center" }}
               >
                 <svg viewBox="0 0 24 24" width="20" height="20" fill="black">
@@ -372,6 +375,8 @@ const MapHeader = memo(({
 
             <div
               onClick={onMyPageClick}
+              role="button"
+              aria-label="마이페이지 이동"
               style={{
                 cursor: "pointer",
                 display: "flex",

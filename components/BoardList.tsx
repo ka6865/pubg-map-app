@@ -15,6 +15,8 @@ const ImageIcon = () => (
     fill="currentColor"
     viewBox="0 0 24 24"
     xmlns="http://www.w3.org/2000/svg"
+    aria-label="이미지 포함된 게시글"
+    role="img"
   >
     <path
       fillRule="evenodd"
@@ -110,9 +112,9 @@ export default function BoardList({
 
       <div className="bg-[#1a1a1a] rounded-[8px] border border-[#333] overflow-hidden">
         {isMobile ? (
-          <div className="flex flex-col">
+          <ul className="flex flex-col list-none p-0 m-0">
             {posts.map((post) => (
-              <div
+              <li
                 key={post.id}
                 onClick={() =>
                   router.push(`/?tab=Board&f=${boardFilter}&postId=${post.id}`)
@@ -150,7 +152,7 @@ export default function BoardList({
                     WebkitTextFillColor: post.is_notice ? "#F2A900" : "#ffffff",
                   }}
                 >
-                  <span>{post.title}</span>
+                  <span className="break-all">{post.title}</span>
                   {post.image_url ? <ImageIcon /> : null}
                   {(post.comment_count || 0) > 0 ? (
                     <span
@@ -174,9 +176,9 @@ export default function BoardList({
                     조회 {post.views} · 추천 {post.likes}
                   </span>
                 </div>
-              </div>
+              </li>
             ))}
-          </div>
+          </ul>
         ) : (
           <table className="w-full border-collapse text-left text-[14px]">
             <thead className="bg-[#252525] text-[#888]">

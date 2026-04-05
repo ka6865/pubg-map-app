@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo } from "react"; // 컴포넌트 렌더링 최적화 훅
+import { useState, useEffect, useMemo } from "react"; // React 상태 및 생명주기 관리 훅
 import { useRouter } from "next/navigation"; // Next.js 페이지 라우터 모듈
+import { supabase } from "../lib/supabase"; // DB 통신용 Supabase 클라이언트
 import DOMPurify from "isomorphic-dompurify"; // XSS 해킹 방지용 HTML 소독 라이브러리 로드
 import Image from "next/image"; // Next.js 이미지 최적화
 import CommentSection from "./CommentSection"; // 게시물 하단 대댓글 시스템 컴포넌트 로드
@@ -54,6 +55,22 @@ export default function BoardDetail({
   handleEditClick,
 }: BoardDetailProps) {
   const router = useRouter();
+  const [relatedPosts, setRelatedPosts] = useState<Post[]>([]); // 관련 게시글 목록 상태
+
+  // 현재 게시글과 동일한 카테고리의 최신글 3개 가져오기 (SEO 및 내부 링크 강화)
+  useEffect(() => {
+    const fetchRelated = async () => {
+      const { data } = await supabase
+        .from("posts")
+        .select("id, title, created_at, category")
+        .eq("category", selectedPost.category)
+        .neq("id", selectedPost.id)
+        .order("created_at", { ascending: false })
+        .limit(3);
+      if (data) setRelatedPosts(data as Post[]);
+    };
+    fetchRelated();
+  }, [selectedPost.id, selectedPost.category]);
 
   // HTML 원본 문자열 보안 소독 및 모바일 호환을 위한 이미지 태그 스타일 CSS 치환 적용
   const processedContent = useMemo(() => {
@@ -65,7 +82,7 @@ export default function BoardDetail({
   }, [selectedPost.content]);
 
   return (
-    <div
+    <article
       className={`bg-[#1a1a1a] rounded-[8px] border border-[#333] w-full box-border overflow-x-hidden ${
         isMobile ? "p-[15px]" : "p-[30px]"
       }`}
@@ -74,13 +91,13 @@ export default function BoardDetail({
         <span className="text-[#F2A900] text-[13px] font-bold">
           [{selectedPost.category}]
         </span>
-        <h2
+        <h1
           className={`mt-[10px] text-white break-all font-bold ${
             isMobile ? "text-[24px]" : "text-[32px]"
           }`}
         >
           {selectedPost.title}
-        </h2>
+        </h1>
         <div className="text-[12px] text-[#888] mt-[12px] flex gap-[10px] flex-wrap">
           <span>글쓴이: {selectedPost.author}</span>
           <span>작성: {formatTimeAgo(selectedPost.created_at)}</span>
@@ -93,7 +110,7 @@ export default function BoardDetail({
           !(selectedPost.content || "").includes(selectedPost.image_url) && (
             <Image
               src={selectedPost.image_url}
-              alt="Thumbnail"
+              alt={`${selectedPost.title} 이미지`}
               width={800}
               height={450}
               priority
@@ -142,6 +159,32 @@ export default function BoardDetail({
         formatTimeAgo={formatTimeAgo}
       />
 
+      {/* 🌟 추천 게시글 (내부 링크 및 SEO 강화) */}
+      {relatedPosts.length > 0 && (
+        <div className="mt-[50px] pt-[30px] border-t border-[#222]">
+          <h3 className="text-[16px] text-[#F2A900] font-bold mb-[15px] flex items-center gap-2">
+            <span className="w-1 h-4 bg-[#F2A900] rounded-full"></span>
+            관련 추천 게시글
+          </h3>
+          <div className="flex flex-col gap-[10px]">
+            {relatedPosts.map((post) => (
+              <div
+                key={post.id}
+                onClick={() => router.push(`/?tab=Board&f=${boardFilter}&postId=${post.id}`)}
+                className="group flex justify-between items-center p-[12px] bg-[#222] rounded-[6px] hover:bg-[#2a2a2a] cursor-pointer transition-all border border-transparent hover:border-[#F2A900]/30"
+              >
+                <span className="text-[14px] text-[#ddd] group-hover:text-white truncate flex-1 pr-[10px]">
+                  {post.title}
+                </span>
+                <span className="text-[11px] text-[#555] shrink-0">
+                  {new Date(post.created_at).toLocaleDateString()}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="mt-[40px] flex gap-[10px]">
         <button
           onClick={() => router.push(`/?tab=Board&f=${boardFilter}`)}
@@ -168,6 +211,6 @@ export default function BoardDetail({
           </button>
         )}
       </div>
-    </div>
+    </article>
   );
 }

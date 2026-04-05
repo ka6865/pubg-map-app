@@ -1,21 +1,73 @@
-'use client';
+import HomeClient from './HomeClient';
+import { Metadata } from 'next';
+import { createClient } from '@supabase/supabase-js';
 
-// Next.js 동적 컴포넌트 로드 모듈
-import dynamic from 'next/dynamic';
+// 서버 전용 Supabase 클라이언트 (메타데이터 조회용)
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
-// 메인 지도 컴포넌트 동적 로드 (SSR 비활성화 및 로딩 UI 지정)
-const Map = dynamic(() => import('../components/Map'), {
-  ssr: false,
-  loading: () => (
-    <div style={{ width: '100%', height: '100vh', backgroundColor: '#0b0f19', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-      <p>전장 진입 중...</p>
-    </div>
-  )
-});
+// [SEO] 동적 메타데이터 생성 함수
+export async function generateMetadata({ searchParams }: { searchParams: { [key: string]: string | string[] | undefined } }): Promise<Metadata> {
+  const postId = searchParams.postId as string;
 
-// 메인 페이지 진입점 컴포넌트
-export default function Home() {
-  const jsonLd = [
+  if (postId) {
+    try {
+      const { data: post } = await supabase
+        .from('posts')
+        .select('id, title, content, category, author, created_at, updated_at, image_url')
+        .eq('id', postId)
+        .single();
+
+      if (post) {
+        // 본문에서 텍스트만 추출하여 150자 내외로 설명문 생성
+        const plainText = post.content?.replace(/<[^>]*>/g, '').substring(0, 150) || '';
+        const canonicalUrl = `https://bgms.kr/?tab=Board&postId=${postId}`;
+        
+        return {
+          title: `${post.title} | ${post.category} - BGMS`,
+          description: plainText,
+          alternates: {
+            canonical: canonicalUrl,
+          },
+          openGraph: {
+            title: `${post.title} - BGMS`,
+            description: plainText,
+            url: canonicalUrl,
+            type: 'article',
+            publishedTime: post.created_at,
+            modifiedTime: post.updated_at,
+            authors: [post.author],
+            images: [post.image_url || '/logo.png'],
+          },
+          twitter: {
+            card: 'summary_large_image',
+            title: `${post.title} - BGMS`,
+            description: plainText,
+            images: [post.image_url || '/logo.png'],
+          }
+        };
+      }
+    } catch (e) {
+      console.error('Metadata generation error:', e);
+    }
+  }
+
+  return {
+    title: 'BGMS | 배틀그라운드 통합 지도 서비스 - 차량 및 전술 정보',
+    description: '에란겔, 미라마, 태이고 등 배틀그라운드 모든 맵의 차량/보트 위치와 실시간 전적 정보를 제공하는 전문 전술 플랫폼 BGMS입니다.'
+  };
+}
+
+// 메인 페이지 서버 컴포넌트
+export default async function Home({ searchParams }: { searchParams: { [key: string]: string | string[] | undefined } }) {
+  const activeMapId = searchParams.tab as string || "Erangel";
+  
+  // 맵 이미지 프리로딩 리스트 (대표 3종)
+  const preloadMaps = ["Erangel", "Miramar", "Taego", "Rondo", "Vikendi", "Deston"];
+
+  const jsonLd: any[] = [
     {
       "@context": "https://schema.org",
       "@type": "WebSite",
@@ -38,11 +90,6 @@ export default function Home() {
         "@type": "Organization",
         "name": "BGMS Team",
         "url": "https://bgms.kr"
-      },
-      "offers": {
-        "@type": "Offer",
-        "price": "0",
-        "priceCurrency": "KRW"
       }
     },
     {
@@ -52,37 +99,82 @@ export default function Home() {
         {
           "@type": "ListItem",
           "position": 1,
-          "name": "에란겔 지도",
+          "name": "에란겔",
           "item": "https://bgms.kr/?tab=Erangel"
         },
         {
           "@type": "ListItem",
           "position": 2,
-          "name": "미라마 지도",
+          "name": "미라마",
           "item": "https://bgms.kr/?tab=Miramar"
         },
         {
           "@type": "ListItem",
           "position": 3,
-          "name": "태이고 지도",
+          "name": "태이고",
           "item": "https://bgms.kr/?tab=Taego"
+        },
+        {
+          "@type": "ListItem",
+          "position": 4,
+          "name": "게시판",
+          "item": "https://bgms.kr/?tab=Board"
         }
       ]
     }
   ];
 
-  return (
-    <main style={{ width: '100%', height: '100vh', overflow: 'hidden' }}>
-      {/* SEO용 숨김 제목 */}
-      <h1 className="sr-only">BGMS | 배틀그라운드(PUBG) 통합 지도 및 전술 분석 도구</h1>
-      
-      {/* 구조화된 데이터 (JSON-LD) */}
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-      />
+  // 게시글 상세 페이지일 경우 Article 스키마 추가
+  if (searchParams.postId) {
+    try {
+      const postId = searchParams.postId as string;
+      const { data: post } = await supabase
+        .from('posts')
+        .select('title, content, author, created_at, updated_at, image_url, category')
+        .eq('id', postId)
+        .single();
 
-      <Map />
-    </main>
+      if (post) {
+        jsonLd.push({
+          "@context": "https://schema.org",
+          "@type": "Article",
+          "headline": post.title,
+          "description": post.content?.replace(/<[^>]*>/g, '').substring(0, 150),
+          "author": {
+            "@type": "Person",
+            "name": post.author
+          },
+          "datePublished": post.created_at,
+          "dateModified": post.updated_at,
+          "publisher": {
+            "@type": "Organization",
+            "name": "BGMS",
+            "logo": {
+              "@type": "ImageObject",
+              "url": "https://bgms.kr/logo.png"
+            }
+          },
+          "image": post.image_url || "https://bgms.kr/logo.png",
+          "mainEntityOfPage": {
+            "@type": "WebPage",
+            "@id": `https://bgms.kr/?tab=Board&postId=${postId}`
+          }
+        });
+      }
+    } catch (e) {
+      console.error('JsonLd article error:', e);
+    }
+  }
+
+  return (
+    <>
+      {/* 🚀 중요 리소스 프리로딩 (성능 최적화) */}
+      <link rel="preload" href={`/${activeMapId}.jpg`} as="image" />
+      {preloadMaps.filter(m => m !== activeMapId).map(m => (
+        <link key={m} rel="prefetch" href={`/${m}.jpg`} as="image" />
+      ))}
+      
+      <HomeClient jsonLd={jsonLd} />
+    </>
   );
 }
