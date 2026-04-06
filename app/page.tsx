@@ -58,14 +58,14 @@ export async function generateMetadata({ searchParams }: { searchParams: Promise
 
   // 2. 맵/탭별 맞춤형 메타데이터 (ID 기반)
   const tabMetadata: Record<string, { title: string; desc: string }> = {
-    Erangel: { title: "에란겔(Erangel) 차량 위치 및 전략 지도", desc: "배틀그라운드 에란겔 맵의 모든 차량/보트 스폰 위치와 고정 차량 정보, 꿀집 위치를 확인하세요." },
-    Miramar: { title: "미라마(Miramar) 차량 위치 및 전략 지도", desc: "황금 미라도 위치부터 오프로드 주행 경로, 미라마 전술 지도를 BGMS에서 제공합니다." },
-    Taego: { title: "태이고(Taego) 차량 위치 및 전략 지도", desc: "태이고 차고지 위치, 포터 스폰 장소, 비밀방 위치 정보를 한눈에 확인하세요." },
-    Rondo: { title: "론도(Rondo) 차량 위치 및 전략 지도", desc: "론도의 넓은 지형을 극복하기 위한 모든 이동수단 스폰 위치 정보를 제공합니다." },
-    Vikendi: { title: "비켄디(Vikendi) 차량 위치 및 전략 지도", desc: "비켄디 리본 맵의 차량 위치와 스노우모빌 정보를 확인하세요." },
-    Deston: { title: "데스턴(Deston) 차량 위치 및 전략 지도", desc: "데스턴 경찰차, 에어보트 위치와 주요 건물 파밍 루트를 제공합니다." },
+    Erangel: { title: "에란겔(Erangel) 고젠 위치 및 전술 지도", desc: "배그 에란겔 맵의 모든 고정 젠(고젠) 차량/보트 스폰 위치 정보를 BGMS에서 확인하세요." },
+    Miramar: { title: "미라마(Miramar) 고젠 위치 및 전술 지도", desc: "미라마 맵의 고정 차량(고젠) 스폰 지역과 황금 미라도 위치 등 핵심 정보를 제공합니다." },
+    Taego: { title: "태이고(Taego) 고젠 위치 및 전술 지도", desc: "태이고 맵의 고정 탈것(고젠) 장소와 포터, 비밀방 상세 위치를 확인하세요." },
+    Rondo: { title: "론도(Rondo) 고젠 위치 및 전술 지도", desc: "론도 맵의 넓은 지형을 빠르게 이동할 수 있는 고정 젠 차량 위치 정보를 확인하세요." },
+    Vikendi: { title: "비켄디(Vikendi) 고젠 위치 및 전술 지도", desc: "비켄디 리본 맵의 고정 차량 스폰(고젠) 위치와 스노우모빌 정보를 제공합니다." },
+    Deston: { title: "데스턴(Deston) 고젠 위치 및 전술 지도", desc: "데스턴의 고정 젠 차량 및 에어보트 위치와 주요 파밍 루트를 확인하세요." },
     Stats: { title: "배그 전적 검색 및 실시간 딜량 계산기", desc: "배틀그라운드 시즌별 전적과 평균 딜량, 킬뎃 정보를 즉시 조회하세요." },
-    Board: { title: "생존자 커뮤니티 및 최신 패치노트", desc: "배틀그라운드 최신 업데이트 소식과 유저들의 전략을 공유하는 공간입니다." }
+    Board: { title: "생존자 커뮤니티 및 고젠 공략 게시판", desc: "배틀그라운드 최신 업데이트 소식과 유저들의 고젠 공략을 공유하는 공간입니다." }
   };
 
   const currentMeta = tabMetadata[tab] || { 
@@ -102,6 +102,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ [
       "@context": "https://schema.org",
       "@type": "WebSite",
       "name": "BGMS",
+      "alternateName": ["배그 고젠", "배그 전술 지도"],
       "url": baseUrl,
       "potentialAction": {
         "@type": "SearchAction",

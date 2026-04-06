@@ -12,11 +12,11 @@ const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://bgms.kr";
 export const metadata: Metadata = {
   metadataBase: new URL(baseUrl), // 도메인 유연성 확보
   title: {
-    default: "BGMS | 배틀그라운드 통합 지도 서비스 - 차량 및 전술 정보",
-    template: "%s | BGMS"
+    default: "BGMS | 배그 고젠 및 고정 차량 위치 - 배틀그라운드 통합 지도",
+    template: "%s | BGMS 배그 고젠"
   },
-  description: "에란겔, 미라마, 태이고 등 배틀그라운드 모든 맵의 차량/보트 위치와 실시간 전적, 아이템 무게 계산기를 제공하는 전문 전술 플랫폼 BGMS입니다.",
-  keywords: ["배틀그라운드", "배그 지도", "BGMS", "배그 전적", "에란겔 지도", "미라마 지도", "태이고 지도", "차스폰 위치", "PUBG Map", "배그 차량 위치"],
+  description: "에란겔, 미라마, 태이고 등 배틀그라운드 모든 맵의 고정 젠(고젠) 차량 위치와 실시간 전적, 아이템 무게 계산기를 제공하는 전문 전술 플랫폼 BGMS입니다.",
+  keywords: ["배틀그라운드", "배그 지도", "BGMS", "배그 전적", "배그 고젠", "배그 고정 젠", "에란겔 고젠", "미라마 고젠", "태이고 고젠", "차스폰 위치", "PUBG Map", "배그 차량 위치"],
   authors: [{ name: "BGMS Team" }],
   alternates: {
     canonical: "/",

@@ -9,8 +9,10 @@ const supabase = createClient(
 );
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  // 환경 변수 설정이 안 되어 있을 경우를 대비한 하드코딩 백업 (권장: Vercel에서 설정)
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://bgms.kr';
+  // 사이트맵용 베이스 URL 설정 (trailing slash 제거 루틴 추가)
+  let baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://bgms.kr';
+  if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
+  
   const lastModified = new Date();
 
   // 1. 기본 정적 메뉴들 (공식 문서 권장 형식)

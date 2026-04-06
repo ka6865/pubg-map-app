@@ -20,7 +20,7 @@ export default function HomeClient({ jsonLd }: HomeClientProps) {
   return (
     <main style={{ width: '100%', height: '100vh', overflow: 'hidden' }}>
       {/* SEO용 숨김 제목 */}
-      <h1 className="sr-only">BGMS | 배틀그라운드(PUBG) 통합 지도 및 전술 분석 도구</h1>
+      <h1 className="sr-only">BGMS | 배틀그라운드(PUBG) 고젠 및 고정 차량 위치 통합 분석 지도</h1>
       
       {/* 구조화된 데이터 (JSON-LD) */}
       <script
