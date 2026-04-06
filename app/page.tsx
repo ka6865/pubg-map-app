@@ -11,9 +11,10 @@ const supabase = createClient(
 const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://bgms.kr";
 
 // [SEO] 동적 메타데이터 생성 함수
-export async function generateMetadata({ searchParams }: { searchParams: { [key: string]: string | string[] | undefined } }): Promise<Metadata> {
-  const postId = searchParams.postId as string;
-  const tab = (searchParams.tab as string) || "Erangel";
+export async function generateMetadata({ searchParams }: { searchParams: Promise<{ [key: string]: string | string[] | undefined }> }): Promise<Metadata> {
+  const s = await searchParams; // 🌟 Next.js 15 비동기 처리
+  const postId = s.postId as string;
+  const tab = (s.tab as string) || "Erangel";
 
   // 1. 게시글 상세 페이지 메타데이터
   if (postId) {
@@ -80,14 +81,20 @@ export async function generateMetadata({ searchParams }: { searchParams: { [key:
       title: `${currentMeta.title} - BGMS`,
       description: currentMeta.desc,
       url: tab === "Erangel" ? "/" : `/?tab=${tab}`,
-      images: [`${baseUrl}/logo.png`],
+      images: [
+        // 🌟 지도가 있는 탭일 때만 타일을 가져오고, 아니면 로고를 사용합니다.
+        ["Erangel", "Miramar", "Taego", "Rondo", "Vikendi", "Deston"].includes(tab)
+          ? `${baseUrl}/tiles/${tab}/0/0/-1.jpg`
+          : `${baseUrl}/logo.png`,
+      ],
     }
   };
 }
 
 // 메인 페이지 서버 컴포넌트
-export default async function Home({ searchParams }: { searchParams: { [key: string]: string | string[] | undefined } }) {
-  const activeMapId = (searchParams.tab as string) || "Erangel";
+export default async function Home({ searchParams }: { searchParams: Promise<{ [key: string]: string | string[] | undefined }> }) {
+  const s = await searchParams; // 🌟 Next.js 15 비동기 처리
+  const activeMapId = (s.tab as string) || "Erangel";
   const preloadMaps = ["Erangel", "Miramar", "Taego", "Rondo", "Vikendi", "Deston"];
 
   const jsonLd: any[] = [
@@ -114,9 +121,9 @@ export default async function Home({ searchParams }: { searchParams: { [key: str
     }
   ];
 
-  if (searchParams.postId) {
+  if (s.postId) {
     try {
-      const postId = searchParams.postId as string;
+      const postId = s.postId as string;
       const { data: post } = await supabase
         .from('posts')
         .select('title, content, author, created_at, updated_at, image_url, category')
@@ -149,11 +156,15 @@ export default async function Home({ searchParams }: { searchParams: { [key: str
     }
   }
 
+  const isMapTab = preloadMaps.includes(activeMapId);
+
   return (
     <>
-      <link rel="preload" href={`/${activeMapId}.jpg`} as="image" />
+      {isMapTab && (
+        <link rel="preload" href={`/tiles/${activeMapId}/0/0/-1.jpg`} as="image" />
+      )}
       {preloadMaps.filter(m => m !== activeMapId).map(m => (
-        <link key={m} rel="prefetch" href={`/${m}.jpg`} as="image" />
+        <link key={m} rel="prefetch" href={`/tiles/${m}/0/0/-1.jpg`} as="image" />
       ))}
       <HomeClient jsonLd={jsonLd} />
     </>
