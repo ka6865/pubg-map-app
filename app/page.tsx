@@ -160,10 +160,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ [
 
   return (
     <>
-      {isMapTab && (
-        <link rel="preload" href={`/tiles/${activeMapId}/0/0/-1.jpg`} as="image" />
-      )}
-      {preloadMaps.filter(m => m !== activeMapId).map(m => (
+      {/* 🌟 지도 탭일 때만 다른 맵들의 타일을 미리 로드(prefetch)하여 전환 속도를 높입니다. */}
+      {isMapTab && preloadMaps.filter(m => m !== activeMapId).map(m => (
         <link key={m} rel="prefetch" href={`/tiles/${m}/0/0/-1.jpg`} as="image" />
       ))}
       <HomeClient jsonLd={jsonLd} />

@@ -1,7 +1,7 @@
 // 파일 위치: components/StatSearch.tsx
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useId, useCallback } from "react";
 import { MatchCard } from "./stat/MatchCard";
 import { StatSummaryCard } from "./stat/StatSummaryCard";
 
@@ -20,6 +20,17 @@ interface StatSearchProps {
  * 요약 데이터(StatSummaryCard)와 매치 히스토리(MatchCard)를 화면에 렌더링합니다.
  */
 export default function StatSearch({ userProfile }: StatSearchProps = {}) {
+  const mounted = React.useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  );
+  
+  // React 표준 방식의 고유 ID 생성 (서버/클라이언트 일치 보장)
+  const platformId = useId();
+  const nicknameId = useId();
+  const seasonId = useId();
+
   const [platform, setPlatform] = useState("steam");
   const [nickname, setNickname] = useState("");
   const [loading, setLoading] = useState(false);
@@ -50,20 +61,7 @@ export default function StatSearch({ userProfile }: StatSearchProps = {}) {
   }, []);
 
   // 유저 프로필에 연동된 배그 닉네임이 있다면 초기 마운트 시 자동 검색
-  useEffect(() => {
-    if (userProfile?.pubg_nickname && !result && !loading) {
-      const userPlatform = userProfile.pubg_platform || "steam";
-      setNickname(userProfile.pubg_nickname);
-      setPlatform(userPlatform);
-      handleSearch(selectedSeason, userProfile.pubg_nickname, userPlatform);
-    }
-  }, [userProfile]);
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY_FAVORITES, JSON.stringify(favorites));
-  }, [favorites]);
-
-  const handleSearch = async (
+  const handleSearch = useCallback(async (
     targetSeason = selectedSeason,
     overrideNickname?: string,
     overridePlatform?: string
@@ -104,7 +102,20 @@ export default function StatSearch({ userProfile }: StatSearchProps = {}) {
       setLoading(false);
       setTimeout(() => setCooldown(false), 3000);
     }
-  };
+  }, [selectedSeason, nickname, platform, cooldown]);
+
+  useEffect(() => {
+    if (userProfile?.pubg_nickname && !result && !loading) {
+      const userPlatform = userProfile.pubg_platform || "steam";
+      setNickname(userProfile.pubg_nickname);
+      setPlatform(userPlatform);
+      handleSearch(selectedSeason, userProfile.pubg_nickname, userPlatform);
+    }
+  }, [userProfile, result, loading, selectedSeason, handleSearch]);
+
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_FAVORITES, JSON.stringify(favorites));
+  }, [favorites]);
 
   const toggleFavorite = (name: string, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -204,8 +215,12 @@ export default function StatSearch({ userProfile }: StatSearchProps = {}) {
         📊 전적 검색
       </h2>
       
-      <div style={{ display: "flex", gap: "10px", maxWidth: "800px", position: "relative", flexWrap: "wrap", margin: "0 auto 30px auto" }}>
+      {/* 하이드레이션 오류 방지를 위해 마운트 후에만 인터랙티브 요소 렌더링 활성화 */}
+      <div style={{ display: "flex", gap: "10px", maxWidth: "800px", position: "relative", flexWrap: "wrap", margin: "0 auto 30px auto", opacity: mounted ? 1 : 0.5 }}>
         <select
+          id={platformId}
+          name="platform"
+          autoComplete="off"
           value={platform}
           onChange={(e) => setPlatform(e.target.value)}
           style={{ padding: "12px", backgroundColor: "#252525", color: "white", border: "1px solid #444", borderRadius: "6px", fontSize: "16px" }}
@@ -216,7 +231,10 @@ export default function StatSearch({ userProfile }: StatSearchProps = {}) {
         
         <div style={{ position: "relative", flex: "1 1 200px" }}>
           <input
+            id={nicknameId}
+            name="nickname"
             type="text"
+            autoComplete="username"
             placeholder="정확한 대소문자 닉네임을 입력하세요"
             value={nickname}
             onChange={(e) => setNickname(e.target.value)}
@@ -278,6 +296,9 @@ export default function StatSearch({ userProfile }: StatSearchProps = {}) {
               {result.nickname}
             </div>
             <select
+              id={seasonId}
+              name="season"
+              autoComplete="off"
               value={selectedSeason}
               onChange={(e) => handleSearch(e.target.value)}
               style={{ padding: "8px 12px", backgroundColor: "#252525", color: "white", border: "1px solid #444", borderRadius: "6px" }}

@@ -273,7 +273,7 @@ const MapView = memo(
             body: JSON.stringify({ markerId, type: data.triggerNotify }),
           }).catch(console.error);
         }
-      } catch (e: any) {
+      } catch {
         toast.error("투표 결과를 반영하지 못했습니다. 잠시 후 다시 시도해 주세요.");
         isActionRunningRef.current = false;
       }
@@ -310,7 +310,7 @@ const MapView = memo(
         toast.success(`관리자 권한으로 ${action === "approve" ? "승인(데이터베이스 반영)" : "파기(삭제)"} 되었습니다!`);
         sessionStorage.setItem("showPendingReports", "true");
         setTimeout(() => window.location.reload(), 1000);
-      } catch (error: any) {
+      } catch {
         toast.error("정보를 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.");
         isActionRunningRef.current = false;
       }

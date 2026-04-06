@@ -147,6 +147,8 @@ export default function CommentSection({
               )}
 
               <textarea
+                id="comment-textarea"
+                name="comment_content"
                 value={newComment}
                 onChange={(e) => setNewComment(e.target.value)}
                 placeholder={

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { Map, BarChart2, MessageSquare, Menu } from 'lucide-react';
 import GlobalMobileMenu from './GlobalMobileMenu';
@@ -12,14 +12,13 @@ export default function BottomNav() {
   const activeTab = searchParams?.get('tab') || 'Erangel';
   
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [prevPathname, setPrevPathname] = useState(pathname);
 
-  // Close menu automatically on route change (e.g., when navigating to /weapons)
-  useEffect(() => {
-    if (isMenuOpen) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setIsMenuOpen(false);
-    }
-  }, [pathname, searchParams, isMenuOpen]);
+  // Close menu automatically only when route actually changes (using render-phase state update)
+  if (pathname !== prevPathname) {
+    setPrevPathname(pathname);
+    setIsMenuOpen(false);
+  }
 
   const bottomNavItems = [
     { id: 'Home', label: '지도', icon: Map, onClick: () => router.push('/?tab=Erangel'), active: ['Erangel', 'Miramar', 'Taego', 'Rondo', 'Vikendi', 'Deston'].includes(activeTab) && pathname === '/' && !isMenuOpen },

@@ -54,7 +54,10 @@ const InventoryItemRow = ({
       <div className="flex items-center gap-2 relative z-10" onDragStart={(e) => e.stopPropagation()}>
         {isEditing ? (
           <input
+            id={`qty-${source}-${item.id}`}
+            name="quantity"
             type="number"
+            autoComplete="off"
             defaultValue={item.quantity}
             autoFocus
             className="w-14 bg-[#1a1a1a] border border-[#F2A900] rounded text-center text-xs font-black text-[#F2A900] focus:outline-none"
@@ -342,6 +345,8 @@ export default function BackpackSimulator() {
             <div className="bg-[#1a1a1a]/80 backdrop-blur-md p-6 rounded-3xl border border-white/5 shadow-2xl">
               <h2 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.3em] mb-5 flex items-center gap-2">현재 차량</h2>
               <select 
+                id="vehicle-select"
+                name="vehicle_type"
                 className="w-full bg-black/40 border border-white/10 rounded-2xl px-5 py-4 text-sm font-black text-blue-400 appearance-none cursor-pointer"
                 value={selectedVehicleId || ""}
                 onChange={(e) => setSelectedVehicleId(e.target.value)}

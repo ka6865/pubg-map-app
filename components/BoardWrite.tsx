@@ -172,6 +172,8 @@ export default function BoardWrite({
     const input = document.createElement("input");
     input.setAttribute("type", "file");
     input.setAttribute("accept", "image/*");
+    input.setAttribute("id", "quill-image-upload"); // 🌟 ID 추가
+    input.setAttribute("name", "quill-image");     // 🌟 Name 추가
     input.classList.add("quill-image-input");
     input.style.display = "none";
     input.style.position = "absolute";
@@ -318,6 +320,8 @@ export default function BoardWrite({
 
       <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: "10px", marginBottom: "15px" }}>
         <select
+          id="post-category"
+          name="category"
           value={newCategory}
           onChange={(e) => setNewCategory(e.target.value)}
           style={{ padding: "10px", backgroundColor: "#252525", color: "white", border: "1px solid #333", borderRadius: "4px" }}
@@ -327,6 +331,8 @@ export default function BoardWrite({
           ))}
         </select>
         <input
+          id="post-title"
+          name="title"
           type="text"
           placeholder="제목을 입력하세요 (최대 50자)"
           value={newTitle}
@@ -400,6 +406,8 @@ export default function BoardWrite({
 
             <div className="relative">
               <input
+                id="post-discord-url"
+                name="discord_url"
                 type="text"
                 placeholder="자동 생성 버튼을 누르거나 직접 링크를 입력하세요."
                 value={newDiscordUrl}
@@ -450,7 +458,13 @@ export default function BoardWrite({
 
       {isAdmin && (
         <label style={{ display: "flex", gap: "8px", marginBottom: "20px", color: "#F2A900" }}>
-          <input type="checkbox" checked={newIsNotice} onChange={(e) => setNewIsNotice(e.target.checked)} /> 공지사항
+          <input 
+            id="post-notice-check"
+            name="is_notice"
+            type="checkbox" 
+            checked={newIsNotice} 
+            onChange={(e) => setNewIsNotice(e.target.checked)} 
+          /> 공지사항
         </label>
       )}
 

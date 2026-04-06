@@ -225,6 +225,8 @@ export default function GameDataEditor() {
         <aside className="w-[300px] bg-[#141414] border-r border-[#333] flex flex-col">
           <div className="p-4 border-b border-[#222]">
             <input
+              id="admin-search"
+              name="admin_q"
               type="text"
               placeholder="검색..."
               className="w-full bg-[#222] border border-[#333] rounded px-3 py-2 text-sm focus:outline-none focus:border-[#F2A900]"
@@ -271,6 +273,8 @@ export default function GameDataEditor() {
                 <div className="col-span-1">
                   <label className="block text-xs font-bold text-gray-500 mb-2">항목 ID</label>
                   <input
+                    id="item-id"
+                    name="id"
                     type="text"
                     required
                     value={selectedItem.id}
@@ -281,6 +285,8 @@ export default function GameDataEditor() {
                 <div className="col-span-1">
                   <label className="block text-xs font-bold text-gray-500 mb-2">이름</label>
                   <input
+                    id="item-name"
+                    name="name"
                     type="text"
                     required
                     value={selectedItem.name}
@@ -293,6 +299,8 @@ export default function GameDataEditor() {
                   <div className="col-span-1">
                     <label className="block text-xs font-bold text-gray-500 mb-2">트렁크 용량</label>
                     <input
+                      id="vehicle-trunk"
+                      name="trunk_capacity"
                       type="number"
                       required
                       value={(selectedItem as Vehicle).trunk_capacity || 0}
@@ -305,6 +313,8 @@ export default function GameDataEditor() {
                     <div className="col-span-1">
                       <label className="block text-xs font-bold text-gray-500 mb-2">무게</label>
                       <input
+                        id="item-weight"
+                        name="weight"
                         type="number"
                         step="0.1"
                         required
@@ -316,6 +326,8 @@ export default function GameDataEditor() {
                     <div className="col-span-1 pt-6">
                       <label className="flex items-center gap-2 cursor-pointer">
                         <input
+                          id="item-backpack-check"
+                          name="can_be_in_backpack"
                           type="checkbox"
                           checked={selectedItem.can_be_in_backpack || false}
                           onChange={(e) => setSelectedItem({...selectedItem, can_be_in_backpack: e.target.checked})}
@@ -332,6 +344,8 @@ export default function GameDataEditor() {
                     <div className="col-span-1">
                       <label className="block text-xs font-bold text-gray-500 mb-2">공격력 (Damage)</label>
                       <input
+                        id="weapon-damage"
+                        name="damage"
                         type="number"
                         value={(selectedItem as Weapon).damage || 0}
                         onChange={(e) => setSelectedItem({...selectedItem, damage: Number(e.target.value)} as Weapon)}
@@ -341,6 +355,8 @@ export default function GameDataEditor() {
                     <div className="col-span-1">
                       <label className="block text-xs font-bold text-gray-500 mb-2">탄약 종류</label>
                       <input
+                        id="weapon-ammo"
+                        name="ammo"
                         type="text"
                         value={(selectedItem as Weapon).ammo || ""}
                         onChange={(e) => setSelectedItem({...selectedItem, ammo: e.target.value} as Weapon)}
@@ -350,6 +366,8 @@ export default function GameDataEditor() {
                     <div className="col-span-1">
                       <label className="block text-xs font-bold text-gray-500 mb-2">무기 분류</label>
                       <select
+                        id="weapon-type-select"
+                        name="type"
                         value={(selectedItem as Weapon).type || "AR"}
                         onChange={(e) => setSelectedItem({...selectedItem, type: e.target.value} as Weapon)}
                         className="w-full bg-[#1a1a1a] border border-[#333] rounded px-4 py-2.5 text-sm focus:outline-none focus:border-[#F2A900]"
@@ -362,6 +380,8 @@ export default function GameDataEditor() {
                     <div className="col-span-1">
                       <label className="block text-xs font-bold text-gray-500 mb-2">탄속 (Bullet Speed)</label>
                       <input
+                        id="weapon-bullet-speed"
+                        name="bullet_speed"
                         type="number"
                         value={(selectedItem as Weapon).bullet_speed || 0}
                         onChange={(e) => setSelectedItem({...selectedItem, bullet_speed: Number(e.target.value)} as Weapon)}
@@ -371,6 +391,8 @@ export default function GameDataEditor() {
                     <div className="col-span-1">
                       <label className="block text-xs font-bold text-gray-500 mb-2">획득처 (Availability)</label>
                       <input
+                        id="weapon-availability"
+                        name="availability"
                         type="text"
                         value={(selectedItem as Weapon).availability || ""}
                         onChange={(e) => setSelectedItem({...selectedItem, availability: e.target.value} as Weapon)}
@@ -383,6 +405,8 @@ export default function GameDataEditor() {
                 <div className="col-span-2">
                   <label className="block text-xs font-bold text-gray-500 mb-2">항목 분류 (Type)</label>
                   <input
+                    id="item-subtype"
+                    name="type"
                     type="text"
                     value={(selectedItem as any).type || ""}
                     onChange={(e) => setSelectedItem({...selectedItem, type: e.target.value} as any)}
@@ -394,6 +418,8 @@ export default function GameDataEditor() {
                 <div className="col-span-2">
                   <label className="block text-xs font-bold text-gray-500 mb-2">패치 노 트 / 설명</label>
                   <textarea
+                    id="item-patch-notes"
+                    name="patch_notes"
                     rows={4}
                     value={selectedItem.patch_notes || ""}
                     onChange={(e) => setSelectedItem({...selectedItem, patch_notes: e.target.value})}

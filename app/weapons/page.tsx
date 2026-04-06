@@ -182,6 +182,8 @@ export default function WeaponsPage() {
 
           <div className="flex items-center gap-3">
             <select 
+              id="weapon-sort-select"
+              name="sort_by"
               className="bg-[#252525] border border-[#444] text-white text-sm rounded-md px-3 py-1.5 outline-none focus:border-[#F2A900]"
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as any)}

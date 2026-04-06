@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react"; // React 상태 및 생명주기 관리 훅
+import { useMemo } from "react"; // React 상태 및 생명주기 관리 훅
 import { useRouter } from "next/navigation"; // Next.js 페이지 라우터 모듈
 import DOMPurify from "isomorphic-dompurify"; // XSS 해킹 방지용 HTML 소독 라이브러리 로드
 import "react-quill-new/dist/quill.snow.css"; // 🌟 Quill 에디터 스타일 임포트

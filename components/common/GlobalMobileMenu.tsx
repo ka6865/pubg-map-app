@@ -1,8 +1,8 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { X, User, LogOut, Sword, Package, PlayCircle } from 'lucide-react';
+import { X, User, LogOut, Sword, Package } from 'lucide-react';
 import { useAuth } from '../AuthProvider';
 import { supabase } from '@/lib/supabase';
 
@@ -15,26 +15,31 @@ interface GlobalMobileMenuProps {
 export default function GlobalMobileMenu({ isOpen, setIsOpen, activeMapId }: GlobalMobileMenuProps) {
   const router = useRouter();
   const { user } = useAuth();
-  const [displayName, setDisplayName] = useState<string>(() => {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem('user_nickname') || '';
-    }
-    return '';
-  });
+  
+  // localStorage를 구독하여 하이드레이션 오류 없이 닉네임 관리
+  const displayName = React.useSyncExternalStore(
+    (callback) => {
+      window.addEventListener('storage', callback);
+      return () => window.removeEventListener('storage', callback);
+    },
+    () => localStorage.getItem('user_nickname') || '',
+    () => ''
+  );
 
   useEffect(() => {
     if (user) {
-      // Supabase 비동기 데이터 최신화 (users -> profiles 테이블 버그 수정)
+      // Supabase 비동기 데이터 최신화
       supabase.from('profiles').select('nickname').eq('id', user.id).single().then(({data}) => {
         if (data && data.nickname && data.nickname !== displayName) {
-          setDisplayName(data.nickname);
           localStorage.setItem('user_nickname', data.nickname);
+          // storage 이벤트는 다른 창에서만 발생하므로 수동으로 상태 업데이트가 필요할 수 있음
+          // 여기서는 localStorage에 저장하고 UI는 다음 렌더링 때 반영되도록 함
+          window.dispatchEvent(new Event('storage'));
         }
       });
     } else if (displayName !== '') {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setDisplayName('');
       localStorage.removeItem('user_nickname');
+      window.dispatchEvent(new Event('storage'));
     }
   }, [user, displayName]);
 
@@ -163,18 +168,6 @@ export default function GlobalMobileMenu({ isOpen, setIsOpen, activeMapId }: Glo
                   </div>
                 </button>
 
-                <button 
-                  disabled
-                  className="bg-[#1a1a1a] p-4 rounded-2xl border border-[#333] flex flex-col gap-2 items-start opacity-50 relative overflow-hidden"
-                >
-                  <div className="p-2 bg-purple-500/10 rounded-lg">
-                      <PlayCircle size={24} className="text-purple-500" />
-                  </div>
-                  <div className="flex flex-col items-start">
-                      <span className="text-white font-bold text-sm">매치 복기</span>
-                      <span className="text-purple-400 text-[10px] font-black uppercase">Coming Soon</span>
-                  </div>
-                </button>
               </div>
             </div>
 

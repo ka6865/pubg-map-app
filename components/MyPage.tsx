@@ -216,6 +216,8 @@ export default function MyPage({
             닉네임 변경
           </label>
           <input
+            id="user-nickname"
+            name="nickname"
             type="text"
             value={editNickname}
             onChange={(e) => setEditNickname(e.target.value)}
@@ -245,6 +247,8 @@ export default function MyPage({
             배틀그라운드 인게임 닉네임 연동
           </label>
           <input
+            id="pubg-nickname"
+            name="pubg_nickname"
             type="text"
             value={editPubgNickname}
             onChange={(e) => setEditPubgNickname(e.target.value)}

@@ -1,6 +1,6 @@
 "use client";
 
-import { Dispatch, SetStateAction } from "react"; // React 상태 제어 함수 타입 모듈
+import React, { Dispatch, SetStateAction, useId } from "react"; // React 상태 제어 및 고유 ID 훅
 import { useRouter } from "next/navigation"; // Next.js 라우터 모듈
 import { Post } from "../types/board"; // 게시글 객체 타입 명세
 
@@ -72,6 +72,17 @@ export default function BoardList({
   formatTimeAgo,
 }: BoardListProps) {
   const router = useRouter();
+  const mounted = React.useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  );
+  
+  // React 표준 방식의 고유 ID 생성 (서버/클라이언트 일치 보장)
+  const searchFormId = useId();
+  const searchSelectId = useId();
+  const searchInputId = useId();
+  const searchSubmitId = useId();
 
   // 동적 페이지 번호 계산 로직
   const totalPages = Math.max(1, Math.ceil(totalPosts / POSTS_PER_PAGE));
@@ -288,8 +299,16 @@ export default function BoardList({
           isMobile ? "flex-col" : "flex-row"
         }`}
       >
-        <div className={`flex gap-[5px] ${isMobile ? "w-full" : "w-auto"}`}>
+        <form 
+          id={searchFormId}
+          name="board_search_form"
+          onSubmit={(e) => { e.preventDefault(); handleSearch(); }}
+          className={`flex gap-[5px] ${mounted && isMobile ? "w-full" : "w-auto"}`}
+        >
+          <label htmlFor={searchSelectId} className="sr-only">검색 옵션 선택</label>
           <select
+            id={searchSelectId}
+            name="search_type"
             value={searchOption}
             onChange={(e) => setSearchOption(e.target.value)}
             className="p-[8px] bg-[#252525] border border-[#333] rounded-[4px] text-[13px] shrink-0 outline-none focus:border-[#F2A900]"
@@ -300,24 +319,29 @@ export default function BoardList({
             <option value="author">글쓴이</option>
           </select>
           <div className="flex bg-[#252525] rounded-[4px] border border-[#333] px-[8px] items-center flex-1 focus-within:border-[#F2A900]">
+            <label htmlFor={searchInputId} className="sr-only">검색어 입력</label>
             <input
+              id={searchInputId}
+              name="q"
               type="text"
+              autoComplete="off"
               placeholder="검색..."
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
               className="bg-transparent border-none p-[8px] text-[13px] w-full min-w-[80px] outline-none"
               style={{ color: "#ffffff", WebkitTextFillColor: "#ffffff" }}
             />
             <button
-              onClick={handleSearch}
+              id={searchSubmitId}
+              name="search_submit"
+              type="submit"
               className="bg-transparent border-none cursor-pointer hover:text-white whitespace-nowrap shrink-0"
               style={{ color: "#888888" }}
             >
               조회
             </button>
           </div>
-        </div>
+        </form>
 
         <div className="flex gap-[5px] flex-wrap justify-center">
           <button

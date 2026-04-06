@@ -320,6 +320,8 @@ export default function TelemetryPlayer({
           </button>
 
           <select
+            id="replay-speed-select"
+            name="playback_speed"
             value={playbackSpeed}
             onChange={(e) => setPlaybackSpeed(Number(e.target.value))}
             className="bg-[#222] text-[#F2A900] text-xs font-bold border border-[#444] rounded px-2 py-1 outline-none"
