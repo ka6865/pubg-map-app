@@ -54,6 +54,8 @@ export default function Board({
   const [newTitle, setNewTitle] = useState(""); // 새 글 제목 상태
   const [newContent, setNewContent] = useState(""); // 새 글 본문 상태
   const [newCategory, setNewCategory] = useState("자유"); // 새 글 카테고리 상태
+  const [newDiscordUrl, setNewDiscordUrl] = useState(""); // 🌟 새 글 디스코드 링크 상태
+  const [newDiscordChannelId, setNewDiscordChannelId] = useState(""); // 🌟 새 글 디스코드 채널 ID 상태
   const [newIsNotice, setNewIsNotice] = useState(false); // 공지사항 여부 상태
   const [newComment, setNewComment] = useState(""); // 새 댓글 내용 상태
   const [replyingTo, setReplyingTo] = useState<Comment | null>(null); // 대댓글 작성 시 대상 댓글 상태
@@ -102,7 +104,7 @@ export default function Board({
       let query = supabase
         .from("posts")
         .select(
-          "id, title, author, user_id, category, image_url, is_notice, created_at, views, likes, comments(count)",
+          "id, title, author, user_id, category, image_url, discord_url, discord_channel_id, is_notice, created_at, views, likes, comments(count)",
           { count: "exact" }
         );
 
@@ -243,6 +245,8 @@ export default function Board({
         author: displayName,
         user_id: currentUser.id,
         editingPostId: editingPostId,
+        discord_url: newDiscordUrl, // 🌟 디스코드 링크 추가
+        discord_channel_id: newDiscordChannelId, // 🌟 디스코드 채널 ID 추가
       };
 
       console.log("⬆️ [Requesting Bypass API]:", { title: trimmedTitle, editingPostId });
@@ -268,6 +272,8 @@ export default function Board({
       setIsWriting(false);
       setNewTitle("");
       setNewContent("");
+      setNewDiscordUrl(""); // 🌟 초기화
+      setNewDiscordChannelId(""); // 🌟 초기화
 
       if (editingPostId) {
         setEditingPostId(null);
@@ -293,7 +299,8 @@ export default function Board({
       if (error.message.includes("30초 초과")) {
         toast.error("서버 응답이 너무 늦습니다. 인터넷 연결이나 세션 상태를 확인하신 후 다시 시도해 주세요.");
       } else {
-        toast.error("게시글을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+        // 🌟 서버에서 전달받은 구체적인 에러 메시지(예: 디스코드 링크 오류)를 사용자에게 보여줍니다.
+        toast.error(error.message || "게시글을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.");
       }
       return false;
     } finally {
@@ -467,6 +474,8 @@ export default function Board({
       setNewTitle(selectedPost.title);
       setNewContent(selectedPost.content || "");
       setNewCategory(selectedPost.category);
+      setNewDiscordUrl(selectedPost.discord_url || ""); // 🌟 수정 시 기존 링크 로드
+      setNewDiscordChannelId(selectedPost.discord_channel_id || ""); // 🌟 수정 시 기존 채널 ID 로드
       setNewIsNotice(selectedPost.is_notice);
       setIsWriting(true);
     }
@@ -478,6 +487,8 @@ export default function Board({
       setNewTitle("");
       setNewContent("");
       setNewCategory("자유");
+      setNewDiscordUrl(""); // 🌟 새 글 작성 시 초기화
+      setNewDiscordChannelId(""); // 🌟 새 글 작성 시 초기화
       setNewIsNotice(false);
     }
     setIsWriting(v);
@@ -492,6 +503,10 @@ export default function Board({
         setNewContent={setNewContent}
         newCategory={newCategory}
         setNewCategory={setNewCategory}
+        newDiscordUrl={newDiscordUrl} // 🌟 전달
+        setNewDiscordUrl={setNewDiscordUrl} // 🌟 전달
+        newDiscordChannelId={newDiscordChannelId} // 🌟 전달
+        setNewDiscordChannelId={setNewDiscordChannelId} // 🌟 전달
         newIsNotice={newIsNotice}
         setNewIsNotice={setNewIsNotice}
         handleSavePost={handleSavePost}

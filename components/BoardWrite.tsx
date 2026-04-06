@@ -54,6 +54,10 @@ interface BoardWriteProps {
   setNewContent: (content: string) => void;
   newCategory: string;
   setNewCategory: (category: string) => void;
+  newDiscordUrl: string; // 🌟 추가
+  setNewDiscordUrl: (url: string) => void; // 🌟 추가
+  newDiscordChannelId: string; // 🌟 추가
+  setNewDiscordChannelId: (id: string) => void; // 🌟 추가
   newIsNotice: boolean;
   setNewIsNotice: (isNotice: boolean) => void;
   handleSavePost: () => Promise<boolean>;
@@ -71,6 +75,10 @@ export default function BoardWrite({
   setNewContent,
   newCategory,
   setNewCategory,
+  newDiscordUrl,
+  setNewDiscordUrl,
+  newDiscordChannelId,
+  setNewDiscordChannelId,
   newIsNotice,
   setNewIsNotice,
   handleSavePost,
@@ -83,6 +91,44 @@ export default function BoardWrite({
   const quillRef = useRef<any>(null);
   const uploadedImagesRef = useRef<string[]>([]);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
+  const [isCreatingRoom, setIsCreatingRoom] = useState(false); // 🌟 디스코드 방 생성 로딩 상태
+
+  // 🌟 디스코드 음성 채널 자동 생성 함수
+  const createDiscordRoom = async (type: "duo" | "squad") => {
+    if (isCreatingRoom) return;
+
+    // 닉네임 정보 (author) - 닉네임 표시되는 태그에서 추출 시도
+    const authorElement = document.querySelector(".nickname-display");
+    const author = authorElement?.textContent?.trim() || "익명";
+
+    const confirmMsg = `${type === "duo" ? "2인 듀오" : "4인 스쿼드"} 전용 보이스 채널을 생성하시겠습니까?\n\n* 사람이 모두 나가면 봇이 자동으로 삭제합니다.`;
+    if (!confirm(confirmMsg)) return;
+
+    setIsCreatingRoom(true);
+    const toastId = toast.loading(`${type.toUpperCase()} 채널 생성 중...`);
+
+    try {
+      const res = await fetch("/api/discord/room/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type, author }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "채널 생성 실패");
+
+      // 성공 시 주소와 ID 저장
+      setNewDiscordUrl(data.inviteUrl);
+      setNewDiscordChannelId(data.channelId);
+
+      toast.success(`${type.toUpperCase()} 채널이 생성되었습니다!`, { id: toastId });
+    } catch (err: any) {
+      console.error("🚨 [Room Create Error]:", err);
+      toast.error(err.message || "채널 생성 중 오류가 발생했습니다.", { id: toastId });
+    } finally {
+      setIsCreatingRoom(false);
+    }
+  };
 
   useEffect(() => {
     return () => {
@@ -214,6 +260,15 @@ export default function BoardWrite({
         }
       }
 
+      // 🌟 [검증] 디스코드 링크 형식만 간단히 체크 (상세 검증은 서버 API에서 수행)
+      if (newCategory === "듀오/스쿼드 모집" && newDiscordUrl) {
+        const isDiscordUrl = /discord\.(gg|com)/.test(newDiscordUrl);
+        if (!isDiscordUrl) {
+          toast.error("올바른 디스코드 링크 형식이 아닙니다.");
+          return;
+        }
+      }
+
       await handleSavePost();
     } catch (err) {
       console.error("onSaveClick fatal error:", err);
@@ -280,6 +335,98 @@ export default function BoardWrite({
           style={{ flex: 1, padding: "10px", backgroundColor: "#252525", color: "white", border: "1px solid #333", borderRadius: "4px", fontSize: "16px" }}
         />
       </div>
+
+      {/* 🌟 디스코드 링크 입력 섹션 (듀오/스쿼드 모집 카테고리 전용) */}
+      {newCategory === "듀오/스쿼드 모집" && (
+        <div style={{ marginBottom: "20px", display: "flex", flexDirection: "column", gap: "8px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <span style={{ color: "#7289da", fontWeight: "bold", fontSize: "14px" }}>👾 디스코드 채널 링크</span>
+            <div 
+              style={{ 
+                position: "relative", 
+                cursor: "help",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: "18px",
+                height: "18px",
+                borderRadius: "50%",
+                backgroundColor: "#444",
+                color: "#ddd",
+                fontSize: "12px"
+              }}
+              className="group"
+            >
+              ?
+              <div className="invisible group-hover:visible absolute left-[25px] top-0 w-[300px] p-4 bg-[#333] text-white text-[12px] rounded-lg shadow-2xl border border-[#444] z-[3000] leading-relaxed">
+                <p style={{ fontWeight: "bold", color: "#F2A900", marginBottom: "8px", fontSize: "13px" }}>🔗 디스코드 채널 링크 넣는 법</p>
+                <div style={{ marginBottom: "10px" }}>
+                  <strong style={{ color: "#7289da" }}>방식 A. 초대 링크 (추천)</strong><br/>
+                  1. 보이스 채널 우클릭 - [초대하기]<br/>
+                  2. [링크 편집] - 만료 기간 [무제한] 설정<br/>
+                  3. 생성된 주소(discord.gg/...) 복사
+                </div>
+                <div>
+                  <strong style={{ color: "#7289da" }}>방식 B. 채널 링크</strong><br/>
+                  1. 보이스 채널 우클릭 - [링크 복사]<br/>
+                  2. 주소창의 링크 그대로 붙여넣기
+                </div>
+                <p style={{ marginTop: "10px", color: "#ff4444", fontSize: "11px", borderTop: "1px solid #444", paddingTop: "8px" }}>
+                  * 다른 디스코드 서버 링크는 자동으로 차단됩니다.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => createDiscordRoom("duo")}
+                disabled={isCreatingRoom}
+                className="flex-1 py-[8px] bg-[#5865F2] hover:bg-[#4752C4] text-white rounded font-bold text-[12px] transition-colors flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isCreatingRoom ? "생성 중..." : "🎮 듀오 방 자동 생성 (2인)"}
+              </button>
+              <button
+                type="button"
+                onClick={() => createDiscordRoom("squad")}
+                disabled={isCreatingRoom}
+                className="flex-1 py-[8px] bg-[#5865F2] hover:bg-[#4752C4] text-white rounded font-bold text-[12px] transition-colors flex items-center justify-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isCreatingRoom ? "생성 중..." : "🎮 스쿼드 방 자동 생성 (4인)"}
+              </button>
+            </div>
+
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="자동 생성 버튼을 누르거나 직접 링크를 입력하세요."
+                value={newDiscordUrl}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setNewDiscordUrl(val);
+                  // 직접 입력 시에는 채널 ID 초기화 (자동 삭제 대상 제외)
+                  if (newDiscordChannelId) {
+                    setNewDiscordChannelId("");
+                  }
+                }}
+                className={`w-full p-2 bg-[#252525] text-white border rounded text-[14px] outline-none transition-colors ${
+                  newDiscordChannelId ? "border-[#43b581] border-2" : "border-[#333] focus:border-[#5865F2]"
+                }`}
+              />
+              {newDiscordChannelId && (
+                <div className="mt-1 text-[11px] text-[#43b581] flex items-center gap-1">
+                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                  전용 채널이 생성되었습니다. (종료 시 자동 삭제됨)
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div
         className="quill-wrapper"

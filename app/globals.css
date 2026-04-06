@@ -42,3 +42,19 @@
   visibility: hidden !important;
   pointer-events: none !important;
 }
+
+/* 게시판 본문 스타일 보정 (줄바꿈 및 문단 여백) */
+.board-content p {
+  margin-bottom: 1rem; /* 한 줄 띄움 효과 */
+  min-height: 1.2em;   /* 빈 줄이 있을 경우 최소 높이 보장 */
+}
+
+.board-content p:last-child {
+  margin-bottom: 0;
+}
+
+/* 이미지 사이의 간격 추가 */
+.board-content img {
+  display: block;
+  margin: 1.5rem auto;
+}
