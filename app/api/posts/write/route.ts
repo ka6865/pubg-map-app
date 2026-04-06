@@ -8,6 +8,39 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
  * @fileoverview 게시판 저장을 서버사이드에서 우회(Bypass) 처리하는 API입니다.
  * 브라우저 직접 통신 시 발생하는 원인 모를 타임아웃 문제를 해결하기 위해 도입되었습니다.
  */
+
+// 🌟 디스코드 서버 검증 상수
+const ALLOWED_GUILD_ID = "1486899870928470121";
+
+async function validateDiscordUrl(url: string): Promise<boolean> {
+  if (!url) return true;
+
+  try {
+    // 1. 단축 초대 링크 형식 (discord.gg/code 또는 discord.com/invite/code)
+    const inviteMatch = url.match(/(?:discord\.gg\/|discord\.com\/invite\/)([a-zA-Z0-9-]+)/);
+    if (inviteMatch) {
+      const code = inviteMatch[1];
+      const res = await fetch(`https://discord.com/api/v10/invites/${code}`);
+      if (!res.ok) return false;
+      const data = await res.json();
+      return data.guild?.id === ALLOWED_GUILD_ID;
+    }
+
+    // 2. 상세 채널 링크 형식 (discord.com/channels/guild_id/channel_id)
+    const channelMatch = url.match(/discord\.com\/channels\/(\d+)\/\d+/);
+    if (channelMatch) {
+      const guildId = channelMatch[1];
+      return guildId === ALLOWED_GUILD_ID;
+    }
+
+    // 그 외 형식은 일단 허용하지 않음 (보안)
+    return false;
+  } catch (err) {
+    console.error("Discord validation error:", err);
+    return false;
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -20,6 +53,8 @@ export async function POST(request: Request) {
       author,
       user_id,
       editingPostId,
+      discord_url, // 🌟 추가
+      discord_channel_id, // 🌟 추가
     } = body;
 
     if (!title || !content || !user_id) {
@@ -27,6 +62,17 @@ export async function POST(request: Request) {
         { error: "필수 입력 데이터가 누락되었습니다." },
         { status: 400 }
       );
+    }
+
+    // 🌟 [검증] 디스코드 링크 유효성 체크
+    if (category === "듀오/스쿼드 모집" && discord_url) {
+      const isValid = await validateDiscordUrl(discord_url);
+      if (!isValid) {
+        return NextResponse.json(
+          { error: "BGMS 공식 디스코드 서버의 초대 링크 또는 채널 링크만 등록할 수 있습니다." },
+          { status: 400 }
+        );
+      }
     }
 
     // 관리자(Service Role) 권한으로 DB 클라이언트 초기화 (RLS 우회)
@@ -89,6 +135,8 @@ export async function POST(request: Request) {
           category,
           image_url,
           is_notice,
+          discord_url, // 🌟 필드 업데이트 추가
+          discord_channel_id, // 🌟 필드 업데이트 추가
         })
         .eq("id", editingPostId)
         .select();
@@ -107,6 +155,8 @@ export async function POST(request: Request) {
             user_id,
             category,
             image_url,
+            discord_url, // 🌟 필드 삽입 추가
+            discord_channel_id, // 🌟 필드 삽입 추가
             is_notice,
           },
         ])
