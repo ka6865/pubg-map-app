@@ -8,10 +8,14 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://bgms.kr";
+
 // [SEO] 동적 메타데이터 생성 함수
 export async function generateMetadata({ searchParams }: { searchParams: { [key: string]: string | string[] | undefined } }): Promise<Metadata> {
   const postId = searchParams.postId as string;
+  const tab = (searchParams.tab as string) || "Erangel";
 
+  // 1. 게시글 상세 페이지 메타데이터
   if (postId) {
     try {
       const { data: post } = await supabase
@@ -21,16 +25,13 @@ export async function generateMetadata({ searchParams }: { searchParams: { [key:
         .single();
 
       if (post) {
-        // 본문에서 텍스트만 추출하여 150자 내외로 설명문 생성
         const plainText = post.content?.replace(/<[^>]*>/g, '').substring(0, 150) || '';
-        const canonicalUrl = `https://bgms.kr/?tab=Board&postId=${postId}`;
+        const canonicalUrl = `${baseUrl}/?tab=Board&postId=${postId}`;
         
         return {
           title: `${post.title} | ${post.category} - BGMS`,
           description: plainText,
-          alternates: {
-            canonical: canonicalUrl,
-          },
+          alternates: { canonical: canonicalUrl },
           openGraph: {
             title: `${post.title} - BGMS`,
             description: plainText,
@@ -39,13 +40,13 @@ export async function generateMetadata({ searchParams }: { searchParams: { [key:
             publishedTime: post.created_at,
             modifiedTime: post.updated_at,
             authors: [post.author],
-            images: [post.image_url || '/logo.png'],
+            images: [post.image_url || `${baseUrl}/logo.png`],
           },
           twitter: {
             card: 'summary_large_image',
             title: `${post.title} - BGMS`,
             description: plainText,
-            images: [post.image_url || '/logo.png'],
+            images: [post.image_url || `${baseUrl}/logo.png`],
           }
         };
       }
@@ -54,17 +55,39 @@ export async function generateMetadata({ searchParams }: { searchParams: { [key:
     }
   }
 
+  // 2. 맵/탭별 맞춤형 메타데이터 (ID 기반)
+  const tabMetadata: Record<string, { title: string; desc: string }> = {
+    Erangel: { title: "에란겔(Erangel) 차량 위치 및 전략 지도", desc: "배틀그라운드 에란겔 맵의 모든 차량/보트 스폰 위치와 고정 차량 정보, 꿀집 위치를 확인하세요." },
+    Miramar: { title: "미라마(Miramar) 차량 위치 및 전략 지도", desc: "황금 미라도 위치부터 오프로드 주행 경로, 미라마 전술 지도를 BGMS에서 제공합니다." },
+    Taego: { title: "태이고(Taego) 차량 위치 및 전략 지도", desc: "태이고 차고지 위치, 포터 스폰 장소, 비밀방 위치 정보를 한눈에 확인하세요." },
+    Rondo: { title: "론도(Rondo) 차량 위치 및 전략 지도", desc: "론도의 넓은 지형을 극복하기 위한 모든 이동수단 스폰 위치 정보를 제공합니다." },
+    Vikendi: { title: "비켄디(Vikendi) 차량 위치 및 전략 지도", desc: "비켄디 리본 맵의 차량 위치와 스노우모빌 정보를 확인하세요." },
+    Deston: { title: "데스턴(Deston) 차량 위치 및 전략 지도", desc: "데스턴 경찰차, 에어보트 위치와 주요 건물 파밍 루트를 제공합니다." },
+    Stats: { title: "배그 전적 검색 및 실시간 딜량 계산기", desc: "배틀그라운드 시즌별 전적과 평균 딜량, 킬뎃 정보를 즉시 조회하세요." },
+    Board: { title: "생존자 커뮤니티 및 최신 패치노트", desc: "배틀그라운드 최신 업데이트 소식과 유저들의 전략을 공유하는 공간입니다." }
+  };
+
+  const currentMeta = tabMetadata[tab] || { 
+    title: "배틀그라운드 통합 지도 및 전략 서비스", 
+    desc: "모든 맵의 차량 위치와 실시간 전적, 아이템 무게 계산기를 제공하는 전문 전술 플랫폼입니다." 
+  };
+
   return {
-    title: 'BGMS | 배틀그라운드 통합 지도 서비스 - 차량 및 전술 정보',
-    description: '에란겔, 미라마, 태이고 등 배틀그라운드 모든 맵의 차량/보트 위치와 실시간 전적 정보를 제공하는 전문 전술 플랫폼 BGMS입니다.'
+    title: `${currentMeta.title} | BGMS`,
+    description: currentMeta.desc,
+    alternates: { canonical: tab === "Erangel" ? "/" : `/?tab=${tab}` },
+    openGraph: {
+      title: `${currentMeta.title} - BGMS`,
+      description: currentMeta.desc,
+      url: tab === "Erangel" ? "/" : `/?tab=${tab}`,
+      images: [`${baseUrl}/logo.png`],
+    }
   };
 }
 
 // 메인 페이지 서버 컴포넌트
 export default async function Home({ searchParams }: { searchParams: { [key: string]: string | string[] | undefined } }) {
-  const activeMapId = searchParams.tab as string || "Erangel";
-  
-  // 맵 이미지 프리로딩 리스트 (대표 3종)
+  const activeMapId = (searchParams.tab as string) || "Erangel";
   const preloadMaps = ["Erangel", "Miramar", "Taego", "Rondo", "Vikendi", "Deston"];
 
   const jsonLd: any[] = [
@@ -72,59 +95,25 @@ export default async function Home({ searchParams }: { searchParams: { [key: str
       "@context": "https://schema.org",
       "@type": "WebSite",
       "name": "BGMS",
-      "url": "https://bgms.kr",
+      "url": baseUrl,
       "potentialAction": {
         "@type": "SearchAction",
-        "target": "https://bgms.kr/?q={search_term_string}",
+        "target": `${baseUrl}/?q={search_term_string}`,
         "query-input": "required name=search_term_string"
-      }
-    },
-    {
-      "@context": "https://schema.org",
-      "@type": "WebApplication",
-      "name": "BGMS - 배틀그라운드 통합 전술 지도",
-      "description": "에란겔, 미라마, 태이고 론도 등 배틀그라운드 모든 맵의 차량 스폰 위치 및 텔레메트리 정보를 제공하는 전문 전술 플랫폼입니다.",
-      "applicationCategory": "GameApplication",
-      "operatingSystem": "Web",
-      "author": {
-        "@type": "Organization",
-        "name": "BGMS Team",
-        "url": "https://bgms.kr"
       }
     },
     {
       "@context": "https://schema.org",
       "@type": "BreadcrumbList",
       "itemListElement": [
-        {
-          "@type": "ListItem",
-          "position": 1,
-          "name": "에란겔",
-          "item": "https://bgms.kr/?tab=Erangel"
-        },
-        {
-          "@type": "ListItem",
-          "position": 2,
-          "name": "미라마",
-          "item": "https://bgms.kr/?tab=Miramar"
-        },
-        {
-          "@type": "ListItem",
-          "position": 3,
-          "name": "태이고",
-          "item": "https://bgms.kr/?tab=Taego"
-        },
-        {
-          "@type": "ListItem",
-          "position": 4,
-          "name": "게시판",
-          "item": "https://bgms.kr/?tab=Board"
-        }
+        { "@type": "ListItem", "position": 1, "name": "에란겔", "item": `${baseUrl}/?tab=Erangel` },
+        { "@type": "ListItem", "position": 2, "name": "미라마", "item": `${baseUrl}/?tab=Miramar` },
+        { "@type": "ListItem", "position": 3, "name": "태이고", "item": `${baseUrl}/?tab=Taego` },
+        { "@type": "ListItem", "position": 4, "name": "게시판", "item": `${baseUrl}/?tab=Board` }
       ]
     }
   ];
 
-  // 게시글 상세 페이지일 경우 Article 스키마 추가
   if (searchParams.postId) {
     try {
       const postId = searchParams.postId as string;
@@ -140,24 +129,18 @@ export default async function Home({ searchParams }: { searchParams: { [key: str
           "@type": "Article",
           "headline": post.title,
           "description": post.content?.replace(/<[^>]*>/g, '').substring(0, 150),
-          "author": {
-            "@type": "Person",
-            "name": post.author
-          },
+          "author": { "@type": "Person", "name": post.author },
           "datePublished": post.created_at,
           "dateModified": post.updated_at,
           "publisher": {
             "@type": "Organization",
             "name": "BGMS",
-            "logo": {
-              "@type": "ImageObject",
-              "url": "https://bgms.kr/logo.png"
-            }
+            "logo": { "@type": "ImageObject", "url": `${baseUrl}/logo.png` }
           },
-          "image": post.image_url || "https://bgms.kr/logo.png",
+          "image": post.image_url || `${baseUrl}/logo.png`,
           "mainEntityOfPage": {
             "@type": "WebPage",
-            "@id": `https://bgms.kr/?tab=Board&postId=${postId}`
+            "@id": `${baseUrl}/?tab=Board&postId=${postId}`
           }
         });
       }
@@ -168,12 +151,10 @@ export default async function Home({ searchParams }: { searchParams: { [key: str
 
   return (
     <>
-      {/* 🚀 중요 리소스 프리로딩 (성능 최적화) */}
       <link rel="preload" href={`/${activeMapId}.jpg`} as="image" />
       {preloadMaps.filter(m => m !== activeMapId).map(m => (
         <link key={m} rel="prefetch" href={`/${m}.jpg`} as="image" />
       ))}
-      
       <HomeClient jsonLd={jsonLd} />
     </>
   );

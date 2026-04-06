@@ -12,6 +12,6 @@ export default function robots(): MetadataRoute.Robots {
         '/api',
       ],
     },
-    sitemap: 'https://bgms.kr/sitemap.xml', // BGMS 도메인 유지
+    sitemap: `${process.env.NEXT_PUBLIC_SITE_URL || 'https://bgms.kr'}/sitemap.xml`,
   };
 }

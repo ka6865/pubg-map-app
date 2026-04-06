@@ -7,8 +7,10 @@ import Footer from "@/components/common/Footer";
 import { Suspense } from "react";
 
 // 브라우저 탭 제목, 설명, 파비콘 메타데이터 정의
+const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://bgms.kr";
+
 export const metadata: Metadata = {
-  metadataBase: new URL("https://bgms.kr"), // BGMS 도메인 유지
+  metadataBase: new URL(baseUrl), // 도메인 유연성 확보
   title: {
     default: "BGMS | 배틀그라운드 통합 지도 서비스 - 차량 및 전술 정보",
     template: "%s | BGMS"
@@ -17,7 +19,7 @@ export const metadata: Metadata = {
   keywords: ["배틀그라운드", "배그 지도", "BGMS", "배그 전적", "에란겔 지도", "미라마 지도", "태이고 지도", "차스폰 위치", "PUBG Map", "배그 차량 위치"],
   authors: [{ name: "BGMS Team" }],
   alternates: {
-    canonical: "https://bgms.kr",
+    canonical: "/",
   },
   icons: {
     icon: "/logo.png",
@@ -26,7 +28,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "BGMS - 배틀그라운드 모든 맵 차량 위치 및 전술 정보",
     description: "에란겔부터 태이고까지, 배틀그라운드 전장의 모든 차량 스폰 위치를 한눈에 확인하세요.",
-    url: "https://bgms.kr",
+    url: "/",
     siteName: "BGMS",
     images: [
       {
