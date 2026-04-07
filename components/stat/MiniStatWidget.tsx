@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import getApiUrl from "../../lib/api-config";
 
 interface MiniStatWidgetProps {
   pubgNickname: string;
@@ -23,7 +24,8 @@ export default function MiniStatWidget({ pubgNickname, platform = "steam" }: Min
       try {
         setLoading(true);
         // 클라이언트에서 pubg API 라우트를 호출하여 전적 요약(솔로/스쿼드 선택적)
-        const res = await fetch(`/api/pubg/player?nickname=${pubgNickname}&platform=${platform}`);
+        const apiUrl = getApiUrl(`/api/pubg/player?nickname=${pubgNickname}&platform=${platform}`);
+        const res = await fetch(apiUrl);
         if (!res.ok) throw new Error("전적 조회 실패");
         const json = await res.json();
         console.log("📊 PUBG API Response:", json);

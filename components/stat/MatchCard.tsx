@@ -19,6 +19,75 @@ export const MatchCard = ({
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+
+  // 채팅 관련 상태 추가
+  const [chatMessages, setChatMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
+  const [chatInput, setChatInput] = useState("");
+  const [isChatting, setIsChatting] = useState(false);
+
+  const handleAnalyze = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (isAnalyzing || aiAnalysis) return;
+
+    setIsAnalyzing(true);
+    setAiError(null);
+
+    try {
+      const response = await fetch("/api/pubg/ai-analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ matchData, nickname }),
+      });
+
+      const data = await response.json();
+      if (data.error) throw new Error(data.error);
+      
+      setAiAnalysis(data.analysis);
+      // 초기 분석 결과를 대화 기록에 추가
+      setChatMessages([{ role: "assistant", content: data.analysis }]);
+    } catch (err: any) {
+      console.error("AI 분석 실패:", err);
+      setAiError(err.message || "AI 분석 중 오류가 발생했습니다.");
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const handleSendChat = async () => {
+    if (!chatInput.trim() || isChatting) return;
+
+    const userMessage = { role: "user" as const, content: chatInput };
+    const updatedMessages = [...chatMessages, userMessage];
+    
+    setChatMessages(updatedMessages);
+    setChatInput("");
+    setIsChatting(true);
+
+    try {
+      const response = await fetch("/api/pubg/ai-analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          matchData, 
+          nickname, 
+          messages: updatedMessages 
+        }),
+      });
+
+      const data = await response.json();
+      if (data.error) throw new Error(data.error);
+
+      setChatMessages([...updatedMessages, { role: "assistant", content: data.analysis }]);
+    } catch (err: any) {
+      console.error("채팅 응답 실패:", err);
+      setChatMessages([...updatedMessages, { role: "assistant", content: "알 수 없는 오류가 발생했습니다. 다시 질문해 주세요." }]);
+    } finally {
+      setIsChatting(false);
+    }
+  };
 
   useEffect(() => {
     fetch(
@@ -335,7 +404,7 @@ export const MatchCard = ({
             </div>
           </div>
 
-          <div style={{ marginBottom: "20px", display: "flex", justifyContent: "center" }}>
+          <div style={{ marginBottom: "20px", display: "flex", justifyContent: "center", gap: "10px", flexWrap: "wrap" }}>
             <a
               href={`/?tab=${encodeURIComponent(
                 { 에란겔: "Erangel", 미라마: "Miramar", 태이고: "Taego", 론도: "Rondo", 비켄디: "Vikendi", 데스턴: "Deston" }[mapName] || "Erangel"
@@ -361,7 +430,167 @@ export const MatchCard = ({
               </svg>
               매치 궤적 복기 (BETA)
             </a>
+
+            <button
+              onClick={handleAnalyze}
+              disabled={isAnalyzing}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
+                backgroundColor: aiAnalysis ? "rgba(52, 168, 83, 0.15)" : "rgba(255, 255, 255, 0.05)",
+                border: aiAnalysis ? "1px solid #34A853" : "1px solid #444",
+                color: aiAnalysis ? "#34A853" : "#fff",
+                padding: "10px 20px",
+                borderRadius: "8px",
+                fontWeight: "bold",
+                fontSize: "14px",
+                cursor: isAnalyzing || aiAnalysis ? "default" : "pointer",
+                transition: "all 0.2s",
+              }}
+              className={!isAnalyzing && !aiAnalysis ? "hover:bg-white/10" : ""}
+            >
+              {isAnalyzing ? (
+                <div style={{ width: "18px", height: "18px", border: "2px solid #fff", borderTop: "2px solid transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+              ) : (
+                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z" />
+                </svg>
+              )}
+              {isAnalyzing ? "AI 분석 중..." : aiAnalysis ? "분석 완료" : "Groq AI 실시간 분석"}
+            </button>
           </div>
+
+          {(chatMessages.length > 0 || aiError) && (
+            <div
+              style={{
+                marginBottom: "20px",
+                padding: "15px",
+                backgroundColor: "rgba(0, 0, 0, 0.3)",
+                borderRadius: "16px",
+                border: `1px solid ${aiError ? "#f87171" : "rgba(255,255,255,0.05)"}`,
+                maxHeight: "500px",
+                display: "flex",
+                flexDirection: "column",
+                gap: "15px",
+              }}
+            >
+              <h4 style={{ 
+                margin: "0", 
+                color: aiError ? "#f87171" : "#34A853", 
+                fontSize: "13px", 
+                display: "flex", 
+                alignItems: "center", 
+                gap: "8px",
+                paddingBottom: "10px",
+                borderBottom: "1px solid rgba(255,255,255,0.05)"
+              }}>
+                <span style={{ fontSize: "16px" }}>{aiError ? "⚠️" : "🤖"}</span>
+                {aiError ? "분석 에러" : "AI 매치 어시스턴트"}
+              </h4>
+
+              <div style={{ 
+                flex: 1, 
+                overflowY: "auto", 
+                display: "flex", 
+                flexDirection: "column", 
+                gap: "12px",
+                paddingRight: "5px"
+              }}>
+                {chatMessages.map((msg, idx) => (
+                  <div 
+                    key={idx} 
+                    style={{ 
+                      alignSelf: msg.role === "user" ? "flex-end" : "flex-start",
+                      maxWidth: "85%",
+                      padding: "10px 14px",
+                      borderRadius: msg.role === "user" ? "16px 16px 2px 16px" : "16px 16px 16px 2px",
+                      backgroundColor: msg.role === "user" ? "rgba(255,255,255,0.1)" : "rgba(52, 168, 83, 0.1)",
+                      border: `1px solid ${msg.role === "user" ? "rgba(255,255,255,0.1)" : "rgba(52, 168, 83, 0.2)"}`,
+                      fontSize: "13px",
+                      lineHeight: "1.6",
+                      color: "#eee",
+                      whiteSpace: "pre-wrap"
+                    }}
+                  >
+                    {msg.content}
+                  </div>
+                ))}
+                {isChatting && (
+                  <div style={{ alignSelf: "flex-start", color: "#888", fontSize: "12px", paddingLeft: "10px", fontStyle: "italic" }}>
+                    AI 코치가 데이터를 분석하며 생각 중...
+                  </div>
+                )}
+                {aiError && (
+                  <div style={{ color: "#f87171", fontSize: "13px", textAlign: "center", padding: "10px" }}>
+                    {aiError}
+                  </div>
+                )}
+              </div>
+
+              {/* 채팅 입력창 */}
+              {!aiError && (
+                <div style={{ 
+                  marginTop: "5px", 
+                  display: "flex", 
+                  gap: "8px",
+                  paddingTop: "10px",
+                  borderTop: "1px solid rgba(255,255,255,0.05)"
+                }}>
+                  <input 
+                    type="text"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleSendChat()}
+                    placeholder="AI에게 이 매치에 대해 질문해 보세요..."
+                    disabled={isChatting}
+                    style={{
+                      flex: 1,
+                      backgroundColor: "rgba(255,255,255,0.05)",
+                      border: "1px solid rgba(255,255,255,0.1)",
+                      borderRadius: "20px",
+                      padding: "8px 16px",
+                      fontSize: "13px",
+                      color: "#fff",
+                      outline: "none"
+                    }}
+                  />
+                  <button
+                    onClick={handleSendChat}
+                    disabled={isChatting || !chatInput.trim()}
+                    style={{
+                      backgroundColor: isChatting || !chatInput.trim() ? "rgba(255,255,255,0.05)" : "#34A853",
+                      color: "#fff",
+                      border: "none",
+                      borderRadius: "50%",
+                      width: "34px",
+                      height: "34px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      cursor: isChatting || !chatInput.trim() ? "default" : "pointer",
+                      transition: "all 0.2s"
+                    }}
+                  >
+                    {isChatting ? (
+                      <div style={{ width: "14px", height: "14px", border: "2px solid #fff", borderTop: "2px solid transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+                    ) : (
+                      <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          <style>{`
+            @keyframes spin {
+              from { transform: rotate(0deg); }
+              to { transform: rotate(360deg); }
+            }
+          `}</style>
 
           <table
             style={{

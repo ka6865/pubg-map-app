@@ -34,7 +34,7 @@ const sanitizeHTML = (html: string) => {
   return DOMPurify.sanitize(html, { 
     ALLOWED_TAGS: [
       "p", "br", "strong", "em", "u", "s", "ul", "ol", "li", 
-      "h1", "h2", "h3", "blockquote", "img", "a", "span", "iframe"
+      "h1", "h2", "h3", "blockquote", "img", "a", "span", "iframe", "div"
     ],
     ALLOWED_ATTR: ["href", "target", "rel", "src", "style", "class", "width", "height", "alt", "title", "frameborder", "allow", "allowfullscreen"]
   });
