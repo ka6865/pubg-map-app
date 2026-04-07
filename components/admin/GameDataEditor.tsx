@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useCallback } from "react";
+import getApiUrl from "../../lib/api-config";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 import { toast } from "sonner";
@@ -74,7 +75,8 @@ export default function GameDataEditor() {
     setIsSaving(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const response = await fetch("/api/admin/game-data", {
+      const apiUrl = getApiUrl("/api/admin/game-data");
+      const response = await fetch(apiUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -100,7 +102,8 @@ export default function GameDataEditor() {
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const response = await fetch(`/api/admin/game-data?category=${activeCategory}&id=${id}`, {
+      const apiUrl = getApiUrl(`/api/admin/game-data?category=${activeCategory}&id=${id}`);
+      const response = await fetch(apiUrl, {
         method: "DELETE",
         headers: {
           "Authorization": `Bearer ${session?.access_token}`
@@ -189,19 +192,55 @@ export default function GameDataEditor() {
           </nav>
         </div>
         <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2">
+          <input
+            id="manual-sync-url"
+            name="manual_url"
+            type="text"
+            placeholder="수동 동기화 뉴스 URL (선택사항)"
+            className="w-[240px] bg-[#222] border border-[#333] rounded px-3 py-1.5 text-[11px] focus:outline-none focus:border-blue-500"
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                const btn = document.getElementById("sync-btn");
+                if (btn) btn.click();
+              }
+            }}
+          />
           <button 
+            id="sync-btn"
             onClick={async () => {
+              const urlInput = document.getElementById("manual-sync-url") as HTMLInputElement;
+              const manualUrl = urlInput?.value.trim();
+              
+              const confirmMsg = manualUrl 
+                ? `입력하신 URL(${manualUrl})로 강제 동기화를 진행할까요?`
+                : "모든 공식 뉴스를 훑어보고 최신 패치노트 전 내용을 동기화할까요?";
+                
+              if (!confirm(confirmMsg)) return;
+              
               setIsSaving(true);
               try {
-                const res = await fetch("/api/admin/patch-notes/sync", { method: "POST" });
-                const result = await res.json();
-                if (result.success) {
-                  toast.success(result.message);
-                } else {
-                  toast.error("연동 실패: " + (result.error || "알 수 없는 오류"));
+                // [수정] url 파라미터 대응
+                let apiUrl = `/api/cron/patch-notes?secret=my_super_secret_admin_token_1234!&force=true`;
+                if (manualUrl) {
+                  apiUrl += `&url=${encodeURIComponent(manualUrl)}`;
                 }
-              } catch {
-                toast.error("통신 오류 발생");
+                
+                const res = await fetch(apiUrl);
+                const result = await res.json();
+                
+                if (result.success) {
+                  toast.success("✅ 패치노트가 성공적으로 동기화되었습니다!");
+                  if (urlInput) urlInput.value = ""; // 성공 시 비우기
+                  router.push("/?tab=Board");
+                } else if (result.reason === "ai_failed") {
+                  toast.error("⚠️ AI 요약 실패! 디스코드를 확인하고 수동으로 작성해주세요.");
+                } else {
+                  toast.error("❌ 동기화 실패: " + (result.message || "알 수 없는 오류"));
+                }
+              } catch (err) {
+                console.error("Sync error:", err);
+                toast.error("연동 통신 중 오류가 발생했습니다.");
               } finally {
                 setIsSaving(false);
               }
@@ -213,8 +252,9 @@ export default function GameDataEditor() {
                 : "bg-blue-600/10 border-blue-600/30 text-blue-400 hover:bg-blue-600/20"
             }`}
           >
-            {isSaving ? "⏳ 동기화 중..." : "🔄 패치노트 동기화"}
+            {isSaving ? "⏳ 동기화 중..." : "🔄 패치노트 데이터 동기화"}
           </button>
+          </div>
           <button onClick={() => router.push("/")} className="text-sm font-bold text-gray-400 hover:text-white transition-colors">
             나가기
           </button>
