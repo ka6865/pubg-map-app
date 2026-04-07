@@ -4,6 +4,7 @@ import L from "leaflet";
 import Sidebar from "../Sidebar";
 import MobileBottomSheet from "./MobileBottomSheet";
 import MapView from "./MapView";
+import { X, Hammer, Map as MapIcon, Crosshair, Plane, AlertCircle, SlidersHorizontal } from 'lucide-react';
 import type { MapTab, MapMarker, AuthUser, PendingVehicle } from "../../types/map";
 import { useTelemetry } from "../../hooks/useTelemetry";
 import TelemetryPlayer from "./TelemetryPlayer";
@@ -28,7 +29,7 @@ interface MapShellProps {
   onEnableDefaultVehicleFilters?: () => void;
   currentUser: AuthUser | null;
   isAdmin?: boolean;
-  pendingVehicles: PendingVehicle[]; // 🌟 추가
+  pendingVehicles: PendingVehicle[];
 }
 
 const getDistanceToLineSegment = (
@@ -88,7 +89,6 @@ const MapShell = memo(
     const router = useRouter();
     const searchParams = useSearchParams();
 
-    // 🌟 텔레메트리 관련 쿼리 파라미터 확인 및 상태 가져오기
     const playbackId = searchParams?.get("playback") || null;
     const playbackNickname = searchParams?.get("nickname") || null;
     
@@ -119,16 +119,13 @@ const MapShell = memo(
     const [isGridOn, setIsGridOn] = useState(true);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [showZone, setShowZone] = useState(true);
-    const [showCombatDots, setShowCombatDots] = useState(false);  // 교전 흐적 점 (default OFF)
-    const [showShotDots, setShowShotDots] = useState(true);      // 아군 발사 위치 점 (default ON)
-    const [hiddenPlayers, setHiddenPlayers] = useState<string[]>([]); // 숨겨진 플레이어 목록
-    const [showPlayerNames, setShowPlayerNames] = useState(true); // 플레이어 이름 표시 여부
-    const [showPlayerPaths, setShowPlayerPaths] = useState(true); // 플레이어 이동 경로 표시 여부
+    const [showCombatDots, setShowCombatDots] = useState(false);
+    const [showShotDots, setShowShotDots] = useState(true);
+    const [hiddenPlayers, setHiddenPlayers] = useState<string[]>([]);
+    const [showPlayerNames, setShowPlayerNames] = useState(true);
+    const [showPlayerPaths, setShowPlayerPaths] = useState(true);
 
     useEffect(() => {
-      // 컴포넌트 마운트/업데이트 초기화 관련 로직 (의도적으로 상위에서 제어)
-      // 또는 activeMapId 변경 시 꼭 필요한 side effect만 수행
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setIsMenuOpen(false);
     }, [activeMapId]);
 
@@ -211,57 +208,89 @@ const MapShell = memo(
           />
         )}
 
-        <div className="relative flex-1 h-full">
+        <div className="relative flex-1 h-full overflow-hidden">
           <HomeNotice />
-          <div className={`absolute z-[1000] flex flex-col gap-[10px] items-end ${isMobile ? 'bottom-[80px] right-[10px]' : 'top-[15px] right-[15px]'}`}>
-            <button
-              onClick={() => setIsMenuOpen(!isMenuOpen)}
-              className={`px-4 text-white border border-[#444] rounded-lg font-bold cursor-pointer shadow-[0_4px_10px_rgba(0,0,0,0.6)] transition-all duration-200 ease-in-out ${isMenuOpen ? "bg-[#d93025]" : "bg-[#252525]"} ${isMobile ? "py-4 text-lg" : "py-2"}`}
-            >
-              {isMenuOpen ? "✖ 메뉴 닫기" : "🛠️ 지도 도구"}
-            </button>
 
-            {isMenuOpen && (
-              <div className="flex flex-col gap-[10px] items-end">
+          {/* 🌟 플로팅 지도 도구/필터 버튼 - 모바일 대칭 배치 */}
+          <div className={`absolute z-[1000] flex w-full pointer-events-none transition-all ${isMobile ? 'bottom-[100px] px-6 safe-bottom' : 'top-4 right-4 justify-end'}`}>
+            <div className={`flex w-full items-end ${isMobile ? 'justify-between' : 'flex-col gap-3'}`}>
+              
+              {/* 모바일 전용 필터 버튼 (좌측) */}
+              {isMobile && (
                 <button
-                  onClick={() => setIsGridOn(!isGridOn)}
-                  className={`px-4 py-2 border border-[#333] rounded-lg font-bold cursor-pointer shadow-[0_4px_10px_rgba(0,0,0,0.5)] ${isGridOn ? "bg-[#F2A900] text-black" : "bg-[#1a1a1a] text-[#aaa]"}`}
+                  onClick={() => onSetSidebarOpen(!isSidebarOpen)}
+                  className="pointer-events-auto flex items-center justify-center w-[52px] h-[52px] bg-black/80 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl active:scale-90 transition-all text-[#F2A900]"
                 >
-                  🗺️ 그리드망 {isGridOn ? "ON" : "OFF"}
+                  <SlidersHorizontal size={22} strokeWidth={2.5} />
                 </button>
+              )}
+
+              {/* 지도 도구 버튼 (우측) */}
+              <div className="flex flex-col gap-3 items-end">
                 <button
-                  onClick={() => handleModeToggle("mortar")}
-                  className={`px-4 py-2 border border-[#333] rounded-lg font-bold cursor-pointer shadow-[0_4px_10px_rgba(0,0,0,0.5)] ${activeMode === "mortar" ? "bg-[#ea4335] text-white" : "bg-[#1a1a1a] text-[#aaa]"}`}
+                  onClick={() => setIsMenuOpen(!isMenuOpen)}
+                  className={`pointer-events-auto flex items-center gap-2 px-6 shadow-[0_12px_40px_rgba(0,0,0,0.4)] active:scale-90 transition-all duration-300 border border-white/5 ${isMenuOpen ? "bg-red-600 text-white h-[52px] rounded-2xl text-sm" : "bg-black text-[#F2A900] h-[52px] rounded-2xl text-base"}`}
                 >
-                  🎯 박격포 계산기
+                  {isMenuOpen ? (
+                    <>
+                      <X size={18} strokeWidth={3} />
+                      <span className="font-black uppercase tracking-tight text-xs">닫기</span>
+                    </>
+                  ) : (
+                    <>
+                      <Hammer size={18} strokeWidth={3} />
+                      {isMobile ? null : <span className="font-black uppercase tracking-tight text-xs">지도 도구</span>}
+                    </>
+                  )}
                 </button>
-                <button
-                  onClick={() => handleModeToggle("flight")}
-                  className={`px-4 py-2 border border-[#333] rounded-lg font-bold cursor-pointer shadow-[0_4px_10px_rgba(0,0,0,0.5)] ${activeMode === "flight" ? "bg-[#3b82f6] text-white" : "bg-[#1a1a1a] text-[#aaa]"}`}
-                >
-                  ✈️ 비행기 경로 (Drop Zone)
-                </button>
-                <button
-                  onClick={() => handleModeToggle("report")}
-                  className={`px-4 py-2 border border-[#333] rounded-lg font-bold cursor-pointer shadow-[0_4px_10px_rgba(0,0,0,0.5)] ${activeMode === "report" ? "bg-[#10b981] text-white" : "bg-[#1a1a1a] text-[#aaa]"}`}
-                >
-                  📣 차량 제보 모드
-                </button>
-                {activeMode === "flight" && flightPoints.length === 2 && (
-                  <button
-                    onClick={() => {
-                      const nextState = !isVehicleFilterOn;
-                      setIsVehicleFilterOn(nextState);
-                      if (nextState && onEnableDefaultVehicleFilters)
-                        onEnableDefaultVehicleFilters();
-                    }}
-                    className={`px-3 py-2 border-none rounded-[20px] font-black text-[12px] cursor-pointer ${isVehicleFilterOn ? "bg-[#F2A900] text-black" : "bg-[#252525] text-[#888]"}`}
-                  >
-                    🚗 주변 1km 차량/보트 찾기 {isVehicleFilterOn ? "ON" : "OFF"}
-                  </button>
+
+                {isMenuOpen && (
+                  <div className="flex flex-col gap-2.5 items-end animate-in fade-in slide-in-from-bottom-4 duration-300">
+                    <button
+                      onClick={() => setIsGridOn(!isGridOn)}
+                      className={`pointer-events-auto flex items-center gap-2.5 px-5 py-3.5 border border-white/10 rounded-xl font-black text-xs shadow-2xl transition-all active:scale-95 ${isGridOn ? "bg-[#F2A900] text-black" : "bg-[#1a1a1a] text-[#777]"}`}
+                    >
+                      <MapIcon size={16} strokeWidth={3} />
+                      <span className="uppercase tracking-tighter">그리드망 {isGridOn ? "ON" : "OFF"}</span>
+                    </button>
+                    <button
+                      onClick={() => handleModeToggle("mortar")}
+                      className={`pointer-events-auto flex items-center gap-2.5 px-5 py-3.5 border border-white/10 rounded-xl font-black text-xs shadow-2xl transition-all active:scale-95 ${activeMode === "mortar" ? "bg-[#ea4335] text-white" : "bg-[#1a1a1a] text-[#777]"}`}
+                    >
+                      <Crosshair size={16} strokeWidth={3} />
+                      <span className="uppercase tracking-tighter">박격포</span>
+                    </button>
+                    <button
+                      onClick={() => handleModeToggle("flight")}
+                      className={`pointer-events-auto flex items-center gap-2.5 px-5 py-3.5 border border-white/10 rounded-xl font-black text-xs shadow-2xl transition-all active:scale-95 ${activeMode === "flight" ? "bg-[#3b82f6] text-white" : "bg-[#1a1a1a] text-[#777]"}`}
+                    >
+                      <Plane size={16} strokeWidth={3} />
+                      <span className="uppercase tracking-tighter">비행기 경로</span>
+                    </button>
+                    <button
+                      onClick={() => handleModeToggle("report")}
+                      className={`pointer-events-auto flex items-center gap-2.5 px-5 py-3.5 border border-white/10 rounded-xl font-black text-xs shadow-2xl transition-all active:scale-95 ${activeMode === "report" ? "bg-[#10b981] text-white" : "bg-[#1a1a1a] text-[#777]"}`}
+                    >
+                      <AlertCircle size={16} strokeWidth={3} />
+                      <span className="uppercase tracking-tighter">차량 제보</span>
+                    </button>
+                    {activeMode === "flight" && flightPoints.length === 2 && (
+                      <button
+                        onClick={() => {
+                          const nextState = !isVehicleFilterOn;
+                          setIsVehicleFilterOn(nextState);
+                          if (nextState && onEnableDefaultVehicleFilters)
+                            onEnableDefaultVehicleFilters();
+                        }}
+                        className={`pointer-events-auto mt-2 px-5 py-2.5 bg-black border-2 border-[#F2A900] rounded-full font-black text-[11px] text-[#F2A900] shadow-[0_0_20px_rgba(242,169,0,0.2)] animate-pulse`}
+                      >
+                        🚗 1km 주변 스캔 {isVehicleFilterOn ? "ON" : "OFF"}
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
-            )}
+            </div>
           </div>
 
           {activeMode !== "none" && (
@@ -300,8 +329,8 @@ const MapShell = memo(
             reportLocation={reportLocation}
             currentUser={currentUser}
             isAdmin={isAdmin}
-            pendingVehicles={playbackId ? [] : pendingVehicles} // 🌟 넘겨주기
-            filters={filters} // 🌟 사이드바 토글 상태 체크용
+            pendingVehicles={playbackId ? [] : pendingVehicles}
+            filters={filters}
             telemetryData={{
               isActive: !!playbackId,
               mapName: activeMapId || "Erangel",
@@ -320,7 +349,6 @@ const MapShell = memo(
             }}
           />
 
-          {/* 🌟 텔레메트리 재생 컨트롤러 렌더링 */}
           {playbackId && (
             <TelemetryPlayer
               events={telemetryEvents}
@@ -359,7 +387,6 @@ const MapShell = memo(
             />
           )}
 
-          {/* 🔫 실시간 킬로그 피드 (우측 상단 오버레이) */}
           {playbackId && telemetryEvents.length > 0 && (
             <KillFeed
               events={telemetryEvents}
@@ -369,7 +396,6 @@ const MapShell = memo(
             />
           )}
 
-          {/* 🔵 자기장 타이머 (상단 중앙) */}
           {playbackId && zoneEvents.length > 0 && (
             <ZoneTimer
               zoneEvents={zoneEvents}
@@ -377,7 +403,6 @@ const MapShell = memo(
               showZone={showZone}
             />
           )}
-
         </div>
       </div>
     );

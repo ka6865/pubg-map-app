@@ -29,8 +29,8 @@ export default function BottomNav() {
 
   return (
     <>
-      <nav className="fixed bottom-0 left-0 right-0 z-[5000] bg-[#121212] border-t border-[#333] px-2 py-1 md:hidden safe-area-bottom">
-        <div className="flex justify-around items-center h-14">
+      <nav className="fixed bottom-0 left-0 right-0 z-[5000] bg-[#121212] border-t border-[#333] px-2 py-1 md:hidden safe-bottom shadow-[0_-4px_10px_rgba(0,0,0,0.3)]">
+        <div className="flex justify-around items-center min-h-[56px] h-auto">
           {bottomNavItems.map((item) => (
             <button
               key={item.id}

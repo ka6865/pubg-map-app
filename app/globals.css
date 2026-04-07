@@ -58,3 +58,38 @@
   display: block;
   margin: 1.5rem auto;
 }
+/* 모바일 전용 앱 최적화 스타일 */
+@layer utilities {
+  .safe-top {
+    padding-top: env(safe-area-inset-top);
+  }
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .pb-safe-nav {
+    padding-bottom: calc(56px + env(safe-area-inset-bottom));
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+/* 터치 조작 최적화 */
+* {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* 입력창 포커스 시 자동 줌 방지 (iOS) */
+input, textarea, select {
+  font-size: 16px !important;
+}
+
+/* 바텀 시트 오픈 시 본문 스크롤 고정 */
+[data-vaul-drawer][data-state='open'] {
+  overflow: hidden;
+}

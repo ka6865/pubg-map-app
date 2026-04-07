@@ -1,4 +1,5 @@
 import { MetadataRoute } from 'next';
+export const dynamic = 'force-static';
 import { createClient } from '@supabase/supabase-js';
 
 // 서버 사이드 전용 Supabase 클라이언트 생성

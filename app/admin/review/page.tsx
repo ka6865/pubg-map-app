@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, Suspense } from "react";
+import getApiUrl from "../../../lib/api-config";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "../../../lib/supabase";
 import { PendingVehicle } from "../../../types/map";
@@ -74,7 +75,8 @@ function AdminReviewInner() {
     if (!session) return;
 
     try {
-      const res = await fetch(`/api/admin/${action}`, {
+      const apiUrl = getApiUrl(`/api/admin/${action}`);
+      const res = await fetch(apiUrl, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

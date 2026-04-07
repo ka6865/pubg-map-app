@@ -4,6 +4,7 @@
 import React, { useState, useEffect, useId, useCallback } from "react";
 import { MatchCard } from "./stat/MatchCard";
 import { StatSummaryCard } from "./stat/StatSummaryCard";
+import { RecentAISummary } from "./stat/RecentAISummary";
 
 const STORAGE_KEY_RECENT = "pubg_recent_searches_v2";
 const STORAGE_KEY_FAVORITES = "pubg_favorites_v2";
@@ -326,6 +327,15 @@ export default function StatSearch({ userProfile }: StatSearchProps = {}) {
               <StatSummaryCard title="스쿼드" data={result.stats?.normal?.squad} isRanked={false} />
             </div>
           </div>
+
+          {/* 최근 10경기 AI 종합 분석 섹션 추가 */}
+          {result.recentMatches && result.recentMatches.length > 0 && (
+            <RecentAISummary 
+              matchIds={result.recentMatches} 
+              nickname={result.nickname} 
+              platform={result.platform} 
+            />
+          )}
 
           <div style={{ marginTop: "20px" }}>
             <h3 style={{ fontSize: "20px", fontWeight: "bold", marginBottom: "15px", borderBottom: "1px solid #333", paddingBottom: "10px" }}>

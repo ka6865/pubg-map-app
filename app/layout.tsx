@@ -53,6 +53,9 @@ export const viewport = {
   width: "device-width",
   initialScale: 1,
   viewportFit: "cover",
+  themeColor: "#121212",
+  appleMobileWebAppCapable: "yes",
+  appleMobileWebAppStatusBarStyle: "black-translucent",
 };
 
 // 최상위 HTML 뼈대 렌더링 컴포넌트
@@ -66,7 +69,7 @@ export default function RootLayout({
       <body className="antialiased bg-[#121212] text-white">
         <AuthProvider>
           <div className="flex flex-col min-h-dvh">
-            <main className="flex-grow pb-14 md:pb-0">
+            <main className="flex-grow pb-safe-nav md:pb-0">
               {children}
             </main>
             <Footer />

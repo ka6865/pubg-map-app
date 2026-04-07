@@ -1,5 +1,7 @@
 "use client";
 
+import getApiUrl from "../lib/api-config";
+
 import { useState, useEffect, useCallback } from "react"; // React 상태 및 생명주기 관리 훅
 import { useRouter, useSearchParams } from "next/navigation"; // Next.js 라우터 및 쿼리 파라미터 로드 모듈
 import { supabase } from "../lib/supabase"; // DB 통신용 Supabase 클라이언트
@@ -437,7 +439,8 @@ export default function Board({
 
       // 관리자라면 서버사이드 강제 삭제 API 호출 (RLS 우회)
       if (isAdmin) {
-        const adminRes = await fetch(`/api/admin/posts/delete?postId=${postId}`, { method: "DELETE" });
+        const apiUrl = getApiUrl(`/api/admin/posts/delete?postId=${postId}`);
+        const adminRes = await fetch(apiUrl, { method: "DELETE" });
         const adminResult = await adminRes.json();
         
         if (!adminRes.ok) throw new Error(adminResult.error || "관리자 삭제 실패");

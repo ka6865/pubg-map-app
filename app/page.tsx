@@ -1,4 +1,5 @@
 import HomeClient from './HomeClient';
+export const dynamic = 'auto';
 import { Metadata } from 'next';
 import { createClient } from '@supabase/supabase-js';
 

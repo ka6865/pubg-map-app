@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useEffect } from 'react';
+import React from 'react';
 import { CATEGORY_INFO, MAP_CATEGORIES } from "../../lib/map_config";
-import { X, ChevronUp } from 'lucide-react';
+import { X, ChevronUp, Map as MapIcon, SlidersHorizontal } from 'lucide-react';
+import { Drawer } from 'vaul';
 
 interface MobileBottomSheetProps {
   isOpen: boolean;
@@ -26,107 +27,113 @@ export default function MobileBottomSheet({
   const currentCategories =
     MAP_CATEGORIES[activeMapId] || MAP_CATEGORIES["Erangel"];
 
-  // Handle body scroll lock when open
-  useEffect(() => {
-    if (isOpen) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = 'unset';
-    }
-    return () => { document.body.style.overflow = 'unset'; };
-  }, [isOpen]);
-
-  if (!isOpen) return (
-    <button 
-      onClick={() => setIsOpen(true)}
-      className="fixed bottom-20 left-4 z-[4000] bg-[#F2A900] text-black px-4 py-2 rounded-full font-bold shadow-lg flex items-center gap-2 md:hidden"
-    >
-      <ChevronUp size={20} />
-      필터 보기
-    </button>
-  );
-
   return (
-    <>
-      {/* Backdrop */}
-      <div 
-        className="fixed inset-0 bg-black/60 z-[5000] md:hidden transition-opacity"
-        onClick={() => setIsOpen(false)}
-      />
-      
-      {/* Sheet */}
-      <div 
-        className="fixed bottom-0 left-0 right-0 z-[5001] bg-[#121212] border-t border-[#333] rounded-t-3xl md:hidden flex flex-col max-h-[90vh] transition-transform animate-in slide-in-from-bottom duration-300 shadow-[0_-10px_40px_rgba(0,0,0,0.5)]"
-      >
-        {/* Handle / Header */}
-        <div className="flex items-center justify-between p-5 border-b border-[#222]">
-          <div className="w-12 h-1.5 bg-[#333] rounded-full absolute top-2 left-1/2 -translate-x-1/2" />
-          <h2 className="text-[#F2A900] font-black text-xl italic tracking-tighter uppercase">
-            {mapLabel} 필터
-          </h2>
-          <button onClick={() => setIsOpen(false)} className="p-1 bg-[#222] rounded-full text-[#666]">
-            <X size={20} />
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="overflow-y-auto px-5 pb-10 pt-4">
-          {/* Existing Filters UI */}
-          <div
-            onClick={() => toggleFilter("pending")}
-            className={`flex items-center justify-between p-4 my-2 rounded-2xl transition-all border-l-4 ${
-                filters["pending"] ? "bg-[#3b2f15] border-[#F2A900]" : "bg-[#1a1a1a] border-transparent"
-            }`}
-          >
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">👀</span>
-              <span className={`text-sm ${filters["pending"] ? "text-[#F2A900] font-black" : "text-[#777]"}`}>
-                제보 진행 중인 구역
-              </span>
-            </div>
-            <span className={`text-[10px] font-black px-2 py-1 rounded bg-black/40 ${filters["pending"] ? "text-[#F2A900]" : "text-[#666]"}`}>
-              {filters["pending"] ? "ON" : "OFF"}
-            </span>
-          </div>
-
-          <div className="h-[1px] bg-[#333] my-4 mx-2" />
-
-          <div className="grid grid-cols-2 gap-3 mt-2">
-            {currentCategories.map((id) => {
-              const item = CATEGORY_INFO[id];
-              if (!item) return null;
-
-              return (
-                <div
-                  key={id}
-                  onClick={() => toggleFilter(id)}
-                  className={`flex items-center gap-3 p-4 rounded-2xl transition-all border-l-4 ${
-                    filters[id] ? "bg-[#252525]" : "bg-[#1a1a1a] border-transparent"
-                  }`}
-                  style={{ borderLeftColor: filters[id] ? item.color : 'transparent' }}
+    <Drawer.Root open={isOpen} onOpenChange={setIsOpen}>
+      <Drawer.Portal>
+        <Drawer.Overlay className="fixed inset-0 bg-black/60 z-[5000] backdrop-blur-[2px]" />
+        <Drawer.Content className="bg-[#121212] flex flex-col rounded-t-[32px] h-[85%] mt-24 fixed bottom-0 left-0 right-0 z-[5001] outline-none border-t border-[#333]">
+          <div className="flex-1 overflow-y-auto p-4 rounded-t-[32px]">
+            {/* 드래그 핸들 */}
+            <div className="mx-auto w-12 h-1.5 flex-shrink-0 rounded-full bg-[#333] mb-8" />
+            
+            <div className="max-w-md mx-auto">
+              <div className="flex items-center justify-between mb-6">
+                <Drawer.Title className="text-2xl font-black text-[#F2A900] tracking-tighter flex items-center gap-2">
+                  <MapIcon size={24} />
+                  <span>{mapLabel} 전술 정보</span>
+                </Drawer.Title>
+                <button 
+                  onClick={() => setIsOpen(false)}
+                  className="p-2 bg-[#222] rounded-full text-[#777] active:bg-[#333] transition-colors"
                 >
-                  <svg
-                    viewBox="0 0 24 24"
-                    width="20"
-                    height="20"
-                    fill={filters[id] ? item.color : "#555"}
+                  <X size={20} />
+                </button>
+              </div>
+
+              {/* 필터 섹션 */}
+              <div className="space-y-4">
+                <section>
+                  <h3 className="text-[#555] text-xs font-black uppercase tracking-widest mb-3 ml-1">상태 필터</h3>
+                  <div
+                    onClick={() => toggleFilter("pending")}
+                    className={`flex items-center justify-between p-4 rounded-2xl transition-all border-l-4 cursor-pointer ${
+                        filters["pending"] ? "bg-[#3b2f15] border-[#F2A900]" : "bg-[#1a1a1a] border-transparent"
+                    }`}
                   >
-                    <path d={item.path} />
-                  </svg>
-                  <div className="flex flex-col">
-                    <span className={`text-sm tracking-tight ${filters[id] ? "text-white font-black" : "text-[#777]"}`}>
-                        {item.label}
-                    </span>
-                    <span className={`text-[10px] font-bold ${filters[id] ? "text-white/40" : "text-[#555]"}`}>
-                        Count: {getCount(id)}
-                    </span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-2xl">👀</span>
+                      <div className="flex flex-col">
+                        <span className={`text-[13px] ${filters["pending"] ? "text-[#F2A900] font-black" : "text-[#777]"}`}>
+                          실시간 제보 진행 중
+                        </span>
+                        <span className="text-[10px] text-[#555]">검증이 필요한 차량 스폰 지점</span>
+                      </div>
+                    </div>
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${filters["pending"] ? "bg-[#F2A900] text-black" : "bg-black/40 text-[#444]"}`}>
+                      <ChevronUp size={16} className={filters["pending"] ? "" : "rotate-180"} />
+                    </div>
                   </div>
+                </section>
+
+                <div className="h-[1px] bg-[#222] my-2" />
+
+                <section>
+                  <h3 className="text-[#555] text-xs font-black uppercase tracking-widest mb-3 ml-1">스폰 카테고리</h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    {currentCategories.map((id) => {
+                      const item = CATEGORY_INFO[id];
+                      if (!item) return null;
+
+                      return (
+                        <div
+                          key={id}
+                          onClick={() => toggleFilter(id)}
+                          className={`flex flex-col gap-3 p-4 rounded-2xl transition-all border-l-4 cursor-pointer relative overflow-hidden ${
+                            filters[id] ? "bg-[#1a1a1a] border-l-4 shadow-[inset_0_0_20px_rgba(0,0,0,0.3)]" : "bg-[#1a1a1a] border-transparent"
+                          }`}
+                          style={{ borderLeftColor: filters[id] ? item.color : 'transparent' }}
+                        >
+                          <div className="flex items-center justify-between">
+                            <svg
+                              viewBox="0 0 24 24"
+                              width="22"
+                              height="22"
+                              fill={filters[id] ? item.color : "#444"}
+                            >
+                              <path d={item.path} />
+                            </svg>
+                            <span className={`text-[11px] font-black ${filters[id] ? "text-white" : "text-[#444]"}`}>
+                                {getCount(id)}
+                            </span>
+                          </div>
+                          <span className={`text-[13px] font-bold tracking-tight ${filters[id] ? "text-white" : "text-[#777]"}`}>
+                              {item.label}
+                          </span>
+                          
+                          {/* 하단 활성화 데코레이션 */}
+                          {filters[id] && (
+                            <div 
+                                className="absolute bottom-0 right-0 w-8 h-8 rounded-tl-full opacity-20"
+                                style={{ backgroundColor: item.color }}
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+                
+                <div className="p-8 text-center">
+                    <p className="text-[#333] text-[11px] font-medium leading-relaxed">
+                        BGMS 전술 지도는 커뮤니티 제보를 기반으로 운영됩니다.<br/>
+                        틀린 정보가 있다면 지도 도구에서 제보해 주세요.
+                    </p>
                 </div>
-              );
-            })}
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
-    </>
+        </Drawer.Content>
+      </Drawer.Portal>
+    </Drawer.Root>
   );
 }

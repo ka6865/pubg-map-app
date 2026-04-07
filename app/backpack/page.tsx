@@ -284,7 +284,7 @@ export default function BackpackSimulator() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0b0f19] text-white p-6 pb-20 overflow-y-auto w-full font-sans">
+    <div className="min-h-screen bg-[#0b0f19] text-white p-6 pb-20 overflow-y-auto w-full font-sans safe-top safe-bottom">
       <div className="max-w-[1600px] mx-auto w-full">
         
         {/* 헤더 */}

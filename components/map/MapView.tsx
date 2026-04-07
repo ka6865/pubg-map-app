@@ -1,4 +1,5 @@
-import React, { memo, useRef } from "react";
+import React, { memo, useRef, useState, useEffect, useCallback } from "react";
+import getApiUrl from "../../lib/api-config";
 import {
   MapContainer,
   TileLayer,
@@ -295,7 +296,8 @@ const MapView = memo(
       }
 
       try {
-        const res = await fetch(`/api/admin/${action}`, {
+        const apiUrl = getApiUrl(`/api/admin/${action}`);
+        const res = await fetch(apiUrl, {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

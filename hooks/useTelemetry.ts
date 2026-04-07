@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import getApiUrl from "../lib/api-config";
 
 /**
  * 텔레메트리 데이터(교전, 이동, 자기장 등)에서 발생하는 이벤트의 단일 레코드를 정의하는 인터페이스입니다.
@@ -73,7 +74,8 @@ export function useTelemetry(matchId: string | null, nickname: string | null, ma
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`/api/pubg/telemetry?matchId=${matchId}&nickname=${nickname}`);
+        const apiUrl = getApiUrl(`/api/pubg/telemetry?matchId=${matchId}&nickname=${nickname}`);
+        const res = await fetch(apiUrl);
         const data = await res.json();
         
         if (!res.ok) {
