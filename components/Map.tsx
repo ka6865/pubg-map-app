@@ -92,8 +92,14 @@ export default function Map({ initialMapId, postId, initialIsWriting }: MapProps
 
   const [isSidebarOpen, setSidebarOpen] = useState(true);
   const [showNotiDropdown, setShowNotiDropdown] = useState(false);
-  const [isMyPage, setIsMyPage] = useState(false);
+  // URL 쿼리 파라미터 mypage=1 여부로 마이페이지 초기 상태 결정
+  const [isMyPage, setIsMyPage] = useState(() => searchParams?.get("mypage") === "1");
   const [isMobile, setIsMobile] = useState(false);
+
+  // URL의 mypage 쿼리 파라미터가 바뀔 때마다 isMyPage 상태 동기화
+  useEffect(() => {
+    setIsMyPage(searchParams?.get("mypage") === "1");
+  }, [searchParams]);
 
   const icons = useMemo(() => {
     const res: Record<string, L.DivIcon> = {};
@@ -153,9 +159,9 @@ export default function Map({ initialMapId, postId, initialIsWriting }: MapProps
   };
 
   const handleTabClick = (tabId: string) => {
-    setIsMyPage(false);
+    // router.push로 URL이 바뀌면 useEffect가 isMyPage를 자동 동기화
     if (tabId === "Board") {
-      router.push('/board');
+      router.push('/board'); // 게시판 이동 시 mypage 쿼리 없이 이동
     } else if (tabId === "Stats") {
       router.push('/stats');
     } else {
@@ -183,7 +189,7 @@ export default function Map({ initialMapId, postId, initialIsWriting }: MapProps
       );
     }
     setShowNotiDropdown(false);
-    setIsMyPage(false);
+    // router.push로 URL 변경 → useEffect가 isMyPage 자동 동기화
     router.push(`/board/${noti.post_id}`);
   };
 
@@ -238,8 +244,8 @@ export default function Map({ initialMapId, postId, initialIsWriting }: MapProps
         onMarkAllAsRead={markAllAsRead}
         onNotiClick={handleNotiClick}
         onMyPageClick={() => {
-          setIsMyPage(true);
-          router.push("/board");
+          // /board 페이지로 이동하되 mypage=1 쿼리를 붙여 상태 유지
+          router.push("/board?mypage=1");
         }}
         formatNotiTime={formatNotiTime}
       />
@@ -287,7 +293,6 @@ export default function Map({ initialMapId, postId, initialIsWriting }: MapProps
                 <MyPage
                   currentUser={currentUser}
                   userProfile={userProfile}
-                  setIsMyPage={setIsMyPage}
                   fetchUserProfile={fetchUserProfile}
                   setOptimisticNickname={setOptimisticNickname}
                 />

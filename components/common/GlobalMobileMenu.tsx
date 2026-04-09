@@ -82,7 +82,7 @@ export default function GlobalMobileMenu({ isOpen, setIsOpen, activeMapId }: Glo
                   </div>
                   <div className="flex gap-2">
                     <button 
-                      onClick={() => { router.push(user ? '/board?mode=mypage' : '/login'); setIsOpen(false); }}
+                      onClick={() => { router.push(user ? '/board?mypage=1' : '/login'); setIsOpen(false); }}
                       className="flex-1 bg-[#F2A900] text-black py-3 rounded-xl font-bold text-sm shadow-lg active:scale-95 transition-transform"
                     >
                       {user ? "마이페이지" : "로그인하기"}

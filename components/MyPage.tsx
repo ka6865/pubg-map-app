@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react"; // React 상태 제어 훅 로드
+import { useRouter } from "next/navigation"; // 페이지 이동을 URL 기반으로 제어
 import { supabase } from "../lib/supabase"; // DB 및 인증 서버 통신용 Supabase 클라이언트 로드
 import type { CurrentUser } from "../types/map";
 import { toast } from "sonner";
@@ -15,7 +16,6 @@ const USER_CONFIG = {
 interface MyPageProps {
   currentUser: CurrentUser | null;
   userProfile: any;
-  setIsMyPage: (v: boolean) => void;
   fetchUserProfile: (user: any) => void;
   setOptimisticNickname: (name: string) => void;
 }
@@ -24,10 +24,10 @@ interface MyPageProps {
 export default function MyPage({
   currentUser,
   userProfile,
-  setIsMyPage,
   fetchUserProfile,
   setOptimisticNickname,
 }: MyPageProps) {
+  const router = useRouter();
   const [editNickname, setEditNickname] = useState(userProfile?.nickname || ""); // 닉네임 수정 입력값 상태
   const [editPubgNickname, setEditPubgNickname] = useState(userProfile?.pubg_nickname || ""); // 배틀그라운드 닉네임 연동 상태
   const [editPubgPlatform, setEditPubgPlatform] = useState(userProfile?.pubg_platform || "steam"); // 플랫폼 선택 상태 (기본값 스팀)
@@ -107,7 +107,8 @@ export default function MyPage({
         .update({ sender_name: newNickname })
         .eq("sender_id", currentUser.id);
 
-      setIsMyPage(false);
+      // URL을 /board로 변경하면 useEffect가 isMyPage 자동 닫기
+      router.push('/board');
     } else {
       if (error?.code === "23505") {
         toast.error("이미 사용 중인 닉네임입니다.");
@@ -168,7 +169,8 @@ export default function MyPage({
       await supabase.auth.signOut();
 
       toast.success("회원 탈퇴가 완료되었습니다. 그동안 이용해 주셔서 감사합니다.");
-      setIsMyPage(false);
+      // URL을 /board로 변경 후 리로드
+      router.push('/board');
       window.location.reload();
     } catch (error: any) {
       toast.error("탈퇴 처리 중 오류가 발생했습니다: " + error.message);
@@ -318,7 +320,7 @@ export default function MyPage({
             저장하기
           </button>
           <button
-            onClick={() => setIsMyPage(false)}
+            onClick={() => router.push('/board')}
             style={{
               flex: 1,
               padding: "12px",
@@ -346,7 +348,8 @@ export default function MyPage({
           <button
             onClick={() => {
               supabase.auth.signOut();
-              setIsMyPage(false);
+              // URL을 / 로 변경하면 마이페이지 자동 닫힘
+              router.push('/');
             }}
             style={{
               background: "none",
