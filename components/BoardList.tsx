@@ -1,35 +1,24 @@
 "use client";
 
-import React, { Dispatch, SetStateAction, useId } from "react"; // React 상태 제어 및 고유 ID 훅
-import { useRouter } from "next/navigation"; // Next.js 라우터 모듈
-import { Post } from "../types/board"; // 게시글 객체 타입 명세
+import React, { Dispatch, SetStateAction, useId } from "react";
+import { useRouter } from "next/navigation";
+import { Post } from "../types/board";
+import { Search, PenLine, Image, MessageCircle, ChevronLeft, ChevronRight } from "lucide-react";
 
 const BOARD_CATEGORIES = ["패치노트", "자유", "듀오/스쿼드 모집", "클럽홍보", "제보/문의"];
 const POSTS_PER_PAGE = 10;
-const MAX_VISIBLE_PAGES = 5; // 한 번에 보여줄 최대 페이지 버튼 수
+const MAX_VISIBLE_PAGES = 5;
 
-// 리스트 내 썸네일 이미지 존재 표시용 SVG 아이콘 컴포넌트 (렌더링 최적화 분리)
+// 이미지 포함 아이콘
 const ImageIcon = () => (
-  <svg
-    className="w-[15px] h-[15px] text-[#34A853] ml-[6px] shrink-0 inline-block"
-    fill="currentColor"
-    viewBox="0 0 24 24"
-    xmlns="http://www.w3.org/2000/svg"
-    aria-label="이미지 포함된 게시글"
-    role="img"
-  >
-    <path
-      fillRule="evenodd"
-      clipRule="evenodd"
-      d="M1.5 6a2.25 2.25 0 012.25-2.25h16.5A2.25 2.25 0 0122.5 6v12a2.25 2.25 0 01-2.25 2.25H3.75A2.25 2.25 0 011.5 18V6zM3 16.06V18c0 .414.336.75.75.75h16.5A.75.75 0 0021 18v-1.94l-2.69-2.689a1.5 1.5 0 00-2.12 0l-.88.879.97.97a.75.75 0 11-1.06 1.06l-5.16-5.159a1.5 1.5 0 00-2.12 0L3 16.061zm10.125-7.81a1.125 1.125 0 112.25 0 1.125 1.125 0 01-2.25 0z"
-    />
-  </svg>
+  <Image size={13} className="text-emerald-400 ml-[5px] shrink-0 inline-block" aria-label="이미지 포함" />
 );
 
-// 디스코드 채널 링크 존재 표시용 SVG 아이콘
+// 디스코드 아이콘
 const DiscordIcon = () => (
   <svg
-    className="w-[16px] h-[16px] text-[#5865F2] ml-[6px] shrink-0 inline-block"
+    className="w-[14px] h-[14px] ml-[5px] shrink-0 inline-block"
+    style={{ color: "#5865F2" }}
     viewBox="0 0 24 24"
     fill="currentColor"
     aria-label="디스코드 채널 포함됨"
@@ -55,7 +44,6 @@ interface BoardListProps {
   formatTimeAgo: (dateString: string) => string;
 }
 
-// 게시판 목록 테이블 UI 및 페이지네이션 컴포넌트
 export default function BoardList({
   posts,
   boardFilter,
@@ -77,14 +65,12 @@ export default function BoardList({
     () => true,
     () => false
   );
-  
-  // React 표준 방식의 고유 ID 생성 (서버/클라이언트 일치 보장)
+
   const searchFormId = useId();
   const searchSelectId = useId();
   const searchInputId = useId();
   const searchSubmitId = useId();
 
-  // 동적 페이지 번호 계산 로직
   const totalPages = Math.max(1, Math.ceil(totalPosts / POSTS_PER_PAGE));
   let startPage = Math.max(1, page - Math.floor(MAX_VISIBLE_PAGES / 2));
   let endPage = startPage + MAX_VISIBLE_PAGES - 1;
@@ -99,209 +85,337 @@ export default function BoardList({
 
   return (
     <>
-      <div className="flex justify-between mb-[20px] items-center gap-[10px]">
-        <div className="flex gap-[8px] overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden flex-1">
-          {["전체", "추천", ...BOARD_CATEGORIES].map((f) => (
-            <button
-              key={f}
-              onClick={() => router.push(`/board?f=${f}`)}
-              className={`px-[12px] py-[6px] rounded-[20px] border border-[#333] whitespace-nowrap text-[13px] cursor-pointer font-bold transition-colors ${
-                boardFilter === f
-                  ? "bg-[#F2A900]"
-                  : "bg-[#1a1a1a] hover:bg-[#2a2a2a]"
-              }`}
-              style={{
-                color: boardFilter === f ? "#000000" : "#aaaaaa",
-                WebkitTextFillColor: boardFilter === f ? "#000000" : "#aaaaaa",
-                WebkitAppearance: "none",
-              }}
-            >
-              {f}
-            </button>
-          ))}
-        </div>
-
-        <button
-          onClick={() => router.push('/board/write')}
-          className="px-[16px] py-[8px] bg-[#34A853] rounded-[4px] border-none font-bold text-[13px] whitespace-nowrap cursor-pointer hover:bg-[#2a9040] transition-colors shrink-0"
+      {/* ── 상단 툴바 ── */}
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: "16px",
+          gap: "10px",
+        }}
+      >
+        {/* 카테고리 필터 pill */}
+        <div
           style={{
-            color: "#ffffff",
-            WebkitTextFillColor: "#ffffff",
-            WebkitAppearance: "none",
+            display: "flex",
+            gap: "6px",
+            overflowX: "auto",
+            scrollbarWidth: "none",
+            flex: 1,
           }}
         >
+          {["전체", "추천", ...BOARD_CATEGORIES].map((f) => {
+            const isActive = boardFilter === f;
+            return (
+              <button
+                key={f}
+                onClick={() => router.push(`/board?f=${f}`)}
+                style={{
+                  padding: "5px 13px",
+                  borderRadius: "20px",
+                  border: `1px solid ${isActive ? "#F2A900" : "rgba(255,255,255,0.1)"}`,
+                  whiteSpace: "nowrap",
+                  fontSize: "12px",
+                  fontWeight: isActive ? 700 : 500,
+                  cursor: "pointer",
+                  transition: "all 0.15s ease",
+                  backgroundColor: isActive
+                    ? "#F2A900"
+                    : "rgba(255,255,255,0.04)",
+                  color: isActive ? "#000" : "rgba(255,255,255,0.5)",
+                  letterSpacing: "0.01em",
+                }}
+              >
+                {f}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* 글쓰기 버튼 */}
+        <button
+          onClick={() => router.push("/board/write")}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+            padding: "7px 14px",
+            backgroundColor: "#F2A900",
+            border: "none",
+            borderRadius: "8px",
+            fontWeight: 700,
+            fontSize: "13px",
+            color: "#000",
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+            transition: "all 0.15s ease",
+            flexShrink: 0,
+          }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#d4940a";
+            (e.currentTarget as HTMLButtonElement).style.transform = "scale(0.98)";
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.backgroundColor = "#F2A900";
+            (e.currentTarget as HTMLButtonElement).style.transform = "scale(1)";
+          }}
+        >
+          <PenLine size={14} strokeWidth={2.5} />
           글쓰기
         </button>
       </div>
 
-      <div className="bg-[#1a1a1a] rounded-[8px] border border-[#333] overflow-hidden">
+      {/* ── 게시글 목록 ── */}
+      <div
+        style={{
+          backgroundColor: "var(--color-bg-surface, #161616)",
+          borderRadius: "12px",
+          border: "1px solid var(--color-border, rgba(255,255,255,0.08))",
+          overflow: "hidden",
+        }}
+      >
         {isMobile ? (
-          <ul className="flex flex-col list-none p-0 m-0">
-            {posts.map((post) => (
+          /* 모바일: 카드형 리스트 */
+          <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+            {posts.map((post, idx) => (
               <li
                 key={post.id}
-                onClick={() =>
-                  router.push(`/board/${post.id}`)
+                onClick={() => router.push(`/board/${post.id}`)}
+                style={{
+                  padding: "14px 16px",
+                  borderBottom: idx < posts.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none",
+                  cursor: "pointer",
+                  transition: "background-color 0.15s ease",
+                  backgroundColor: post.is_notice
+                    ? "rgba(242,169,0,0.04)"
+                    : "transparent",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "6px",
+                }}
+                onMouseEnter={(e) =>
+                  ((e.currentTarget as HTMLLIElement).style.backgroundColor =
+                    post.is_notice ? "rgba(242,169,0,0.07)" : "rgba(255,255,255,0.03)")
                 }
-                className={`p-[15px] border-b border-[#222] cursor-pointer transition-colors hover:bg-white/5 flex flex-col gap-1 ${
-                  post.is_notice
-                    ? "bg-[rgba(242,169,0,0.05)]"
-                    : "bg-transparent"
-                }`}
+                onMouseLeave={(e) =>
+                  ((e.currentTarget as HTMLLIElement).style.backgroundColor =
+                    post.is_notice ? "rgba(242,169,0,0.04)" : "transparent")
+                }
               >
-                <div className="flex justify-between items-center">
+                {/* 카테고리 + 시간 */}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                   <span
-                    className="text-[11px] font-bold"
                     style={{
-                      color: post.is_notice ? "#F2A900" : "#777777",
-                      WebkitTextFillColor: post.is_notice
-                        ? "#F2A900"
-                        : "#777777",
+                      fontSize: "10px",
+                      fontWeight: 700,
+                      letterSpacing: "0.08em",
+                      textTransform: "uppercase",
+                      color: post.is_notice ? "#F2A900" : "rgba(255,255,255,0.3)",
+                      backgroundColor: post.is_notice ? "rgba(242,169,0,0.12)" : "rgba(255,255,255,0.06)",
+                      padding: "2px 7px",
+                      borderRadius: "4px",
                     }}
                   >
-                    {post.category}
+                    {post.is_notice ? "📢 공지" : post.category}
                   </span>
-                  <span
-                    className="text-[11px]"
-                    style={{ color: "#555555", WebkitTextFillColor: "#555555" }}
-                  >
+                  <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.25)" }}>
                     {formatTimeAgo(post.created_at)}
                   </span>
                 </div>
 
-                <div
-                  className="flex items-center flex-wrap text-[15px] font-bold leading-[1.4]"
-                  style={{
-                    color: post.is_notice ? "#F2A900" : "#ffffff",
-                    WebkitTextFillColor: post.is_notice ? "#F2A900" : "#ffffff",
-                  }}
-                >
-                  <span className="break-all">{post.title}</span>
-                  {post.image_url ? <ImageIcon /> : null}
-                  {post.discord_url ? <DiscordIcon /> : null}
-                  {(post.comment_count || 0) > 0 ? (
-                    <span
-                      className="text-[12px] ml-[6px]"
-                      style={{
-                        color: "#aaaaaa",
-                        WebkitTextFillColor: "#aaaaaa",
-                      }}
-                    >
-                      💬 {post.comment_count}
+                {/* 제목 */}
+                <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                  <span
+                    style={{
+                      fontSize: "14px",
+                      fontWeight: post.is_notice ? 700 : 500,
+                      color: post.is_notice ? "#F2A900" : "rgba(255,255,255,0.9)",
+                      lineHeight: 1.4,
+                      wordBreak: "break-all",
+                    }}
+                  >
+                    {post.title}
+                  </span>
+                  {post.image_url && <ImageIcon />}
+                  {post.discord_url && <DiscordIcon />}
+                  {(post.comment_count || 0) > 0 && (
+                    <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.35)", marginLeft: "4px", display: "flex", alignItems: "center", gap: "2px" }}>
+                      <MessageCircle size={11} />
+                      {post.comment_count}
                     </span>
-                  ) : null}
+                  )}
                 </div>
 
-                <div
-                  className="flex justify-between text-[11px] mt-1"
-                  style={{ color: "#888888", WebkitTextFillColor: "#888888" }}
-                >
+                {/* 작성자 + 조회/추천 */}
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: "11px", color: "rgba(255,255,255,0.28)" }}>
                   <span>{post.author}</span>
-                  <span>
-                    조회 {post.views} · 추천 {post.likes}
-                  </span>
+                  <span>조회 {post.views} · 추천 {post.likes}</span>
                 </div>
               </li>
             ))}
           </ul>
         ) : (
-          <table className="w-full border-collapse text-left text-[14px]">
-            <thead className="bg-[#252525] text-[#888]">
-              <tr>
-                <th className="p-[15px]">분류</th>
-                <th className="p-[15px]">제목</th>
-                <th className="p-[15px]">글쓴이</th>
-                <th className="p-[15px]">작성일</th>
-                <th className="p-[15px]">조회</th>
-                <th className="p-[15px]">추천</th>
+          /* 데스크톱: 테이블 */
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+            <thead>
+              <tr style={{ backgroundColor: "rgba(255,255,255,0.03)", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                {["분류", "제목", "글쓴이", "작성일", "조회", "추천"].map((h) => (
+                  <th
+                    key={h}
+                    style={{
+                      padding: "12px 16px",
+                      textAlign: "left",
+                      fontSize: "10px",
+                      fontWeight: 700,
+                      letterSpacing: "0.1em",
+                      textTransform: "uppercase",
+                      color: "rgba(255,255,255,0.3)",
+                    }}
+                  >
+                    {h}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {posts.map((post) => (
                 <tr
                   key={post.id}
-                  onClick={() =>
-                    router.push(`/board/${post.id}`)
-                  }
-                  className={`border-b border-[#222] cursor-pointer transition-colors hover:bg-white/5 ${
-                    post.is_notice
-                      ? "bg-[rgba(242,169,0,0.05)]"
-                      : "bg-transparent"
-                  }`}
+                  onClick={() => router.push(`/board/${post.id}`)}
+                  style={{
+                    borderBottom: "1px solid rgba(255,255,255,0.04)",
+                    cursor: "pointer",
+                    transition: "background-color 0.12s ease",
+                    backgroundColor: post.is_notice
+                      ? "rgba(242,169,0,0.04)"
+                      : "transparent",
+                  }}
+                  onMouseEnter={(e) => {
+                    const row = e.currentTarget as HTMLTableRowElement;
+                    row.style.backgroundColor = post.is_notice
+                      ? "rgba(242,169,0,0.07)"
+                      : "rgba(255,255,255,0.03)";
+                    // 왼쪽 경계선 효과
+                    const firstCell = row.querySelector("td") as HTMLTableCellElement | null;
+                    if (firstCell) firstCell.style.borderLeft = `2px solid ${post.is_notice ? "#F2A900" : "rgba(255,255,255,0.2)"}`;
+                  }}
+                  onMouseLeave={(e) => {
+                    const row = e.currentTarget as HTMLTableRowElement;
+                    row.style.backgroundColor = post.is_notice ? "rgba(242,169,0,0.04)" : "transparent";
+                    const firstCell = row.querySelector("td") as HTMLTableCellElement | null;
+                    if (firstCell) firstCell.style.borderLeft = "2px solid transparent";
+                  }}
                 >
+                  {/* 분류 */}
                   <td
-                    className="p-[15px] font-bold"
-                    style={{ color: post.is_notice ? "#F2A900" : "#777777" }}
+                    style={{
+                      padding: "14px 16px",
+                      borderLeft: "2px solid transparent",
+                      transition: "border-color 0.12s ease",
+                    }}
                   >
-                    {post.is_notice ? "공지" : post.category}
+                    <span
+                      style={{
+                        fontSize: "10px",
+                        fontWeight: 700,
+                        letterSpacing: "0.06em",
+                        color: post.is_notice ? "#F2A900" : "rgba(255,255,255,0.3)",
+                        backgroundColor: post.is_notice ? "rgba(242,169,0,0.1)" : "rgba(255,255,255,0.05)",
+                        padding: "2px 7px",
+                        borderRadius: "4px",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {post.is_notice ? "공지" : post.category}
+                    </span>
                   </td>
 
-                  <td className="p-[15px]">
-                    <div className="flex items-center">
+                  {/* 제목 */}
+                  <td style={{ padding: "14px 16px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
                       <span
                         style={{
-                          color: post.is_notice ? "#F2A900" : "#ffffff",
-                          fontWeight: post.is_notice ? "bold" : "normal",
+                          color: post.is_notice ? "#F2A900" : "rgba(255,255,255,0.88)",
+                          fontWeight: post.is_notice ? 700 : 400,
                         }}
                       >
                         {post.title}
                       </span>
-                      {post.image_url ? <ImageIcon /> : null}
-                      {post.discord_url ? <DiscordIcon /> : null}
-                      {(post.comment_count || 0) > 0 ? (
-                        <span
-                          className="ml-[8px] text-[12px]"
-                          style={{ color: "#aaaaaa" }}
-                        >
-                          💬 {post.comment_count}
+                      {post.image_url && <ImageIcon />}
+                      {post.discord_url && <DiscordIcon />}
+                      {(post.comment_count || 0) > 0 && (
+                        <span style={{ fontSize: "11px", color: "rgba(255,255,255,0.35)", marginLeft: "4px", display: "flex", alignItems: "center", gap: "2px" }}>
+                          <MessageCircle size={11} />
+                          {post.comment_count}
                         </span>
-                      ) : null}
+                      )}
                     </div>
                   </td>
 
-                  <td className="p-[15px]" style={{ color: "#aaaaaa" }}>
+                  <td style={{ padding: "14px 16px", color: "rgba(255,255,255,0.4)", whiteSpace: "nowrap" }}>
                     {post.author}
                   </td>
-                  <td
-                    className="p-[15px] text-[13px]"
-                    style={{ color: "#888888" }}
-                  >
+                  <td style={{ padding: "14px 16px", color: "rgba(255,255,255,0.3)", whiteSpace: "nowrap", fontSize: "12px" }}>
                     {formatTimeAgo(post.created_at)}
                   </td>
-                  <td className="p-[15px]" style={{ color: "#666666" }}>
+                  <td style={{ padding: "14px 16px", color: "rgba(255,255,255,0.25)" }}>
                     {post.views}
                   </td>
-                  <td
-                    className="p-[15px]"
-                    style={{
-                      color: post.likes >= 5 ? "#F2A900" : "#666666",
-                      fontWeight: post.likes >= 5 ? "bold" : "normal",
-                    }}
-                  >
-                    {post.likes}
+                  <td style={{ padding: "14px 16px", fontWeight: post.likes >= 5 ? 700 : 400 }}>
+                    <span
+                      style={{
+                        color: post.likes >= 5 ? "#F2A900" : "rgba(255,255,255,0.25)",
+                        backgroundColor: post.likes >= 5 ? "rgba(242,169,0,0.1)" : "transparent",
+                        padding: post.likes >= 5 ? "2px 7px" : "0",
+                        borderRadius: "4px",
+                      }}
+                    >
+                      {post.likes}
+                    </span>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
-        {posts.length === 0 ? (
-          <div className="p-[50px] text-center" style={{ color: "#666666" }}>
-            글이 없습니다.
+
+        {/* 빈 상태 */}
+        {posts.length === 0 && (
+          <div
+            style={{
+              padding: "60px 20px",
+              textAlign: "center",
+              color: "rgba(255,255,255,0.2)",
+            }}
+          >
+            <p style={{ fontSize: "14px", marginBottom: "4px" }}>게시글이 없습니다</p>
+            <p style={{ fontSize: "12px" }}>첫 번째 글을 작성해 보세요</p>
           </div>
-        ) : null}
+        )}
       </div>
 
+      {/* ── 하단 검색 + 페이지네이션 ── */}
       <div
-        className={`flex justify-between items-center mt-[20px] gap-[15px] w-full ${
-          isMobile ? "flex-col" : "flex-row"
-        }`}
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginTop: "16px",
+          gap: "12px",
+          flexWrap: isMobile ? "wrap" : "nowrap",
+        }}
       >
-        <form 
+        {/* 검색 폼 */}
+        <form
           id={searchFormId}
           name="board_search_form"
           onSubmit={(e) => { e.preventDefault(); handleSearch(); }}
-          className={`flex gap-[5px] ${mounted && isMobile ? "w-full" : "w-auto"}`}
+          style={{
+            display: "flex",
+            gap: "6px",
+            width: mounted && isMobile ? "100%" : "auto",
+          }}
         >
           <label htmlFor={searchSelectId} className="sr-only">검색 옵션 선택</label>
           <select
@@ -309,14 +423,39 @@ export default function BoardList({
             name="search_type"
             value={searchOption}
             onChange={(e) => setSearchOption(e.target.value)}
-            className="p-[8px] bg-[#252525] border border-[#333] rounded-[4px] text-[13px] shrink-0 outline-none focus:border-[#F2A900]"
-            style={{ color: "#dddddd", WebkitAppearance: "none" }}
+            style={{
+              padding: "8px 10px",
+              backgroundColor: "var(--color-bg-elevated, #1f1f1f)",
+              border: "1px solid rgba(255,255,255,0.1)",
+              borderRadius: "8px",
+              fontSize: "12px",
+              color: "rgba(255,255,255,0.6)",
+              outline: "none",
+              cursor: "pointer",
+              flexShrink: 0,
+              WebkitAppearance: "none",
+            }}
           >
             <option value="all">제목+내용</option>
             <option value="title">제목</option>
             <option value="author">글쓴이</option>
           </select>
-          <div className="flex bg-[#252525] rounded-[4px] border border-[#333] px-[8px] items-center flex-1 focus-within:border-[#F2A900]">
+
+          <div
+            style={{
+              display: "flex",
+              backgroundColor: "var(--color-bg-elevated, #1f1f1f)",
+              borderRadius: "8px",
+              border: "1px solid rgba(255,255,255,0.1)",
+              alignItems: "center",
+              paddingLeft: "10px",
+              paddingRight: "4px",
+              flex: 1,
+              transition: "border-color 0.15s ease, box-shadow 0.15s ease",
+            }}
+            className="focus-glow"
+          >
+            <Search size={13} style={{ color: "rgba(255,255,255,0.25)", flexShrink: 0 }} />
             <label htmlFor={searchInputId} className="sr-only">검색어 입력</label>
             <input
               id={searchInputId}
@@ -326,75 +465,125 @@ export default function BoardList({
               placeholder="검색..."
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              className="bg-transparent border-none p-[8px] text-[13px] w-full min-w-[80px] outline-none"
-              style={{ color: "#ffffff", WebkitTextFillColor: "#ffffff" }}
+              style={{
+                background: "transparent",
+                border: "none",
+                padding: "8px 6px",
+                fontSize: "13px",
+                color: "white",
+                width: "100%",
+                minWidth: "80px",
+                outline: "none",
+              }}
             />
             <button
               id={searchSubmitId}
               name="search_submit"
               type="submit"
-              className="bg-transparent border-none cursor-pointer hover:text-white whitespace-nowrap shrink-0"
-              style={{ color: "#888888" }}
+              style={{
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                color: "rgba(255,255,255,0.4)",
+                padding: "4px 8px",
+                fontSize: "12px",
+                fontWeight: 600,
+                transition: "color 0.15s ease",
+                whiteSpace: "nowrap",
+              }}
+              onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.color = "white")}
+              onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.4)")}
             >
               조회
             </button>
           </div>
         </form>
 
-        <div className="flex gap-[5px] flex-wrap justify-center">
+        {/* 페이지네이션 */}
+        <div style={{ display: "flex", gap: "4px", alignItems: "center", flexWrap: "wrap", justifyContent: "center" }}>
+          {/* 이전 */}
           <button
             onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
             disabled={page === 1}
-            className={`px-[12px] py-[8px] border border-[#333] rounded-[4px] transition-colors ${
-              page === 1
-                ? "bg-[#e0e0e0] cursor-not-allowed"
-                : "bg-white hover:bg-[#eee]"
-            }`}
             style={{
-              color: page === 1 ? "#999999" : "#000000",
-              WebkitTextFillColor: page === 1 ? "#999999" : "#000000",
-              WebkitAppearance: "none",
+              width: "34px",
+              height: "34px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: "8px",
+              border: "1px solid rgba(255,255,255,0.1)",
+              backgroundColor: page === 1 ? "rgba(255,255,255,0.03)" : "rgba(255,255,255,0.06)",
+              color: page === 1 ? "rgba(255,255,255,0.15)" : "rgba(255,255,255,0.6)",
+              cursor: page === 1 ? "not-allowed" : "pointer",
+              transition: "all 0.15s ease",
             }}
           >
-            &lt;
+            <ChevronLeft size={15} />
           </button>
 
           {pageNumbers.map((num) => (
             <button
               key={num}
               onClick={() => setPage(num)}
-              className={`px-[12px] py-[8px] border border-[#333] rounded-[4px] text-[13px] transition-colors ${
-                page === num
-                  ? "bg-[#F2A900] font-bold"
-                  : "bg-white font-normal hover:bg-[#eee]"
-              }`}
               style={{
-                color: "#000000",
-                WebkitTextFillColor: "#000000",
-                WebkitAppearance: "none",
+                width: "34px",
+                height: "34px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                borderRadius: "8px",
+                border: `1px solid ${page === num ? "#F2A900" : "rgba(255,255,255,0.1)"}`,
+                backgroundColor: page === num ? "#F2A900" : "rgba(255,255,255,0.04)",
+                color: page === num ? "#000" : "rgba(255,255,255,0.5)",
+                fontWeight: page === num ? 700 : 400,
+                fontSize: "13px",
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+              }}
+              onMouseEnter={(e) => {
+                if (page !== num) {
+                  (e.currentTarget as HTMLButtonElement).style.backgroundColor = "rgba(255,255,255,0.08)";
+                  (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.8)";
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (page !== num) {
+                  (e.currentTarget as HTMLButtonElement).style.backgroundColor = "rgba(255,255,255,0.04)";
+                  (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.5)";
+                }
               }}
             >
               {num}
             </button>
           ))}
 
+          {/* 다음 */}
           <button
             onClick={() => setPage((prev) => Math.min(prev + 1, totalPages))}
             disabled={page >= totalPages || totalPosts === 0}
-            className={`px-[12px] py-[8px] border border-[#333] rounded-[4px] transition-colors ${
-              page >= totalPages || totalPosts === 0
-                ? "bg-[#e0e0e0] cursor-not-allowed"
-                : "bg-white hover:bg-[#eee]"
-            }`}
             style={{
+              width: "34px",
+              height: "34px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              borderRadius: "8px",
+              border: "1px solid rgba(255,255,255,0.1)",
+              backgroundColor:
+                page >= totalPages || totalPosts === 0
+                  ? "rgba(255,255,255,0.03)"
+                  : "rgba(255,255,255,0.06)",
               color:
-                page >= totalPages || totalPosts === 0 ? "#999999" : "#000000",
-              WebkitTextFillColor:
-                page >= totalPages || totalPosts === 0 ? "#999999" : "#000000",
-              WebkitAppearance: "none",
+                page >= totalPages || totalPosts === 0
+                  ? "rgba(255,255,255,0.15)"
+                  : "rgba(255,255,255,0.6)",
+              cursor:
+                page >= totalPages || totalPosts === 0 ? "not-allowed" : "pointer",
+              transition: "all 0.15s ease",
             }}
           >
-            &gt;
+            <ChevronRight size={15} />
           </button>
         </div>
       </div>

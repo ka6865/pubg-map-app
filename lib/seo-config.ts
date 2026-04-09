@@ -1,13 +1,21 @@
 import { Metadata } from 'next';
+import { cache } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { BreadcrumbList, ArticleSchema } from '@/types/seo';
 
+// 환경 변수 정기화 유틸리티
+const clean = (val: string | undefined) => (val || '').replace(/['";\s]+/g, '').trim();
+
+const supabaseUrl = clean(process.env.NEXT_PUBLIC_SUPABASE_URL);
+const supabaseAnonKey = clean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+const supabaseServiceKey = clean(process.env.SUPABASE_SERVICE_ROLE_KEY);
+
 const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
+  supabaseUrl,
+  supabaseServiceKey || supabaseAnonKey // 서버에선 서비스 키, 클라이언트에선 anon 키 사용 (보안)
 );
 
-const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://bgms.kr";
+const baseUrl = clean(process.env.NEXT_PUBLIC_SITE_URL) || "https://bgms.kr";
 
 export const tabMetadata: Record<string, { title: string; desc: string }> = {
   Erangel: { title: "에란겔(Erangel) 고젠 위치 및 전술 지도", desc: "배그 에란겔 맵의 모든 고정 젠(고젠) 차량/보트 스폰 위치 정보를 BGMS에서 확인하세요." },
@@ -20,46 +28,61 @@ export const tabMetadata: Record<string, { title: string; desc: string }> = {
   Board: { title: "생존자 커뮤니티 및 고젠 공략 게시판", desc: "배틀그라운드 최신 업데이트 소식과 유저들의 고젠 공략을 공유하는 공간입니다." }
 };
 
-export async function getPostMetadata(postId: string): Promise<Metadata | null> {
+/**
+ * 포스트 데이터를 조회합니다. (React cache로 중복 쿼리 방지)
+ */
+const getPostData = cache(async (postId: string) => {
   try {
-    const { data: post } = await supabase
+    const { data: post, error } = await supabase
       .from('posts')
       .select('id, title, content, category, author, created_at, updated_at, image_url')
       .eq('id', postId)
       .single();
 
-    if (post) {
-      const plainText = post.content?.replace(/<[^>]*>/g, '').substring(0, 150) || '';
-      const canonicalUrl = `${baseUrl}/board/${postId}`;
-      
-      return {
-        title: `${post.title} | ${post.category} - BGMS`,
-        description: plainText,
-        alternates: { canonical: canonicalUrl },
-        openGraph: {
-          title: `${post.title} - BGMS`,
-          description: plainText,
-          url: canonicalUrl,
-          type: 'article',
-          publishedTime: post.created_at,
-          modifiedTime: post.updated_at,
-          authors: [post.author],
-          images: [post.image_url || `${baseUrl}/logo.png`],
-        },
-        twitter: {
-          card: 'summary_large_image',
-          title: `${post.title} - BGMS`,
-          description: plainText,
-          images: [post.image_url || `${baseUrl}/logo.png`],
-        }
-      };
-    }
+    if (error || !post) return null;
+    return post;
   } catch (e) {
-    console.error('getPostMetadata error:', e);
+    console.error('getPostData error:', e);
+    return null;
   }
-  return null;
+});
+
+/**
+ * 포스트 메타데이터를 생성합니다.
+ */
+export async function getPostMetadata(postId: string): Promise<Metadata | null> {
+  const post = await getPostData(postId);
+  if (!post) return null;
+
+  const plainText = post.content?.replace(/<[^>]*>/g, '').substring(0, 150) || '';
+  const canonicalUrl = `${baseUrl}/board/${postId}`;
+  
+  return {
+    title: `${post.title} | ${post.category} - BGMS`,
+    description: plainText,
+    alternates: { canonical: canonicalUrl },
+    openGraph: {
+      title: `${post.title} - BGMS`,
+      description: plainText,
+      url: canonicalUrl,
+      type: 'article',
+      publishedTime: post.created_at,
+      modifiedTime: post.updated_at,
+      authors: [post.author],
+      images: [post.image_url || `${baseUrl}/logo.png`],
+    },
+    twitter: {
+      card: 'summary_large_image',
+      title: `${post.title} - BGMS`,
+      description: plainText,
+      images: [post.image_url || `${baseUrl}/logo.png`],
+    }
+  };
 }
 
+/**
+ * 탭별 SEO 정보를 생성합니다.
+ */
 export function getTabSeo(tab: string): Metadata {
   const currentMeta = tabMetadata[tab] || { 
     title: "배틀그라운드 통합 지도 및 전략 서비스", 
@@ -110,39 +133,29 @@ export function getBreadcrumbJsonLd(items: { name: string; item: string }[]): Br
  * 게시글 상세용 Article JSON-LD를 생성합니다.
  */
 export async function getPostArticleJsonLd(postId: string): Promise<ArticleSchema | null> {
-  try {
-    const { data: post } = await supabase
-      .from('posts')
-      .select('id, title, content, author, created_at, updated_at, image_url, category')
-      .eq('id', postId)
-      .single();
+  const post = await getPostData(postId);
+  if (!post) return null;
 
-    if (post) {
-      const plainText = post.content?.replace(/<[^>]*>/g, '').substring(0, 150) || '';
-      return {
-        "@context": "https://schema.org",
-        "@type": "Article",
-        headline: post.title,
-        description: plainText,
-        image: post.image_url || `${baseUrl}/logo.png`,
-        datePublished: post.created_at,
-        dateModified: post.updated_at || post.created_at,
-        author: {
-          "@type": "Person",
-          name: post.author,
-        },
-        publisher: {
-          "@type": "Organization",
-          name: "BGMS",
-          logo: {
-            "@type": "ImageObject",
-            url: `${baseUrl}/logo.png`,
-          },
-        },
-      };
-    }
-  } catch (e) {
-    console.error('getPostArticleJsonLd error:', e);
-  }
-  return null;
+  const plainText = post.content?.replace(/<[^>]*>/g, '').substring(0, 150) || '';
+  return {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: post.title,
+    description: plainText,
+    image: post.image_url || `${baseUrl}/logo.png`,
+    datePublished: post.created_at,
+    dateModified: post.updated_at || post.created_at,
+    author: {
+      "@type": "Person",
+      name: post.author,
+    },
+    publisher: {
+      "@type": "Organization",
+      name: "BGMS",
+      logo: {
+        "@type": "ImageObject",
+        url: `${baseUrl}/logo.png`,
+      },
+    },
+  };
 }

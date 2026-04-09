@@ -8,6 +8,7 @@ import dynamic from "next/dynamic";
 import { supabase } from "../lib/supabase";
 import { CATEGORY_INFO } from "../lib/map_config";
 import { useMapData } from "../hooks/useMapData";
+import { useAuth } from "./AuthProvider";
 import MapHeader from "./map/MapHeader";
 import MapShell from "./map/MapShell";
 import StatSearch from "./StatSearch";
@@ -74,6 +75,7 @@ export default function Map({ initialMapId, postId, initialIsWriting }: MapProps
   const searchParams = useSearchParams();
   const activeMapId = initialMapId || searchParams?.get("tab") || "Erangel";
   const activePostId = postId || searchParams?.get("postId");
+  const { user: authUser, loading: authLoading } = useAuth();
 
   const {
     currentUser,
@@ -81,13 +83,14 @@ export default function Map({ initialMapId, postId, initialIsWriting }: MapProps
     optimisticNickname,
     notifications,
     dbVehicles,
-    pendingVehicles, // 🌟 제보 데이터 로드
-    isAuthLoading,
+    pendingVehicles,
+    isDataLoading,
     setOptimisticNickname,
     setNotifications,
     fetchUserProfile,
-  } = useMapData(activeMapId);
+  } = useMapData(activeMapId, authUser);
 
+  const isAuthLoading = authLoading || isDataLoading;
   const currentPostId = activePostId;
 
   const [isSidebarOpen, setSidebarOpen] = useState(true);
@@ -279,12 +282,14 @@ export default function Map({ initialMapId, postId, initialIsWriting }: MapProps
               width: "100%",
               height: "100%",
               overflowY: "auto",
-              backgroundColor: "#0d0d0d",
+              backgroundColor: "#121212",
+              display: "flex",
+              justifyContent: "center",
             }}
           >
             <div
               style={{
-                maxWidth: "900px",
+                maxWidth: isMyPage ? "1300px" : "900px",
                 margin: "0 auto",
                 padding: isMobile ? "10px" : "20px",
               }}

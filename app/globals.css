@@ -1,13 +1,83 @@
 @import "tailwindcss";
 @config "../tailwind.config.ts";
 
+/* ============================================
+   BGMS 디자인 시스템 토큰
+   ============================================ */
+:root {
+  /* 색상 팔레트 */
+  --color-accent:        #F2A900;
+  --color-accent-glow:   rgba(242, 169, 0, 0.25);
+  --color-accent-dim:    rgba(242, 169, 0, 0.12);
+
+  --color-bg-base:       #0d0d0d;
+  --color-bg-surface:    #161616;
+  --color-bg-elevated:   #1f1f1f;
+  --color-bg-hover:      rgba(255, 255, 255, 0.04);
+
+  --color-border:        rgba(255, 255, 255, 0.08);
+  --color-border-subtle: rgba(255, 255, 255, 0.05);
+
+  --color-text-primary:   #ffffff;
+  --color-text-secondary: rgba(255, 255, 255, 0.6);
+  --color-text-muted:     rgba(255, 255, 255, 0.3);
+
+  /* 타이포그래피 */
+  --font-sans: 'Outfit', 'Pretendard', sans-serif;
+
+  /* 라운딩 */
+  --radius-sm:  6px;
+  --radius-md:  10px;
+  --radius-lg:  14px;
+  --radius-xl:  20px;
+
+  /* 트랜지션 */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-base: 220ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 @layer base {
   html, body {
-    @apply bg-[#121212] overflow-x-hidden;
+    @apply overflow-x-hidden;
+    background-color: var(--color-bg-base);
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
     -webkit-tap-highlight-color: transparent;
   }
 }
 
+/* ============================================
+   유틸리티 클래스
+   ============================================ */
+
+/* 골든 글로우 포커스 효과 */
+.focus-glow:focus-within {
+  border-color: var(--color-accent) !important;
+  box-shadow: 0 0 0 3px var(--color-accent-glow);
+}
+.input-glow:focus {
+  outline: none;
+  border-color: var(--color-accent) !important;
+  box-shadow: 0 0 0 3px var(--color-accent-glow);
+}
+
+/* 카드 호버 리프트 효과 */
+.card-hover {
+  transition: transform var(--transition-base), box-shadow var(--transition-base);
+}
+.card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+/* 액센트 글로우 텍스트 */
+.text-glow {
+  text-shadow: 0 0 20px var(--color-accent-glow);
+}
+
+/* ============================================
+   Leaflet 커스터마이즈
+   ============================================ */
 .leaflet-div-icon {
   background: transparent;
   border: none;
@@ -24,7 +94,9 @@
   margin: 0 !important;
 }
 
-/* Screen Reader Only (SEO용 숨김 텍스트) */
+/* ============================================
+   접근성
+   ============================================ */
 .sr-only {
   position: absolute;
   width: 1px;
@@ -36,29 +108,31 @@
   white-space: nowrap;
   border-width: 0;
 }
-/* 텔레메트리 이름표 숨김 처리 (에러 방지를 위해 제거가 아닌 가시성 조절) */
+
+/* ============================================
+   게시판 본문 스타일
+   ============================================ */
 .hidden-tooltip {
   opacity: 0 !important;
   visibility: hidden !important;
   pointer-events: none !important;
 }
 
-/* 게시판 본문 스타일 보정 (줄바꿈 및 문단 여백) */
 .board-content p {
-  margin-bottom: 1rem; /* 한 줄 띄움 효과 */
-  min-height: 1.2em;   /* 빈 줄이 있을 경우 최소 높이 보장 */
+  margin-bottom: 1rem;
+  min-height: 1.2em;
 }
-
 .board-content p:last-child {
   margin-bottom: 0;
 }
-
-/* 이미지 사이의 간격 추가 */
 .board-content img {
   display: block;
   margin: 1.5rem auto;
 }
-/* 모바일 전용 앱 최적화 스타일 */
+
+/* ============================================
+   모바일 앱 최적화
+   ============================================ */
 @layer utilities {
   .safe-top {
     padding-top: env(safe-area-inset-top);
@@ -93,3 +167,4 @@ input, textarea, select {
 [data-vaul-drawer][data-state='open'] {
   overflow: hidden;
 }
+

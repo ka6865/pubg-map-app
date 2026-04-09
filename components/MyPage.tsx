@@ -1,13 +1,17 @@
-"use client";
+'use client';
 
-import { useState, useEffect } from "react"; // React 상태 제어 훅 로드
-import { useRouter } from "next/navigation"; // 페이지 이동을 URL 기반으로 제어
-import { supabase } from "../lib/supabase"; // DB 및 인증 서버 통신용 Supabase 클라이언트 로드
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { supabase } from "../lib/supabase";
 import type { CurrentUser } from "../types/map";
 import { toast } from "sonner";
 import MiniStatWidget from "./stat/MiniStatWidget";
+import { 
+  ArrowLeft, User, Save, LogOut, Trash2, 
+  Gamepad2, Settings, ShieldCheck, ExternalLink,
+  Mail, ChevronRight, Activity, MessageSquare, FileText, Heart
+} from "lucide-react";
 
-// 유저 설정 상수
 const USER_CONFIG = {
   MIN_NICKNAME_LENGTH: 2,
   MAX_NICKNAME_LENGTH: 15,
@@ -20,7 +24,71 @@ interface MyPageProps {
   setOptimisticNickname: (name: string) => void;
 }
 
-// 사용자 개인 설정(닉네임 변경 및 회원 탈퇴) 화면 컴포넌트
+// 💎 고급 섹션 카드 컴포넌트
+function DashboardCard({ 
+  children, 
+  title, 
+  icon: Icon,
+  variant = 'default',
+  style = {}
+}: { 
+  children: React.ReactNode; 
+  title?: string;
+  icon?: any;
+  variant?: 'default' | 'highlight';
+  style?: React.CSSProperties;
+}) {
+  return (
+    <div style={{
+      backgroundColor: variant === 'highlight' ? 'rgba(242,169,0,0.03)' : 'rgba(255,255,255,0.02)',
+      border: `1px solid ${variant === 'highlight' ? 'rgba(242,169,0,0.15)' : 'rgba(255,255,255,0.05)'}`,
+      borderRadius: "20px",
+      padding: "24px",
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '16px',
+      transition: 'all 0.3s ease',
+      backdropFilter: 'blur(10px)',
+      boxShadow: '0 4px 30px rgba(0,0,0,0.1)',
+      ...style
+    }}>
+      {(title || Icon) && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+          {Icon && <Icon size={18} style={{ color: variant === 'highlight' ? '#F2A900' : 'rgba(255,255,255,0.4)' }} />}
+          {title && (
+            <span style={{ 
+              fontSize: "11px", 
+              fontWeight: 800, 
+              letterSpacing: "0.15em", 
+              textTransform: "uppercase", 
+              color: 'rgba(255,255,255,0.3)' 
+            }}>
+              {title}
+            </span>
+          )}
+        </div>
+      )}
+      {children}
+    </div>
+  );
+}
+
+// 💎 대전 정보를 담은 미니 위젯
+function InfoBadge({ label, value, color = '#F2A900' }: { label: string; value: string; color?: string }) {
+  return (
+    <div style={{ 
+      backgroundColor: 'rgba(255,255,255,0.03)', 
+      padding: '12px 16px', 
+      borderRadius: '12px',
+      border: '1px solid rgba(255,255,255,0.05)',
+      flex: 1
+    }}>
+      <p style={{ margin: 0, fontSize: '10px', color: 'rgba(255,255,255,0.3)', marginBottom: '4px' }}>{label}</p>
+      <p style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: color }}>{value}</p>
+    </div>
+  );
+}
+
 export default function MyPage({
   currentUser,
   userProfile,
@@ -28,353 +96,345 @@ export default function MyPage({
   setOptimisticNickname,
 }: MyPageProps) {
   const router = useRouter();
-  const [editNickname, setEditNickname] = useState(userProfile?.nickname || ""); // 닉네임 수정 입력값 상태
-  const [editPubgNickname, setEditPubgNickname] = useState(userProfile?.pubg_nickname || ""); // 배틀그라운드 닉네임 연동 상태
-  const [editPubgPlatform, setEditPubgPlatform] = useState(userProfile?.pubg_platform || "steam"); // 플랫폼 선택 상태 (기본값 스팀)
+  const [editNickname, setEditNickname] = useState(userProfile?.nickname || "");
+  const [editPubgNickname, setEditPubgNickname] = useState(userProfile?.pubg_nickname || "");
+  const [editPubgPlatform, setEditPubgPlatform] = useState<"steam" | "kakao">(
+    userProfile?.pubg_platform || "steam"
+  );
+  const [isMobile, setIsMobile] = useState(false);
+  
+  // 📊 실시간 활동 데이터 상태
+  const [activityStats, setActivityStats] = useState({
+    postCount: 0,
+    commentCount: 0,
+    likeCount: 0
+  });
 
-  // 진입 시점 사용자 프로필 데이터를 참조하여 닉네임 입력 폼 초기화
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 1024);
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
+
   useEffect(() => {
     if (userProfile?.nickname) setEditNickname(userProfile.nickname);
     if (userProfile?.pubg_nickname) setEditPubgNickname(userProfile.pubg_nickname);
     if (userProfile?.pubg_platform) setEditPubgPlatform(userProfile.pubg_platform);
   }, [userProfile]);
 
-  // 닉네임 변경 검증, DB 프로필 테이블 갱신 및 기존 게시물/댓글 작성자명 동기화 처리
+  // 🔄 실시간 활동 데이터 페칭
+  useEffect(() => {
+    const fetchStats = async () => {
+      if (!currentUser) return;
+      
+      try {
+        // 1. 게시글 수
+        const { count: posts } = await supabase
+          .from('posts')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', currentUser.id);
+          
+        // 2. 댓글 수
+        const { count: comments } = await supabase
+          .from('comments')
+          .select('*', { count: 'exact', head: true })
+          .eq('user_id', currentUser.id);
+
+        // 3. 받은 좋아요 수 (본인 게시물의 좋아요 총합)
+        // 먼저 본인의 게시물 ID들을 가져옴
+        const { data: myPosts } = await supabase
+          .from('posts')
+          .select('id')
+          .eq('user_id', currentUser.id);
+          
+        let totalLikes = 0;
+        if (myPosts && myPosts.length > 0) {
+          const postIds = myPosts.map(p => p.id);
+          const { count: likes } = await supabase
+            .from('post_likes')
+            .select('*', { count: 'exact', head: true })
+            .in('post_id', postIds);
+          totalLikes = likes || 0;
+        }
+
+        setActivityStats({
+          postCount: posts || 0,
+          commentCount: comments || 0,
+          likeCount: totalLikes
+        });
+      } catch (err) {
+        console.error("Failed to fetch activity stats:", err);
+      }
+    };
+
+    fetchStats();
+  }, [currentUser]);
+
   const handleUpdateProfile = async () => {
     if (!currentUser) return;
-
     const newNickname = editNickname.trim();
-    const newPubgNickname = editPubgNickname.trim();
-    const newPubgPlatform = editPubgPlatform;
-
-    if (
-      newNickname === userProfile?.nickname && 
-      newPubgNickname === (userProfile?.pubg_nickname || "") &&
-      newPubgPlatform === (userProfile?.pubg_platform || "steam")
-    ) {
-      toast.info("변경된 내용이 없습니다.");
+    if (!newNickname || newNickname.length < 2) {
+      toast.error("닉네임을 2자 이상 입력해주세요.");
       return;
     }
 
-    if (newNickname.length < USER_CONFIG.MIN_NICKNAME_LENGTH || newNickname.length > USER_CONFIG.MAX_NICKNAME_LENGTH) {
-      toast.warning(`닉네임은 ${USER_CONFIG.MIN_NICKNAME_LENGTH}글자 이상 ${USER_CONFIG.MAX_NICKNAME_LENGTH}글자 이하로 입력해주세요.`);
-      return;
-    }
-
-    setOptimisticNickname(newNickname);
-
-    // [디버그] 업데이트 전, 현재 내 프로필 데이터가 DB에 실제로 존재하는지, 그리고 RLS 열람 권한이 있는지 확인
-    const { data: existingProfile, error: checkError } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("id", currentUser.id)
-      .single();
-
-    if (checkError || !existingProfile) {
-      console.error("🔍 DB 프로필 존재 확인 실패:", checkError);
-      toast.error("프로필 정보를 불러올 수 없습니다. 다시 로그인해 보시기 바랍니다.");
-      return;
-    }
-
-    const { error, data: updatedProfiles } = await supabase
-      .from("profiles")
+    const { error } = await supabase
+      .from('profiles')
       .update({
         nickname: newNickname,
-        pubg_nickname: newPubgNickname || null,
-        pubg_platform: newPubgPlatform,
-        updated_at: new Date(),
+        pubg_nickname: editPubgNickname.trim() || null,
+        pubg_platform: editPubgPlatform,
+        updated_at: new Date()
       })
-      .eq("id", currentUser.id)
-      .select();
+      .eq('id', currentUser.id);
 
-    if (!error && updatedProfiles && updatedProfiles.length > 0) {
-      toast.success("프로필이 업데이트되었습니다.");
-      setEditNickname(newNickname);
-      setEditPubgNickname(newPubgNickname);
-      setEditPubgPlatform(newPubgPlatform);
-      fetchUserProfile(currentUser);
-
-      await supabase
-        .from("posts")
-        .update({ author: newNickname })
-        .eq("user_id", currentUser.id);
-      await supabase
-        .from("comments")
-        .update({ author: newNickname })
-        .eq("user_id", currentUser.id);
-      await supabase
-        .from("notifications")
-        .update({ sender_name: newNickname })
-        .eq("sender_id", currentUser.id);
-
-      // URL을 /board로 변경하면 useEffect가 isMyPage 자동 닫기
-      router.push('/board');
+    if (error) {
+      toast.error("업데이트 실패: " + error.message);
     } else {
-      if (error?.code === "23505") {
-        toast.error("이미 사용 중인 닉네임입니다.");
-      } else if (!updatedProfiles || updatedProfiles.length === 0) {
-        toast.error("저장할 프로필 정보가 데이터베이스에 존재하지 않습니다.");
-      } else {
-        toast.error("프로필 정보를 수정하는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.");
-      }
+      toast.success("프로필이 성공적으로 저장되었습니다.");
+      fetchUserProfile(currentUser);
+      setOptimisticNickname(newNickname);
     }
   };
 
-  // 사용자 계정 탈퇴 시 작성 게시글 탐색을 통한 스토리지 이미지 선행 삭제 후 DB 레코드 일괄 제거
-  const handleDeleteAccount = async () => {
-    if (
-      !confirm(
-        "정말로 탈퇴하시겠습니까?\n탈퇴 시 작성한 모든 글과 댓글, 프로필 정보가 삭제되며 복구할 수 없습니다."
-      )
-    )
-      return;
-    if (!currentUser) return;
-
-    try {
-      const { data: userPosts } = await supabase
-        .from("posts")
-        .select("content")
-        .eq("user_id", currentUser.id);
-
-      if (userPosts && userPosts.length > 0) {
-        const imgRegex = /<img[^>]+src\s*=\s*["']?([^"'\s>]+)["']?/g;
-        const allImagePaths: string[] = [];
-
-        userPosts.forEach((post) => {
-          const matches = [...post.content.matchAll(imgRegex)];
-          matches.forEach((match) => {
-            const src = match[1];
-            if (src.includes("/storage/v1/object/public/images/")) {
-              const path = src.split("/storage/v1/object/public/images/")[1];
-              if (path) allImagePaths.push(decodeURIComponent(path));
-            }
-          });
-        });
-
-        if (allImagePaths.length > 0) {
-          await supabase.storage.from("images").remove(allImagePaths);
-        }
-      }
-
-      await supabase.from("comments").delete().eq("user_id", currentUser.id);
-      await supabase.from("post_likes").delete().eq("user_id", currentUser.id);
-      await supabase.from("posts").delete().eq("user_id", currentUser.id);
-      const { error: profileError } = await supabase
-        .from("profiles")
-        .delete()
-        .eq("id", currentUser.id);
-
-      if (profileError) throw profileError;
-
-      await supabase.auth.signOut();
-
-      toast.success("회원 탈퇴가 완료되었습니다. 그동안 이용해 주셔서 감사합니다.");
-      // URL을 /board로 변경 후 리로드
-      router.push('/board');
-      window.location.reload();
-    } catch (error: any) {
-      toast.error("탈퇴 처리 중 오류가 발생했습니다: " + error.message);
-    }
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    router.push('/');
+    window.location.reload();
   };
+
+  if (!currentUser) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '80dvh' }}>
+        <DashboardCard title="시스템 확인">
+          <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+            <ShieldCheck size={48} style={{ color: '#F2A900', marginBottom: '20px', opacity: 0.5 }} />
+            <h2 style={{ fontSize: '24px', fontWeight: 900, marginBottom: '12px' }}>로그인이 필요합니다</h2>
+            <p style={{ color: 'rgba(255,255,255,0.4)', marginBottom: '32px' }}>마이페이지 접근을 위해 먼저 소셜 로그인을 진행해 주세요.</p>
+            <button 
+              onClick={() => router.push('/login')}
+              style={{ padding: '16px 48px', backgroundColor: '#F2A900', border: 'none', borderRadius: '12px', fontWeight: 900, cursor: 'pointer' }}
+            >
+              로그인하기
+            </button>
+          </div>
+        </DashboardCard>
+      </div>
+    );
+  }
 
   return (
-    <div
-      style={{
-        backgroundColor: "#1a1a1a",
-        padding: "40px",
-        borderRadius: "12px",
-        border: "1px solid #333",
-      }}
-    >
-      <h2
-        style={{
-          marginBottom: "30px",
-          color: "#F2A900",
-          fontSize: "24px",
-          fontWeight: "bold",
-        }}
-      >
-        마이페이지
-      </h2>
+    <div style={{ 
+      width: "100%", 
+      maxWidth: "1350px", 
+      margin: "0 auto", 
+      padding: isMobile ? "24px 16px 120px" : "60px 40px",
+      fontFamily: 'inherit'
+    }}>
+      
+      {/* 🧭 브레드크럼 (3열 그리드 밖 최상단 배치) */}
+      {!isMobile && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'rgba(255,255,255,0.2)', fontSize: '12px', marginBottom: '24px', paddingLeft: '4px' }}>
+          <span>Home</span> <ChevronRight size={10} /> <span>Account</span> <ChevronRight size={10} /> <span style={{ color: '#F2A900' }}>My Dashboard</span>
+        </div>
+      )}
 
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          gap: "20px",
-          maxWidth: "500px",
-        }}
-      >
-        <div>
-          <label
-            style={{
-              display: "block",
-              marginBottom: "8px",
-              fontSize: "13px",
-              color: "#888",
-              fontWeight: "bold",
-            }}
-          >
-            닉네임 변경
-          </label>
-          <input
-            id="user-nickname"
-            name="nickname"
-            type="text"
-            value={editNickname}
-            onChange={(e) => setEditNickname(e.target.value)}
-            style={{
-              width: "100%",
-              padding: "12px",
-              backgroundColor: "#252525",
-              border: "1px solid #444",
-              color: "white",
-              borderRadius: "6px",
-              fontSize: "16px",
-              boxSizing: "border-box",
-            }}
-          />
+      {/* 🏟️ 대시보드 구조 (데스크톱: 3열 / 모바일: 1열) */}
+      <div style={{ 
+        display: "grid", 
+        gridTemplateColumns: isMobile ? "1fr" : "340px 1fr 360px", 
+        gap: isMobile ? "24px" : "32px",
+        alignItems: "stretch" // 📏 높이를 서로 맞춤
+      }}>
+        
+        {/* 1️⃣ LEFT: Profile Summary */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+          <DashboardCard variant="highlight" style={{ flex: 1 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', padding: '10px 0', height: '100%', justifyContent: 'center' }}>
+              <div style={{ 
+                width: '120px', 
+                height: '120px', 
+                borderRadius: '40px', 
+                backgroundColor: '#121212', 
+                border: '2px solid #F2A900',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: '24px',
+                boxShadow: '0 0 30px rgba(242,169,0,0.2)'
+              }}>
+                <User size={56} style={{ color: '#F2A900' }} />
+              </div>
+              <h1 style={{ fontSize: '28px', fontWeight: 900, margin: '0 0 8px 0', letterSpacing: '-0.5px' }}>
+                {userProfile?.nickname || "게이머"}
+              </h1>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'rgba(255,255,255,0.3)', fontSize: '13px' }}>
+                <Mail size={14} />
+                {currentUser.email}
+              </div>
+            </div>
+          </DashboardCard>
+          
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            <button 
+              onClick={handleSignOut}
+              style={{ 
+                width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
+                padding: '18px 20px', backgroundColor: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)',
+                borderRadius: '16px', color: 'rgba(255,255,255,0.6)', cursor: 'pointer', fontSize: '14px', fontWeight: 600
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><LogOut size={16} /> 안전하게 로그아웃</div>
+              <ChevronRight size={14} />
+            </button>
+            <button 
+              style={{ 
+                width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
+                padding: '14px 20px', backgroundColor: 'transparent', border: '1px solid rgba(255,75,75,0.1)',
+                borderRadius: '16px', color: 'rgba(255,75,75,0.4)', cursor: 'pointer', fontSize: '13px'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Trash2 size={16} /> 계정 삭제 (회원탈퇴)</div>
+            </button>
+          </div>
         </div>
 
-        <div>
-          <label
-            style={{
-              display: "block",
-              marginBottom: "8px",
-              fontSize: "13px",
-              color: "#888",
-              fontWeight: "bold",
-            }}
-          >
-            배틀그라운드 인게임 닉네임 연동
-          </label>
-          <input
-            id="pubg-nickname"
-            name="pubg_nickname"
-            type="text"
-            value={editPubgNickname}
-            onChange={(e) => setEditPubgNickname(e.target.value)}
-            placeholder="인게임 닉네임을 정확히 입력하세요"
-            style={{
-              width: "100%",
-              padding: "12px",
-              backgroundColor: "#252525",
-              border: "1px solid #444",
-              color: "white",
-              borderRadius: "6px",
-              fontSize: "16px",
-              boxSizing: "border-box",
-            }}
-          />
-          <p style={{ fontSize: "12px", color: "#666", marginTop: "6px" }}>
-            * 연동 시 대시보드 위젯과 메인 전적 탭에서 내 기록을 즉시 조회할 수 있습니다.
-          </p>
+        {/* 2️⃣ CENTER: Core Settings */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
 
-          <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
-            {(["steam", "kakao"] as const).map((p) => (
-              <button
-                key={p}
-                onClick={() => setEditPubgPlatform(p)}
-                style={{
-                  flex: 1,
-                  padding: "10px",
-                  backgroundColor: editPubgPlatform === p ? "#F2A900" : "#252525",
-                  color: editPubgPlatform === p ? "black" : "#888",
-                  border: `1px solid ${editPubgPlatform === p ? "#F2A900" : "#444"}`,
-                  borderRadius: "6px",
-                  fontWeight: "bold",
-                  fontSize: "13px",
-                  cursor: "pointer",
-                  transition: "all 0.2s ease",
+          <DashboardCard title="계정 정보 최적화" icon={Settings} style={{ flex: 1 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '24px', height: '100%', justifyContent: 'center' }}>
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'rgba(255,255,255,0.3)', marginBottom: '10px' }}>커뮤니티 활동 닉네임</label>
+                <input 
+                  value={editNickname}
+                  onChange={(e) => setEditNickname(e.target.value)}
+                  placeholder="닉네임을 입력하세요"
+                  style={{ 
+                    width: '100%', padding: '18px', backgroundColor: '#000', border: '1px solid rgba(255,255,255,0.1)',
+                    borderRadius: '14px', color: 'white', outline: 'none', fontSize: '16px'
+                  }}
+                />
+                <p style={{ margin: '8px 0 0 0', fontSize: '12px', color: 'rgba(255,255,255,0.2)' }}>커뮤니티 작성글 및 댓글에 표시되는 이름입니다.</p>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'rgba(255,255,255,0.3)', marginBottom: '10px' }}>PUBG 인게임 연동</label>
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <input 
+                    value={editPubgNickname}
+                    onChange={(e) => setEditPubgNickname(e.target.value)}
+                    placeholder="인게임 닉네임"
+                    style={{ 
+                      flex: 1, padding: '18px', backgroundColor: '#000', border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: '14px', color: 'white', outline: 'none', fontSize: '16px'
+                    }}
+                  />
+                  <div style={{ display: 'flex', backgroundColor: '#000', borderRadius: '14px', padding: '5px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                    {['steam', 'kakao'].map(p => (
+                      <button 
+                        key={p}
+                        onClick={() => setEditPubgPlatform(p as any)}
+                        style={{ 
+                          padding: '0 18px', borderRadius: '10px', border: 'none', backgroundColor: editPubgPlatform === p ? '#F2A900' : 'transparent',
+                          color: editPubgPlatform === p ? 'black' : 'rgba(255,255,255,0.4)', fontWeight: 800, cursor: 'pointer', fontSize: '13px'
+                        }}
+                      >
+                        {p.toUpperCase()}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <p style={{ margin: '8px 0 0 0', fontSize: '12px', color: 'rgba(255,255,255,0.2)' }}>전적 검색 시 자동으로 입력되는 기본 계정입니다.</p>
+              </div>
+
+              <button 
+                onClick={handleUpdateProfile}
+                style={{ 
+                  marginTop: '12px', width: '100%', padding: '20px', backgroundColor: '#F2A900', border: 'none', 
+                  borderRadius: '16px', color: 'black', fontWeight: 900, fontSize: '17px', cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
+                  boxShadow: '0 10px 30px rgba(242,169,0,0.15)'
                 }}
               >
-                {p.toUpperCase()}
+                <Save size={18} /> 설정 저장하기
               </button>
-            ))}
-          </div>
+            </div>
+          </DashboardCard>
+
+          <DashboardCard title="보안 및 연동" icon={ShieldCheck}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '5px 0' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{ width: '44px', height: '44px', borderRadius: '14px', backgroundColor: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Gamepad2 size={22} />
+                </div>
+                <div>
+                  <p style={{ margin: 0, fontSize: '14px', fontWeight: 700 }}>PUBG API 연동 상태</p>
+                  <p style={{ margin: 0, fontSize: '12px', color: '#10b981' }}>정상 (Connected)</p>
+                </div>
+              </div>
+              <button style={{ padding: '10px 20px', backgroundColor: 'rgba(255,255,255,0.05)', border: 'none', borderRadius: '10px', color: 'white', fontSize: '13px', fontWeight: 700, cursor: 'pointer' }}>
+                재연동
+              </button>
+            </div>
+          </DashboardCard>
         </div>
 
-        {userProfile?.pubg_nickname && (
-          <div className="mt-2">
-            <MiniStatWidget 
-              pubgNickname={userProfile.pubg_nickname} 
-              platform={userProfile.pubg_platform || "steam"}
-            />
-          </div>
-        )}
+        {/* 3️⃣ RIGHT: Stats & Insights */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+          <DashboardCard title="데이터 인사이트" icon={Activity} style={{ flex: 1 }}>
+             {userProfile?.pubg_nickname ? (
+               <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', height: '100%', justifyContent: 'center' }}>
+                  <MiniStatWidget 
+                    pubgNickname={userProfile.pubg_nickname}
+                    platform={userProfile.pubg_platform || "steam"}
+                  />
+                  <button 
+                    onClick={() => router.push('/stats')}
+                    style={{ 
+                      width: '100%', padding: '16px', backgroundColor: 'rgba(255,255,255,0.05)', 
+                      border: '1px solid rgba(255,255,255,0.1)', borderRadius: '14px', 
+                      color: 'white', fontSize: '14px', fontWeight: 700, cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
+                    }}
+                  >
+                    상세 전적 분석 보기 <ExternalLink size={14} />
+                  </button>
+               </div>
+             ) : (
+               <div style={{ textAlign: 'center', padding: '30px 0', opacity: 0.4, height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+                  <Gamepad2 size={40} style={{ marginBottom: '16px', alignSelf: 'center' }} />
+                  <p style={{ fontSize: '13px', margin: 0, lineHeight: 1.6 }}>인게임 닉네임을 설정하면<br/>이곳에 실시간 전적이 나타납니다.</p>
+               </div>
+             )}
+          </DashboardCard>
 
-        <div style={{ display: "flex", gap: "10px", marginTop: "20px" }}>
-          <button
-            onClick={handleUpdateProfile}
-            style={{
-              flex: 1,
-              padding: "12px",
-              backgroundColor: "#F2A900",
-              border: "none",
-              borderRadius: "6px",
-              fontWeight: "bold",
-              color: "black",
-              cursor: "pointer",
-            }}
-          >
-            저장하기
-          </button>
-          <button
-            onClick={() => router.push('/board')}
-            style={{
-              flex: 1,
-              padding: "12px",
-              backgroundColor: "#333",
-              border: "none",
-              borderRadius: "6px",
-              color: "white",
-              cursor: "pointer",
-            }}
-          >
-            돌아가기
-          </button>
-        </div>
-
-        <div
-          style={{
-            marginTop: "30px",
-            paddingTop: "20px",
-            borderTop: "1px solid #333",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <button
-            onClick={() => {
-              supabase.auth.signOut();
-              // URL을 / 로 변경하면 마이페이지 자동 닫힘
-              router.push('/');
-            }}
-            style={{
-              background: "none",
-              border: "none",
-              color: "#888",
-              cursor: "pointer",
-              fontSize: "13px",
-              textDecoration: "underline",
-            }}
-          >
-            로그아웃
-          </button>
-          <button
-            onClick={handleDeleteAccount}
-            style={{
-              background: "none",
-              border: "none",
-              color: "#ff4d4d",
-              cursor: "pointer",
-              fontSize: "13px",
-              fontWeight: "bold",
-            }}
-          >
-            회원탈퇴
-          </button>
+          <DashboardCard title="활동 요약" icon={Activity}>
+             <div style={{ display: 'flex', flexDirection: 'column', gap: '18px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'rgba(255,255,255,0.4)' }}>
+                    <FileText size={16} />
+                    <span style={{ fontSize: '14px' }}>작성한 게시글</span>
+                  </div>
+                  <span style={{ fontWeight: 800, fontSize: '16px' }}>{activityStats.postCount}개</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'rgba(255,255,255,0.4)' }}>
+                    <MessageSquare size={16} />
+                    <span style={{ fontSize: '14px' }}>작성한 댓글</span>
+                  </div>
+                  <span style={{ fontWeight: 800, fontSize: '16px' }}>{activityStats.commentCount}개</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: 'rgba(255,255,255,0.4)' }}>
+                    <Heart size={16} />
+                    <span style={{ fontSize: '14px' }}>받은 좋아요</span>
+                  </div>
+                  <span style={{ fontWeight: 800, fontSize: '16px', color: '#F2A900' }}>{activityStats.likeCount}개</span>
+                </div>
+             </div>
+          </DashboardCard>
         </div>
       </div>
     </div>

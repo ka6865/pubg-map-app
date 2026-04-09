@@ -14,33 +14,96 @@ export default function BottomNav() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [prevPathname, setPrevPathname] = useState(pathname);
 
-  // Close menu automatically only when route actually changes (using render-phase state update)
+  // 라우트 변경 시 메뉴 자동 닫기
   if (pathname !== prevPathname) {
     setPrevPathname(pathname);
     setIsMenuOpen(false);
   }
 
   const bottomNavItems = [
-    { id: 'Home', label: '지도', icon: Map, onClick: () => router.push('/maps/erangel'), active: pathname.startsWith('/maps') && !isMenuOpen },
-    { id: 'Stats', label: '전적', icon: BarChart2, onClick: () => router.push('/stats'), active: pathname === '/stats' && !isMenuOpen },
-    { id: 'Board', label: '커뮤니티', icon: MessageSquare, onClick: () => router.push('/board'), active: pathname.startsWith('/board') && !isMenuOpen },
-    { id: 'Menu', label: '메뉴', icon: Menu, onClick: () => setIsMenuOpen(true), active: isMenuOpen },
+    {
+      id: 'Home',
+      label: '지도',
+      icon: Map,
+      onClick: () => router.push('/maps/erangel'),
+      active: pathname.startsWith('/maps') && !isMenuOpen,
+    },
+    {
+      id: 'Stats',
+      label: '전적',
+      icon: BarChart2,
+      onClick: () => router.push('/stats'),
+      active: pathname === '/stats' && !isMenuOpen,
+    },
+    {
+      id: 'Board',
+      label: '커뮤니티',
+      icon: MessageSquare,
+      onClick: () => router.push('/board'),
+      active: pathname.startsWith('/board') && !isMenuOpen,
+    },
+    {
+      id: 'Menu',
+      label: '메뉴',
+      icon: Menu,
+      onClick: () => setIsMenuOpen(true),
+      active: isMenuOpen,
+    },
   ];
 
   return (
     <>
-      <nav className="fixed bottom-0 left-0 right-0 z-[5000] bg-[#121212] border-t border-[#333] px-2 py-1 md:hidden safe-bottom shadow-[0_-4px_10px_rgba(0,0,0,0.3)]">
-        <div className="flex justify-around items-center min-h-[56px] h-auto">
+      <nav
+        className="fixed bottom-0 left-0 right-0 z-[5000] md:hidden safe-bottom"
+        style={{
+          /* 글래스모피즘 배경 */
+          background: "rgba(13, 13, 13, 0.85)",
+          backdropFilter: "blur(20px)",
+          WebkitBackdropFilter: "blur(20px)",
+          borderTop: "1px solid rgba(255, 255, 255, 0.07)",
+          boxShadow: "0 -8px 32px rgba(0, 0, 0, 0.5)",
+        }}
+      >
+        <div className="flex justify-around items-center h-[56px] px-2">
           {bottomNavItems.map((item) => (
             <button
               key={item.id}
               onClick={item.onClick}
-              className={`flex flex-col items-center justify-center w-full gap-1 transition-all duration-200 ${
-                item.active ? 'text-[#F2A900] scale-110' : 'text-[#888]'
-              }`}
+              className="flex flex-col items-center justify-center w-full gap-[3px] relative"
+              style={{
+                color: item.active ? '#F2A900' : 'rgba(255,255,255,0.4)',
+                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                transform: item.active ? 'scale(1.08)' : 'scale(1)',
+              }}
             >
-              <item.icon size={20} strokeWidth={item.active ? 2.5 : 2} />
-              <span className={`text-[10px] font-bold ${item.active ? 'opacity-100' : 'opacity-70'}`}>{item.label}</span>
+              {/* 액티브 인디케이터 닷 */}
+              {item.active && (
+                <span
+                  style={{
+                    position: 'absolute',
+                    top: '4px',
+                    width: '4px',
+                    height: '4px',
+                    borderRadius: '50%',
+                    backgroundColor: '#F2A900',
+                    boxShadow: '0 0 6px rgba(242, 169, 0, 0.8)',
+                  }}
+                />
+              )}
+              <item.icon
+                size={20}
+                strokeWidth={item.active ? 2.5 : 1.8}
+                style={{ marginTop: item.active ? '8px' : '0' }}
+              />
+              <span
+                style={{
+                  fontSize: '10px',
+                  fontWeight: item.active ? 700 : 500,
+                  letterSpacing: '0.02em',
+                }}
+              >
+                {item.label}
+              </span>
             </button>
           ))}
         </div>

@@ -1,4 +1,4 @@
-import HomeClient from '../../HomeClient';
+import HomeClient from '@/app/HomeClient';
 import { Metadata } from 'next';
 import { getPostMetadata, getBreadcrumbJsonLd, getPostArticleJsonLd } from '@/lib/seo-config';
 import { JsonLdProps } from '@/types/seo';
