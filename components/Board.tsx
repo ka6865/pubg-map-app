@@ -21,6 +21,8 @@ interface BoardProps {
   currentUser: CurrentUser | null;
   displayName: string;
   isAdmin: boolean;
+  postId?: string | number;
+  initialIsWriting?: boolean;
 }
 
 // 게시판 하위 화면 렌더링용 자식 컴포넌트 모음 로드
@@ -33,17 +35,19 @@ export default function Board({
   currentUser,
   displayName,
   isAdmin,
+  postId,
+  initialIsWriting,
 }: BoardProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const postIdParam = searchParams?.get("postId");
+  const postIdParam = postId || searchParams?.get("postId");
   const boardFilter = searchParams?.get("f") || "전체";
 
   const [posts, setPosts] = useState<Post[]>([]); // 게시글 목록 데이터 배열 상태
   const [comments, setComments] = useState<Comment[]>([]); // 현재 선택된 게시글의 댓글 목록 상태
   const [selectedPost, setSelectedPost] = useState<Post | null>(null); // 현재 상세 조회 중인 게시글 객체 상태
-  const [isWriting, setIsWriting] = useState(false); // 글 작성/수정 모드 활성화 여부 상태
+  const [isWriting, setIsWriting] = useState(initialIsWriting || false); // 글 작성/수정 모드 활성화 여부 상태
   const [isLoading, setIsLoading] = useState(false); // 데이터 로딩 중 여부 상태 (스피너 제어)
 
   const [page, setPage] = useState(1); // 현재 페이지 번호 상태
@@ -158,7 +162,7 @@ export default function Board({
   // URL 내 postId 파라미터 유무 식별을 통한 상세 뷰 진입 여부 판별 트리거
   useEffect(() => {
     if (postIdParam) {
-      fetchSinglePost(postIdParam);
+      fetchSinglePost(String(postIdParam));
     } else {
       setSelectedPost(null);
       setComments([]);
@@ -454,7 +458,7 @@ export default function Board({
         toast.success("게시글이 성공적으로 삭제되었습니다.");
       }
 
-      router.push("/?tab=Board");
+      router.push("/board");
       await fetchPosts();
     } catch (error: any) {
       console.error("Delete error:", error);

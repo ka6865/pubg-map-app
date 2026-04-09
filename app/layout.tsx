@@ -19,7 +19,9 @@ export const metadata: Metadata = {
   keywords: ["배틀그라운드", "배그 지도", "BGMS", "배그 전적", "배그 고젠", "배그 고정 젠", "에란겔 고젠", "미라마 고젠", "태이고 고젠", "차스폰 위치", "PUBG Map", "배그 차량 위치"],
   authors: [{ name: "BGMS Team" }],
   alternates: {
-    canonical: "/",
+    languages: {
+      "ko-KR": "/",
+    },
   },
   icons: {
     icon: "/logo.png",

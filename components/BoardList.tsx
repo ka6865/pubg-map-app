@@ -104,7 +104,7 @@ export default function BoardList({
           {["전체", "추천", ...BOARD_CATEGORIES].map((f) => (
             <button
               key={f}
-              onClick={() => router.push(`/?tab=Board&f=${f}`)}
+              onClick={() => router.push(`/board?f=${f}`)}
               className={`px-[12px] py-[6px] rounded-[20px] border border-[#333] whitespace-nowrap text-[13px] cursor-pointer font-bold transition-colors ${
                 boardFilter === f
                   ? "bg-[#F2A900]"
@@ -122,7 +122,7 @@ export default function BoardList({
         </div>
 
         <button
-          onClick={() => setIsWriting(true)}
+          onClick={() => router.push('/board/write')}
           className="px-[16px] py-[8px] bg-[#34A853] rounded-[4px] border-none font-bold text-[13px] whitespace-nowrap cursor-pointer hover:bg-[#2a9040] transition-colors shrink-0"
           style={{
             color: "#ffffff",
@@ -141,7 +141,7 @@ export default function BoardList({
               <li
                 key={post.id}
                 onClick={() =>
-                  router.push(`/?tab=Board&f=${boardFilter}&postId=${post.id}`)
+                  router.push(`/board/${post.id}`)
                 }
                 className={`p-[15px] border-b border-[#222] cursor-pointer transition-colors hover:bg-white/5 flex flex-col gap-1 ${
                   post.is_notice
@@ -221,9 +221,7 @@ export default function BoardList({
                 <tr
                   key={post.id}
                   onClick={() =>
-                    router.push(
-                      `/?tab=Board&f=${boardFilter}&postId=${post.id}`
-                    )
+                    router.push(`/board/${post.id}`)
                   }
                   className={`border-b border-[#222] cursor-pointer transition-colors hover:bg-white/5 ${
                     post.is_notice

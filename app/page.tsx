@@ -1,172 +1,29 @@
-import HomeClient from './HomeClient';
-export const dynamic = 'auto';
-import { Metadata } from 'next';
-import { createClient } from '@supabase/supabase-js';
+import { redirect } from 'next/navigation';
 
-// 서버 전용 Supabase 클라이언트 (메타데이터 조회용)
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
-const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://bgms.kr";
-
-// [SEO] 동적 메타데이터 생성 함수
-export async function generateMetadata({ searchParams }: { searchParams: Promise<{ [key: string]: string | string[] | undefined }> }): Promise<Metadata> {
-  const s = await searchParams; // 🌟 Next.js 15 비동기 처리
-  const postId = s.postId as string;
-  const tab = (s.tab as string) || "Erangel";
-
-  // 1. 게시글 상세 페이지 메타데이터
-  if (postId) {
-    try {
-      const { data: post } = await supabase
-        .from('posts')
-        .select('id, title, content, category, author, created_at, updated_at, image_url')
-        .eq('id', postId)
-        .single();
-
-      if (post) {
-        const plainText = post.content?.replace(/<[^>]*>/g, '').substring(0, 150) || '';
-        const canonicalUrl = `${baseUrl}/?tab=Board&postId=${postId}`;
-        
-        return {
-          title: `${post.title} | ${post.category} - BGMS`,
-          description: plainText,
-          alternates: { canonical: canonicalUrl },
-          openGraph: {
-            title: `${post.title} - BGMS`,
-            description: plainText,
-            url: canonicalUrl,
-            type: 'article',
-            publishedTime: post.created_at,
-            modifiedTime: post.updated_at,
-            authors: [post.author],
-            images: [post.image_url || `${baseUrl}/logo.png`],
-          },
-          twitter: {
-            card: 'summary_large_image',
-            title: `${post.title} - BGMS`,
-            description: plainText,
-            images: [post.image_url || `${baseUrl}/logo.png`],
-          }
-        };
-      }
-    } catch (e) {
-      console.error('Metadata generation error:', e);
-    }
-  }
-
-  // 2. 맵/탭별 맞춤형 메타데이터 (ID 기반)
-  const tabMetadata: Record<string, { title: string; desc: string }> = {
-    Erangel: { title: "에란겔(Erangel) 고젠 위치 및 전술 지도", desc: "배그 에란겔 맵의 모든 고정 젠(고젠) 차량/보트 스폰 위치 정보를 BGMS에서 확인하세요." },
-    Miramar: { title: "미라마(Miramar) 고젠 위치 및 전술 지도", desc: "미라마 맵의 고정 차량(고젠) 스폰 지역과 황금 미라도 위치 등 핵심 정보를 제공합니다." },
-    Taego: { title: "태이고(Taego) 고젠 위치 및 전술 지도", desc: "태이고 맵의 고정 탈것(고젠) 장소와 포터, 비밀방 상세 위치를 확인하세요." },
-    Rondo: { title: "론도(Rondo) 고젠 위치 및 전술 지도", desc: "론도 맵의 넓은 지형을 빠르게 이동할 수 있는 고정 젠 차량 위치 정보를 확인하세요." },
-    Vikendi: { title: "비켄디(Vikendi) 고젠 위치 및 전술 지도", desc: "비켄디 리본 맵의 고정 차량 스폰(고젠) 위치와 스노우모빌 정보를 제공합니다." },
-    Deston: { title: "데스턴(Deston) 고젠 위치 및 전술 지도", desc: "데스턴의 고정 젠 차량 및 에어보트 위치와 주요 파밍 루트를 확인하세요." },
-    Stats: { title: "배그 전적 검색 및 실시간 딜량 계산기", desc: "배틀그라운드 시즌별 전적과 평균 딜량, 킬뎃 정보를 즉시 조회하세요." },
-    Board: { title: "생존자 커뮤니티 및 고젠 공략 게시판", desc: "배틀그라운드 최신 업데이트 소식과 유저들의 고젠 공략을 공유하는 공간입니다." }
-  };
-
-  const currentMeta = tabMetadata[tab] || { 
-    title: "배틀그라운드 통합 지도 및 전략 서비스", 
-    desc: "모든 맵의 차량 위치와 실시간 전적, 아이템 무게 계산기를 제공하는 전문 전술 플랫폼입니다." 
-  };
-
-  return {
-    title: `${currentMeta.title} | BGMS`,
-    description: currentMeta.desc,
-    alternates: { canonical: tab === "Erangel" ? "/" : `/?tab=${tab}` },
-    openGraph: {
-      title: `${currentMeta.title} - BGMS`,
-      description: currentMeta.desc,
-      url: tab === "Erangel" ? "/" : `/?tab=${tab}`,
-      images: [
-        // 🌟 지도가 있는 탭일 때만 타일을 가져오고, 아니면 로고를 사용합니다.
-        ["Erangel", "Miramar", "Taego", "Rondo", "Vikendi", "Deston"].includes(tab)
-          ? `${baseUrl}/tiles/${tab}/0/0/-1.jpg`
-          : `${baseUrl}/logo.png`,
-      ],
-    }
-  };
-}
-
-// 메인 페이지 서버 컴포넌트
 export default async function Home({ searchParams }: { searchParams: Promise<{ [key: string]: string | string[] | undefined }> }) {
-  const s = await searchParams; // 🌟 Next.js 15 비동기 처리
-  const activeMapId = (s.tab as string) || "Erangel";
-  const preloadMaps = ["Erangel", "Miramar", "Taego", "Rondo", "Vikendi", "Deston"];
+  const s = await searchParams;
+  const tab = s.tab as string;
+  const postId = s.postId as string;
 
-  const jsonLd: any[] = [
-    {
-      "@context": "https://schema.org",
-      "@type": "WebSite",
-      "name": "BGMS",
-      "alternateName": ["배그 고젠", "배그 전술 지도"],
-      "url": baseUrl,
-      "potentialAction": {
-        "@type": "SearchAction",
-        "target": `${baseUrl}/?q={search_term_string}`,
-        "query-input": "required name=search_term_string"
+  // 🌟 [레거시 대응] 쿼리 파라미터 주소를 새로운 경로 기반 주소로 리다이렉트
+  if (tab) {
+    if (tab === "Board") {
+      if (postId) {
+        redirect(`/board/${postId}`);
       }
-    },
-    {
-      "@context": "https://schema.org",
-      "@type": "BreadcrumbList",
-      "itemListElement": [
-        { "@type": "ListItem", "position": 1, "name": "에란겔", "item": `${baseUrl}/?tab=Erangel` },
-        { "@type": "ListItem", "position": 2, "name": "미라마", "item": `${baseUrl}/?tab=Miramar` },
-        { "@type": "ListItem", "position": 3, "name": "태이고", "item": `${baseUrl}/?tab=Taego` },
-        { "@type": "ListItem", "position": 4, "name": "게시판", "item": `${baseUrl}/?tab=Board` }
-      ]
+      redirect('/board');
     }
-  ];
-
-  if (s.postId) {
-    try {
-      const postId = s.postId as string;
-      const { data: post } = await supabase
-        .from('posts')
-        .select('title, content, author, created_at, updated_at, image_url, category')
-        .eq('id', postId)
-        .single();
-
-      if (post) {
-        jsonLd.push({
-          "@context": "https://schema.org",
-          "@type": "Article",
-          "headline": post.title,
-          "description": post.content?.replace(/<[^>]*>/g, '').substring(0, 150),
-          "author": { "@type": "Person", "name": post.author },
-          "datePublished": post.created_at,
-          "dateModified": post.updated_at,
-          "publisher": {
-            "@type": "Organization",
-            "name": "BGMS",
-            "logo": { "@type": "ImageObject", "url": `${baseUrl}/logo.png` }
-          },
-          "image": post.image_url || `${baseUrl}/logo.png`,
-          "mainEntityOfPage": {
-            "@type": "WebPage",
-            "@id": `${baseUrl}/?tab=Board&postId=${postId}`
-          }
-        });
-      }
-    } catch (e) {
-      console.error('JsonLd article error:', e);
+    if (tab === "Stats") {
+      redirect('/stats');
+    }
+    // 맵 탭인 경우
+    const maps = ["Erangel", "Miramar", "Taego", "Rondo", "Vikendi", "Deston"];
+    if (maps.includes(tab)) {
+      redirect(`/maps/${tab.toLowerCase()}`);
     }
   }
 
-  const isMapTab = preloadMaps.includes(activeMapId);
-
-  return (
-    <>
-      {/* 🌟 지도 탭일 때만 다른 맵들의 타일을 미리 로드(prefetch)하여 전환 속도를 높입니다. */}
-      {isMapTab && preloadMaps.filter(m => m !== activeMapId).map(m => (
-        <link key={m} rel="prefetch" href={`/tiles/${m}/0/0/-1.jpg`} as="image" />
-      ))}
-      <HomeClient jsonLd={jsonLd} />
-    </>
-  );
+  // 🌟 [기본 동작] 루트 접속 시 에란겔 맵으로 리다이렉트 (Option 2 전략)
+  redirect('/maps/erangel');
 }
+

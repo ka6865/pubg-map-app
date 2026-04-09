@@ -1,16 +1,15 @@
+import HomeClient from '../HomeClient';
 import { Metadata } from 'next';
 import { getTabSeo, getBreadcrumbJsonLd } from '@/lib/seo-config';
-import JsonLd from '@/components/seo/JsonLd';
-import WeaponsClient from './WeaponsClient';
 import { JsonLdProps } from '@/types/seo';
 
 const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://bgms.kr";
 
 export async function generateMetadata(): Promise<Metadata> {
-  return getTabSeo("Weapons");
+  return getTabSeo("Stats");
 }
 
-export default async function WeaponsPage() {
+export default async function StatsPage() {
   const jsonLd: JsonLdProps[] = [
     {
       "@context": "https://schema.org",
@@ -20,14 +19,9 @@ export default async function WeaponsPage() {
     },
     getBreadcrumbJsonLd([
       { name: "홈", item: "/" },
-      { name: "무기 정보", item: "/weapons" }
+      { name: "전적 검색", item: "/stats" }
     ]) as JsonLdProps
   ];
 
-  return (
-    <>
-      <JsonLd data={jsonLd} />
-      <WeaponsClient />
-    </>
-  );
+  return <HomeClient jsonLd={jsonLd} initialMapId="Stats" />;
 }

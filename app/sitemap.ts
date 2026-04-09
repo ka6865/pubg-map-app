@@ -11,53 +11,72 @@ const supabase = createClient(
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // 사이트맵용 베이스 URL 설정 (trailing slash 제거 루틴 추가)
-  let baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://bgms.kr';
-  if (baseUrl.endsWith('/')) baseUrl = baseUrl.slice(0, -1);
-  
-  const lastModified = new Date();
+  let siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://bgms.kr';
+  if (siteUrl.endsWith('/')) siteUrl = siteUrl.slice(0, -1);
 
-  // 1. 기본 정적 메뉴들 (공식 문서 권장 형식)
-  const staticRoutes = [
-    '',
-    '/?tab=Erangel',
-    '/?tab=Miramar',
-    '/?tab=Taego',
-    '/?tab=Rondo',
-    '/?tab=Vikendi',
-    '/?tab=Deston',
-    '/?tab=Stats',
-    '/?tab=Board',
-    '/weapons',
-    '/backpack',
-  ].map((route) => ({
-    url: `${baseUrl}${route}`,
-    lastModified,
-    changeFrequency: 'daily' as const,
-    priority: route === '' ? 1 : 0.8,
+  const maps = ["erangel", "miramar", "taego", "rondo", "vikendi", "deston"];
+  const mapEntries: MetadataRoute.Sitemap = maps.map((map) => ({
+    url: `${siteUrl}/maps/${map}`,
+    lastModified: new Date(),
+    changeFrequency: 'daily',
+    priority: 0.8,
   }));
 
-  // 2. 개별 게시글들 (DB 실시간 동기화)
-  let postRoutes: MetadataRoute.Sitemap = [];
+  const staticEntries: MetadataRoute.Sitemap = [
+    {
+      url: `${siteUrl}/`,
+      lastModified: new Date(),
+      changeFrequency: 'daily',
+      priority: 1.0,
+    },
+    {
+      url: `${siteUrl}/board`,
+      lastModified: new Date(),
+      changeFrequency: 'daily',
+      priority: 0.7,
+    },
+    {
+      url: `${siteUrl}/stats`,
+      lastModified: new Date(),
+      changeFrequency: 'daily',
+      priority: 0.6,
+    },
+    {
+      url: `${siteUrl}/weapons`,
+      lastModified: new Date(),
+      changeFrequency: 'weekly',
+      priority: 0.5,
+    },
+    {
+      url: `${siteUrl}/backpack`,
+      lastModified: new Date(),
+      changeFrequency: 'weekly',
+      priority: 0.5,
+    },
+  ];
+
+  // 🌟 게시글들 가져오기 (상세 페이지 SEO용)
+  let postEntries: MetadataRoute.Sitemap = [];
   try {
     const { data: posts, error } = await supabase
       .from('posts')
-      .select('id, created_at')
-      .order('created_at', { ascending: false });
+      .select('id, updated_at')
+      .order('created_at', { ascending: false })
+      .limit(100);
 
     if (error) throw error;
 
     if (posts) {
-      postRoutes = posts.map((post) => ({
-        url: `${baseUrl}/?tab=Board&amp;postId=${post.id}`,
-        lastModified: post.created_at ? new Date(post.created_at) : lastModified,
-        changeFrequency: 'weekly' as const,
+      postEntries = posts.map((post) => ({
+        url: `${siteUrl}/board/${post.id}`,
+        lastModified: post.updated_at ? new Date(post.updated_at) : new Date(),
+        changeFrequency: 'weekly',
         priority: 0.6,
       }));
     }
   } catch (error) {
     console.error('[Sitemap Error] 게시글을 불러오지 못했습니다. 환경변수(SERVICE_ROLE_KEY)를 확인하세요.', error);
-    // 에러 발생 시에도 빈 결과 대신 기본 메뉴는 반환합니다.
   }
 
-  return [...staticRoutes, ...postRoutes];
+  return [...staticEntries, ...mapEntries, ...postEntries];
 }

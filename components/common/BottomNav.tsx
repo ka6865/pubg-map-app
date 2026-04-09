@@ -21,9 +21,9 @@ export default function BottomNav() {
   }
 
   const bottomNavItems = [
-    { id: 'Home', label: '지도', icon: Map, onClick: () => router.push('/?tab=Erangel'), active: ['Erangel', 'Miramar', 'Taego', 'Rondo', 'Vikendi', 'Deston'].includes(activeTab) && pathname === '/' && !isMenuOpen },
-    { id: 'Stats', label: '전적', icon: BarChart2, onClick: () => router.push('/?tab=Stats'), active: activeTab === 'Stats' && pathname === '/' && !isMenuOpen },
-    { id: 'Board', label: '커뮤니티', icon: MessageSquare, onClick: () => router.push('/?tab=Board'), active: activeTab === 'Board' && pathname === '/' && !isMenuOpen },
+    { id: 'Home', label: '지도', icon: Map, onClick: () => router.push('/maps/erangel'), active: pathname.startsWith('/maps') && !isMenuOpen },
+    { id: 'Stats', label: '전적', icon: BarChart2, onClick: () => router.push('/stats'), active: pathname === '/stats' && !isMenuOpen },
+    { id: 'Board', label: '커뮤니티', icon: MessageSquare, onClick: () => router.push('/board'), active: pathname.startsWith('/board') && !isMenuOpen },
     { id: 'Menu', label: '메뉴', icon: Menu, onClick: () => setIsMenuOpen(true), active: isMenuOpen },
   ];
 

@@ -63,10 +63,17 @@ const MAP_LIST: MapTab[] = [
   { id: "Deston", label: "데스턴", imageUrl: "/Deston.jpg" },
 ];
 
-export default function Map() {
+interface MapProps {
+  initialMapId?: string;
+  postId?: string;
+  initialIsWriting?: boolean;
+}
+
+export default function Map({ initialMapId, postId, initialIsWriting }: MapProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const activeMapId = searchParams?.get("tab") || "Erangel";
+  const activeMapId = initialMapId || searchParams?.get("tab") || "Erangel";
+  const activePostId = postId || searchParams?.get("postId");
 
   const {
     currentUser,
@@ -80,6 +87,8 @@ export default function Map() {
     setNotifications,
     fetchUserProfile,
   } = useMapData(activeMapId);
+
+  const currentPostId = activePostId;
 
   const [isSidebarOpen, setSidebarOpen] = useState(true);
   const [showNotiDropdown, setShowNotiDropdown] = useState(false);
@@ -145,7 +154,13 @@ export default function Map() {
 
   const handleTabClick = (tabId: string) => {
     setIsMyPage(false);
-    router.push(`/?tab=${tabId}`);
+    if (tabId === "Board") {
+      router.push('/board');
+    } else if (tabId === "Stats") {
+      router.push('/stats');
+    } else {
+      router.push(`/maps/${tabId.toLowerCase()}`);
+    }
   };
 
   const formatNotiTime = (dateString: string) => {
@@ -169,7 +184,7 @@ export default function Map() {
     }
     setShowNotiDropdown(false);
     setIsMyPage(false);
-    router.push(`/?tab=Board&postId=${noti.post_id}`);
+    router.push(`/board/${noti.post_id}`);
   };
 
   const markAllAsRead = async () => {
@@ -224,7 +239,7 @@ export default function Map() {
         onNotiClick={handleNotiClick}
         onMyPageClick={() => {
           setIsMyPage(true);
-          router.push("/?tab=Board");
+          router.push("/board");
         }}
         formatNotiTime={formatNotiTime}
       />
@@ -281,6 +296,8 @@ export default function Map() {
                   currentUser={currentUser}
                   displayName={displayName}
                   isAdmin={isAdmin}
+                  postId={currentPostId || undefined}
+                  initialIsWriting={initialIsWriting}
                 />
               )}
             </div>
