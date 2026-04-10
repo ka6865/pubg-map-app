@@ -57,9 +57,14 @@ export default function GlobalMobileMenu({ isOpen, setIsOpen, activeMapId }: Glo
             
             <div className="max-w-md mx-auto">
               <div className="flex items-center justify-between mb-6">
-                <h2 className="text-[#F2A900] font-black text-2xl italic tracking-tighter uppercase">
-                  BGMS Menu
-                </h2>
+                <Drawer.Title asChild>
+                  <h2 className="text-[#F2A900] font-black text-2xl italic tracking-tighter uppercase">
+                    BGMS Menu
+                  </h2>
+                </Drawer.Title>
+                <Drawer.Description className="sr-only">
+                  BGMS 서비스 메뉴 및 맵 선택 도구입니다.
+                </Drawer.Description>
                 <button 
                   onClick={() => setIsOpen(false)} 
                   className="p-2 bg-[#222] rounded-full text-[#666] active:bg-[#333] transition-colors"

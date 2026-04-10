@@ -46,7 +46,10 @@ export default function BottomNav() {
       id: 'Menu',
       label: '메뉴',
       icon: Menu,
-      onClick: () => setIsMenuOpen(true),
+      onClick: (e?: React.MouseEvent) => {
+        if (e) (e.currentTarget as HTMLButtonElement).blur();
+        setIsMenuOpen(true);
+      },
       active: isMenuOpen,
     },
   ];
@@ -68,7 +71,7 @@ export default function BottomNav() {
           {bottomNavItems.map((item) => (
             <button
               key={item.id}
-              onClick={item.onClick}
+              onClick={(e) => item.onClick(e)}
               className="flex flex-col items-center justify-center w-full gap-[3px] relative"
               style={{
                 color: item.active ? '#F2A900' : 'rgba(255,255,255,0.4)',

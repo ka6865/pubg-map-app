@@ -33,14 +33,18 @@ export function useMapData(activeMapId: string, injectedUser: AuthUser | null) {
 
   // 알림 조회
   const fetchNotifications = async (userId: string) => {
-    const { data } = await supabase
-      .from("notifications")
-      .select("*")
-      .eq("receiver_id", userId)
-      .order("created_at", { ascending: false });
+    try {
+      const { data, error } = await supabase
+        .from("notifications")
+        .select("*")
+        .eq("user_id", userId) // 📍 receiver_id -> user_id로 교정 (Typescript 정의 일치)
+        .order("created_at", { ascending: false });
 
-    if (data) {
-      setNotifications(data as NotificationItem[]);
+      if (!error && data) {
+        setNotifications(data as NotificationItem[]);
+      }
+    } catch (err) {
+      console.warn("[useMapData] 알림 로드 실패:", err);
     }
   };
 
@@ -64,26 +68,45 @@ export function useMapData(activeMapId: string, injectedUser: AuthUser | null) {
   // 맵 마커 동기화
   useEffect(() => {
     const fetchMarkers = async () => {
-      // 게시판이나 전적 페이지에서는 마커를 불러오지 않음
       if (activeMapId === "Board" || activeMapId === "Stats") return;
 
       setIsDataLoading(true);
       try {
-        // 1. 공인된 마커 데이터 (vehicles)
-        const { data: approved } = await supabase
-          .from("vehicles")
+        // 1. 공인된 마커 데이터 (map_markers)
+        const { data: approved, error: approvedError } = await supabase
+          .from("map_markers")
           .select("*")
           .eq("map_id", activeMapId);
 
-        if (approved) setDbVehicles(approved as MapMarker[]);
+        if (!approvedError && approved) {
+          const mapMarkers = approved.map((v: any) => ({
+            ...v,
+            mapId: v.map_id // 내부에서는 camelCase 사용을 위해 매핑
+          }));
+          setDbVehicles(mapMarkers as MapMarker[]);
+        }
 
-        // 2. 대기 중인 사용자 제보 (pending_vehicles)
-        const { data: pending } = await supabase
-          .from("pending_vehicles")
-          .select("*")
-          .eq("map_id", activeMapId);
+        // 2. 대기 중인 사용자 제보 (pending_markers)
+        // 📍 404가 발생하는 테이블이므로 안전하게 try-catch로 별도 처리
+        try {
+          const { data: pending, error: pendingError } = await supabase
+            .from("pending_markers")
+            .select("*")
+            .eq("map_name", activeMapId);
 
-        if (pending) setPendingVehicles(pending as PendingVehicle[]);
+          if (!pendingError && pending) {
+            const mappedPending = pending.map((v: any) => ({
+              ...v,
+              mapId: v.map_name // 내부 통일성을 위해 매핑
+            }));
+            setPendingVehicles(mappedPending as PendingVehicle[]);
+          }
+        } catch (e) {
+          // 테이블 부재 시 조용히 넘어감
+          console.log("[useMapData] pending_markers 테이블을 찾을 수 없어 건너뜁니다.");
+        }
+      } catch (err) {
+        console.error("[useMapData] 데이터 로드 중 치명적 에러:", err);
       } finally {
         setIsDataLoading(false);
       }

@@ -42,6 +42,9 @@ export default function MobileBottomSheet({
                   <MapIcon size={24} />
                   <span>{mapLabel} 전술 정보</span>
                 </Drawer.Title>
+                <Drawer.Description className="sr-only">
+                  {mapLabel}의 주요 차량 스폰 위치 및 전술 정보를 필터링하여 확인합니다.
+                </Drawer.Description>
                 <button 
                   onClick={() => setIsOpen(false)}
                   className="p-2 bg-[#222] rounded-full text-[#777] active:bg-[#333] transition-colors"

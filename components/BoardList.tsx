@@ -99,11 +99,15 @@ export default function BoardList({
         <div
           style={{
             display: "flex",
-            gap: "6px",
+            gap: "8px",
             overflowX: "auto",
             scrollbarWidth: "none",
+            msOverflowStyle: "none",
             flex: 1,
+            padding: isMobile ? "2px 0" : "0", // 상하 여백만 부여
+            WebkitOverflowScrolling: "touch",
           }}
+          className="no-scrollbar"
         >
           {["전체", "추천", ...BOARD_CATEGORIES].map((f) => {
             const isActive = boardFilter === f;
@@ -112,7 +116,7 @@ export default function BoardList({
                 key={f}
                 onClick={() => router.push(`/board?f=${f}`)}
                 style={{
-                  padding: "5px 13px",
+                  padding: "6px 14px",
                   borderRadius: "20px",
                   border: `1px solid ${isActive ? "#F2A900" : "rgba(255,255,255,0.1)"}`,
                   whiteSpace: "nowrap",
@@ -125,6 +129,7 @@ export default function BoardList({
                     : "rgba(255,255,255,0.04)",
                   color: isActive ? "#000" : "rgba(255,255,255,0.5)",
                   letterSpacing: "0.01em",
+                  flexShrink: 0,
                 }}
               >
                 {f}

@@ -291,7 +291,9 @@ export default function Map({ initialMapId, postId, initialIsWriting }: MapProps
               style={{
                 maxWidth: isMyPage ? "1300px" : "900px",
                 margin: "0 auto",
-                padding: isMobile ? "10px" : "20px",
+                padding: isMobile ? "16px" : "20px",
+                width: "100%",
+                boxSizing: "border-box",
               }}
             >
               {isMyPage ? (

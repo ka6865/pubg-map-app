@@ -11,34 +11,11 @@ import { toast } from 'sonner';
 export default function Login() {
   const [isLoading, setIsLoading] = useState<string | null>(null);
   
-  // 브라우저 로드 시 현재 환경 로그 출력
-  useEffect(() => {
-    console.log('[Login] 환경 체크:', {
-      origin: window.location.origin,
-      siteUrlEnv: process.env.NEXT_PUBLIC_SITE_URL
-    });
-  }, []);
-
-  const handleSocialLogin = async (provider: 'google' | 'kakao') => {
+  const handleSocialLogin = async (provider: 'kakao' | 'google') => {
     setIsLoading(provider);
-    console.log(`[Login] ${provider} 로그인 프로세스 시작...`);
-    
     try {
-      // 1. URL 정밀 세척 (따옴표, 공백 완전 제거)
-      const clean = (val: string | undefined) => (val || '').replace(/['";\s]+/g, '').trim();
+      const redirectTo = `${window.location.origin}/auth/callback`;
       
-      const currentOrigin = window.location.origin;
-      const envSiteUrl = clean(process.env.NEXT_PUBLIC_SITE_URL);
-      
-      // 로컬이면 origin 우선, 아니면 환경변수 우선
-      const baseSite = currentOrigin.includes('localhost') ? currentOrigin : (envSiteUrl || currentOrigin);
-      const baseUrl = baseSite.endsWith('/') ? baseSite : `${baseSite}/`;
-      
-      const redirectTo = `${baseUrl}auth/callback`;
-      
-      console.log(`[Login] 최종 리다이렉트 경로: ${redirectTo}`);
-
-      // 2. 인증 요청 실행
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
@@ -51,14 +28,10 @@ export default function Login() {
       });
 
       if (error) {
-        console.error('[Login] Supabase API 에러:', error);
         throw error;
       }
       
-      console.log('[Login] OAuth 요청 성공, 외부 페이지로 이동합니다...', data);
-      
     } catch (error: any) {
-      console.error('[Login] 치명적 오류:', error);
       toast.error(`로그인 시도 중 오류가 발생했습니다: ${error.message}`);
       setIsLoading(null);
     }
