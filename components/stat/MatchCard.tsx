@@ -2,6 +2,92 @@ import React, { useState, useEffect } from "react";
 import type { MatchData, MatchTeamMember } from "../../types/stat";
 
 /**
+ * 간단한 마크다운 파서를 통해 AI 응답을 시각적으로 예쁘게 렌더링합니다.
+ */
+const renderMarkdown = (text: string) => {
+  if (!text) return null;
+  const lines = text.split('\n');
+  
+  return lines.map((line, idx) => {
+    // 빈 줄 처리
+    if (!line.trim()) {
+      return <div key={idx} style={{ height: "6px" }} />;
+    }
+    
+    // 헤더 처리 (###, ##, #)
+    let isHeader = false;
+    let headerLevel = 0;
+    if (line.startsWith('### ')) { isHeader = true; headerLevel = 3; }
+    else if (line.startsWith('## ')) { isHeader = true; headerLevel = 2; }
+    else if (line.startsWith('# ')) { isHeader = true; headerLevel = 1; }
+    
+    let content = line;
+    if (isHeader) {
+      content = line.replace(/^#+\s/, '');
+    }
+
+    // 리스트 처리 (-, *, 1.)
+    const isList = /^[*\-]\s/.test(content);
+    const isNumList = /^\d+\.\s/.test(content);
+    if (isList) content = content.replace(/^[*\-]\s/, '');
+    if (isNumList) content = content.replace(/^\d+\.\s/, '');
+
+    // 볼드 처리 (**text**)
+    const parts = content.split(/(\*\*.*?\*\*)/g);
+
+    const renderedLine = parts.map((part, i) => {
+      if (part.startsWith('**') && part.endsWith('**')) {
+        return <strong key={i} style={{ color: '#F2A900', fontWeight: 'bold' }}>{part.slice(2, -2)}</strong>;
+      }
+      return <span key={i}>{part}</span>;
+    });
+
+    if (isHeader) {
+      const fontSize = headerLevel === 1 ? '16px' : (headerLevel === 2 ? '15px' : '14px');
+      return (
+        <div key={idx} style={{ 
+          fontSize: fontSize, 
+          fontWeight: 'bold', 
+          color: '#34A853', 
+          marginTop: idx === 0 ? "0" : "16px", 
+          marginBottom: "8px",
+          borderBottom: headerLevel <= 2 ? "1px solid rgba(255,255,255,0.05)" : "none",
+          paddingBottom: headerLevel <= 2 ? "6px" : "0",
+          display: "flex",
+          alignItems: "center",
+          gap: "6px"
+        }}>
+          <span style={{ fontSize: "14px" }}>{headerLevel === 1 ? "🎯" : headerLevel === 2 ? "📊" : "💡"}</span>
+          {renderedLine}
+        </div>
+      );
+    }
+    
+    return (
+      <div key={idx} style={{ 
+        display: isList || isNumList ? 'flex' : 'block',
+        marginLeft: isList || isNumList ? '12px' : '0',
+        marginBottom: "6px",
+        lineHeight: "1.6"
+      }}>
+        {(isList || isNumList) && (
+          <span style={{ 
+            color: '#34A853', 
+            marginRight: '8px',
+            fontSize: isList ? '10px' : '12px',
+            marginTop: isList ? '3px' : '0',
+            fontWeight: isNumList ? 'bold' : 'normal'
+          }}>
+            {isList ? '▶' : line.match(/^\d+\./)?.[0]}
+          </span>
+        )}
+        <div style={{ flex: 1 }}>{renderedLine}</div>
+      </div>
+    );
+  });
+};
+
+/**
  * 개별 매치의 결과 요약과 아코디언(상세 펼치기) 형태의 팀원 스탯을 렌더링하는 컨테이너입니다.
  */
 export const MatchCard = ({
@@ -18,6 +104,7 @@ export const MatchCard = ({
   const [matchData, setMatchData] = useState<MatchData | null>(null);
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState<string | null>(null);
+  const [isEventMode, setIsEventMode] = useState(false); // 이벤트 모드 맵 여부
   const [isExpanded, setIsExpanded] = useState(false);
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -36,10 +123,18 @@ export const MatchCard = ({
     setAiError(null);
 
     try {
+      // killDetails, dbnoDetails는 match API에서 텔레메트리 기반으로 수집된 데이터
       const response = await fetch("/api/pubg/ai-analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ matchData, nickname }),
+        body: JSON.stringify({
+          matchData: {
+            ...matchData,
+            killDetails: matchData?.killDetails ?? [],
+            dbnoDetails: matchData?.dbnoDetails ?? [],
+          },
+          nickname,
+        }),
       });
 
       const data = await response.json();
@@ -70,10 +165,14 @@ export const MatchCard = ({
       const response = await fetch("/api/pubg/ai-analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          matchData, 
-          nickname, 
-          messages: updatedMessages 
+        body: JSON.stringify({
+          matchData: {
+            ...matchData,
+            killDetails: matchData?.killDetails ?? [],
+            dbnoDetails: matchData?.dbnoDetails ?? [],
+          },
+          nickname,
+          messages: updatedMessages,
         }),
       });
 
@@ -95,7 +194,11 @@ export const MatchCard = ({
     )
       .then((res) => res.json())
       .then((data) => {
-        if (data?.error) {
+        if (data?.isEventMode) {
+          // 이벤트 모드 맵(Desert_Main_BinarySpot 등)은 조용히 숨김 처리
+          setIsEventMode(true);
+          setMatchData(null);
+        } else if (data?.error) {
           setFetchError(data.error as string);
           setMatchData(null);
         } else {
@@ -130,6 +233,9 @@ export const MatchCard = ({
         매치 정보 불러오는 중...
       </div>
     );
+
+  // 이벤트 모드 맵(Desert_Main_BinarySpot 등)은 목록에서 완전히 제외
+  if (isEventMode) return null;
 
   if (!matchData) {
     if (fetchError) {
@@ -502,18 +608,18 @@ export const MatchCard = ({
                     key={idx} 
                     style={{ 
                       alignSelf: msg.role === "user" ? "flex-end" : "flex-start",
-                      maxWidth: "85%",
-                      padding: "10px 14px",
-                      borderRadius: msg.role === "user" ? "16px 16px 2px 16px" : "16px 16px 16px 2px",
-                      backgroundColor: msg.role === "user" ? "rgba(255,255,255,0.1)" : "rgba(52, 168, 83, 0.1)",
+                      maxWidth: msg.role === "user" ? "85%" : "100%",
+                      width: msg.role === "user" ? "auto" : "100%",
+                      padding: "12px 16px",
+                      borderRadius: msg.role === "user" ? "16px 16px 2px 16px" : "8px",
+                      backgroundColor: msg.role === "user" ? "rgba(255,255,255,0.1)" : "rgba(0, 0, 0, 0.2)",
                       border: `1px solid ${msg.role === "user" ? "rgba(255,255,255,0.1)" : "rgba(52, 168, 83, 0.2)"}`,
                       fontSize: "13px",
-                      lineHeight: "1.6",
                       color: "#eee",
-                      whiteSpace: "pre-wrap"
+                      whiteSpace: msg.role === "user" ? "pre-wrap" : "normal"
                     }}
                   >
-                    {msg.content}
+                    {msg.role === "assistant" ? renderMarkdown(msg.content) : msg.content}
                   </div>
                 ))}
                 {isChatting && (
