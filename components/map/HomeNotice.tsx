@@ -52,7 +52,7 @@ export default function HomeNotice() {
   if (isLoading || !latestNotice || !isVisible) return null;
 
   const handleNoticeClick = () => {
-    router.push(`/?tab=Board&postId=${latestNotice.id}`);
+    router.push(`/board/${latestNotice.id}`);
   };
 
   const handleDismiss = (e: React.MouseEvent) => {

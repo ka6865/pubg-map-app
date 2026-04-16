@@ -59,6 +59,7 @@ export default function TelemetryPlayer({
   const [showGroggy, setShowGroggy] = useState(true);
   const [showTeamDown, setShowTeamDown] = useState(true);
   const [showOnlyTeam, setShowOnlyTeam] = useState(true); // 아군 이벤트만 보기 추가 (Timeline 전용)
+  const [isMinimized, setIsMinimized] = useState(false); // 패널 숨기기 상태
 
   // 경과 시간 포맷팅 (mm:ss)
   const formatTime = (ms: number) => {
@@ -90,6 +91,44 @@ export default function TelemetryPlayer({
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
           </svg>
           텔레메트리 파싱 및 압축 중... (약 10초 소요)
+        </div>
+      </div>
+    );
+  }
+
+  if (isMinimized) {
+    return (
+      <div className="absolute bottom-4 sm:bottom-8 left-1/2 transform -translate-x-1/2 w-max bg-[#1a1a1a]/95 backdrop-blur shadow-2xl rounded-full border border-[#444] z-[5000] flex items-center justify-between text-white font-sans px-4 py-2 gap-6">
+        <div className="flex items-center gap-3">
+          <button 
+            onClick={() => setIsPlaying(!isPlaying)}
+            className="w-8 h-8 flex items-center justify-center bg-[#F2A900] rounded-full text-black hover:bg-yellow-400 active:scale-95 transition-all"
+          >
+            {isPlaying ? (
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+            ) : (
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" style={{ marginLeft: "2px" }}><path d="M8 5v14l11-7z"/></svg>
+            )}
+          </button>
+          <div className="font-mono text-sm tracking-widest font-bold">
+            <span className="text-[#F2A900]">{formatTime(currentTimeMs)}</span>
+            <span className="text-[#666] mx-1">/</span>
+            <span className="text-[#aaa]">{formatTime(maxTimeMs)}</span>
+          </div>
+        </div>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={() => setIsMinimized(false)}
+            className="text-[11px] bg-[#333] hover:bg-[#444] px-3 py-1.5 rounded-full font-bold text-gray-300 transition-colors"
+          >
+            🔼 펼치기
+          </button>
+          <button 
+            onClick={onClose}
+            className="text-[11px] bg-[#ef4444]/20 text-red-500 hover:bg-[#ef4444] hover:text-white px-3 py-1.5 rounded-full font-bold transition-colors"
+          >
+            닫기
+          </button>
         </div>
       </div>
     );
@@ -334,10 +373,20 @@ export default function TelemetryPlayer({
           </select>
           
           <button 
-            onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded bg-[#333] hover:bg-red-500/20 hover:text-red-400 transition-colors"
+            onClick={() => setIsMinimized(true)}
+            title="타임라인 리모컨 숨기기"
+            className="flex items-center gap-1.5 px-2.5 h-8 rounded bg-[#333] hover:bg-[#444] transition-colors text-xs font-bold text-gray-300"
           >
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/></svg>
+            🔽 숨기기
+          </button>
+
+          <button 
+            onClick={onClose}
+            title="재생 종료"
+            className="flex items-center gap-1 px-2.5 h-8 rounded bg-red-500/20 text-red-400 hover:bg-red-500 hover:text-white transition-colors text-[11px] font-bold"
+          >
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12 19 6.41z"/></svg>
+            닫기
           </button>
         </div>
       </div>

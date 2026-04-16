@@ -1,16 +1,16 @@
-import HomeClient from '../../HomeClient';
 import { Metadata } from 'next';
 import { getTabSeo } from '@/lib/seo-config';
+import BoardWriteClient from '@/components/board/BoardWriteClient';
 
 export async function generateMetadata(): Promise<Metadata> {
-  const baseMeta = getTabSeo("Board");
+  const seo = await getTabSeo("Board");
   return {
-    ...baseMeta,
-    title: `글쓰기 | ${baseMeta.title}`,
-    robots: { index: false } // 글쓰기 페이지는 색인 제외
+    ...seo,
+    title: "글쓰기 | BGMS",
+    robots: { index: false } // 글쓰기 페이지는 수집되지 않도록 방지
   };
 }
 
-export default async function BoardWritePage() {
-  return <HomeClient jsonLd={[]} initialMapId="Board" initialIsWriting={true} />;
+export default function BoardWritePage() {
+  return <BoardWriteClient />;
 }

@@ -1,0 +1,286 @@
+'use client';
+
+import React, { useState, useEffect } from "react";
+import Link from "next/link";
+import { usePathname, useRouter } from "next/navigation";
+import { Bell, User, Hammer, Database, LogIn, Menu } from 'lucide-react';
+import { useAuth } from "../AuthProvider";
+import { supabase } from "@/lib/supabase";
+import NotificationDropdown from "../map/NotificationDropdown";
+import type { NotificationItem, UserProfile } from "@/types/map";
+
+const MAP_LIST = [
+  { id: "Erangel", label: "에란겔" },
+  { id: "Miramar", label: "미라마" },
+  { id: "Taego", label: "태이고" },
+  { id: "Rondo", label: "론도" },
+  { id: "Vikendi", label: "비켄디" },
+  { id: "Deston", label: "데스턴" },
+];
+
+export default function GlobalHeader() {
+  const pathname = usePathname();
+  const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
+  
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [showNotiDropdown, setShowNotiDropdown] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // 반응형 감지
+  useEffect(() => {
+    const checkMobile = () => setIsMobile(window.innerWidth < 768);
+    checkMobile();
+    window.addEventListener("resize", checkMobile);
+    return () => window.removeEventListener("resize", checkMobile);
+  }, []);
+
+  // 유저 정보 & 알림 로드
+  useEffect(() => {
+    if (!user) {
+      setUserProfile(null);
+      setNotifications([]);
+      return;
+    }
+
+    const fetchUserData = async () => {
+      // 1. 프로필
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .single();
+      
+      if (profile) setUserProfile(profile as UserProfile);
+
+      // 2. 알림
+      const { data: notis } = await supabase
+        .from("notifications")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("created_at", { ascending: false });
+        
+      if (notis) setNotifications(notis as NotificationItem[]);
+    };
+
+    fetchUserData();
+  }, [user]);
+
+  const activeMapId = pathname.startsWith("/maps/") 
+    ? pathname.replace("/maps/", "").charAt(0).toUpperCase() + pathname.replace("/maps/", "").slice(1)
+    : "";
+
+  const isBoardActive = pathname.startsWith("/board");
+  const isStatsActive = pathname.startsWith("/stats");
+  const isWeaponsActive = pathname.startsWith("/weapons");
+  const isBackpackActive = pathname.startsWith("/backpack");
+
+  const displayName = userProfile?.nickname || "익명";
+  const isAdmin = userProfile?.role === "admin";
+
+  const markAllAsRead = async () => {
+    if (!user) return;
+    await supabase
+      .from("notifications")
+      .update({ is_read: true })
+      .eq("user_id", user.id)
+      .eq("is_read", false);
+    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
+  };
+
+  const handleNotiClick = async (noti: NotificationItem) => {
+    if (!noti.is_read) {
+      await supabase
+        .from("notifications")
+        .update({ is_read: true })
+        .eq("id", noti.id);
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === noti.id ? { ...n, is_read: true } : n))
+      );
+    }
+    setShowNotiDropdown(false);
+    router.push(`/board/${noti.post_id}`);
+  };
+
+  const formatNotiTime = (dateString: string) => {
+    const diff = (new Date().getTime() - new Date(dateString).getTime()) / 1000;
+    if (diff < 60) return "방금 전";
+    if (diff < 3600) return `${Math.floor(diff / 60)}분 전`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}시간 전`;
+    if (diff < 604800) return `${Math.floor(diff / 86400)}일 전`;
+    return new Date(dateString).toLocaleDateString();
+  };
+
+  // 기존 홈/맵 루트에서는 지도가 뒷배경에 깔리므로 MapHeader를 자체적으로 사용합니다.
+  // 따라서 / (Home) 이거나 /maps/... 일 때는 GlobalHeader를 투명화하거나 렌더링하지 않을 수 있습니다.
+  // 유저 요청에 따라 우선 전역에서 띄웁니다.
+  // 단, SPA Map.tsx가 살아있는 한 충돌할 수 있습니다. 
+  // 나중에 분리 전까지는 보이지 않게 처리해 둡니다.
+
+  return (
+    <header className="flex items-center justify-between min-h-[56px] h-auto px-4 bg-[#F2A900] border-b-2 border-[#cc8b00] z-[6000] safe-top shadow-md select-none shrink-0 w-full">
+      <div className="flex items-center gap-3 overflow-hidden flex-1">
+        
+        {/* 모바일 햄버거 임시(TODO) */}
+        {!isMobile && (
+          <button className="p-2 -ml-2 text-black/80 hover:text-black transition-colors md:hidden">
+            <Menu size={22} strokeWidth={2.5} />
+          </button>
+        )}
+
+        <Link href="/" className="flex items-center cursor-pointer group flex-shrink-0">
+          <span className="text-[20px] md:text-[22px] font-black italic tracking-tighter text-black uppercase group-active:scale-95 transition-transform flex items-center">
+            BG<span className="text-white">MS</span>
+          </span>
+        </Link>
+        
+        {/* 데스크톱 네비게이션 */}
+        {!isMobile && (
+          <nav className="flex items-center gap-0.5 ml-4 overflow-x-auto no-scrollbar">
+            {MAP_LIST.map((m) => {
+              const isActive = activeMapId.toLowerCase() === m.id.toLowerCase() || (pathname === '/' && m.id === 'Erangel');
+              return (
+                <Link key={m.id} href={`/?tab=${m.id}`} className="shrink-0">
+                  <button
+                    className={`relative h-8 px-3 rounded-lg font-extrabold text-[11px] uppercase whitespace-nowrap transition-all tracking-wide ${
+                      isActive
+                        ? "bg-black/90 text-white shadow-sm"
+                        : "text-black/60 hover:bg-black/10 hover:text-black/80"
+                    }`}
+                  >
+                    {m.label}
+                    {isActive && (
+                      <span className="absolute bottom-[3px] left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-[#F2A900]" />
+                    )}
+                  </button>
+                </Link>
+              );
+            })}
+            <div className="w-[1.5px] h-3.5 bg-black/15 mx-2 rounded-full shrink-0" />
+            
+            <Link href="/board" className="shrink-0">
+              <button
+                className={`relative h-8 px-3 rounded-lg font-extrabold text-[11px] uppercase whitespace-nowrap transition-all tracking-wide ${
+                  isBoardActive
+                    ? "bg-black/90 text-[#F2A900] shadow-sm"
+                    : "text-black/60 hover:bg-black/10 hover:text-black/80"
+                }`}
+              >
+                커뮤니티
+                {isBoardActive && (
+                  <span className="absolute bottom-[3px] left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-[#F2A900]" />
+                )}
+              </button>
+            </Link>
+            
+            <Link href="/stats" className="shrink-0">
+              <button
+                className={`relative h-8 px-3 rounded-lg font-extrabold text-[11px] uppercase whitespace-nowrap transition-all tracking-wide ${
+                  isStatsActive
+                    ? "bg-black/90 text-[#F2A900] shadow-sm"
+                    : "text-black/60 hover:bg-black/10 hover:text-black/80"
+                }`}
+              >
+                전적 검색
+                {isStatsActive && (
+                  <span className="absolute bottom-[3px] left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-[#F2A900]" />
+                )}
+              </button>
+            </Link>
+            
+            <Link href="/weapons" className="shrink-0">
+              <button className={`relative h-8 px-3 rounded-lg font-extrabold text-[11px] uppercase whitespace-nowrap transition-all tracking-wide ${
+                isWeaponsActive ? "bg-black/90 text-[#F2A900] shadow-sm" : "text-black/60 hover:bg-black/10 hover:text-black/80"
+              }`}>
+                무기 도감
+                {isWeaponsActive && (
+                  <span className="absolute bottom-[3px] left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-[#F2A900]" />
+                )}
+              </button>
+            </Link>
+
+            <Link href="/backpack" className="shrink-0">
+              <button className={`relative h-8 px-3 rounded-lg font-extrabold text-[11px] uppercase whitespace-nowrap transition-all tracking-wide ${
+                isBackpackActive ? "bg-black/90 text-[#F2A900] shadow-sm" : "text-black/60 hover:bg-black/10 hover:text-black/80"
+              }`}>
+                가방 시뮬
+                {isBackpackActive && (
+                  <span className="absolute bottom-[3px] left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-[#F2A900]" />
+                )}
+              </button>
+            </Link>
+          </nav>
+        )}
+      </div>
+
+      {/* 우측 사용자 액션 */}
+      <div className="flex items-center gap-4 flex-shrink-0">
+        {authLoading ? (
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-black/5 rounded-xl border border-black/5 animate-pulse">
+            <div className="w-4 h-4 rounded-full bg-black/10" />
+            <div className="w-12 h-3 bg-black/10 rounded" />
+          </div>
+        ) : user ? (
+          <>
+            {isAdmin && !isMobile && (
+              <div className="flex gap-2 mr-2">
+                <Link href="/map-editor">
+                  <button className="flex items-center gap-1.5 px-3 py-1.5 bg-black text-[#F2A900] border border-black/10 rounded-lg font-black text-[10px] uppercase">
+                    <Hammer size={12} />
+                    <span>맵 에디터</span>
+                  </button>
+                </Link>
+                <Link href="/admin/game-data">
+                  <button className="flex items-center gap-1.5 px-3 py-1.5 bg-[#34A853] text-white rounded-lg font-black text-[10px] uppercase shadow-sm">
+                    <Database size={12} />
+                    <span>데이터 관리</span>
+                  </button>
+                </Link>
+              </div>
+            )}
+
+            <div className="relative">
+              <button
+                onClick={() => setShowNotiDropdown(!showNotiDropdown)}
+                className="p-2 text-black/80 hover:text-black active:scale-90 transition-transform relative"
+              >
+                <Bell size={22} strokeWidth={2.5} />
+                {notifications.some((n) => !n.is_read) && (
+                  <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 bg-red-600 border-2 border-[#F2A900] rounded-full" />
+                )}
+              </button>
+
+              <NotificationDropdown
+                notifications={notifications}
+                isOpen={showNotiDropdown}
+                onClose={() => setShowNotiDropdown(false)}
+                onMarkAllAsRead={markAllAsRead}
+                onNotificationClick={handleNotiClick}
+                formatNotiTime={formatNotiTime}
+              />
+            </div>
+
+            <Link href="/board?mypage=1" className="flex items-center gap-2 group active:scale-95 transition-transform">
+              <div className="w-8 h-8 rounded-xl bg-black/10 flex items-center justify-center border border-black/5 group-active:bg-black/20">
+                <User size={18} strokeWidth={2.5} className="text-black/80" />
+              </div>
+              {!isMobile && (
+                <span className="font-black text-black text-sm tracking-tight">
+                  {displayName}
+                </span>
+              )}
+            </Link>
+          </>
+        ) : (
+          <Link href="/login">
+            <button className="flex items-center gap-2 px-4 py-2 bg-white text-black font-black text-xs rounded-xl shadow-sm border border-black/5 active:scale-95 transition-transform">
+              <LogIn size={14} strokeWidth={3} />
+              <span>로그인</span>
+            </button>
+          </Link>
+        )}
+      </div>
+    </header>
+  );
+}

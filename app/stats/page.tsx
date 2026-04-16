@@ -1,27 +1,21 @@
-import HomeClient from '../HomeClient';
 import { Metadata } from 'next';
-import { getTabSeo, getBreadcrumbJsonLd } from '@/lib/seo-config';
-import { JsonLdProps } from '@/types/seo';
-
-const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://bgms.kr";
+import { getTabSeo } from '@/lib/seo-config';
+import StatSearch from '@/components/StatSearch';
 
 export async function generateMetadata(): Promise<Metadata> {
-  return getTabSeo("Stats");
+  const seo = await getTabSeo("Stats");
+  return {
+    ...seo,
+    title: "전적 검색 | BGMS",
+  };
 }
 
-export default async function StatsPage() {
-  const jsonLd: JsonLdProps[] = [
-    {
-      "@context": "https://schema.org",
-      "@type": "WebSite",
-      "name": "BGMS",
-      "url": baseUrl,
-    },
-    getBreadcrumbJsonLd([
-      { name: "홈", item: "/" },
-      { name: "전적 검색", item: "/stats" }
-    ]) as JsonLdProps
-  ];
-
-  return <HomeClient jsonLd={jsonLd} initialMapId="Stats" />;
+export default function StatsPage() {
+  return (
+    <div className="w-full h-full overflow-y-auto bg-[#0d0d0d] flex justify-center">
+      <div className="w-full max-w-[1200px]">
+        <StatSearch />
+      </div>
+    </div>
+  );
 }

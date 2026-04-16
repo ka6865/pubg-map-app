@@ -4,7 +4,7 @@ import L from "leaflet";
 import Sidebar from "../Sidebar";
 import MobileBottomSheet from "./MobileBottomSheet";
 import MapView from "./MapView";
-import { X, Hammer, Map as MapIcon, Crosshair, Plane, AlertCircle, SlidersHorizontal } from 'lucide-react';
+import { X, Hammer, Map as MapIcon, Crosshair, Plane, AlertCircle, SlidersHorizontal, Menu } from 'lucide-react';
 import type { MapTab, MapMarker, AuthUser, PendingVehicle } from "../../types/map";
 import { useTelemetry } from "../../hooks/useTelemetry";
 import TelemetryPlayer from "./TelemetryPlayer";
@@ -211,10 +211,19 @@ const MapShell = memo(
         <div className="relative flex-1 h-full overflow-hidden">
           <HomeNotice />
 
-          {/* 🌟 플로팅 지도 도구/필터 버튼 - 모바일 대칭 배치 */}
           <div className={`absolute z-[1000] flex w-full pointer-events-none transition-all ${isMobile ? 'bottom-[100px] px-6 safe-bottom' : 'top-4 right-4 justify-end'}`}>
-            <div className={`flex w-full items-end ${isMobile ? 'justify-between' : 'flex-col gap-3'}`}>
+            <div className={`flex w-full items-start ${isMobile ? 'justify-between items-end' : 'justify-end'}`}>
               
+              {/* 데스크탑 사이드바 열기 버튼 (좌측 상단 - MapHeader 제거 후 대비) */}
+              {!isMobile && !isSidebarOpen && (
+                <button
+                  onClick={() => onSetSidebarOpen(true)}
+                  className="pointer-events-auto absolute left-4 top-0 flex items-center justify-center w-[44px] h-[44px] bg-black/80 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl active:scale-90 transition-all text-white hover:text-[#F2A900] z-[5000]"
+                >
+                  <Menu size={22} strokeWidth={2.5} />
+                </button>
+              )}
+
               {/* 모바일 전용 필터 버튼 (좌측) */}
               {isMobile && (
                 <button
@@ -226,7 +235,7 @@ const MapShell = memo(
               )}
 
               {/* 지도 도구 버튼 (우측) */}
-              <div className="flex flex-col gap-3 items-end">
+              <div className="flex flex-col gap-3 items-end pointer-events-auto">
                 <button
                   onClick={() => setIsMenuOpen(!isMenuOpen)}
                   className={`pointer-events-auto flex items-center gap-2 px-6 shadow-[0_12px_40px_rgba(0,0,0,0.4)] active:scale-90 transition-all duration-300 border border-white/5 ${isMenuOpen ? "bg-red-600 text-white h-[52px] rounded-2xl text-sm" : "bg-black text-[#F2A900] h-[52px] rounded-2xl text-base"}`}

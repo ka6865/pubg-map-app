@@ -3,6 +3,7 @@ import { Outfit } from "next/font/google"; // DESIGN.md 지정 폰트
 import "./globals.css"; // 전역 스타일시트
 import { AuthProvider } from "@/components/AuthProvider";
 import { Toaster } from "sonner";
+import GlobalHeader from "@/components/common/GlobalHeader";
 import BottomNav from "@/components/common/BottomNav";
 import Footer from "@/components/common/Footer";
 import { Suspense } from "react";
@@ -81,7 +82,8 @@ export default function RootLayout({
       <body className="antialiased bg-[#0d0d0d] text-white" style={{ fontFamily: 'var(--font-outfit), Pretendard, sans-serif' }}>
         <AuthProvider>
           <div className="flex flex-col min-h-dvh">
-            <main className="flex-grow pb-safe-nav md:pb-0">
+            <GlobalHeader />
+            <main className="flex-grow pb-safe-nav md:pb-0 relative overflow-hidden flex flex-col">
               {children}
             </main>
             <Footer />

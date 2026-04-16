@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../lib/supabase";
-import type { CurrentUser } from "../types/map";
 import { toast } from "sonner";
 import MiniStatWidget from "./stat/MiniStatWidget";
 import { 
@@ -17,11 +16,17 @@ const USER_CONFIG = {
   MAX_NICKNAME_LENGTH: 15,
 } as const;
 
+import type { UserProfile } from "../types/map";
+import type { User } from '@supabase/supabase-js';
+
 interface MyPageProps {
-  currentUser: CurrentUser | null;
-  userProfile: any;
-  fetchUserProfile: (user: any) => void;
-  setOptimisticNickname: (name: string) => void;
+  initialCurrentUser: User | null;
+  initialUserProfile: UserProfile | null;
+  initialActivityStats: {
+    postCount: number;
+    commentCount: number;
+    likeCount: number;
+  };
 }
 
 // 💎 고급 섹션 카드 컴포넌트
@@ -89,26 +94,20 @@ function InfoBadge({ label, value, color = '#F2A900' }: { label: string; value: 
   );
 }
 
-export default function MyPage({
-  currentUser,
-  userProfile,
-  fetchUserProfile,
-  setOptimisticNickname,
-}: MyPageProps) {
+export default function MyPage({ initialCurrentUser, initialUserProfile, initialActivityStats }: MyPageProps) {
   const router = useRouter();
-  const [editNickname, setEditNickname] = useState(userProfile?.nickname || "");
-  const [editPubgNickname, setEditPubgNickname] = useState(userProfile?.pubg_nickname || "");
+  const currentUser = initialCurrentUser;
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(initialUserProfile);
+  
+  const [editNickname, setEditNickname] = useState(initialUserProfile?.nickname || "");
+  const [editPubgNickname, setEditPubgNickname] = useState(initialUserProfile?.pubg_nickname || "");
   const [editPubgPlatform, setEditPubgPlatform] = useState<"steam" | "kakao">(
-    userProfile?.pubg_platform || "steam"
+    initialUserProfile?.pubg_platform || "steam"
   );
   const [isMobile, setIsMobile] = useState(false);
   
-  // 📊 실시간 활동 데이터 상태
-  const [activityStats, setActivityStats] = useState({
-    postCount: 0,
-    commentCount: 0,
-    likeCount: 0
-  });
+  // 📊 실시간 활동 데이터 상태 (초기값은 서버에서 제공)
+  const activityStats = initialActivityStats;
 
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 1024);
@@ -116,60 +115,6 @@ export default function MyPage({
     window.addEventListener("resize", checkMobile);
     return () => window.removeEventListener("resize", checkMobile);
   }, []);
-
-  useEffect(() => {
-    if (userProfile?.nickname) setEditNickname(userProfile.nickname);
-    if (userProfile?.pubg_nickname) setEditPubgNickname(userProfile.pubg_nickname);
-    if (userProfile?.pubg_platform) setEditPubgPlatform(userProfile.pubg_platform);
-  }, [userProfile]);
-
-  // 🔄 실시간 활동 데이터 페칭
-  useEffect(() => {
-    const fetchStats = async () => {
-      if (!currentUser) return;
-      
-      try {
-        // 1. 게시글 수
-        const { count: posts } = await supabase
-          .from('posts')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', currentUser.id);
-          
-        // 2. 댓글 수
-        const { count: comments } = await supabase
-          .from('comments')
-          .select('*', { count: 'exact', head: true })
-          .eq('user_id', currentUser.id);
-
-        // 3. 받은 좋아요 수 (본인 게시물의 좋아요 총합)
-        // 먼저 본인의 게시물 ID들을 가져옴
-        const { data: myPosts } = await supabase
-          .from('posts')
-          .select('id')
-          .eq('user_id', currentUser.id);
-          
-        let totalLikes = 0;
-        if (myPosts && myPosts.length > 0) {
-          const postIds = myPosts.map(p => p.id);
-          const { count: likes } = await supabase
-            .from('post_likes')
-            .select('*', { count: 'exact', head: true })
-            .in('post_id', postIds);
-          totalLikes = likes || 0;
-        }
-
-        setActivityStats({
-          postCount: posts || 0,
-          commentCount: comments || 0,
-          likeCount: totalLikes
-        });
-      } catch (err) {
-        console.error("Failed to fetch activity stats:", err);
-      }
-    };
-
-    fetchStats();
-  }, [currentUser]);
 
   const handleUpdateProfile = async () => {
     if (!currentUser) return;
@@ -193,8 +138,12 @@ export default function MyPage({
       toast.error("업데이트 실패: " + error.message);
     } else {
       toast.success("프로필이 성공적으로 저장되었습니다.");
-      fetchUserProfile(currentUser);
-      setOptimisticNickname(newNickname);
+      
+      // 재조회 로직 교체
+      const { data } = await supabase.from("profiles").select("*").eq("id", currentUser.id).single();
+      if (data) {
+        setUserProfile(data as UserProfile);
+      }
     }
   };
 

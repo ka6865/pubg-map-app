@@ -232,7 +232,7 @@ export default function GameDataEditor() {
                 if (result.success) {
                   toast.success("✅ 패치노트가 성공적으로 동기화되었습니다!");
                   if (urlInput) urlInput.value = ""; // 성공 시 비우기
-                  router.push("/?tab=Board");
+                  router.push("/board");
                 } else if (result.reason === "ai_failed") {
                   toast.error("⚠️ AI 요약 실패! 디스코드를 확인하고 수동으로 작성해주세요.");
                 } else {

@@ -512,9 +512,9 @@ export const MatchCard = ({
 
           <div style={{ marginBottom: "20px", display: "flex", justifyContent: "center", gap: "10px", flexWrap: "wrap" }}>
             <a
-              href={`/?tab=${encodeURIComponent(
-                { 에란겔: "Erangel", 미라마: "Miramar", 태이고: "Taego", 론도: "Rondo", 비켄디: "Vikendi", 데스턴: "Deston" }[mapName] || "Erangel"
-              )}&playback=${matchId}&nickname=${encodeURIComponent(nickname)}`}
+              href={`/maps/${(
+                { 에란겔: "erangel", 미라마: "miramar", 태이고: "taego", 론도: "rondo", 비켄디: "vikendi", 데스턴: "deston" }[mapName] || mapName || "erangel"
+              ).toLowerCase()}?playback=${matchId}&nickname=${encodeURIComponent(nickname)}`}
               style={{
                 display: "inline-flex",
                 alignItems: "center",

@@ -1,9 +1,8 @@
-import HomeClient from '@/app/HomeClient';
 import { Metadata } from 'next';
+import { supabase } from '@/lib/supabase';
 import { getPostMetadata, getBreadcrumbJsonLd, getPostArticleJsonLd } from '@/lib/seo-config';
 import { JsonLdProps } from '@/types/seo';
-
-const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://bgms.kr";
+import BoardDetailClient from '@/components/board/BoardDetailClient';
 
 export async function generateMetadata({ params }: { params: Promise<{ postId: string }> }): Promise<Metadata> {
   const { postId } = await params;
@@ -35,7 +34,32 @@ export default async function PostDetailPage({ params }: { params: Promise<{ pos
     jsonLd.push(articleJsonLd as JsonLdProps);
   }
 
-  // postId가 주입되면 기존 Board 컴포넌트 내부에서 이를 인식하도록 Map에 전달
-  // (HomeClient -> Map -> Board 순서로 전달됨)
-  return <HomeClient jsonLd={jsonLd} initialMapId="Board" postId={postId} />;
+  const { data: postResult } = await supabase
+    .from("posts")
+    .select("*")
+    .eq("id", postId)
+    .single();
+
+  const { data: commentResult } = await supabase
+    .from("comments")
+    .select("*")
+    .eq("post_id", postId)
+    .order("created_at", { ascending: true });
+
+  if (!postResult) {
+    return (
+      <div className="w-full h-full overflow-y-auto bg-[#121212] flex flex-col pt-6 items-center">
+         <h1 className="text-2xl font-black text-red-500">게시글을 찾을 수 없습니다.</h1>
+      </div>
+    );
+  }
+
+  return (
+    <div className="w-full h-full overflow-y-auto bg-[#121212] flex flex-col pt-6">
+      <BoardDetailClient 
+        initialPost={postResult} 
+        initialComments={commentResult || []}
+      />
+    </div>
+  );
 }

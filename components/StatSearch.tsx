@@ -10,17 +10,12 @@ const STORAGE_KEY_RECENT = "pubg_recent_searches_v2";
 const STORAGE_KEY_FAVORITES = "pubg_favorites_v2";
 
 import type { UserProfile } from "../types/map";
-
-interface StatSearchProps {
-  userProfile?: UserProfile | null;
-}
-
-/**
- * 전적 검색 메인 컴포넌트
- * 플레이어 닉네임, 플랫폼을 기반으로 PUBG API를 호출하여 
- * 요약 데이터(StatSummaryCard)와 매치 히스토리(MatchCard)를 화면에 렌더링합니다.
- */
-export default function StatSearch({ userProfile }: StatSearchProps = {}) {
+import { useAuth } from "./AuthProvider";
+import { supabase } from "../lib/supabase";
+/** 전적 검색 메인 컴포넌트 */
+export default function StatSearch() {
+  const { user } = useAuth();
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const mounted = React.useSyncExternalStore(
     () => () => {},
     () => true,
@@ -60,6 +55,16 @@ export default function StatSearch({ userProfile }: StatSearchProps = {}) {
     const savedFavorites = localStorage.getItem(STORAGE_KEY_FAVORITES);
     if (savedFavorites) setFavorites(JSON.parse(savedFavorites));
   }, []);
+
+  useEffect(() => {
+    if (user) {
+      supabase.from("profiles").select("*").eq("id", user.id).single().then(({ data }) => {
+        if (data) setUserProfile(data as UserProfile);
+      });
+    } else {
+      setUserProfile(null);
+    }
+  }, [user]);
 
   // 유저 프로필에 연동된 배그 닉네임이 있다면 초기 마운트 시 자동 검색
   const handleSearch = useCallback(async (

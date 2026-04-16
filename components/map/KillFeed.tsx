@@ -121,7 +121,7 @@ const DISPLAY_WINDOW_MS = (speed: number) => {
 
 export default function KillFeed({ events, currentTimeMs, teamNames, playbackSpeed }: KillFeedProps) {
   const [isLogOpen, setIsLogOpen] = useState(false);
-  const [showOnlyTeam, setShowOnlyTeam] = useState(false);
+  const [showOnlyTeam, setShowOnlyTeam] = useState(true);
   const windowMs = DISPLAY_WINDOW_MS(playbackSpeed);
 
   const recentEvents = useMemo(() => {
@@ -152,7 +152,7 @@ export default function KillFeed({ events, currentTimeMs, teamNames, playbackSpe
   const teamDowned = allEvents.filter((e) => (e as any).isTeamVictim && e.type === "groggy").length;
 
   return (
-    <div className="absolute top-16 right-3 z-[4500] flex flex-col gap-1.5 pointer-events-auto select-none" style={{ maxWidth: "280px" }}>
+    <div className="absolute top-[20px] md:top-[80px] right-3 md:right-4 z-[4500] flex flex-col gap-1.5 pointer-events-auto select-none" style={{ maxWidth: "280px" }}>
       
       {/* 보기 필터 토글 */}
       <div className="flex justify-end gap-1 mb-0.5">

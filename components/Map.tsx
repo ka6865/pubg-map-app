@@ -3,31 +3,13 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState, useEffect, useMemo } from "react";
 import L from "leaflet";
-import dynamic from "next/dynamic";
 
 import { supabase } from "../lib/supabase";
 import { CATEGORY_INFO } from "../lib/map_config";
 import { useMapData } from "../hooks/useMapData";
 import { useAuth } from "./AuthProvider";
-import MapHeader from "./map/MapHeader";
 import MapShell from "./map/MapShell";
-import StatSearch from "./StatSearch";
-import type { MapFilters, MapTab, NotificationItem } from "../types/map";
-
-const Board = dynamic(() => import("./Board"), {
-  loading: () => (
-    <div style={{ color: "white", padding: "20px" }}>게시판 불러오는 중...</div>
-  ),
-});
-const MyPage = dynamic(() => import("./MyPage"), {
-  loading: () => (
-    <div style={{ color: "white", padding: "20px" }}>
-      마이페이지 불러오는 중...
-    </div>
-  ),
-});
-
-
+import type { MapFilters, MapTab } from "../types/map";
 
 const createPinIcon = (colorCode: string, pathData: string, scale: number = 1) => {
   const width = 28 * scale;
@@ -162,9 +144,8 @@ export default function Map({ initialMapId, postId, initialIsWriting }: MapProps
   };
 
   const handleTabClick = (tabId: string) => {
-    // router.push로 URL이 바뀌면 useEffect가 isMyPage를 자동 동기화
     if (tabId === "Board") {
-      router.push('/board'); // 게시판 이동 시 mypage 쿼리 없이 이동
+      router.push('/board');
     } else if (tabId === "Stats") {
       router.push('/stats');
     } else {
@@ -223,36 +204,13 @@ export default function Map({ initialMapId, postId, initialIsWriting }: MapProps
         display: "flex",
         flexDirection: "column",
         width: "100%",
-        height: "100dvh",
+        height: "100%", /* 100dvh에서 100%로 변경 (부모인 main이 flex-grow를 가지므로) */
         fontFamily: "'Pretendard', sans-serif",
         overflow: "hidden",
         backgroundColor: "#121212",
         color: "white",
       }}
     >
-      <MapHeader
-        activeMapId={activeMapId}
-        isMobile={isMobile}
-        isAuthLoading={isAuthLoading}
-        isAdmin={isAdmin}
-        currentUser={currentUser}
-        notifications={notifications}
-        showNotiDropdown={showNotiDropdown}
-        displayName={displayName}
-        mapList={MAP_LIST}
-        onTabClick={handleTabClick}
-        onToggleSidebar={() => setSidebarOpen(!isSidebarOpen)}
-        onToggleNoti={() => setShowNotiDropdown(!showNotiDropdown)}
-        onCloseNoti={() => setShowNotiDropdown(false)}
-        onMarkAllAsRead={markAllAsRead}
-        onNotiClick={handleNotiClick}
-        onMyPageClick={() => {
-          // /board 페이지로 이동하되 mypage=1 쿼리를 붙여 상태 유지
-          router.push("/board?mypage=1");
-        }}
-        formatNotiTime={formatNotiTime}
-      />
-
       <main
         style={{
           flex: 1,
@@ -261,80 +219,25 @@ export default function Map({ initialMapId, postId, initialIsWriting }: MapProps
           overflow: "hidden",
         }}
       >
-        {activeMapId === "Stats" ? (
-          <div
-            style={{
-              width: "100%",
-              height: "100%",
-              overflowY: "auto",
-              backgroundColor: "#0d0d0d",
-              display: "flex",
-              justifyContent: "center",
-            }}
-          >
-            <div style={{ width: "100%", maxWidth: "1200px" }}>
-              <StatSearch userProfile={userProfile} />
-            </div>
-          </div>
-        ) : activeMapId === "Board" ? (
-          <div
-            style={{
-              width: "100%",
-              height: "100%",
-              overflowY: "auto",
-              backgroundColor: "#121212",
-              display: "flex",
-              justifyContent: "center",
-            }}
-          >
-            <div
-              style={{
-                maxWidth: isMyPage ? "1300px" : "900px",
-                margin: "0 auto",
-                padding: isMobile ? "16px" : "20px",
-                width: "100%",
-                boxSizing: "border-box",
-              }}
-            >
-              {isMyPage ? (
-                <MyPage
-                  currentUser={currentUser}
-                  userProfile={userProfile}
-                  fetchUserProfile={fetchUserProfile}
-                  setOptimisticNickname={setOptimisticNickname}
-                />
-              ) : (
-                <Board
-                  currentUser={currentUser}
-                  displayName={displayName}
-                  isAdmin={isAdmin}
-                  postId={currentPostId || undefined}
-                  initialIsWriting={initialIsWriting}
-                />
-              )}
-            </div>
-          </div>
-        ) : (
-          <MapShell
-            isMobile={isMobile}
-            isSidebarOpen={isSidebarOpen}
-            activeMapId={activeMapId}
-            currentMap={currentMap}
-            filters={filters}
-            visibleVehicles={visibleVehicles}
-            bounds={bounds}
-            icons={icons}
-            imageHeight={8192}
-            imageWidth={8192}
-            onSetSidebarOpen={setSidebarOpen}
-            onToggleFilter={toggleFilter}
-            onGetCount={getCount}
-            onEnableDefaultVehicleFilters={enableDefaultVehicleFilters}
-            currentUser={currentUser}
-            isAdmin={isAdmin}
-            pendingVehicles={pendingVehicles} // 🌟 자식에게 제보 데이터 넘김
-          />
-        )}
+        <MapShell
+          isMobile={isMobile}
+          isSidebarOpen={isSidebarOpen}
+          activeMapId={activeMapId}
+          currentMap={currentMap}
+          filters={filters}
+          visibleVehicles={visibleVehicles}
+          bounds={bounds}
+          icons={icons}
+          imageHeight={8192}
+          imageWidth={8192}
+          onSetSidebarOpen={setSidebarOpen}
+          onToggleFilter={toggleFilter}
+          onGetCount={getCount}
+          onEnableDefaultVehicleFilters={enableDefaultVehicleFilters}
+          currentUser={currentUser}
+          isAdmin={isAdmin}
+          pendingVehicles={pendingVehicles}
+        />
       </main>
     </div>
   );
