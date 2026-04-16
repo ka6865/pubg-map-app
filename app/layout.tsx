@@ -26,8 +26,8 @@ export const metadata: Metadata = {
     default: "BGMS | 배그 고젠 및 고정 차량 위치 - 배틀그라운드 통합 지도",
     template: "%s | BGMS 배그 고젠"
   },
-  description: "에란겔, 미라마, 태이고 등 배틀그라운드 모든 맵의 고정 젠(고젠) 차량 위치와 실시간 전적, 아이템 무게 계산기를 제공하는 전문 전술 플랫폼 BGMS입니다.",
-  keywords: ["배틀그라운드", "배그 지도", "BGMS", "배그 전적", "배그 고젠", "배그 고정 젠", "에란겔 고젠", "미라마 고젠", "태이고 고젠", "차스폰 위치", "PUBG Map", "배그 차량 위치"],
+  description: "에란겔(Erangel), 테이고(Taego), 론도(Rondo) 등 배틀그라운드 모든 맵의 고정 젠(고젠) 차량 위치와 비밀의 열쇠 소지품, 실시간 전적, 아이템 무게 계산기를 제공하는 전문 전술 플랫폼 BGMS입니다.",
+  keywords: ["배틀그라운드", "배그 지도", "BGMS", "배그 전적", "배그 고젠", "배그 고정 젠", "에란겔 고젠", "미라마 고젠", "태이고 고젠", "테이고 고젠", "론도 고젠", "차스폰 위치", "PUBG Map", "배그 차량 위치", "비밀의 열쇠", "에란겔 비밀의 열쇠", "테이고 비밀의 열쇠", "론도 비밀의 열쇠", "배그 비밀방 위치"],
   authors: [{ name: "BGMS Team" }],
   alternates: {
     languages: {
@@ -40,7 +40,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: "BGMS - 배틀그라운드 모든 맵 차량 위치 및 전술 정보",
-    description: "에란겔부터 태이고까지, 배틀그라운드 전장의 모든 차량 스폰 위치를 한눈에 확인하세요.",
+    description: "에란겔부터 테이고, 론도까지! 배틀그라운드 전장의 모든 차량 스폰 위치와 비밀의 열쇠 위치를 한눈에 확인하세요.",
     url: "/",
     siteName: "BGMS",
     images: [
@@ -57,7 +57,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary_large_image",
     title: "BGMS - 배틀그라운드 전술 지도 및 전적 서비스",
-    description: "에란겔, 미라마, 태이고 등 배틀그라운드 정보를 한눈에!",
+    description: "에란겔, 테이고, 론도 등 배틀그라운드 비밀의 열쇠 및 차량 위치 정보를 한눈에!",
     images: ["/logo.png"],
   },
 };
