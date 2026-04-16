@@ -113,19 +113,17 @@ export const CombatRenderer = ({ telemetryData }: { telemetryData: any }) => {
 
       // 피해자 점
       if (ev.victimX && ev.victimY) {
-        const victimFill = ev.isTeamVictim ? "#ef4444" : "#111111";
+        const iconHtml = `<div style="font-size: 8px; color: ${ev.isTeamVictim ? '#ff4444' : '#aaaaaa'}; font-weight: 900; text-align: center; opacity: 0.8; pointer-events: none;">X</div>`;
         markers.push(
-          <CircleMarker
+          <Marker
             key={`cdot-vic-${i}-${ev.relativeTimeMs}`}
-            center={[ev.victimY, ev.victimX]}
-            radius={isKill ? 3.5 : 2.5}
-            pathOptions={{
-              color: ev.isTeamVictim ? "#ff4444" : "#444",
-              fillColor: victimFill,
-              fillOpacity: ev.isTeamVictim ? 0.9 : 0.45,
-              weight: ev.isTeamVictim ? 1.5 : 0.5,
-              opacity: ev.isTeamVictim ? 0.9 : 0.5,
-            }}
+            position={[ev.victimY, ev.victimX]}
+            icon={L.divIcon({
+              html: iconHtml,
+              className: "",
+              iconSize: [10, 10],
+              iconAnchor: [5, 5],
+            })}
             interactive={false}
           />
         );

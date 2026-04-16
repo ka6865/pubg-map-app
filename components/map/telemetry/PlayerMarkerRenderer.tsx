@@ -14,13 +14,13 @@ export const PlayerMarkerRenderer = ({ telemetryData }: { telemetryData: any }) 
   const teamNames = useMemo(() => telemetryData?.teamNames ?? [], [telemetryData?.teamNames]);
   const showNames = telemetryData?.showPlayerNames !== false;
   const isActive = telemetryData?.isActive !== false && !!currentStates;
+  const currentTimeMs = telemetryData?.currentTimeMs;
 
   const { deadNodes, groggyNodes, footNodes, vehicleNodes } = useMemo(() => {
     if (!isActive) return { deadNodes: [], groggyNodes: [], footNodes: [], vehicleNodes: [] };
 
     const allPlayers = Object.values(currentStates) as any[];
     
-    const deadPlayers = allPlayers.filter((p) => p.isDead);
     const groggyPlayers = allPlayers.filter((p) => !p.isDead && p.isGroggy);
     const footPlayers = allPlayers.filter((p) => !p.isDead && !p.isGroggy && !p.isInVehicle);
     const vehiclePlayers = allPlayers.filter((p) => !p.isDead && !p.isGroggy && p.isInVehicle);
@@ -49,27 +49,6 @@ export const PlayerMarkerRenderer = ({ telemetryData }: { telemetryData: any }) 
         }
       }
     }
-
-    const deadNodes = deadPlayers.map((player) => (
-      <Marker
-        key={`dead-${player.name}-${showNames}`}
-        position={[player.y, player.x]}
-        icon={L.divIcon({
-          html: `<div style="font-size:22px;text-align:center;filter: drop-shadow(0 0 5px rgba(255,0,0,0.5));">💀</div>`,
-          className: "telemetry-dead",
-          iconSize: [24, 24],
-        })}
-      >
-        <Tooltip 
-          direction="top" 
-          permanent 
-          opacity={showNames ? 1 : 0}
-          className={`bg-black/90 border-none text-red-500 font-bold shadow-none text-[10px] ${!showNames ? 'hidden-tooltip' : ''}`}
-        >
-          {player.name} (사망)
-        </Tooltip>
-      </Marker>
-    ));
 
     const groggyNodes = groggyPlayers.map((player) => (
       <React.Fragment key={`groggy-group-${player.name}-${showNames}`}>
@@ -192,14 +171,13 @@ export const PlayerMarkerRenderer = ({ telemetryData }: { telemetryData: any }) 
       );
     });
 
-    return { deadNodes, groggyNodes, footNodes, vehicleNodes };
-  }, [isActive, currentStates, hiddenPlayers, showNames, teamNames]);
+    return { groggyNodes, footNodes, vehicleNodes };
+  }, [isActive, currentStates, hiddenPlayers, showNames, teamNames, currentTimeMs]);
 
   if (!isActive) return null;
 
   return (
     <>
-      {deadNodes}
       {groggyNodes}
       {footNodes}
       {vehicleNodes}
