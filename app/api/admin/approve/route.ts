@@ -1,30 +1,24 @@
 // app/api/admin/approve/route.ts
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient as createSupabaseAdminClient } from "@supabase/supabase-js";
+import { createClient } from "@/utils/supabase/server";
 
 export async function POST(request: Request) {
   try {
-    // 1. 헤더에서 유저 JWT 토큰 가져오기 (보안)
-    const authHeader = request.headers.get("authorization");
-    if (!authHeader) return NextResponse.json({ error: "인증 토큰이 없습니다." }, { status: 401 });
-    const token = authHeader.replace("Bearer ", "");
-    
-    const { id } = await request.json();
-    if (!id) return NextResponse.json({ error: "마커 ID가 누락되었습니다." }, { status: 400 });
+    const supabaseServer = await createClient();
+    const { data: { user } } = await supabaseServer.auth.getUser();
+    if (!user) return NextResponse.json({ error: "🔒 로그인이 만료되었거나 유효하지 않습니다." }, { status: 401 });
 
-    // 2. 서버용 마스터키 클라이언트 세팅
-    const supabaseAdmin = createClient(
+    const { data: profile } = await supabaseServer.from("profiles").select("nickname, role").eq("id", user.id).single();
+    if (profile?.role !== "admin") return NextResponse.json({ error: "⛔ 관리자 권한이 없습니다." }, { status: 403 });
+
+    const supabaseAdmin = createSupabaseAdminClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
-    // 3. 토큰으로 진짜 유저 검증
-    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
-    if (authError || !user) return NextResponse.json({ error: "로그인이 만료되었거나 유효하지 않습니다." }, { status: 401 });
-
-    // 4. DB에서 진짜 Admin 뱃지가 있는지 검증 (가장 중요!)
-    const { data: profile } = await supabaseAdmin.from("profiles").select("nickname, role").eq("id", user.id).single();
-    if (profile?.role !== "admin") return NextResponse.json({ error: "관리자 권한이 없습니다." }, { status: 403 });
+    const { id } = await request.json();
+    if (!id) return NextResponse.json({ error: "마커 ID가 누락되었습니다." }, { status: 400 });
 
     // --- 이후 승인 로직 (기존과 동일) ---
     const { data: pending, error: fetchError } = await supabaseAdmin

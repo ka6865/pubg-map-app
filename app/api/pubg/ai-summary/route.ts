@@ -424,10 +424,37 @@ ${detailedMatches
   .join("\n")}`;
 
     const genAI = new GoogleGenerativeAI(geminiApiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-    const result = await model.generateContent(`${systemPrompt}\n\n${userPrompt}`);
+    let analysis = "";
+
+    // 2026년 기준 안정적인 모델 폴백 리스트
+    const modelsToTry = [
+      "gemini-flash-latest",
+      "gemini-2.5-flash",
+      "gemini-3.1-flash-lite-preview",
+      "gemini-pro-latest"
+    ];
+
+    for (const modelName of modelsToTry) {
+      try {
+        console.log(`[AI-SUMMARY] Attempting summary with ${modelName}...`);
+        const model = genAI.getGenerativeModel({ model: modelName });
+        const result = await model.generateContent(`${systemPrompt}\n\n${userPrompt}`);
+        analysis = result.response.text();
+        
+        if (analysis) break;
+      } catch (err: any) {
+        const errorMsg = err.message || "";
+        console.warn(`[AI-SUMMARY] ${modelName} failed: ${errorMsg}`);
+        
+        if (errorMsg.includes("503") || errorMsg.includes("Service Unavailable") || 
+            errorMsg.includes("429") || errorMsg.includes("quota")) {
+          continue; // 다음 모델로 재시도
+        }
+        throw err;
+      }
+    }
     
-    const analysis = result.response.text();
+    if (!analysis) throw new Error("분석 결과를 생성할 수 없습니다.");
     if (!analysis) throw new Error("결과 생성 실패");
     
     return NextResponse.json({ analysis });

@@ -6,7 +6,7 @@ import { supabase } from "../lib/supabase";
 import { toast } from "sonner";
 import MiniStatWidget from "./stat/MiniStatWidget";
 import { 
-  ArrowLeft, User, Save, LogOut, Trash2, 
+  ArrowLeft, User as UserIcon, Save, LogOut, Trash2, 
   Gamepad2, Settings, ShieldCheck, ExternalLink,
   Mail, ChevronRight, Activity, MessageSquare, FileText, Heart
 } from "lucide-react";
@@ -102,7 +102,7 @@ export default function MyPage({ initialCurrentUser, initialUserProfile, initial
   const [editNickname, setEditNickname] = useState(initialUserProfile?.nickname || "");
   const [editPubgNickname, setEditPubgNickname] = useState(initialUserProfile?.pubg_nickname || "");
   const [editPubgPlatform, setEditPubgPlatform] = useState<"steam" | "kakao">(
-    initialUserProfile?.pubg_platform || "steam"
+    (initialUserProfile?.pubg_platform as "steam" | "kakao") || "steam"
   );
   const [isMobile, setIsMobile] = useState(false);
   
@@ -213,7 +213,7 @@ export default function MyPage({ initialCurrentUser, initialUserProfile, initial
                 marginBottom: '24px',
                 boxShadow: '0 0 30px rgba(242,169,0,0.2)'
               }}>
-                <User size={56} style={{ color: '#F2A900' }} />
+                <UserIcon size={56} style={{ color: '#F2A900' }} />
               </div>
               <h1 style={{ fontSize: '28px', fontWeight: 900, margin: '0 0 8px 0', letterSpacing: '-0.5px' }}>
                 {userProfile?.nickname || "게이머"}

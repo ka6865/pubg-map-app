@@ -4,7 +4,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useState, useEffect, useMemo } from "react";
 import L from "leaflet";
 
-import { supabase } from "../lib/supabase";
+
 import { CATEGORY_INFO } from "../lib/map_config";
 import { useMapData } from "../hooks/useMapData";
 import { useAuth } from "./AuthProvider";
@@ -63,12 +63,10 @@ export default function Map({ initialMapId, postId, initialIsWriting }: MapProps
     currentUser,
     userProfile,
     optimisticNickname,
-    notifications,
     dbVehicles,
     pendingVehicles,
     isDataLoading,
     setOptimisticNickname,
-    setNotifications,
     fetchUserProfile,
   } = useMapData(activeMapId, authUser);
 
@@ -76,7 +74,6 @@ export default function Map({ initialMapId, postId, initialIsWriting }: MapProps
   const currentPostId = activePostId;
 
   const [isSidebarOpen, setSidebarOpen] = useState(true);
-  const [showNotiDropdown, setShowNotiDropdown] = useState(false);
   // URL 쿼리 파라미터 mypage=1 여부로 마이페이지 초기 상태 결정
   const [isMyPage, setIsMyPage] = useState(() => searchParams?.get("mypage") === "1");
   const [isMobile, setIsMobile] = useState(false);
@@ -153,39 +150,7 @@ export default function Map({ initialMapId, postId, initialIsWriting }: MapProps
     }
   };
 
-  const formatNotiTime = (dateString: string) => {
-    const diff = (new Date().getTime() - new Date(dateString).getTime()) / 1000;
-    if (diff < 60) return "방금 전";
-    if (diff < 3600) return `${Math.floor(diff / 60)}분 전`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}시간 전`;
-    if (diff < 604800) return `${Math.floor(diff / 86400)}일 전`;
-    return new Date(dateString).toLocaleDateString();
-  };
 
-  const handleNotiClick = async (noti: NotificationItem) => {
-    if (!noti.is_read) {
-      await supabase
-        .from("notifications")
-        .update({ is_read: true })
-        .eq("id", noti.id);
-      setNotifications((prev) =>
-        prev.map((n) => (n.id === noti.id ? { ...n, is_read: true } : n))
-      );
-    }
-    setShowNotiDropdown(false);
-    // router.push로 URL 변경 → useEffect가 isMyPage 자동 동기화
-    router.push(`/board/${noti.post_id}`);
-  };
-
-  const markAllAsRead = async () => {
-    if (!currentUser) return;
-    await supabase
-      .from("notifications")
-      .update({ is_read: true })
-      .eq("user_id", currentUser.id)
-      .eq("is_read", false);
-    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })));
-  };
 
   const currentMap = MAP_LIST.find((m) => m.id === activeMapId) || MAP_LIST[0];
   const bounds: [[number, number], [number, number]] = [

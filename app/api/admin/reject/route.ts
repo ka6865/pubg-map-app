@@ -1,26 +1,24 @@
 // app/api/admin/reject/route.ts
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient as createSupabaseAdminClient } from "@supabase/supabase-js";
+import { createClient } from "@/utils/supabase/server";
 
 export async function POST(request: Request) {
   try {
-    const authHeader = request.headers.get("authorization");
-    if (!authHeader) return NextResponse.json({ error: "인증 토큰이 없습니다." }, { status: 401 });
-    const token = authHeader.replace("Bearer ", "");
-    
-    const { id } = await request.json();
-    if (!id) return NextResponse.json({ error: "마커 ID가 누락되었습니다." }, { status: 400 });
+    const supabaseServer = await createClient();
+    const { data: { user } } = await supabaseServer.auth.getUser();
+    if (!user) return NextResponse.json({ error: "🔒 로그인이 만료되었거나 유효하지 않습니다." }, { status: 401 });
 
-    const supabaseAdmin = createClient(
+    const { data: profile } = await supabaseServer.from("profiles").select("nickname, role").eq("id", user.id).single();
+    if (profile?.role !== "admin") return NextResponse.json({ error: "⛔ 관리자 권한이 없습니다." }, { status: 403 });
+
+    const supabaseAdmin = createSupabaseAdminClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
-    const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token);
-    if (authError || !user) return NextResponse.json({ error: "로그인이 만료되었거나 유효하지 않습니다." }, { status: 401 });
-
-    const { data: profile } = await supabaseAdmin.from("profiles").select("nickname, role").eq("id", user.id).single();
-    if (profile?.role !== "admin") return NextResponse.json({ error: "관리자 권한이 없습니다." }, { status: 403 });
+    const { id } = await request.json();
+    if (!id) return NextResponse.json({ error: "마커 ID가 누락되었습니다." }, { status: 400 });
 
     const { data: pending } = await supabaseAdmin
       .from("pending_markers")

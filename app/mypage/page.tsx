@@ -14,7 +14,7 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function MyPagePage() {
-  const supabase = createClient();
+  const supabase = await createClient();
   
   // 서버 사이드에서 쿠키를 통해 유저 세션 획득
   const { data: { user } } = await supabase.auth.getUser();

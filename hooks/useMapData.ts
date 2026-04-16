@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { supabase } from "../lib/supabase";
-import type { MapMarker, NotificationItem, UserProfile, AuthUser, PendingVehicle } from "../types/map";
+import type { MapMarker, UserProfile, AuthUser, PendingVehicle } from "../types/map";
 
 /**
  * 활성화된 맵 데이터와 주입된 사용자 정보를 동의화하는 커스텀 훅입니다.
@@ -12,7 +12,6 @@ import type { MapMarker, NotificationItem, UserProfile, AuthUser, PendingVehicle
 export function useMapData(activeMapId: string, injectedUser: AuthUser | null) {
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [optimisticNickname, setOptimisticNickname] = useState<string | null>(null);
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [dbVehicles, setDbVehicles] = useState<MapMarker[]>([]);
   const [pendingVehicles, setPendingVehicles] = useState<PendingVehicle[]>([]);
   const [isDataLoading, setIsDataLoading] = useState(false);
@@ -31,35 +30,18 @@ export function useMapData(activeMapId: string, injectedUser: AuthUser | null) {
     }
   };
 
-  // 알림 조회
-  const fetchNotifications = async (userId: string) => {
-    try {
-      const { data, error } = await supabase
-        .from("notifications")
-        .select("*")
-        .eq("user_id", userId) // 📍 receiver_id -> user_id로 교정 (Typescript 정의 일치)
-        .order("created_at", { ascending: false });
 
-      if (!error && data) {
-        setNotifications(data as NotificationItem[]);
-      }
-    } catch (err) {
-      console.warn("[useMapData] 알림 로드 실패:", err);
-    }
-  };
 
   // 주입된 사용자 정보가 바뀔 때마다 프로필/알림 동기화
   useEffect(() => {
     if (!injectedUser) {
       setUserProfile(null);
-      setNotifications([]);
       setOptimisticNickname(null);
       return;
     }
 
     const syncUserData = async () => {
       await fetchUserProfile(injectedUser);
-      await fetchNotifications(injectedUser.id);
     };
 
     syncUserData();
@@ -119,12 +101,10 @@ export function useMapData(activeMapId: string, injectedUser: AuthUser | null) {
     currentUser: injectedUser, // 주입받은 사용자를 다시 내보내어 하위 호환성 유지
     userProfile,
     optimisticNickname,
-    notifications,
     dbVehicles,
     pendingVehicles,
     isDataLoading,
     setOptimisticNickname,
-    setNotifications,
     fetchUserProfile,
     setDbVehicles,
     setPendingVehicles

@@ -138,14 +138,37 @@ ${playerReportSummary}
 
     let analysis = "";
 
-    try {
-      console.log("Attempting analysis with Gemini 2.5 Flash...");
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
-      const result = await model.generateContent(promptText);
-      analysis = result.response.text();
-    } catch (err: any) {
-      console.error("Gemini analysis failed:", err.message);
+    // 2026년 기준 안정적인 모델 폴백 리스트
+    const modelsToTry = [
+      "gemini-flash-latest",
+      "gemini-2.5-flash",
+      "gemini-3.1-flash-lite-preview",
+      "gemini-pro-latest"
+    ];
+
+    const genAI = new GoogleGenerativeAI(apiKey);
+
+    for (const modelName of modelsToTry) {
+      try {
+        console.log(`[AI-ANALYZE] Attempting analysis with ${modelName}...`);
+        const model = genAI.getGenerativeModel({ model: modelName });
+        const result = await model.generateContent(promptText);
+        analysis = result.response.text();
+        
+        if (analysis) break; // 분석 성공 시 루프 탈출
+      } catch (err: any) {
+        const errorMsg = err.message || "";
+        console.warn(`[AI-ANALYZE] ${modelName} failed: ${errorMsg}`);
+        
+        // 과부하(503) 또는 할당량(429) 시 다음 모델로 전환
+        if (errorMsg.includes("503") || errorMsg.includes("Service Unavailable") || 
+            errorMsg.includes("429") || errorMsg.includes("quota")) {
+          console.warn(`[AI-ANALYZE] Switching to next model due to server load...`);
+          continue;
+        }
+        // 그 외 치명적 에러는 중단
+        throw err;
+      }
     }
 
     if (!analysis) {

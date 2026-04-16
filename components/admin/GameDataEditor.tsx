@@ -220,23 +220,20 @@ export default function GameDataEditor() {
               
               setIsSaving(true);
               try {
-                // [수정] url 파라미터 대응
-                let apiUrl = `/api/cron/patch-notes?secret=my_super_secret_admin_token_1234!&force=true`;
-                if (manualUrl) {
-                  apiUrl += `&url=${encodeURIComponent(manualUrl)}`;
-                }
-                
-                const res = await fetch(apiUrl);
+                const apiUrl = `/api/admin/patch-notes/sync`;
+                const res = await fetch(apiUrl, { 
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ url: manualUrl })
+                });
                 const result = await res.json();
                 
                 if (result.success) {
-                  toast.success("✅ 패치노트가 성공적으로 동기화되었습니다!");
+                  toast.success("✅ 동기화 완료! (" + (result.details?.join(", ") || "내역 없음") + ")");
                   if (urlInput) urlInput.value = ""; // 성공 시 비우기
                   router.push("/board");
-                } else if (result.reason === "ai_failed") {
-                  toast.error("⚠️ AI 요약 실패! 디스코드를 확인하고 수동으로 작성해주세요.");
                 } else {
-                  toast.error("❌ 동기화 실패: " + (result.message || "알 수 없는 오류"));
+                  toast.error("❌ 동기화 실패: " + (result.error || result.message || "알 수 없는 오류"));
                 }
               } catch (err) {
                 console.error("Sync error:", err);

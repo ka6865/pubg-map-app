@@ -217,7 +217,7 @@ export default function BoardDetailClient({
 
           <div className="border-y border-[#333] py-[30px] min-h-[200px] text-[#e5e5e5]">
             {post.image_url && !(post.content || "").includes(post.image_url) && (
-              <Image src={post.image_url} alt="기본 이미지" width={800} height={450} className="w-full h-auto mb-[20px] rounded-[8px]" />
+              <Image priority={true} src={post.image_url} alt="기본 이미지" width={800} height={450} className="w-full h-auto mb-[20px] rounded-[8px]" />
             )}
             
             <style>{`
