@@ -1,16 +1,15 @@
 import { MetadataRoute } from 'next';
-export const dynamic = 'force-static';
+export const revalidate = 3600; // 1시간마다 사이트맵 갱신 (자동 수집 최적화)
 import { createClient } from '@supabase/supabase-js';
 
-// 서버 사이드 전용 Supabase 클라이언트 생성
-// 보안을 위해 SUPABASE_SERVICE_ROLE_KEY가 서버 환경 변수에 등록되어 있어야 합니다.
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-);
+// 🌟 [보안/안정성] 서버 사이드 전용 Supabase 클라이언트 생성 (URL/Key 유효성 검사 추가)
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+
+const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  // 사이트맵용 베이스 URL 설정 (trailing slash 제거 루틴 추가)
+  // 사이트맵용 베이스 URL 설정
   let siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://bgms.kr';
   if (siteUrl.endsWith('/')) siteUrl = siteUrl.slice(0, -1);
 
@@ -55,27 +54,27 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     },
   ];
 
-  // 🌟 게시글들 가져오기 (상세 페이지 SEO용)
+  // 🌟 [확장] 게시글들 가져오기 (최신 1,000개까지 수집 범위 확대)
   let postEntries: MetadataRoute.Sitemap = [];
-  try {
-    const { data: posts, error } = await supabase
-      .from('posts')
-      .select('id, created_at')
-      .order('created_at', { ascending: false })
-      .limit(100);
+  if (supabase) {
+    try {
+      const { data: posts, error } = await supabase
+        .from('posts')
+        .select('id, created_at')
+        .order('created_at', { ascending: false })
+        .limit(1000);
 
-    if (error) throw error;
-
-    if (posts) {
-      postEntries = posts.map((post) => ({
-        url: `${siteUrl}/board/${post.id}`,
-        lastModified: post.created_at ? new Date(post.created_at) : new Date(),
-        changeFrequency: 'weekly',
-        priority: 0.6,
-      }));
+      if (!error && posts) {
+        postEntries = posts.map((post) => ({
+          url: `${siteUrl}/board/${post.id}`,
+          lastModified: post.created_at ? new Date(post.created_at) : new Date(),
+          changeFrequency: 'weekly',
+          priority: 0.6,
+        }));
+      }
+    } catch (error) {
+      console.error('[Sitemap Error] 게시글 로드 실패:', error);
     }
-  } catch (error) {
-    console.error('[Sitemap Error] 게시글을 불러오지 못했습니다. 환경변수(SERVICE_ROLE_KEY)를 확인하세요.', error);
   }
 
   return [...staticEntries, ...mapEntries, ...postEntries];

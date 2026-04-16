@@ -7,6 +7,7 @@ import GlobalHeader from "@/components/common/GlobalHeader";
 import BottomNav from "@/components/common/BottomNav";
 import Footer from "@/components/common/Footer";
 import { Suspense } from "react";
+import JsonLd from "@/components/seo/JsonLd";
 
 // Outfit 폰트 — 기하학적이고 현대적인 게이밍 타이포그래피
 const outfit = Outfit({
@@ -35,8 +36,8 @@ export const metadata: Metadata = {
     },
   },
   icons: {
-    icon: "/logo.png",
-    apple: "/logo.png",
+    icon: "/icon.png",
+    apple: "/icon.png",
   },
   openGraph: {
     title: "BGMS - 배틀그라운드 모든 맵 차량 위치 및 전술 정보",
@@ -71,6 +72,30 @@ export const viewport = {
   appleMobileWebAppStatusBarStyle: "black-translucent",
 };
 
+// 🌟 사이트 전체 구조화 데이터 (브랜드 및 검색창 지원)
+const siteJsonLd = [
+  {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    "name": "BGMS",
+    "url": baseUrl,
+    "logo": `${baseUrl}/logo.png`,
+    "sameAs": [
+      "https://github.com/ka6865/pubg-map-app"
+    ]
+  },
+  {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "url": baseUrl,
+    "potentialAction": {
+      "@type": "SearchAction",
+      "target": `${baseUrl}/board?search={search_term_string}`,
+      "query-input": "required name=search_term_string"
+    }
+  }
+];
+
 // 최상위 HTML 뼈대 렌더링 컴포넌트
 export default function RootLayout({
   children,
@@ -79,6 +104,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ko" className={outfit.variable}>
+      <head>
+        <JsonLd data={siteJsonLd as any} />
+      </head>
       <body className="antialiased bg-[#0d0d0d] text-white" style={{ fontFamily: 'var(--font-outfit), Pretendard, sans-serif' }}>
         <AuthProvider>
           <div className="flex flex-col min-h-dvh">
