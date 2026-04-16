@@ -261,7 +261,7 @@ export default function GlobalHeader() {
               />
             </div>
 
-            <Link href="/board?mypage=1" className="flex items-center gap-2 group active:scale-95 transition-transform">
+            <Link href="/mypage" className="flex items-center gap-2 group active:scale-95 transition-transform">
               <div className="w-8 h-8 rounded-xl bg-black/10 flex items-center justify-center border border-black/5 group-active:bg-black/20">
                 <User size={18} strokeWidth={2.5} className="text-black/80" />
               </div>

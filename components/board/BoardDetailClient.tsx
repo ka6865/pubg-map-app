@@ -188,7 +188,7 @@ export default function BoardDetailClient({
   return (
     <div className="w-full flex justify-center pb-20">
       <div className="w-full max-w-[900px]">
-        <article className={`bg-[#1a1a1a] rounded-[8px] border border-[#333] w-full box-border overflow-x-hidden ${isMobile ? "p-[15px]" : "p-[30px]"}`}>
+        <article className={`bg-[#1a1a1a] rounded-[8px] border border-[#333] w-full box-border ${isMobile ? "p-[15px]" : "p-[30px]"}`}>
           <div className="mb-[20px]">
             <span className="text-[#F2A900] text-[13px] font-bold">[{post.category}]</span>
             <h1 className={`mt-[10px] text-white break-all font-bold ${isMobile ? "text-[24px]" : "text-[32px]"}`}>{post.title}</h1>
@@ -207,7 +207,7 @@ export default function BoardDetailClient({
                   className="inline-flex items-center gap-2 px-[20px] py-[12px] bg-[#5865F2] hover:bg-[#4752C4] text-white font-bold rounded-[8px] no-underline shadow-lg"
                 >
                   <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
-                    <path d="M20.317 4.3698a19.7913..."/>
+                    <path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-3.5485-13.6604a.061.061 0 00-.0312-.0286z" />
                   </svg>
                   디스코드 음성 채널 입장하기
                 </a>
@@ -228,6 +228,8 @@ export default function BoardDetailClient({
               .board-content ol { list-style-type: decimal !important; }
               .board-content li { margin-bottom: 0.5rem !important; display: list-item !important; }
               .board-content { white-space: pre-wrap !important; word-break: break-word !important; font-family: inherit !important; color: #e5e5e5 !important; }
+              .ql-snow .ql-editor { background-color: transparent !important; color: inherit !important; padding: 0 !important; }
+              .ql-container.ql-snow { border: none !important; }
             `}</style>
             
             <div className="ql-container ql-snow" style={{ border: 'none', font: 'inherit', color: 'inherit' }}>

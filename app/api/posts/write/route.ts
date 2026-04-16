@@ -64,6 +64,14 @@ export async function POST(request: Request) {
       );
     }
 
+    // 🌟 [보안] 본문 크기 제한 (DB 안정성 확보용)
+    if (content.length > 300000) {
+      return NextResponse.json(
+        { error: "게시글 용량이 너무 큽니다. 불필요한 이미지 데이터를 제거해 주세요." },
+        { status: 413 }
+      );
+    }
+
     // 🌟 [검증] 디스코드 링크 유효성 체크
     if (category === "듀오/스쿼드 모집" && discord_url) {
       const isValid = await validateDiscordUrl(discord_url);

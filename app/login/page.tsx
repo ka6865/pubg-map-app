@@ -10,6 +10,11 @@ import { toast } from 'sonner';
  */
 export default function Login() {
   const [isLoading, setIsLoading] = useState<string | null>(null);
+  const [isMounted, setIsMounted] = useState(false);
+
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
   
   const handleSocialLogin = async (provider: 'kakao' | 'google') => {
     setIsLoading(provider);
@@ -105,22 +110,6 @@ export default function Login() {
           >
             {isLoading === 'google' ? '연결 중...' : '구글 로그인'}
           </button>
-        </div>
-
-        {/* 🛠️ 개발자용 디버그 정보 (배포 후 확인용) */}
-        <div style={{ 
-          marginTop: '30px', 
-          padding: '12px', 
-          backgroundColor: 'rgba(255,165,0,0.05)', 
-          borderRadius: '12px', 
-          border: '1px dashed rgba(255,165,0,0.2)',
-          textAlign: 'left'
-        }}>
-          <p style={{ fontSize: '10px', color: 'orange', margin: '0 0 4px 0', fontWeight: 'bold' }}>DEBUG INFO (Check this with Kakao/Google Settings)</p>
-          <div style={{ fontSize: '9px', color: 'rgba(255,255,255,0.3)', wordBreak: 'break-all', fontFamily: 'monospace' }}>
-            Site URL: {process.env.NEXT_PUBLIC_SITE_URL || 'Not Set'}<br />
-            Callback: {typeof window !== 'undefined' ? `${window.location.origin}/auth/callback` : 'Loading...'}
-          </div>
         </div>
       </div>
     </div>

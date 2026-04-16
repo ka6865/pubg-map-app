@@ -229,6 +229,44 @@ export default function BoardWrite({
     }
   }, []);
 
+  // 🌟 [추가] 드래그 앤 드롭 이미지 업로드 핸들러
+  useEffect(() => {
+    if (!quillRef.current) return;
+    const editor = quillRef.current.getEditor();
+    const root = editor.root;
+
+    const handleDrop = async (e: DragEvent) => {
+      e.preventDefault();
+      if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
+        const file = e.dataTransfer.files[0];
+        if (file.type.startsWith("image/")) {
+          const maxSize = IMAGE_CONFIG.MAX_FILE_SIZE_MB * 1024 * 1024;
+          if (file.size > maxSize) {
+            toast.warning(`이미지 크기는 ${IMAGE_CONFIG.MAX_FILE_SIZE_MB}MB를 초과할 수 없습니다.`);
+            return;
+          }
+
+          const range = editor.getSelection(true) || { index: editor.getLength() };
+          try {
+            setIsUploadingImage(true);
+            editor.enable(false);
+            const url = await uploadImage(file);
+            if (url) {
+              editor.insertEmbed(range.index, "image", url);
+              editor.setSelection(range.index + 1);
+            }
+          } finally {
+            editor.enable(true);
+            setIsUploadingImage(false);
+          }
+        }
+      }
+    };
+
+    root.addEventListener("drop", handleDrop);
+    return () => root.removeEventListener("drop", handleDrop);
+  }, [uploadImage]);
+
   const handleCancel = async () => {
     try {
       if (uploadedImagesRef.current.length > 0) {
@@ -278,6 +316,31 @@ export default function BoardWrite({
     }
   };
 
+  // 🌟 [추가] 텍스트 스타일 전체 초기화 함수
+  const handleClearFormatting = () => {
+    if (!quillRef.current) return;
+    const editor = quillRef.current.getEditor();
+    const length = editor.getLength();
+    
+    if (length <= 1) return; // 내용이 없을 때
+
+    if (confirm("글의 모든 스타일(배경색, 글자색 등)을 초기화하시겠습니까? (이미지는 유지됩니다)")) {
+      const range = { index: 0, length: length };
+      // 1. Quill의 기본 서식 제거
+      editor.removeFormat(range.index, range.length);
+      
+      // 2. 인라인 스타일(배경색 등)이 남아있을 수 있으므로 강제 세척 처리
+      const cleanContent = newContent.replace(/style="[^"]*"/g, (match) => {
+        // 이미지 태그의 인라인 스타일은 유지 (크기 등 때문)
+        if (match.includes("max-width") || match.includes("display:block")) return match;
+        return "";
+      });
+      setNewContent(cleanContent);
+      
+      toast.success("스타일이 초기화되었습니다.");
+    }
+  };
+
   const modules = useMemo(() => ({
     toolbar: {
       container: [
@@ -289,15 +352,37 @@ export default function BoardWrite({
       ],
       handlers: { image: imageHandler },
     },
-    // 🌟 [안전] 클립보드 붙여넣기 시 Base64 이미지 자동 필터링
+    // 🌟 [안전] 클립보드 붙여넣기 시 Base64 이미지 자동 필터링 및 스타일 클리닝
     clipboard: {
       matchers: [
         ["IMG", (node: any, delta: any) => {
           const src = node.getAttribute("src");
           if (src && src.startsWith("data:image")) {
-            toast.warning("이미지 직접 붙여넣기는 서버 부하 방지를 위해 차단되었습니다. 하단 업로드 버튼을 이용해 주세요.");
-            return { ops: [] }; // 이미지를 제외한 빈 델타 반환
+            // Base64 이미지는 용량 문제로 차단하고 사용자에게 안내
+            toast.warning("이미지 직접 붙여넣기는 서버 부하 방지를 위해 제한됩니다. 상단 업로드 버튼이나 드래그 앤 드롭을 이용해 주세요.", {
+              duration: 5000,
+              description: "고화질 이미지는 DB 저장 시 글이 잘릴 원인이 됩니다."
+            });
+            return { ops: [] }; 
           }
+          return delta;
+        }],
+        [Node.ELEMENT_NODE, (node: HTMLElement, delta: any) => {
+          // 외부에서 복사된 배경색(특히 흰색 배경) 및 스타일 제거
+          delta.ops.forEach((op: any) => {
+            if (op.attributes) {
+              // 배경색 무조건 제거
+              if (op.attributes.background) delete op.attributes.background;
+              
+              // 글자색이 검은색 계열이거나 너무 어두우면 제거하여 기본 밝은색이 나오게 함
+              if (op.attributes.color) {
+                const color = op.attributes.color.toLowerCase();
+                if (color === "black" || color === "#000000" || color === "#000" || color.startsWith("rgb(0,0,0)")) {
+                  delete op.attributes.color;
+                }
+              }
+            }
+          });
           return delta;
         }]
       ]
@@ -340,6 +425,15 @@ export default function BoardWrite({
           maxLength={50}
           style={{ flex: 1, padding: "10px", backgroundColor: "#252525", color: "white", border: "1px solid #333", borderRadius: "4px", fontSize: "16px" }}
         />
+        <button
+          type="button"
+          onClick={handleClearFormatting}
+          style={{ padding: "0 15px", backgroundColor: "#333", color: "#F2A900", border: "1px solid #F2A900", borderRadius: "4px", fontSize: "12px", fontWeight: "bold", cursor: "pointer", transition: "all 0.2s" }}
+          onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = "#F2A900", e.currentTarget.style.color = "black")}
+          onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = "#333", e.currentTarget.style.color = "#F2A900")}
+        >
+          스타일 초기화
+        </button>
       </div>
 
       {/* 🌟 디스코드 링크 입력 섹션 (듀오/스쿼드 모집 카테고리 전용) */}
@@ -438,7 +532,7 @@ export default function BoardWrite({
 
       <div
         className="quill-wrapper"
-        style={{ marginBottom: "50px", backgroundColor: "white", color: "black", borderRadius: "4px", position: "relative" }}
+        style={{ marginBottom: "50px", backgroundColor: "#252525", color: "#e5e5e5", borderRadius: "4px", position: "relative", border: "1px solid #333" }}
         onClick={handleWrapperClick}
       >
         {isUploadingImage && (
