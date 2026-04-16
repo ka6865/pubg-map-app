@@ -60,7 +60,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   try {
     const { data: posts, error } = await supabase
       .from('posts')
-      .select('id, updated_at')
+      .select('id, created_at')
       .order('created_at', { ascending: false })
       .limit(100);
 
@@ -69,7 +69,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     if (posts) {
       postEntries = posts.map((post) => ({
         url: `${siteUrl}/board/${post.id}`,
-        lastModified: post.updated_at ? new Date(post.updated_at) : new Date(),
+        lastModified: post.created_at ? new Date(post.created_at) : new Date(),
         changeFrequency: 'weekly',
         priority: 0.6,
       }));
