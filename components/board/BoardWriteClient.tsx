@@ -105,9 +105,11 @@ export default function BoardWriteClient() {
 
       toast.success(editPostId ? "게시글이 수정되었습니다." : "새 게시글이 등록되었습니다.");
       
-      // 저장 완료 후 상세 페이지로 이동
-      const newPostId = result.id || editPostId;
+      // 🌟 API 응답 구조({ data: { id } })에 맞게 수정
+      const newPostId = result.data?.id || editPostId;
+      
       if (newPostId) {
+        // 수정 완료 후에는 깨끗한 URL로 이동
         router.push(`/board/${newPostId}`);
       } else {
         router.push("/board");

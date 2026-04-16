@@ -1,19 +1,10 @@
 import { Metadata } from 'next';
 import { cache } from 'react';
-import { createClient } from '@supabase/supabase-js';
 import { BreadcrumbList, ArticleSchema } from '@/types/seo';
+import { createClient } from '@/utils/supabase/server';
 
-// 환경 변수 정기화 유틸리티
+// 환경 변수 정기화 유틸리티 (항시 최상단 위치)
 const clean = (val: string | undefined) => (val || '').replace(/['";\s]+/g, '').trim();
-
-const supabaseUrl = clean(process.env.NEXT_PUBLIC_SUPABASE_URL);
-const supabaseAnonKey = clean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
-const supabaseServiceKey = clean(process.env.SUPABASE_SERVICE_ROLE_KEY);
-
-const supabase = createClient(
-  supabaseUrl,
-  supabaseServiceKey || supabaseAnonKey // 서버에선 서비스 키, 클라이언트에선 anon 키 사용 (보안)
-);
 
 const baseUrl = clean(process.env.NEXT_PUBLIC_SITE_URL) || "https://bgms.kr";
 
@@ -28,18 +19,27 @@ export const tabMetadata: Record<string, { title: string; desc: string }> = {
   Board: { title: "생존자 커뮤니티 및 고젠 공략 게시판", desc: "배틀그라운드 최신 업데이트 소식과 유저들의 고젠 공략을 공유하는 공간입니다." }
 };
 
+
 /**
  * 포스트 데이터를 조회합니다. (React cache로 중복 쿼리 방지)
  */
 const getPostData = cache(async (postId: string) => {
   try {
+    const numericPostId = Number(postId);
+    if (isNaN(numericPostId)) return null;
+
+    // 🌟 검증된 서버용 클라이언트 사용
+    const supabase = await createClient();
+
     const { data: post, error } = await supabase
       .from('posts')
-      .select('id, title, content, category, author, created_at, updated_at, image_url')
-      .eq('id', postId)
+      .select('id, title, content, category, author, created_at, image_url')
+      .eq('id', numericPostId)
       .single();
 
-    if (error || !post) return null;
+    if (error || !post) {
+      return null;
+    }
     return post;
   } catch (e) {
     console.error('getPostData error:', e);
@@ -67,7 +67,7 @@ export async function getPostMetadata(postId: string): Promise<Metadata | null> 
       url: canonicalUrl,
       type: 'article',
       publishedTime: post.created_at,
-      modifiedTime: post.updated_at,
+      modifiedTime: post.created_at, // updated_at 대신 created_at 사용
       authors: [post.author],
       images: [post.image_url || `${baseUrl}/logo.png`],
     },
@@ -144,7 +144,7 @@ export async function getPostArticleJsonLd(postId: string): Promise<ArticleSchem
     description: plainText,
     image: post.image_url || `${baseUrl}/logo.png`,
     datePublished: post.created_at,
-    dateModified: post.updated_at || post.created_at,
+    dateModified: post.created_at, // updated_at 대신 created_at 사용
     author: {
       "@type": "Person",
       name: post.author,

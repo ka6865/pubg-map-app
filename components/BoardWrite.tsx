@@ -309,7 +309,11 @@ export default function BoardWrite({
         }
       }
 
-      await handleSavePost();
+      const saved = await handleSavePost();
+      if (saved) {
+        // 🌟 성공적으로 저장된 경우, 언마운트 시 자동 삭제되지 않도록 목록을 비워줍니다.
+        uploadedImagesRef.current = [];
+      }
     } catch (err) {
       console.error("onSaveClick fatal error:", err);
       toast.error("저장을 준비하는 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.");

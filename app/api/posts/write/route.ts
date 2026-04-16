@@ -101,12 +101,24 @@ export async function POST(request: Request) {
         );
       }
 
-      if (existingPost.user_id !== user_id) {
+      // 🌟 [권한 확인] 요청자 프로필 로드 (관리자 여부 확인용)
+      const { data: requesterProfile } = await supabaseAdmin
+        .from("profiles")
+        .select("role")
+        .eq("id", user_id)
+        .single();
+
+      const isRequesterAdmin = requesterProfile?.role === "admin";
+
+      if (existingPost.user_id !== user_id && !isRequesterAdmin) {
+        console.warn(`⚠️ [Permission Denied] User ${user_id} tried to edit post ${editingPostId} owned by ${existingPost.user_id}`);
         return NextResponse.json(
           { error: "게시글 수정 권한이 없습니다." },
           { status: 403 }
         );
       }
+
+      console.log(`✅ [Permission Granted] User ${user_id} (Admin: ${isRequesterAdmin}) editing post ${editingPostId}`);
 
       // 🌟 [서버사이드 이미지 정리] 삭제된 이미지 감지 및 스토리지 폐기
       try {
@@ -149,7 +161,10 @@ export async function POST(request: Request) {
         .eq("id", editingPostId)
         .select();
 
-      if (updateError) throw updateError;
+      if (updateError) {
+        console.error("🚨 [Update Error]:", updateError);
+        throw updateError;
+      }
       return NextResponse.json({ success: true, data: data[0] });
     } else {
       // 3. 신규 게시글 등록

@@ -1,8 +1,13 @@
 import { Metadata } from 'next';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/utils/supabase/server';
 import { getPostMetadata, getBreadcrumbJsonLd, getPostArticleJsonLd } from '@/lib/seo-config';
 import { JsonLdProps } from '@/types/seo';
 import BoardDetailClient from '@/components/board/BoardDetailClient';
+import Link from 'next/link';
+import { CircleAlert, ChevronLeft } from 'lucide-react';
+
+// 🌟 캐시를 완전히 끄고 항상 실시간 데이터를 가져오도록 설정 (수정 사항 반영 확인용)
+export const revalidate = 0;
 
 export async function generateMetadata({ params }: { params: Promise<{ postId: string }> }): Promise<Metadata> {
   const { postId } = await params;
@@ -10,7 +15,8 @@ export async function generateMetadata({ params }: { params: Promise<{ postId: s
   
   if (!metadata) {
     return {
-      title: "게시글을 찾을 수 없습니다 | BGMS",
+      title: "존재하지 않는 게시글입니다 | BGMS",
+      description: "요청하신 게시글을 찾을 수 없습니다. 삭제되었거나 주소가 잘못되었을 수 있습니다.",
       robots: { index: false }
     };
   }
@@ -20,6 +26,9 @@ export async function generateMetadata({ params }: { params: Promise<{ postId: s
 
 export default async function PostDetailPage({ params }: { params: Promise<{ postId: string }> }) {
   const { postId } = await params;
+  const numericPostId = Number(postId);
+  
+  const supabase = await createClient();
   const metadata = await getPostMetadata(postId);
   
   const jsonLd: JsonLdProps[] = [
@@ -34,22 +43,47 @@ export default async function PostDetailPage({ params }: { params: Promise<{ pos
     jsonLd.push(articleJsonLd as JsonLdProps);
   }
 
+  // 데이터 조회
   const { data: postResult } = await supabase
     .from("posts")
     .select("*")
-    .eq("id", postId)
+    .eq("id", numericPostId)
     .single();
 
   const { data: commentResult } = await supabase
     .from("comments")
     .select("*")
-    .eq("post_id", postId)
+    .eq("post_id", numericPostId)
     .order("created_at", { ascending: true });
 
   if (!postResult) {
     return (
-      <div className="w-full h-full overflow-y-auto bg-[#121212] flex flex-col pt-6 items-center">
-         <h1 className="text-2xl font-black text-red-500">게시글을 찾을 수 없습니다.</h1>
+      <div className="w-full h-[calc(100vh-100px)] bg-[#121212] flex flex-col items-center justify-center p-6 text-center animate-in fade-in duration-500">
+        <div className="bg-[#1a1a1a] border border-[#333] p-10 rounded-2xl shadow-2xl flex flex-col items-center max-w-md w-full">
+          <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mb-6">
+            <CircleAlert className="w-8 h-8 text-red-500" />
+          </div>
+          <h1 className="text-2xl font-black text-white mb-2">게시글을 찾을 수 없습니다</h1>
+          <p className="text-[#999] text-sm leading-relaxed mb-8">
+            삭제된 게시글이거나 유효하지 않은 주소입니다.<br />
+            입력하신 주소를 다시 한번 확인해 주세요.
+          </p>
+          <div className="flex flex-col gap-3 w-full">
+            <Link 
+              href="/board"
+              className="flex items-center justify-center gap-2 w-full py-4 bg-[#F2A900] text-black font-bold rounded-xl hover:bg-[#d49400] transition-all active:scale-95"
+            >
+              <ChevronLeft className="w-4 h-4" />
+              게시판 목록으로 돌아가기
+            </Link>
+            <Link 
+              href="/"
+              className="text-[#999] text-xs hover:text-[#F2A900] transition-colors"
+            >
+              홈으로 가기
+            </Link>
+          </div>
+        </div>
       </div>
     );
   }
