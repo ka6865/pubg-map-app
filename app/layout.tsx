@@ -8,6 +8,8 @@ import BottomNav from "@/components/common/BottomNav";
 import Footer from "@/components/common/Footer";
 import { Suspense } from "react";
 import JsonLd from "@/components/seo/JsonLd";
+import { GoogleAnalytics } from '@next/third-parties/google';
+
 
 // Outfit 폰트 — 기하학적이고 현대적인 게이밍 타이포그래피
 const outfit = Outfit({
@@ -108,7 +110,9 @@ export default function RootLayout({
         <JsonLd data={siteJsonLd as any} />
       </head>
       <body className="antialiased bg-[#0d0d0d] text-white" style={{ fontFamily: 'var(--font-outfit), Pretendard, sans-serif' }}>
+        <GoogleAnalytics gaId={process.env.NEXT_PUBLIC_GA_ID!} />
         <AuthProvider>
+
           <div className="flex flex-col min-h-dvh">
             <GlobalHeader />
             <main className="flex-grow pb-safe-nav md:pb-0 relative overflow-hidden flex flex-col">
