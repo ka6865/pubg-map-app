@@ -123,8 +123,9 @@ export default function BoardDetailClient({
 
     if (!error) {
       const targetUserId = replyingTo ? replyingTo.user_id : post.user_id;
-      if (targetUserId !== user.id) {
-        await supabase.from("notifications").insert([{
+      // 본인 글/댓글에 본인이 달 때는 알림 생략
+      if (targetUserId && targetUserId !== user.id) {
+        const { error: notiError } = await supabase.from("notifications").insert([{
           user_id: targetUserId,
           sender_id: user.id,
           sender_name: displayName,
@@ -132,6 +133,10 @@ export default function BoardDetailClient({
           post_id: post.id,
           preview_text: replyingTo ? replyingTo.content : post.title,
         }]);
+        // 🔍 알림 INSERT 실패 시 콘솔에 RLS 에러 상세 출력 (디버깅용)
+        if (notiError) {
+          console.error("[notifications INSERT 실패]", notiError.message, notiError.code, notiError.details);
+        }
       }
       setNewComment("");
       setReplyingTo(null);

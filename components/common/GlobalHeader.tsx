@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, startTransition } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { Bell, User, Hammer, Database, LogIn, Menu } from 'lucide-react';
@@ -8,6 +8,9 @@ import { useAuth } from "../AuthProvider";
 import { supabase } from "@/lib/supabase";
 import NotificationDropdown from "../map/NotificationDropdown";
 import type { NotificationItem, UserProfile } from "@/types/map";
+import { useRealtimeToast } from "@/hooks/useRealtimeToast";
+import { toast } from "sonner";
+
 
 const MAP_LIST = [
   { id: "Erangel", label: "에란겔" },
@@ -28,6 +31,9 @@ export default function GlobalHeader() {
   const [showNotiDropdown, setShowNotiDropdown] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
 
+  // ✨ [1번] 전역 차량 제보 실시간 Toast 알림 (로그인 여부 무관)
+  useRealtimeToast();
+
   // 반응형 감지
   useEffect(() => {
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
@@ -39,8 +45,11 @@ export default function GlobalHeader() {
   // 유저 정보 & 알림 로드
   useEffect(() => {
     if (!user) {
-      setUserProfile(null);
-      setNotifications([]);
+      //  React 19: 비긴급 업데이트로 분류하여 연쇄적 렌더링 방지 및 UI 응답성 유지
+      startTransition(() => {
+        setUserProfile(null);
+        setNotifications([]);
+      });
       return;
     }
 
@@ -65,6 +74,42 @@ export default function GlobalHeader() {
     };
 
     fetchUserData();
+  }, [user]);
+
+  // ✨ [2번] 내 알림 실시간 구독 (notifications 테이블 INSERT)
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel(`user-notifications-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload) => {
+          const newNoti = payload.new as NotificationItem;
+
+          // Bell 배지 즉시 활성화
+          setNotifications((prev) => [newNoti, ...prev]);
+
+          // 제보 Toast처럼 우측 상단 팝업 알림 표시
+          const label = newNoti.type === 'reply' ? '답글' : '댓글';
+          toast.info(`💬 ${newNoti.sender_name}님이 내 글에 ${label}을 달았습니다!`, {
+            description: newNoti.preview_text || '',
+            duration: 5000,
+            position: 'top-right',
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [user]);
 
   const activeMapId = pathname.startsWith("/maps/") 
