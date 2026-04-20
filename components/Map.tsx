@@ -6,6 +6,7 @@ import L from "leaflet";
 
 
 import { CATEGORY_INFO } from "../lib/map_config";
+import { useMapSettings } from "../hooks/useMapSettings";
 import { useMapData } from "../hooks/useMapData";
 import { useAuth } from "./AuthProvider";
 import MapShell from "./map/MapShell";
@@ -83,25 +84,32 @@ export default function Map({ initialMapId, postId, initialIsWriting }: MapProps
     setIsMyPage(searchParams?.get("mypage") === "1");
   }, [searchParams]);
 
+  // DB 기반 카테고리 마스터 정보 로드
+  const { categoryInfoMap } = useMapSettings(activeMapId);
+
   const icons = useMemo(() => {
     const res: Record<string, L.DivIcon> = {};
     const scale = isMobile ? 1.25 : 1; // 모바일에서 마커 25% 확대
-    Object.keys(CATEGORY_INFO).forEach((key) => {
+    // DB 카테고리 우선, 없으면 하드코딩 기본값 사용
+    const infoSource = Object.keys(categoryInfoMap).length > 0 ? categoryInfoMap : CATEGORY_INFO;
+    Object.keys(infoSource).forEach((key) => {
       res[key] = createPinIcon(
-        CATEGORY_INFO[key].color,
-        CATEGORY_INFO[key].path,
+        infoSource[key].color,
+        infoSource[key].path,
         scale
       );
     });
     return res;
-  }, [isMobile]);
+  }, [isMobile, categoryInfoMap]);
 
   const [filters, setFilters] = useState<MapFilters>(() => {
     const init: Record<string, boolean> = { pending: false };
     if (typeof window !== "undefined" && sessionStorage.getItem("showPendingReports") === "true") {
       init.pending = true;
     }
-    Object.keys(CATEGORY_INFO).forEach((k) => {
+    // DB 카테고리 우선, 없으면 CATEGORY_INFO 기본값 사용
+    const infoSource = Object.keys(categoryInfoMap).length > 0 ? categoryInfoMap : CATEGORY_INFO;
+    Object.keys(infoSource).forEach((k) => {
       if (!init.hasOwnProperty(k)) init[k] = false;
     });
     return init;

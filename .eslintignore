@@ -1,0 +1,9 @@
+# 빌드 결과물 - ESLint 검사 제외 대상
+ios/App/App/public/
+android/app/src/main/assets/public/
+
+# Next.js 빌드 캐시
+.next/
+
+# 노드 모듈
+node_modules/

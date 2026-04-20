@@ -1,7 +1,8 @@
 "use client";
 
-import { CATEGORY_INFO, MAP_CATEGORIES } from "../lib/map_config";
 import { X } from "lucide-react";
+import { useMapSettings } from "@/hooks/useMapSettings";
+
 
 interface SidebarProps {
   isOpen: boolean;
@@ -22,8 +23,9 @@ export default function Sidebar({
   toggleFilter,
   getCount,
 }: SidebarProps) {
-  const currentCategories =
-    MAP_CATEGORIES[activeMapId] || MAP_CATEGORIES["Erangel"];
+  // DB 기반 동적 취든 및 카테고리 정보 로드
+  const { activeCategories: currentCategories, categoryInfoMap } = useMapSettings(activeMapId);
+
 
   return (
     <aside
@@ -183,7 +185,7 @@ export default function Sidebar({
         />
 
         {currentCategories.map((id) => {
-          const item = CATEGORY_INFO[id];
+          const item = categoryInfoMap[id];
           if (!item) return null;
           const count = getCount(id);
 

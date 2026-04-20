@@ -1,9 +1,12 @@
 'use client';
 
 import React from 'react';
-import { CATEGORY_INFO, MAP_CATEGORIES } from "../../lib/map_config";
+
+
 import { X, ChevronUp, Map as MapIcon, SlidersHorizontal } from 'lucide-react';
 import { Drawer } from 'vaul';
+import { useMapSettings } from '@/hooks/useMapSettings';
+
 
 interface MobileBottomSheetProps {
   isOpen: boolean;
@@ -24,8 +27,9 @@ export default function MobileBottomSheet({
   toggleFilter,
   getCount,
 }: MobileBottomSheetProps) {
-  const currentCategories =
-    MAP_CATEGORIES[activeMapId] || MAP_CATEGORIES["Erangel"];
+  // DB 기반 동적 취든 및 카테고리 정보 로드
+  const { activeCategories: currentCategories, categoryInfoMap } = useMapSettings(activeMapId);
+
 
   return (
     <Drawer.Root open={isOpen} onOpenChange={setIsOpen}>
@@ -84,7 +88,7 @@ export default function MobileBottomSheet({
                   <h3 className="text-[#555] text-xs font-black uppercase tracking-widest mb-3 ml-1">스폰 카테고리</h3>
                   <div className="grid grid-cols-2 gap-3">
                     {currentCategories.map((id) => {
-                      const item = CATEGORY_INFO[id];
+                      const item = categoryInfoMap[id];
                       if (!item) return null;
 
                       return (

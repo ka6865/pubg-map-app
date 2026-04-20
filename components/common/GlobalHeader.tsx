@@ -3,7 +3,7 @@
 import React, { useState, useEffect, startTransition } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Bell, User, Hammer, Database, LogIn, Menu } from 'lucide-react';
+import { Bell, User, Hammer, Database, LogIn, Menu, Settings } from 'lucide-react';
 import { useAuth } from "../AuthProvider";
 import { supabase } from "@/lib/supabase";
 import NotificationDropdown from "../map/NotificationDropdown";
@@ -280,6 +280,12 @@ export default function GlobalHeader() {
                   <button className="flex items-center gap-1.5 px-3 py-1.5 bg-[#34A853] text-white rounded-lg font-black text-[10px] uppercase shadow-sm">
                     <Database size={12} />
                     <span>데이터 관리</span>
+                  </button>
+                </Link>
+                <Link href="/admin/map-settings">
+                  <button className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg font-black text-[10px] uppercase shadow-sm">
+                    <Settings size={12} />
+                    <span>맵 설정</span>
                   </button>
                 </Link>
               </div>

@@ -65,7 +65,7 @@ async function summarizeText(rawText: string) {
 
 // 1. 글로벌 공식 패치노트 파싱 
 async function fetchOfficialPatchNote(supabaseAdmin: any, manualUrl?: string) {
-  let targetUrl = manualUrl ? cleanUrl(manualUrl) : "https://pubg.com/ko/news?category=patch_notes";
+  const targetUrl = manualUrl ? cleanUrl(manualUrl) : "https://pubg.com/ko/news?category=patch_notes";
   const response = await fetch(targetUrl, { cache: 'no-store', headers: { "User-Agent": "Mozilla/5.0" }});
   if (!response.ok) throw new Error("공식 홈페이지 접속 실패");
   const html = await response.text();
@@ -154,7 +154,7 @@ export async function POST(request: Request) {
     const { url } = await request.json();
     const manualUrl = url?.trim();
     const supabaseAdmin = createSupabaseAdminClient(supabaseUrl, supabaseServiceKey);
-    let results: any[] = [];
+    const results: any[] = [];
     
     if (manualUrl) {
       if (manualUrl.includes("pubg.com")) {

@@ -14,8 +14,10 @@ import {
 import L, { CRS } from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { supabase } from "../lib/supabase";
-import { CATEGORY_INFO, MAP_CATEGORIES } from "../lib/map_config";
+import { CATEGORY_INFO } from "../lib/map_config";
 import { toast } from "sonner";
+import { useMapSettings } from "@/hooks/useMapSettings";
+
 
 // SVG 경로와 색상을 조합해 커스텀 지도 마커 아이콘 객체 생성
 const createPinIcon = (colorCode: string, pathData: string) => {
@@ -100,35 +102,36 @@ const MapEditorComponent = () => {
   // 좌표가 넘어왔다면 줌인(0) 상태로, 아니라면 전체 맵(-3) 상태로 띄움
   const initialZoom = latParam && lngParam ? 0 : -3;
 
-  const icons = useMemo(() => {
-    const res: Record<string, L.DivIcon> = {};
-    Object.keys(CATEGORY_INFO).forEach((key) => {
-      res[key] = createPinIcon(
-        CATEGORY_INFO[key].color,
-        CATEGORY_INFO[key].path
-      );
-    });
-    return res;
-  }, []);
-
-  const [activeType, setActiveType] = useState<string>("Esports");
-  const [filters, setFilters] = useState<Record<string, boolean>>(() => {
-    const init: Record<string, boolean> = {};
-    Object.keys(CATEGORY_INFO).forEach((k) => (init[k] = true));
-    return init;
-  });
-
   const [isLoaded, setIsLoaded] = useState(false);
   const [vehicles, setVehicles] = useState<any[]>([]);
   const [pendingVehicles, setPendingVehicles] = useState<any[]>([]);
 
-  const allowedCategories =
-    MAP_CATEGORIES[activeMapId] || MAP_CATEGORIES["Erangel"];
+  // DB 기반 동적 카테고리 로드
+  const { activeCategories: allowedCategories, categoryInfoMap } = useMapSettings(activeMapId);
+
+  const icons = useMemo(() => {
+    const res: Record<string, L.DivIcon> = {};
+    Object.keys(categoryInfoMap).forEach((key) => {
+      res[key] = createPinIcon(
+        categoryInfoMap[key].color,
+        categoryInfoMap[key].path
+      );
+    });
+    return res;
+  }, [categoryInfoMap]);
+
+  const [activeType, setActiveType] = useState<string>("Esports");
+  const [filters, setFilters] = useState<Record<string, boolean>>(() => {
+    const init: Record<string, boolean> = {};
+    Object.keys(categoryInfoMap).forEach((k) => (init[k] = true));
+    return init;
+  });
+
 
   useEffect(() => {
     if (
-      !allowedCategories.includes(activeType) &&
-      allowedCategories.length > 0
+      allowedCategories.length > 0 &&
+      !allowedCategories.includes(activeType)
     ) {
       setActiveType(allowedCategories[0]);
     }
@@ -309,7 +312,7 @@ const MapEditorComponent = () => {
   const handleMapClick = (e: L.LeafletMouseEvent) => {
     const newVehicle = {
       id: Date.now(),
-      name: CATEGORY_INFO[activeType]?.label || "마커",
+      name: categoryInfoMap[activeType]?.label || "마커",
       x: e.latlng.lng,
       y: e.latlng.lat,
       mapId: activeMapId,
@@ -360,6 +363,7 @@ const MapEditorComponent = () => {
         <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-[1000] flex flex-wrap gap-2 bg-[#1e293b] border border-[#334155] p-3 rounded-xl shadow-2xl items-center justify-center max-w-[90vw]">
           {allowedCategories.map((id) => {
             const info = CATEGORY_INFO[id];
+            if (!info) return null; // 방어 로직 추가
             const isActive = activeType === id;
             const isFiltered = filters[id];
             return (

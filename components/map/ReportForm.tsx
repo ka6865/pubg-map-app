@@ -1,8 +1,10 @@
 import React, { useState, useRef } from "react";
 import L from "leaflet";
 import { supabase } from "../../lib/supabase";
-import { MAP_CATEGORIES, CATEGORY_INFO } from "../../lib/map_config";
+import { CATEGORY_INFO } from "../../lib/map_config";
 import { toast } from "sonner";
+import { useMapSettings } from "@/hooks/useMapSettings";
+
 
 interface ReportFormProps {
   location: L.LatLng;
@@ -33,8 +35,9 @@ const ReportForm = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const isSubmittingRef = useRef(false);
 
-  const availableCategories =
-    MAP_CATEGORIES[activeMapId] || MAP_CATEGORIES["Erangel"];
+  // DB 기반 동적 카테고리 ID 및 표시 정보 로드
+  const { activeCategories: availableCategories, categoryInfoMap } = useMapSettings(activeMapId);
+
 
   const handleSubmit = async () => {
     // 유효성 검사
@@ -227,7 +230,7 @@ const ReportForm = ({
           }}
         >
           {availableCategories.map((categoryId) => {
-            const categoryData = CATEGORY_INFO[categoryId];
+            const categoryData = categoryInfoMap[categoryId];
             if (!categoryData) return null;
 
             const isSelected = selectedType === categoryId;
