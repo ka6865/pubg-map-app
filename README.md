@@ -1,17 +1,49 @@
-# 🗺️ BGMS (PUBG Interactive Tactical Map & AI Intelligence)
+# 🗺️ BGMS (BattleGrounds Management System)
 
-**BGMS**는 배틀그라운드(PUBG) 게이머를 위한 차세대 전술 지도 및 AI 분석 플랫폼입니다. 단순한 지도 정보를 넘어, 텔레메트리 기반의 교전 리플레이 시각화와 Google Gemini를 활용한 AI 전략 브리핑을 제공합니다.
+### 배틀그라운드 전술의 시작, BGMS.kr
+
+[![BGMS Website](https://img.shields.io/badge/Website-bgms.kr-F2A900?style=for-the-badge&logo=google-chrome&logoColor=white)](https://bgms.kr)
+[![Discord Support](https://img.shields.io/badge/Discord-Join%20Us-7289DA?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/your-link)
 
 ---
 
-## ✨ 핵심 기능 (Key Features)
+## 🚀 사이트 바로가기
+**공식 도메인:** [https://bgms.kr](https://bgms.kr)  
+*배틀그라운드의 모든 맵 정보와 AI 분석을 한곳에서 확인하세요.*
 
-- **인터랙티브 전술 지도**: Leaflet 기반 고해상도 지도 및 7개 공식 맵(에란겔, 미라마, 태이고 등) 지원.
-- **텔레메트리 리플레이**: 인게임 매치 데이터를 파싱하여 이동 경로, 교전 위치, 사망 지점 등을 지도에 투사.
-- **BGMS AI 브리핑**: Google Gemini AI를 활용한 패치노트 자동 요약 및 플레이어 매치 분석 스타일 보고서 생성.
-- **자동화 엔진 (Cron)**: 정기적인 공홈 뉴스 스크래핑 및 AI 요약 게시글 자동 등록 시스템.
-- **모바일 하이브리드**: Capacitor를 통해 웹의 경험을 그대로 iOS/Android 앱으로 제공.
-- **커뮤니티**: Discord 연동 기능이 포함된 실시간 정보 공유 및 게시판 시스템.
+---
+
+## ✨ 주요 기능 및 사용법
+
+### 1. 필터링된 인터랙티브 전술 지도
+*   **차량 및 아이템 스폰 확인**: 사이드바의 체크박스를 통해 **차고지, 고정 차량, 보트, 글라이더, 비밀 열쇠** 등의 위치를 지도에 표시하거나 숨길 수 있습니다.
+*   **실시간 제보 시스템**: 지도에서 마우스 우클릭 또는 '차량 제보' 도구를 사용하여 새로운 차량 위치를 커뮤니티에 공유할 수 있습니다.
+
+### 2. 정밀 전술 도구 (Map Tools)
+*   **박격포 계산기**: 내 위치와 타겟 지점을 찍으면 정확한 거리와 발사각을 계산해 줍니다. 
+*   **비행기 경로 스캔**: 비행기 경로를 그리드에 투사하고, 경로 주변 1km 내의 주요 차량 스폰 지점을 한눈에 확인하여 낙하 지점을 결정하세요.
+*   **그리드망**: 1km/100m 단위의 그리드를 활성화하여 정밀한 위치 브리핑이 가능합니다.
+
+### 3. AI 기반 인텔리전스
+*   **AI 패치노트 요약**: 복잡한 공식 패치노트를 Google Gemini AI가 핵심만 요약해 드립니다. 바쁜 게이머를 위해 30초 내에 패치 내용을 파악할 수 있게 돕습니다.
+*   **전적 분석 및 AI 브리핑**: 플레이어의 매치 데이터를 분석하여 교전 성향과 개선점을 AI가 리포트 형식으로 제공합니다.
+
+### 4. 전적 검색 및 통계
+*   **플레이어 검색**: 닉네임 검색을 통해 시즌 스탯 및 최근 매치 결과, 상세 딜량 수치를 확인할 수 있습니다.
+*   **사용자 메뉴**: 로그인 후 나만의 즐겨찾기 맵 설정 및 활동 내역을 관리할 수 있습니다.
+
+---
+
+## 📱 모바일 앱 이용 안내
+BGMS는 웹브라우저뿐만 아니라 모바일 환경에서도 최적의 경험을 제공합니다.
+*   **하이브리드 앱 지원**: iOS 및 Android 앱을 통해 언제 어디서나 전술 지도를 확인하세요.
+*   **모바일 최적화 UI**: 모바일에서는 하단 시트와 터치 친화적 필터 UI를 통해 한 손으로 조작이 가능합니다.
+
+---
+
+## 🤝 커뮤니티 및 게시판
+*   **자유 게시판**: 다른 유저들과 전술을 공유하고 매치에 대해 토론하세요.
+*   **공지사항**: 실시간으로 업데이트되는 패치 소식과 사이트 점검 안내를 확인하세요.
 
 ---
 
@@ -24,31 +56,13 @@
 
 ### Backend & Data
 - **Database / Auth**: Supabase (PostgreSQL)
-- **AI**: Google Generative AI (Gemini)
+- **AI**: Google Generative AI (Gemini 2.5-Flash & v3.1)
 - **Infra**: Vercel (Deployment), GitHub Actions (Cron Jobs)
 
 ### Mobile & Tools
 - **Mobile**: Capacitor v8 (Hybrid)
 - **State Management**: React 19 Hooks & Server Actions
-- **Testing**: Jest, React Testing Library
 
 ---
 
-## 🚀 시작하기 (Quick Start)
-
-```bash
-# 의존성 설치
-npm install
-
-# 개발 서버 실행
-npm run dev
-
-# 모바일 빌드 (Static Export)
-npm run build:app
-```
-
----
-
-## 📖 프로젝트 가이드
-
-AI 개발 가이드 및 상세 아키텍처는 [.project_context.md](./.project_context.md) 파일을 참조하십시오.
+© 2026 BGMS Team. All rights reserved.

@@ -89,7 +89,7 @@ export function getTabSeo(tab: string): Metadata {
     desc: "모든 맵의 차량 위치와 실시간 전적, 아이템 무게 계산기를 제공하는 전문 전술 플랫폼입니다." 
   };
 
-  const path = tab === "Erangel" ? "" : 
+  const path = tab === "Erangel" ? "maps/erangel" : 
                tab === "Board" ? "board" : 
                tab === "Stats" ? "stats" : 
                `maps/${tab.toLowerCase()}`;
