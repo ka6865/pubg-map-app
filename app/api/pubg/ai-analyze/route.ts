@@ -51,63 +51,79 @@ export async function POST(request: Request) {
       );
     }
 
-    const { stats, mapName, gameMode, totalTeamKills, killDetails = [], dbnoDetails = [] } = matchData;
+    const { stats, mapName, gameMode, totalTeamKills, killDetails = [], dbnoDetails = [], team = [] } = matchData;
+    const lowerNickname = nickname.toLowerCase();
+
+    // 1. 사용자(Me)와 팀원(Teammates) 데이터 분리
+    const myKills = killDetails.filter((k: any) => k.attackerName?.toLowerCase() === lowerNickname);
+    const teammateKills = killDetails.filter((k: any) => k.attackerName?.toLowerCase() !== lowerNickname);
 
     // 심화 분석을 위한 보조 지표 계산
     const killParticipation = totalTeamKills > 0 ? Math.round((stats.kills / totalTeamKills) * 100) : 0;
     const damagePerKill = stats.kills > 0 ? Math.floor(stats.damageDealt / stats.kills) : Math.floor(stats.damageDealt);
     const mobilityStyle = stats.rideDistance > stats.walkDistance ? "차량 중심 장거리 운영" : "도보 중심 신중한 운영";
 
-    // 총기별 킬/기절 통계 집계 (텔레메트리 데이터가 있는 경우)
+    // 사용자(Me) 총기별 킬/기절 통계 집계
     const weaponKillMap: Record<string, number> = {};
-    for (const k of killDetails) {
+    for (const k of myKills) {
       if (k.weapon && k.weapon !== "알 수 없음") {
         weaponKillMap[k.weapon] = (weaponKillMap[k.weapon] || 0) + 1;
       }
     }
+    const myDbno = dbnoDetails.filter((k: any) => k.attackerName?.toLowerCase() === lowerNickname);
     const weaponDbnoMap: Record<string, number> = {};
-    for (const k of dbnoDetails) {
+    for (const k of myDbno) {
       if (k.weapon && k.weapon !== "알 수 없음") {
         weaponDbnoMap[k.weapon] = (weaponDbnoMap[k.weapon] || 0) + 1;
       }
     }
 
-    // 교전 거리 분포
+    // 사용자(Me) 교전 거리 분포
     const distBuckets = { close: 0, mid: 0, long: 0 };
-    for (const k of killDetails) {
+    for (const k of myKills) {
       if (k.distanceM <= 50) distBuckets.close++;
       else if (k.distanceM <= 200) distBuckets.mid++;
       else distBuckets.long++;
     }
 
-    // 킬 상세 내역 텍스트 (최대 10건만 - 토큰 절약)
+    // 사용자(Me) 킬 상세 내역 텍스트 (최대 5건만 - 토큰 절약)
     const killDetailText =
-      killDetails.length > 0
-        ? killDetails
-            .slice(0, 10)
+      myKills.length > 0
+        ? myKills
+            .slice(0, 5)
             .map(
               (k: any, i: number) =>
                 `  ${i + 1}. [${k.weapon}] ${k.distanceM}m / ${k.isHeadshot ? "헤드샷 ✓" : "일반"} → 희생자: ${k.victimName}`
             )
             .join("\n")
-        : "  텔레메트리 킬 데이터 없음 (0킬 또는 데이터 미수신)";
+        : "  내 킬 데이터 없음";
+
+    // 2. 팀원 성과 요약 생성 (부하 최소화를 위해 핵심 요약만)
+    const teammateSummaryText = team
+      .filter((m: any) => m.name.toLowerCase() !== lowerNickname)
+      .map((m: any) => {
+        const killsByTeammate = teammateKills.filter((k: any) => k.attackerName === m.name);
+        const mainWeapon = killsByTeammate.length > 0 ? killsByTeammate[0].weapon : "정보없음";
+        return `- ${m.name}: ${m.kills}킬 / ${m.assists}어시 / 딜량 ${Math.floor(m.damageDealt)} / 주무기: ${mainWeapon}`;
+      })
+      .join("\n");
 
     const playerReportSummary = `
 현재 매치 요약:
 - 플레이어: ${nickname} (맵: ${mapName}, 모드: ${gameMode}, 순위: #${stats.winPlace})
-- 전투: ${stats.kills}킬 / ${stats.assists}어시 / ${stats.DBNOs}회 기절시킴 / 딜량 ${Math.floor(stats.damageDealt)}
-- 효율: 킬당 평균 ${damagePerKill}딜 / 팀 킬 기여도 ${killParticipation}%
-- 생존: ${Math.floor(stats.timeSurvived / 60)}분 ${stats.timeSurvived % 60}초 / 스타일: ${mobilityStyle}
-- 아이템: 회복 ${stats.heals}회 / 부스트 ${stats.boosts}회
-- 헤드샷 킬: ${stats.headshotKills}회 / 최장 킬: ${stats.longestKill || 0}m
+- 내 전투: ${stats.kills}킬 / ${stats.assists}어시 / ${stats.DBNOs}회 기절시킴 / 딜량 ${Math.floor(stats.damageDealt)}
+- 내 효율: 킬당 평균 ${damagePerKill}딜 / 팀 킬 기여도 ${killParticipation}%
+- 내 스타일: ${mobilityStyle} / 생존 ${Math.floor(stats.timeSurvived / 60)}분 ${stats.timeSurvived % 60}초
 - 사망 유형: ${stats.deathType || "정보 없음"}
 
-[텔레메트리 기반 무기 분석]
-- 총기별 킬 횟수: ${Object.keys(weaponKillMap).length > 0 ? JSON.stringify(weaponKillMap) : "없음"}
-- 총기별 기절 횟수: ${Object.keys(weaponDbnoMap).length > 0 ? JSON.stringify(weaponDbnoMap) : "없음"}
-- 교전 거리: 근접 ${distBuckets.close}킬 / 중거리 ${distBuckets.mid}킬 / 장거리 ${distBuckets.long}킬
+[내 무기 분석]
+- 총기별 킬: ${JSON.stringify(weaponKillMap)}
+- 교전 거리: 근접 ${distBuckets.close} / 중거리 ${distBuckets.mid} / 장거리 ${distBuckets.long}
 - 킬 상세:
 ${killDetailText}
+
+[우리 팀원 활약상]
+${teammateSummaryText || "- 팀원 정보 없음 (솔로 매치)"}
     `.trim();
 
     const systemPrompt = `
@@ -116,11 +132,11 @@ ${killDetailText}
 
 [최우선 절대 규칙 (Output Constraints)]
 1. 언어: 반드시 100% 자연스러운 한국어(한글)로만 답변해.
-   - 🛑 ⚠️ 경고: '优秀', '稳定的' 같은 한자(중국어)나 'mechanism', 'bluezone' 등 불필요한 영단어를 단 한 글자도 섞지 마. 어색한 번역체 대신 "우수합니다", "안정적인" 같은 한국어로 표현해.
-2. 허용 영문: 'M416', 'AKM', 'KDA', 'AR', 'SR' 등 배틀그라운드 공식 총기명 및 게임 용어는 영문 그대로 허용해.
-3. 배그 전문 용어: 파밍, 자기장, 존버, 찌르기, 양각 등 한국 게이머들이 일상적으로 쓰는 용어를 자연스럽게 활용해.
-4. 분석 요건: 텔레메트리 킬 데이터가 존재할 경우, 두루뭉술하게 말하지 말고 "어떤 무기로 몇 m 거리에서 어떤 부위(헤드샷/일반)를 맞췄는지" 정확한 수치와 팩트를 기반으로 피드백해.
-5. 유저 맞춤형 해석: 사용자의 질문 의도를 파악하고, 제공된 데이터를 근거로 유기적인 해설을 제공해.
+2. 🛑 ⚠️ 경고: '优秀', '稳定的' 같은 한자(중국어)나 'mechanism', 'bluezone' 등 불필요한 영단어를 단 한 글자도 섞지 마. 어색한 번역체 대신 "우수합니다", "안정적인" 같은 한국어로 표현해.
+3. 간결성: 불필요한 인사나 서론은 생략하고, 사용자의 질문에 대한 핵심 요약 위주로 답변해서 가독성을 높여줘.
+4. 팀워크 분석: 사용자가 팀원(동료)의 성과나 이번 판의 팀워크에 대해 물으면, 제공된 [우리 팀원 활약상] 데이터를 바탕으로 구체적인 닉네임을 언급하며 칭찬하거나 아쉬운 점을 분석해줘.
+4. 배그 전문 용어: 파밍, 자기장, 존버, 양각 등 한국 게이머들이 일상적으로 쓰는 용어를 자연스럽게 활용해.
+5. 데이터 기반: "어떤 무기로 몇 킬을 했는지" 등 정확한 수치와 팩트를 기반으로 피드백해.
 
 [데이터 배경]
 ${playerReportSummary}

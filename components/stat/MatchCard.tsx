@@ -95,11 +95,13 @@ export const MatchCard = ({
   nickname,
   platform,
   isMobile,
+  onNicknameClick,
 }: {
   matchId: string;
   nickname: string;
   platform: string;
   isMobile: boolean;
+  onNicknameClick?: (nickname: string) => void;
 }) => {
   const [matchData, setMatchData] = useState<MatchData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -162,6 +164,9 @@ export const MatchCard = ({
     setIsChatting(true);
 
     try {
+      // 토큰 절약을 위해 최신 대화 6개만 슬라이딩 윈도우로 전송
+      const slidingWindowMessages = updatedMessages.slice(-6);
+
       const response = await fetch("/api/pubg/ai-analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -172,7 +177,7 @@ export const MatchCard = ({
             dbnoDetails: matchData?.dbnoDetails ?? [],
           },
           nickname,
-          messages: updatedMessages,
+          messages: slidingWindowMessages,
         }),
       });
 
@@ -448,7 +453,15 @@ export const MatchCard = ({
                   whiteSpace: "nowrap",
                   textOverflow: "ellipsis",
                   overflow: "hidden",
+                  cursor: member.name === nickname ? "default" : "pointer",
                 }}
+                onClick={(e) => {
+                  if (member.name !== nickname && onNicknameClick) {
+                    e.stopPropagation();
+                    onNicknameClick(member.name);
+                  }
+                }}
+                className={member.name !== nickname ? "hover:text-[#F2A900] transition-colors" : ""}
               >
                 {member.name}
               </div>
@@ -738,7 +751,14 @@ export const MatchCard = ({
                           member.name === nickname ? "bold" : "normal",
                         color: member.name === nickname ? "#fff" : "#aaa",
                         textAlign: "left",
+                        cursor: member.name === nickname ? "default" : "pointer",
                       }}
+                      onClick={() => {
+                        if (member.name !== nickname && onNicknameClick) {
+                          onNicknameClick(member.name);
+                        }
+                      }}
+                      className={member.name !== nickname ? "hover:text-[#F2A900] transition-colors" : ""}
                     >
                       {member.name}
                     </td>

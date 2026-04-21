@@ -47,6 +47,7 @@ const WEAPON_MAP: Record<string, string> = {
   "WeapM79_C": "M79", "WeapGrenade_C": "수류탄", "ProjGrenade": "수류탄", "ProjGrenade_C": "수류탄",
   "WeapMolotov_C": "화염병", "ProjMolotov_C": "화염병", "ProjMolotov_DamageField_InWater_C": "화염병",
   "Item_Weapon_FlashBang_C": "섬광탄", "Item_Weapon_C4_C": "C4", "Thompson": "토미건",
+  "WeapHK416_C": "M416",
 };
 
 const getWeaponName = (id: string): string => {
@@ -177,6 +178,8 @@ export async function GET(request: Request) {
           }
 
           const telData: any[] = JSON.parse(telDataStr);
+          const teamNames = new Set(teamStats.map((m: any) => m.name.toLowerCase()));
+          const teamAccountIds = new Set(teamStats.map((m: any) => m.playerId));
 
           if (Array.isArray(telData)) {
             // 킬 이벤트 (v1 + v2)
@@ -186,7 +189,7 @@ export async function GET(request: Request) {
                 if (type !== "LogPlayerKill" && type !== "LogPlayerKillV2") return false;
                 const attacker = e.killer || e.attacker;
                 if (!attacker) return false;
-                return attacker.name?.toLowerCase() === lowerNickname || attacker.accountId === accountId;
+                return teamNames.has(attacker.name?.toLowerCase()) || teamAccountIds.has(attacker.accountId);
               })
               .map((k: any) => {
                 const weaponId =
@@ -209,8 +212,10 @@ export async function GET(request: Request) {
                   k.distance ??
                   0;
 
+                const attacker = k.killer || k.attacker;
                 return {
                   type: "킬",
+                  attackerName: attacker?.name || "알 수 없음",
                   weapon: getWeaponName(weaponId),
                   weaponRaw: weaponId,
                   distanceM: Math.round(rawDist / 100), // cm → m
@@ -226,7 +231,7 @@ export async function GET(request: Request) {
                 if (e._T !== "LogPlayerMakeDBNO") return false;
                 const attacker = e.attacker;
                 if (!attacker) return false;
-                return attacker.name?.toLowerCase() === lowerNickname || attacker.accountId === accountId;
+                return teamNames.has(attacker.name?.toLowerCase()) || teamAccountIds.has(attacker.accountId);
               })
               .map((k: any) => {
                 const weaponId =
@@ -244,6 +249,7 @@ export async function GET(request: Request) {
 
                 return {
                   type: "기절",
+                  attackerName: k.attacker?.name || "알 수 없음",
                   weapon: getWeaponName(weaponId),
                   weaponRaw: weaponId,
                   distanceM: Math.round(rawDist / 100),

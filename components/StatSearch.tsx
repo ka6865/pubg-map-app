@@ -356,6 +356,12 @@ export default function StatSearch() {
                     nickname={result.nickname}
                     platform={result.platform}
                     isMobile={isMobile}
+                    onNicknameClick={(clickedName) => {
+                      setNickname(clickedName);
+                      // handleSearch는 platform을 필요로 하므로 현재 선택된 platform 전달
+                      handleSearch(selectedSeason, clickedName, platform);
+                      window.scrollTo({ top: 0, behavior: "smooth" });
+                    }}
                   />
                 ))}
               </div>

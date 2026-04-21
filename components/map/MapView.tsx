@@ -352,7 +352,7 @@ const MapView = memo(
         style={{ height: "100%", width: "100%", background: "#0b0f19" }}
         zoomControl={false}
       >
-        {/* 🌟 기절 상태 맥박 효과 애니메이션 */}
+        {/* 🌟 기절 상태 맥박 효과 및 마커 이동 부드럽게 설정 */}
         <style>{`
           @keyframes groggy-pulse {
             0% { transform: scale(1.0); opacity: 0.9; }
@@ -366,6 +366,17 @@ const MapView = memo(
             border-radius: 50%;
             animation: groggy-pulse 1.2s infinite ease-out;
             box-shadow: 0 0 12px rgba(255, 0, 255, 0.7);
+          }
+          /* 텔레메트리 마커 부드러운 이동을 위한 트랜지션 */
+          .leaflet-marker-icon, .leaflet-marker-shadow {
+            transition: transform 0.15s linear !important;
+          }
+          .leaflet-interactive {
+            transition: all 0.15s linear !important;
+          }
+          /* 궤적(Polyline)은 트랜지션 제외 (깜빡임 방지) */
+          .leaflet-pane path.leaflet-interactive[stroke-dasharray] {
+            transition: none !important;
           }
         `}</style>
         {currentMap && (

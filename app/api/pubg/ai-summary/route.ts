@@ -18,7 +18,7 @@ const WEAPON_MAP: { [key: string]: string } = {
   "WeapMolotov_C": "화염병", "ProjMolotov_C": "화염병", "ProjMolotov_DamageField_InWater_C": "화염병",
   "Item_Weapon_FlashBang_C": "섬광탄", "Item_Weapon_C4_C": "C4", "Thompson": "토미건",
   // 추가 무기 ID 보완
-  "WeapHK416_C": "HK416", "WeapFAMAS_C": "FAMAS", "WeapMP9_C": "MP9",
+  "WeapHK416_C": "M416", "WeapFAMAS_C": "FAMAS", "WeapMP9_C": "MP9",
   "WeapRhino_C": "리볼버", "WeapDesertEagle_C": "데저트이글", "WeapP1911_C": "P1911",
   "WeapP92_C": "P92", "WeapNagantM1895_C": "나강 권총", "WeapSawnoff_C": "소드오프",
   "WeapFlareGun_C": "플레어건", "Mortar_Proj_C": "박격포", "WeapGrenadeLauncher_C": "유탄발사기",
