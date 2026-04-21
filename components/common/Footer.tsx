@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import Link from "next/link";
 
 const Footer = () => {
   const currentYear = new Date().getFullYear();
@@ -89,7 +90,7 @@ const Footer = () => {
 
           <span style={{ width: "1px", height: "14px", backgroundColor: "rgba(255,255,255,0.1)" }} />
 
-          <a
+          <Link
             href="/board"
             style={{
               fontSize: "12px",
@@ -102,11 +103,11 @@ const Footer = () => {
             onMouseLeave={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "rgba(255,255,255,0.35)")}
           >
             커뮤니티
-          </a>
+          </Link>
 
           <span style={{ width: "1px", height: "14px", backgroundColor: "rgba(255,255,255,0.1)" }} />
 
-          <a
+          <Link
             href="/weapons"
             style={{
               fontSize: "12px",
@@ -119,7 +120,7 @@ const Footer = () => {
             onMouseLeave={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "rgba(255,255,255,0.35)")}
           >
             무기 도감
-          </a>
+          </Link>
         </div>
 
         {/* 법적 고지 */}

@@ -67,7 +67,7 @@ export async function getPostMetadata(postId: string): Promise<Metadata | null> 
       url: canonicalUrl,
       type: 'article',
       publishedTime: post.created_at,
-      modifiedTime: post.created_at, // updated_at 대신 created_at 사용
+      modifiedTime: post.created_at,
       authors: [post.author],
       images: [post.image_url || `${baseUrl}/logo.png`],
     },

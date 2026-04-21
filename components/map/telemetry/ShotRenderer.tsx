@@ -4,7 +4,7 @@ import { Polyline, CircleMarker } from "react-leaflet";
 const EFFECT_WINDOW_MS = 800;
 const COLORS = ["#F2A900", "#34A853", "#3b82f6", "#ef4444"];
 const MAP_SIZES: Record<string, number> = { 
-  Erangel: 816000, Miramar: 816000, Sanhok: 408000, Karakin: 204000, Taego: 816000, Deston: 816000 
+  Erangel: 819200, Miramar: 819200, Sanhok: 409600, Karakin: 204800, Taego: 819200, Deston: 819200 
 };
 
 /**

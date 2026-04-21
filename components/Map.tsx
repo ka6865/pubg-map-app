@@ -75,14 +75,9 @@ export default function Map({ initialMapId, postId, initialIsWriting }: MapProps
   const currentPostId = activePostId;
 
   const [isSidebarOpen, setSidebarOpen] = useState(true);
-  // URL 쿼리 파라미터 mypage=1 여부로 마이페이지 초기 상태 결정
-  const [isMyPage, setIsMyPage] = useState(() => searchParams?.get("mypage") === "1");
+  // URL 쿼리 파라미터 mypage=1 여부로 마이페이지 여부 결정
+  const isMyPage = searchParams?.get("mypage") === "1";
   const [isMobile, setIsMobile] = useState(false);
-
-  // URL의 mypage 쿼리 파라미터가 바뀔 때마다 isMyPage 상태 동기화
-  useEffect(() => {
-    setIsMyPage(searchParams?.get("mypage") === "1");
-  }, [searchParams]);
 
   // DB 기반 카테고리 마스터 정보 로드
   const { categoryInfoMap } = useMapSettings(activeMapId);

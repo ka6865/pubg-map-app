@@ -16,6 +16,7 @@ import L, { CRS } from "leaflet";
 import "leaflet/dist/leaflet.css";
 import type { MapTab, MapMarker, AuthUser, PendingVehicle } from "../../types/map";
 import ReportForm from "./ReportForm";
+import HotDropLayer from "./HotDropLayer";
 import { supabase } from "../../lib/supabase";
 import { toast } from "sonner";
 
@@ -61,7 +62,7 @@ const reportPlacementIcon = L.divIcon({
 const PUBGGrid = memo(() => {
   const lines = [];
   const size = 8192;
-  const pxPer100m = 102.4;
+  const pxPer100m = 100;
   for (let i = 0; i <= 80; i++) {
     const pos = i * pxPer100m;
     const isMajor = i % 10 === 0;
@@ -156,10 +157,14 @@ const MapInteraction = ({
 const MapResizer = () => {
   const map = useMap();
   React.useEffect(() => {
+    const container = map.getContainer();
     const resizeObserver = new ResizeObserver(() => {
-      map.invalidateSize();
+      // 컨테이너가 화면에 있고 크기가 유효할 때만 실행 (IndexSizeError 방지)
+      if (container.offsetWidth > 0 && container.offsetHeight > 0) {
+        map.invalidateSize();
+      }
     });
-    resizeObserver.observe(map.getContainer());
+    resizeObserver.observe(container);
     return () => resizeObserver.disconnect();
   }, [map]);
   return null;
@@ -191,7 +196,8 @@ interface MapViewProps {
   isAdmin?: boolean;
   pendingVehicles: PendingVehicle[];
   filters: Record<string, boolean>;
-  telemetryData?: any; 
+  telemetryData?: any;
+  isHotDropOn?: boolean;  // 🔥 핫드랍 히트맵 토글
 }
 
 const MapView = memo(
@@ -219,7 +225,8 @@ const MapView = memo(
     isAdmin,
     pendingVehicles,
     filters,
-    telemetryData, 
+    telemetryData,
+    isHotDropOn = false,
   }: MapViewProps) => {
     const isActionRunningRef = useRef(false);
 
@@ -568,6 +575,9 @@ const MapView = memo(
         <ShotRenderer telemetryData={telemetryData} />
         <PlayerPathRenderer telemetryData={telemetryData} />
         <PlayerMarkerRenderer telemetryData={telemetryData} />
+
+        {/* 🔥 핫드랍 히트맵 레이어 */}
+        <HotDropLayer mapName={activeMapId} visible={isHotDropOn} />
 
       </MapContainer>
     );

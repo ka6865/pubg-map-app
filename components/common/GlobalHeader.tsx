@@ -167,13 +167,6 @@ export default function GlobalHeader() {
     <header className="flex items-center justify-between min-h-[56px] h-auto px-4 bg-[#F2A900] border-b-2 border-[#cc8b00] z-[6000] safe-top shadow-md select-none shrink-0 w-full">
       <div className="flex items-center gap-3 overflow-hidden flex-1">
         
-        {/* 모바일 햄버거 임시(TODO) */}
-        {!isMobile && (
-          <button className="p-2 -ml-2 text-black/80 hover:text-black transition-colors md:hidden">
-            <Menu size={22} strokeWidth={2.5} />
-          </button>
-        )}
-
         <Link href="/" className="flex items-center cursor-pointer group flex-shrink-0">
           <span className="text-[20px] md:text-[22px] font-black italic tracking-tighter text-black uppercase group-active:scale-95 transition-transform flex items-center">
             BG<span className="text-white">MS</span>

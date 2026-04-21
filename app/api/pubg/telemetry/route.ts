@@ -21,8 +21,8 @@ export async function GET(request: Request) {
   };
 
   const MAP_SIZES: Record<string, number> = {
-    erangel: 816000, miramar: 816000, taego: 816000, deston: 816000, rondo: 816000, vikendi: 816000,
-    sanhok: 408000, paramo: 306000, karakin: 204000, haven: 102000
+    erangel: 819200, miramar: 819200, taego: 819200, deston: 819200, rondo: 819200, vikendi: 819200,
+    sanhok: 409600, paramo: 307200, karakin: 204800, haven: 102400
   };
   const mapSize = MAP_SIZES[mapName.toLowerCase()] || 816000;
   const SIMPLIFY_THRESHOLD = 500;

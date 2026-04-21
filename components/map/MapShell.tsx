@@ -4,7 +4,7 @@ import L from "leaflet";
 import Sidebar from "../Sidebar";
 import MobileBottomSheet from "./MobileBottomSheet";
 import MapView from "./MapView";
-import { X, Hammer, Map as MapIcon, Crosshair, Plane, AlertCircle, SlidersHorizontal, Menu } from 'lucide-react';
+import { X, Hammer, Map as MapIcon, Crosshair, Plane, AlertCircle, SlidersHorizontal, Menu, Flame } from 'lucide-react';
 import type { MapTab, MapMarker, AuthUser, PendingVehicle } from "../../types/map";
 import { useTelemetry } from "../../hooks/useTelemetry";
 import TelemetryPlayer from "./TelemetryPlayer";
@@ -117,6 +117,7 @@ const MapShell = memo(
     const [reportLocation, setReportLocation] = useState<L.LatLng | null>(null);
     const [isVehicleFilterOn, setIsVehicleFilterOn] = useState(false);
     const [isGridOn, setIsGridOn] = useState(true);
+    const [isHotDropOn, setIsHotDropOn] = useState(false);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [showZone, setShowZone] = useState(true);
     const [showCombatDots, setShowCombatDots] = useState(false);
@@ -125,9 +126,11 @@ const MapShell = memo(
     const [showPlayerNames, setShowPlayerNames] = useState(true);
     const [showPlayerPaths, setShowPlayerPaths] = useState(true);
 
-    useEffect(() => {
+    const [prevMapId, setPrevMapId] = useState(activeMapId);
+    if (activeMapId !== prevMapId) {
+      setPrevMapId(activeMapId);
       setIsMenuOpen(false);
-    }, [activeMapId]);
+    }
 
     const mapScale = 8192 / imageWidth;
     const pxPerMeter = imageWidth / 8192;
@@ -236,9 +239,29 @@ const MapShell = memo(
 
               {/* 지도 도구 버튼 (우측) */}
               <div className="flex flex-col gap-3 items-end pointer-events-auto">
+                {/* 핫드랍 상시 노출 버튼 (메인) */}
+                <button
+                  onClick={() => setIsHotDropOn(!isHotDropOn)}
+                  className={`pointer-events-auto flex items-center gap-2.5 px-6 shadow-[0_12px_40px_rgba(0,0,0,0.5)] active:scale-90 transition-all duration-500 border border-white/10 h-[52px] rounded-2xl ${
+                    isHotDropOn
+                      ? "bg-gradient-to-br from-orange-500 via-red-600 to-rose-700 text-white border-orange-400/50 ring-2 ring-orange-500/30 ring-offset-2 ring-offset-black shadow-[0_0_30px_rgba(234,88,12,0.6)]"
+                      : "bg-black/80 backdrop-blur-xl text-orange-500/80 hover:text-orange-400"
+                  }`}
+                >
+                  <div className="relative">
+                    <Flame size={20} strokeWidth={2.5} className={isHotDropOn ? "animate-pulse" : ""} />
+                    {isHotDropOn && (
+                      <span className="absolute inset-0 bg-orange-400 blur-md opacity-50 animate-ping"></span>
+                    )}
+                  </div>
+                  <span className="font-black uppercase tracking-tighter text-xs">
+                    {isHotDropOn ? "HOTDROP ON" : "HOTDROP"}
+                  </span>
+                </button>
+
                 <button
                   onClick={() => setIsMenuOpen(!isMenuOpen)}
-                  className={`pointer-events-auto flex items-center gap-2 px-6 shadow-[0_12px_40px_rgba(0,0,0,0.4)] active:scale-90 transition-all duration-300 border border-white/5 ${isMenuOpen ? "bg-red-600 text-white h-[52px] rounded-2xl text-sm" : "bg-black text-[#F2A900] h-[52px] rounded-2xl text-base"}`}
+                  className={`pointer-events-auto flex items-center gap-2 px-6 shadow-[0_12px_40px_rgba(0,0,0,0.4)] active:scale-90 transition-all duration-300 border border-white/5 ${isMenuOpen ? "bg-red-600 text-white h-[52px] rounded-2xl text-sm" : "bg-black/80 backdrop-blur-xl text-[#F2A900] h-[52px] rounded-2xl text-base"}`}
                 >
                   {isMenuOpen ? (
                     <>
@@ -302,17 +325,22 @@ const MapShell = memo(
             </div>
           </div>
 
-          {activeMode !== "none" && (
-            <div className={`absolute left-1/2 -translate-x-1/2 z-[1000] bg-black/70 text-white px-4 py-2 rounded-[20px] text-[13px] pointer-events-none font-bold border border-[#444] whitespace-nowrap ${isMobile ? 'top-[60px]' : 'top-[15px]'}`}>
-              {activeMode === "mortar" &&
-                "📍 [박격포] 내 위치와 타겟을 클릭하세요"}
-              {activeMode === "flight" &&
-                "📍 [비행기] 출발지와 도착지를 클릭하세요"}
-              {activeMode === "report" &&
-                "🚨 [제보] 지도에 차량 위치를 좌클릭하세요!"}
-              <span className="text-[#F2A900] ml-2.5">
-                (우클릭: 취소)
-              </span>
+          {(activeMode !== "none" || isHotDropOn) && (
+            <div className={`absolute left-1/2 -translate-x-1/2 z-[1000] flex flex-col items-center gap-2 pointer-events-none ${isMobile ? 'bottom-[160px]' : 'top-[15px]'}`}>
+              {activeMode !== "none" && (
+                <div className="bg-black/70 backdrop-blur-md text-white px-5 py-2.5 rounded-[20px] text-[13px] font-bold border border-white/10 shadow-2xl animate-in fade-in slide-in-from-top-4 duration-300">
+                  {activeMode === "mortar" && "📍 [박격포] 내 위치와 타겟을 클릭하세요"}
+                  {activeMode === "flight" && "📍 [비행기] 출발지와 도착지를 클릭하세요"}
+                  {activeMode === "report" && "🚨 [제보] 지도에 차량 위치를 좌클릭하세요!"}
+                  <span className="text-[#F2A900] ml-2.5">(우클릭: 취소)</span>
+                </div>
+              )}
+              {isHotDropOn && (
+                <div className="bg-orange-600/20 backdrop-blur-md text-orange-200 px-5 py-2 rounded-full text-[11px] font-black border border-orange-500/30 shadow-[0_0_15px_rgba(234,88,12,0.2)] animate-in zoom-in-95 duration-500 flex items-center gap-2">
+                  <Flame size={12} className="text-orange-400 animate-pulse fill-orange-400" />
+                  <span className="uppercase tracking-tight">핫드랍: 상위 랭커 및 최근 경쟁 매치 기반 실시간 집계 중</span>
+                </div>
+              )}
             </div>
           )}
 
@@ -340,6 +368,7 @@ const MapShell = memo(
             isAdmin={isAdmin}
             pendingVehicles={playbackId ? [] : pendingVehicles}
             filters={filters}
+            isHotDropOn={isHotDropOn}
             telemetryData={{
               isActive: !!playbackId,
               mapName: activeMapId || "Erangel",

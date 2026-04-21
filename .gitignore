@@ -53,3 +53,11 @@ vehicles_*
 # 타일 생성 스크립트 (로컬 운영용)
 generate-tiles.js
 .project_context.md
+
+# MCP & Agent 관련 (보안 및 로컬 설정)
+.gemini/
+.agents/
+.cursor/
+mcp_config.json
+skills-lock.json
+scratch/
