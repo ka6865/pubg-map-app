@@ -9,7 +9,9 @@ export default function BottomNav() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const pathname = usePathname();
-  const activeTab = searchParams?.get('tab') || 'Erangel';
+  const activeTab = pathname.startsWith('/maps/') 
+    ? pathname.replace('/maps/', '').charAt(0).toUpperCase() + pathname.replace('/maps/', '').slice(1)
+    : (searchParams?.get('tab') || 'Erangel');
   
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [prevPathname, setPrevPathname] = useState(pathname);

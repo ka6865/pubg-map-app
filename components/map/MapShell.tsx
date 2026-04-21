@@ -214,7 +214,7 @@ const MapShell = memo(
         <div className="relative flex-1 h-full overflow-hidden">
           <HomeNotice />
 
-          <div className={`absolute z-[1000] flex w-full pointer-events-none transition-all ${isMobile ? 'bottom-[100px] px-6 safe-bottom' : 'top-4 right-4 justify-end'}`}>
+          <div className={`absolute z-[1000] flex w-full pointer-events-none transition-all ${isMobile ? 'bottom-[120px] px-6 safe-bottom' : 'top-4 right-4 justify-end'}`}>
             <div className={`flex w-full items-start ${isMobile ? 'justify-between items-end' : 'justify-end'}`}>
               
               {/* 데스크탑 사이드바 열기 버튼 (좌측 상단 - MapHeader 제거 후 대비) */}
@@ -239,25 +239,7 @@ const MapShell = memo(
 
               {/* 지도 도구 버튼 (우측) */}
               <div className="flex flex-col gap-3 items-end pointer-events-auto">
-                {/* 핫드랍 상시 노출 버튼 (메인) */}
-                <button
-                  onClick={() => setIsHotDropOn(!isHotDropOn)}
-                  className={`pointer-events-auto flex items-center gap-2.5 px-6 shadow-[0_12px_40px_rgba(0,0,0,0.5)] active:scale-90 transition-all duration-500 border border-white/10 h-[52px] rounded-2xl ${
-                    isHotDropOn
-                      ? "bg-gradient-to-br from-orange-500 via-red-600 to-rose-700 text-white border-orange-400/50 ring-2 ring-orange-500/30 ring-offset-2 ring-offset-black shadow-[0_0_30px_rgba(234,88,12,0.6)]"
-                      : "bg-black/80 backdrop-blur-xl text-orange-500/80 hover:text-orange-400"
-                  }`}
-                >
-                  <div className="relative">
-                    <Flame size={20} strokeWidth={2.5} className={isHotDropOn ? "animate-pulse" : ""} />
-                    {isHotDropOn && (
-                      <span className="absolute inset-0 bg-orange-400 blur-md opacity-50 animate-ping"></span>
-                    )}
-                  </div>
-                  <span className="font-black uppercase tracking-tighter text-xs">
-                    {isHotDropOn ? "HOTDROP ON" : "HOTDROP"}
-                  </span>
-                </button>
+                {/* 핫드랍 버튼은 지도 도구 내부로 통합됨 */}
 
                 <button
                   onClick={() => setIsMenuOpen(!isMenuOpen)}
@@ -271,13 +253,29 @@ const MapShell = memo(
                   ) : (
                     <>
                       <Hammer size={18} strokeWidth={3} />
-                      {isMobile ? null : <span className="font-black uppercase tracking-tight text-xs">지도 도구</span>}
+                      <span className="font-black uppercase tracking-tight text-xs">{isMobile ? "도구" : "지도 도구"}</span>
                     </>
                   )}
                 </button>
 
                 {isMenuOpen && (
                   <div className="flex flex-col gap-2.5 items-end animate-in fade-in slide-in-from-bottom-4 duration-300">
+                    <button
+                      onClick={() => setIsHotDropOn(!isHotDropOn)}
+                      className={`pointer-events-auto flex items-center gap-2.5 px-5 py-3.5 border border-white/10 rounded-xl font-black text-xs shadow-2xl transition-all active:scale-95 ${
+                        isHotDropOn 
+                          ? "bg-gradient-to-r from-orange-500 to-red-600 text-white border-orange-400" 
+                          : "bg-[#1a1a1a] text-orange-500 hover:text-orange-400"
+                      }`}
+                    >
+                      <div className="relative">
+                        <Flame size={16} strokeWidth={3} className={isHotDropOn ? "animate-pulse" : ""} />
+                        {isHotDropOn && (
+                          <span className="absolute inset-0 bg-orange-400 blur-md opacity-50 animate-ping"></span>
+                        )}
+                      </div>
+                      <span className="uppercase tracking-tighter">핫드랍 {isHotDropOn ? "ON" : "OFF"}</span>
+                    </button>
                     <button
                       onClick={() => setIsGridOn(!isGridOn)}
                       className={`pointer-events-auto flex items-center gap-2.5 px-5 py-3.5 border border-white/10 rounded-xl font-black text-xs shadow-2xl transition-all active:scale-95 ${isGridOn ? "bg-[#F2A900] text-black" : "bg-[#1a1a1a] text-[#777]"}`}

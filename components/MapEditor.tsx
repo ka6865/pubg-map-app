@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation"; // 🌟 useSearchParams 추가
 import {
   MapContainer,
@@ -49,6 +49,36 @@ const MAP_LIST = [
   { id: "Deston", label: "데스턴", imageUrl: "/Deston.jpg" },
 ];
 
+/**
+ * 🌟 [추가] 맵/카테고리별 ID 생성 규칙 매핑 테이블 (M CC III 방식)
+ */
+const MAP_INDEX_MAP: Record<string, number> = {
+  Erangel: 1,
+  Miramar: 2,
+  Taego: 3,
+  Vikendi: 4,
+  Deston: 5,
+  Rondo: 6,
+};
+
+const CATEGORY_CODE_MAP: Record<string, number> = {
+  Garage: 1,
+  Esports: 2,
+  Boat: 3,
+  EsportsBoat: 4,
+  Glider: 5,
+  Key: 6,
+  Porter: 7,
+  SecretRoom: 8,
+  GoldenMirado: 9,
+  EsportsMirado: 10,
+  EsportsPickup: 11,
+  PoliceCar: 12,
+  SecurityCard: 13,
+  GasPump: 14,
+  Snowmobile: 15,
+};
+
 const MapEvents = ({
   onClick,
 }: {
@@ -80,6 +110,8 @@ const MapEditorComponent = () => {
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [activeMapId, setActiveMapId] = useState("Erangel");
   const [isSaving, setIsSaving] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isImporting, setIsImporting] = useState(false);
 
   const currentMap = MAP_LIST.find((m) => m.id === activeMapId);
 
@@ -94,13 +126,16 @@ const MapEditorComponent = () => {
   const latParam = searchParams?.get("lat");
   const lngParam = searchParams?.get("lng");
 
-  const initialCenter: [number, number] =
-    latParam && lngParam
+  // 🌟 useMemo를 사용하여 리렌더링 시 배열 참조가 바뀌지 않도록 보정 (줌 초기화 방지)
+  const initialCenter = useMemo<[number, number]>(() => {
+    return latParam && lngParam
       ? [Number(latParam), Number(lngParam)]
       : [imageHeight / 2, imageWidth / 2];
+  }, [latParam, lngParam, imageHeight, imageWidth]);
 
-  // 좌표가 넘어왔다면 줌인(0) 상태로, 아니라면 전체 맵(-3) 상태로 띄움
-  const initialZoom = latParam && lngParam ? 0 : -3;
+  const initialZoom = useMemo(() => {
+    return latParam && lngParam ? 0 : -3;
+  }, [latParam, lngParam]);
 
   const [isLoaded, setIsLoaded] = useState(false);
   const [vehicles, setVehicles] = useState<any[]>([]);
@@ -321,6 +356,65 @@ const MapEditorComponent = () => {
     setVehicles((prev) => [...prev, newVehicle]);
   };
 
+  /**
+   * 🌟 [추가] 로컬 JSON 파일을 읽어 현재 마커 리스트에 추가합니다.
+   * 사용자 요청에 따라 M CC III 규칙으로 ID를 자동 생성합니다.
+   */
+  const handleImportJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const content = event.target?.result as string;
+        const importedData = JSON.parse(content);
+
+        if (!Array.isArray(importedData)) {
+          throw new Error("올바른 JSON 배열 형식이 아닙니다.");
+        }
+
+        const mapIdx = MAP_INDEX_MAP[activeMapId] || 9; // 알 수 없는 맵은 9번대 사용
+        const newMarkers = importedData.map((item: any, index: number) => {
+          const catCode = CATEGORY_CODE_MAP[item.type] || 99; // 알 수 없는 타입은 99번대 사용
+          
+          // M CC III 조합 (예: 6 14 001)
+          // 현재 리스트에 있는 마커들 중 해당 타입의 최대 ID를 찾아 그 다음 번호부터 부여
+          const prefix = mapIdx * 100000 + catCode * 1000;
+          const sameTypeMarkers = vehicles.filter(v => 
+            v.mapId === activeMapId && 
+            Math.floor(Number(v.id) / 1000) === Math.floor(prefix / 1000)
+          );
+          
+          const maxIdx = sameTypeMarkers.length > 0 
+            ? Math.max(...sameTypeMarkers.map(v => Number(v.id) % 1000))
+            : 0;
+
+          return {
+            id: prefix + maxIdx + index + 1,
+            mapId: item.map_id || activeMapId,
+            type: item.type,
+            name: item.name || categoryInfoMap[item.type]?.label || "추출 마커",
+            x: Number(item.x),
+            y: Number(item.y),
+          };
+        });
+
+        setVehicles((prev) => [...prev, ...newMarkers]);
+        toast.success(`${newMarkers.length}개의 마커를 성공적으로 추가했습니다!`, {
+          description: "변경사항을 서버에 저장하려면 '서버에 저장' 버튼을 눌러주세요."
+        });
+      } catch (err: any) {
+        toast.error("파일 로드 실패: " + err.message);
+      } finally {
+        setIsImporting(false);
+        if (fileInputRef.current) fileInputRef.current.value = "";
+      }
+    };
+    reader.readAsText(file);
+  };
+
   if (!isAuthorized)
     return (
       <div className="w-full h-screen bg-[#0f172a] flex items-center justify-center text-white font-bold">
@@ -415,6 +509,23 @@ const MapEditorComponent = () => {
           >
             {isSaving ? "저장 중..." : "서버에 저장"}
           </button>
+
+          <div className="w-px h-6 bg-[#475569] mx-1"></div>
+
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={isImporting}
+            className="flex items-center gap-1 px-3 py-1 bg-blue-600 text-white hover:bg-blue-700 transition-colors rounded font-bold text-xs"
+          >
+            {isImporting ? "로드 중..." : "📂 로컬 JSON 추가"}
+          </button>
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleImportJSON}
+            accept=".json"
+            className="hidden"
+          />
         </div>
 
         <MapContainer
