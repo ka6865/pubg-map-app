@@ -18,6 +18,7 @@ import type { MapTab, MapMarker, AuthUser, PendingVehicle } from "../../types/ma
 import ReportForm from "./ReportForm";
 import HotDropLayer from "./HotDropLayer";
 import { supabase } from "../../lib/supabase";
+import { CATEGORY_INFO, MAP_CATEGORIES, MAP_DIMENSIONS } from "../../lib/map_config";
 import { toast } from "sonner";
 
 // 리팩토링으로 분리된 텔레메트리 컴포넌트 임포트
@@ -59,22 +60,34 @@ const reportPlacementIcon = L.divIcon({
   iconAnchor: [16, 16],
 });
 
-const PUBGGrid = memo(() => {
+interface PUBGGridProps {
+  activeMapId: string;
+}
+
+const PUBGGrid = memo(({ activeMapId }: PUBGGridProps) => {
   const lines = [];
-  const size = 8192;
-  const pxPer100m = 100;
-  for (let i = 0; i <= 80; i++) {
-    const pos = i * pxPer100m;
+  const totalUnits = 8192;
+  const kmSize = MAP_DIMENSIONS[activeMapId] || 8;
+  const unitsPerKm = totalUnits / kmSize;
+  const unitsPer100m = unitsPerKm / 10;
+
+  // 100m 단위로 선을 긋습니다.
+  const lineCount = kmSize * 10;
+
+  for (let i = 0; i <= lineCount; i++) {
+    const pos = i * unitsPer100m;
     const isMajor = i % 10 === 0;
     const color = isMajor ? "#F2A900" : "#ffffff";
     const weight = isMajor ? 2 : 1;
     const opacity = isMajor ? 0.4 : 0.1;
+
+    // 수평선
     lines.push(
       <Polyline
         key={`h-${i}`}
         positions={[
           [pos, 0],
-          [pos, size],
+          [pos, totalUnits],
         ]}
         color={color}
         weight={weight}
@@ -82,12 +95,13 @@ const PUBGGrid = memo(() => {
         interactive={false}
       />
     );
+    // 수직선
     lines.push(
       <Polyline
         key={`v-${i}`}
         positions={[
           [0, pos],
-          [size, pos],
+          [totalUnits, pos],
         ]}
         color={color}
         weight={weight}
@@ -366,7 +380,7 @@ const MapView = memo(
           />
         )}
         <MapResizer />
-        {isGridOn && <PUBGGrid />}
+        {isGridOn && <PUBGGrid activeMapId={activeMapId} />}
         <MapInteraction
           activeMode={activeMode}
           setMortarPoints={setMortarPoints}

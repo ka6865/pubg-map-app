@@ -9,6 +9,7 @@ import Footer from "@/components/common/Footer";
 import { Suspense } from "react";
 import JsonLd from "@/components/seo/JsonLd";
 import { GoogleAnalytics } from '@next/third-parties/google';
+import SidebarFooterWrapper from "@/components/layout/SidebarFooterWrapper";
 
 
 // Outfit 폰트 — 기하학적이고 현대적인 게이밍 타이포그래피
@@ -115,10 +116,9 @@ export default function RootLayout({
 
           <div className="flex flex-col min-h-dvh">
             <GlobalHeader />
-            <main className="flex-grow pb-safe-nav md:pb-0 relative overflow-hidden flex flex-col">
+            <SidebarFooterWrapper>
               {children}
-            </main>
-            <Footer />
+            </SidebarFooterWrapper>
             <Suspense fallback={<div className="h-14 bg-[#121212]"></div>}>
               <BottomNav />
             </Suspense>

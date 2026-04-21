@@ -4,7 +4,7 @@ import L from "leaflet";
 import Sidebar from "../Sidebar";
 import MobileBottomSheet from "./MobileBottomSheet";
 import MapView from "./MapView";
-import { X, Hammer, Map as MapIcon, Crosshair, Plane, AlertCircle, SlidersHorizontal, Menu, Flame } from 'lucide-react';
+import { X, Hammer, Map as MapIcon, Crosshair, Plane, AlertCircle, SlidersHorizontal, Menu, Flame, Grid, MapPin } from 'lucide-react';
 import type { MapTab, MapMarker, AuthUser, PendingVehicle } from "../../types/map";
 import { useTelemetry } from "../../hooks/useTelemetry";
 import TelemetryPlayer from "./TelemetryPlayer";
@@ -214,13 +214,16 @@ const MapShell = memo(
         <div className="relative flex-1 h-full overflow-hidden">
           <HomeNotice />
 
-          <div className={`absolute z-[1000] flex w-full pointer-events-none transition-all ${isMobile ? 'bottom-[120px] px-6 safe-bottom' : 'top-4 right-4 justify-end'}`}>
+          <div className={`absolute z-[1000] flex w-full pointer-events-none transition-all ${isMobile ? 'bottom-[72px] px-6 safe-bottom' : 'top-4 right-4 justify-end'}`}>
             <div className={`flex w-full items-start ${isMobile ? 'justify-between items-end' : 'justify-end'}`}>
               
               {/* 데스크탑 사이드바 열기 버튼 (좌측 상단 - MapHeader 제거 후 대비) */}
               {!isMobile && !isSidebarOpen && (
                 <button
-                  onClick={() => onSetSidebarOpen(true)}
+                  onClick={(e) => {
+                    e.currentTarget.blur();
+                    onSetSidebarOpen(true);
+                  }}
                   className="pointer-events-auto absolute left-4 top-0 flex items-center justify-center w-[44px] h-[44px] bg-black/80 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl active:scale-90 transition-all text-white hover:text-[#F2A900] z-[5000]"
                 >
                   <Menu size={22} strokeWidth={2.5} />
@@ -230,7 +233,10 @@ const MapShell = memo(
               {/* 모바일 전용 필터 버튼 (좌측) */}
               {isMobile && (
                 <button
-                  onClick={() => onSetSidebarOpen(!isSidebarOpen)}
+                  onClick={(e) => {
+                    e.currentTarget.blur();
+                    onSetSidebarOpen(!isSidebarOpen);
+                  }}
                   className="pointer-events-auto flex items-center justify-center w-[52px] h-[52px] bg-black/80 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl active:scale-90 transition-all text-[#F2A900]"
                 >
                   <SlidersHorizontal size={22} strokeWidth={2.5} />
@@ -242,7 +248,10 @@ const MapShell = memo(
                 {/* 핫드랍 버튼은 지도 도구 내부로 통합됨 */}
 
                 <button
-                  onClick={() => setIsMenuOpen(!isMenuOpen)}
+                  onClick={(e) => {
+                    e.currentTarget.blur();
+                    setIsMenuOpen(!isMenuOpen);
+                  }}
                   className={`pointer-events-auto flex items-center gap-2 px-6 shadow-[0_12px_40px_rgba(0,0,0,0.4)] active:scale-90 transition-all duration-300 border border-white/5 ${isMenuOpen ? "bg-red-600 text-white h-[52px] rounded-2xl text-sm" : "bg-black/80 backdrop-blur-xl text-[#F2A900] h-[52px] rounded-2xl text-base"}`}
                 >
                   {isMenuOpen ? (
@@ -258,7 +267,7 @@ const MapShell = memo(
                   )}
                 </button>
 
-                {isMenuOpen && (
+                {isMenuOpen && !isMobile && (
                   <div className="flex flex-col gap-2.5 items-end animate-in fade-in slide-in-from-bottom-4 duration-300">
                     <button
                       onClick={() => setIsHotDropOn(!isHotDropOn)}
@@ -323,12 +332,120 @@ const MapShell = memo(
             </div>
           </div>
 
+          {/* ✨ 모바일 가로 툴바 (추천 방식: 아이콘 + 미니 라벨) */}
+          {isMobile && isMenuOpen && (
+            <div className="fixed bottom-[136px] left-0 right-0 z-[2000] px-4 animate-in fade-in slide-in-from-bottom-6 duration-500 pointer-events-none">
+              <div className="max-w-md mx-auto pointer-events-auto overflow-hidden">
+                <div 
+                  className="flex gap-2.5 overflow-x-auto no-scrollbar p-3 bg-black/70 backdrop-blur-2xl border border-white/10 rounded-[24px] shadow-[0_20px_50px_rgba(0,0,0,0.6)]"
+                  style={{
+                    maskImage: 'linear-gradient(to right, transparent, black 10%, black 90%, transparent)',
+                    WebkitMaskImage: 'linear-gradient(to right, transparent, black 10%, black 90%, transparent)'
+                  }}
+                >
+                  {/* 핫드랍 토글 */}
+                  <button
+                    onClick={() => setIsHotDropOn(!isHotDropOn)}
+                    className={`flex flex-col items-center justify-center min-w-[72px] h-[72px] rounded-2xl transition-all active:scale-95 border ${
+                      isHotDropOn 
+                        ? "bg-gradient-to-br from-orange-500/20 to-red-600/20 border-orange-500/50 text-orange-500" 
+                        : "bg-white/5 border-white/5 text-white/40"
+                    }`}
+                  >
+                    <Flame size={20} className={isHotDropOn ? "animate-pulse" : ""} />
+                    <span className={`text-[10px] font-black mt-1.5 uppercase tracking-tighter ${isHotDropOn ? "text-orange-500" : "text-white/40"}`}>핫드랍</span>
+                  </button>
+
+                  {/* 격자 토글 */}
+                  <button
+                    onClick={() => setIsGridOn(!isGridOn)}
+                    className={`flex flex-col items-center justify-center min-w-[72px] h-[72px] rounded-2xl transition-all active:scale-95 border ${
+                      isGridOn 
+                        ? "bg-white/10 border-white/20 text-[#F2A900]" 
+                        : "bg-white/5 border-white/5 text-white/40"
+                    }`}
+                  >
+                    <Grid size={20} />
+                    <span className={`text-[10px] font-black mt-1.5 uppercase tracking-tighter ${isGridOn ? "text-[#F2A900]" : "text-white/40"}`}>격자</span>
+                  </button>
+
+                  {/* 박격포 모드 */}
+                  <button
+                    onClick={() => {
+                      handleModeToggle("mortar");
+                      setIsMenuOpen(false);
+                    }}
+                    className={`flex flex-col items-center justify-center min-w-[72px] h-[72px] rounded-2xl transition-all active:scale-95 border ${
+                      activeMode === "mortar" 
+                        ? "bg-blue-500/20 border-blue-500/50 text-blue-400" 
+                        : "bg-white/5 border-white/5 text-white/40"
+                    }`}
+                  >
+                    <Crosshair size={20} />
+                    <span className={`text-[10px] font-black mt-1.5 uppercase tracking-tighter ${activeMode === "mortar" ? "text-blue-400" : "text-white/40"}`}>박격포</span>
+                  </button>
+
+                  {/* 비행기 라인 */}
+                  <button
+                    onClick={() => {
+                      handleModeToggle("flight");
+                      setIsMenuOpen(false);
+                    }}
+                    className={`flex flex-col items-center justify-center min-w-[72px] h-[72px] rounded-2xl transition-all active:scale-95 border ${
+                      activeMode === "flight" 
+                        ? "bg-purple-500/20 border-purple-500/50 text-purple-400" 
+                        : "bg-white/5 border-white/5 text-white/40"
+                    }`}
+                  >
+                    <Plane size={20} />
+                    <span className={`text-[10px] font-black mt-1.5 uppercase tracking-tighter ${activeMode === "flight" ? "text-purple-400" : "text-white/40"}`}>비행기</span>
+                  </button>
+
+                  {/* 제보하기 */}
+                  <button
+                    onClick={() => {
+                      handleModeToggle("report");
+                      setIsMenuOpen(false);
+                    }}
+                    className={`flex flex-col items-center justify-center min-w-[72px] h-[72px] rounded-2xl transition-all active:scale-95 border ${
+                      activeMode === "report" 
+                        ? "bg-green-500/20 border-green-500/50 text-green-400" 
+                        : "bg-white/5 border-white/5 text-white/40"
+                    }`}
+                  >
+                    <MapPin size={20} />
+                    <span className={`text-[10px] font-black mt-1.5 uppercase tracking-tighter ${activeMode === "report" ? "text-green-400" : "text-white/40"}`}>제보</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {(activeMode !== "none" || isHotDropOn) && (
-            <div className={`absolute left-1/2 -translate-x-1/2 z-[1000] flex flex-col items-center gap-2 pointer-events-none ${isMobile ? 'bottom-[160px]' : 'top-[15px]'}`}>
+            <div className={`absolute left-1/2 -translate-x-1/2 z-[1000] flex flex-col items-center gap-3 pointer-events-none ${isMobile ? 'bottom-[136px]' : 'top-[15px]'}`}>
+              {/* 모바일 전용: 비행기 주변 1km 스캔 버튼 */}
+              {isMobile && activeMode === "flight" && flightPoints.length === 2 && (
+                <button
+                  onClick={() => {
+                    const nextState = !isVehicleFilterOn;
+                    setIsVehicleFilterOn(nextState);
+                    if (nextState && onEnableDefaultVehicleFilters) onEnableDefaultVehicleFilters();
+                  }}
+                  className={`pointer-events-auto px-6 py-3 border-2 rounded-full font-black text-xs shadow-[0_10px_30px_rgba(0,0,0,0.5)] transition-all active:scale-95 flex items-center gap-2 ${
+                    isVehicleFilterOn 
+                      ? "bg-[#F2A900] border-[#F2A900] text-black" 
+                      : "bg-black/80 border-[#F2A900] text-[#F2A900] backdrop-blur-md"
+                  }`}
+                >
+                  <span className="text-base">🚗</span>
+                  <span className="uppercase tracking-tight">비행기 주변 1km 스캔 {isVehicleFilterOn ? "ON" : "OFF"}</span>
+                </button>
+              )}
+
               {activeMode !== "none" && (
                 <div className="bg-black/70 backdrop-blur-md text-white px-5 py-2.5 rounded-[20px] text-[13px] font-bold border border-white/10 shadow-2xl animate-in fade-in slide-in-from-top-4 duration-300">
                   {activeMode === "mortar" && "📍 [박격포] 내 위치와 타겟을 클릭하세요"}
-                  {activeMode === "flight" && "📍 [비행기] 출발지와 도착지를 클릭하세요"}
+                  {activeMode === "flight" && (flightPoints.length < 2 ? "📍 [비행기] 출발지와 도착지를 클릭하세요" : "✅ [비행기] 비행기 경로가 설정되었습니다")}
                   {activeMode === "report" && "🚨 [제보] 지도에 차량 위치를 좌클릭하세요!"}
                   <span className="text-[#F2A900] ml-2.5">(우클릭: 취소)</span>
                 </div>

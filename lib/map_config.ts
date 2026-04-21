@@ -13,6 +13,7 @@ export const svgPaths = {
     key: "M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z",
     home: "M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z",
     star: "M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z",
+    gas: "M19 10c.55 0 1-.45 1-1s-.45-1-1-1-1 .45-1 1 .45 1 1 1zm-7-1.5c.55 0 1-.45 1-1s-.45-1-1-1-1 .45-1 1 .45 1 1 1zm7 4.5c.55 0 1-.45 1-1s-.45-1-1-1-1 .45-1 1 .45 1 1 1zm-7 0c.55 0 1-.45 1-1s-.45-1-1-1-1 .45-1 1 .45 1 1 1zM18 3c-1.1 0-2 .9-2 2v9c0 .55-.45 1-1 1s-1-.45-1-1V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v16h10v-3.5h1V21h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM6 13h5V6H6v7z",
   };
 
 /**
@@ -25,6 +26,7 @@ export const ICON_LIBRARY: Record<string, { label: string; emoji: string; path: 
   key:    { label: '열쇠/카드', emoji: '🔑', path: svgPaths.key },
   home:   { label: '건물/구역', emoji: '🏠', path: svgPaths.home },
   star:   { label: '특수 지점', emoji: '⭐', path: svgPaths.star },
+  gas:    { label: '주유소', emoji: '⛽', path: svgPaths.gas },
 };
 
 
@@ -49,18 +51,34 @@ export const CATEGORY_INFO: Record<string, { label: string; color: string; path:
     PoliceCar: { label: '경찰차', color: '#3b82f6', path: svgPaths.car, iconType: '🚓' },
     // Airboat: { label: '에어보트', color: '#06b6d4', path: svgPaths.boat, iconType: '🚁' },
     SecurityCard: { label: '보안 키카드', color: '#10b981', path: svgPaths.key, iconType: '💳' },
-    GasPump: { label: '주유기', color: '#84cc16', path: svgPaths.car, iconType: '⛽' },
+    GasPump: { label: '주유기', color: '#84cc16', path: svgPaths.gas, iconType: '⛽' },
     Snowmobile: { label: '스노우모빌', color: '#0ea5e9', path: svgPaths.car, iconType: '🏂' },
   };
   
 /**
  * 각 맵 고유의 특성에 따라 렌더링될 카테고리 목록 (예: 에란겔에는 빙하/스노우모빌이 없음)
  */
+/**
+ * 각 맵 고유의 실제 크기 (km 단위)
+ */
+export const MAP_DIMENSIONS: Record<string, number> = {
+    Erangel: 8,
+    Miramar: 8,
+    Taego: 8,
+    Deston: 8,
+    Vikendi: 8,
+    Rondo: 8,
+    Sanhok: 4,
+    Paramo: 3,
+    Karakin: 2,
+    Haven: 1,
+};
+
 export const MAP_CATEGORIES: Record<string, string[]> = {
     Erangel: ['Garage', 'Esports', 'EsportsBoat', 'Glider', 'Key'],
     Miramar: ['GoldenMirado', 'EsportsMirado', 'EsportsPickup', 'EsportsBoat', 'Glider'], 
     Taego: ['Garage', 'Porter', 'Boat', 'SecretRoom'],
     Deston: ['Garage', 'PoliceCar', 'Boat', 'Glider'],
     Vikendi: ['Garage', 'Snowmobile', 'Esports', 'Boat', 'Key'],
-    Rondo: ['Garage','Esports', 'Boat', 'Glider','Key']
+    Rondo: ['Garage','Esports', 'Boat', 'Glider','Key', 'GasPump']
   };

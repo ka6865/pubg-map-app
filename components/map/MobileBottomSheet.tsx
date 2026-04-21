@@ -130,11 +130,22 @@ export default function MobileBottomSheet({
                   </div>
                 </section>
                 
-                <div className="p-8 text-center">
-                    <p className="text-[#333] text-[11px] font-medium leading-relaxed">
-                        BGMS 전술 지도는 커뮤니티 제보를 기반으로 운영됩니다.<br/>
-                        틀린 정보가 있다면 지도 도구에서 제보해 주세요.
-                    </p>
+                {/* 하단 미니 푸터 */}
+                <div className="mt-8 pt-6 border-t border-[#222] pb-10">
+                  <div className="flex items-center gap-4 mb-3 px-1">
+                    <a 
+                      href="https://discord.gg/T97MR78awb" 
+                      target="_blank" 
+                      rel="noopener noreferrer" 
+                      className="text-[11px] text-[#5865F2] font-black uppercase tracking-tight"
+                    >
+                      Discord
+                    </a>
+                  </div>
+                  <p className="text-[10px] text-[#333] leading-relaxed px-1 font-medium">
+                    © 2026 BGMS Team. All Rights Reserved.<br/>
+                    BGMS는 배틀그라운드 팬을 위한 비공식 서비스입니다.
+                  </p>
                 </div>
               </div>
             </div>

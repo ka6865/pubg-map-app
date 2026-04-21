@@ -111,6 +111,7 @@ export default function Sidebar({
           flexDirection: "column",
           gap: "2px",
           overflowY: "auto",
+          flexGrow: 1,
         }}
       >
         {/* 제보 진행 중 구역 */}
@@ -253,6 +254,35 @@ export default function Sidebar({
             </button>
           );
         })}
+      </div>
+
+      {/* 미니 푸터 (사이드바 하단) */}
+      <div
+        style={{
+          padding: "20px 16px",
+          borderTop: "1px solid rgba(255,255,255,0.05)",
+          backgroundColor: "rgba(255,255,255,0.01)",
+        }}
+      >
+        <div style={{ display: "flex", gap: "12px", marginBottom: "8px", alignItems: "center" }}>
+          <a
+            href="https://discord.gg/T97MR78awb"
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              fontSize: "11px",
+              color: "#5865F2",
+              textDecoration: "none",
+              fontWeight: 700,
+            }}
+          >
+            Discord
+          </a>
+        </div>
+        <p style={{ fontSize: "10px", color: "rgba(255,255,255,0.15)", margin: 0, lineHeight: 1.5 }}>
+          © 2026 BGMS Team.<br />
+          All Rights Reserved.
+        </p>
       </div>
     </aside>
   );
