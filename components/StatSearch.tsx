@@ -77,6 +77,7 @@ export default function StatSearch() {
     if (!searchName.trim() || cooldown) return;
 
     setLoading(true);
+    setResult(null); // 새로운 검색 시작 시 기존 결과 초기화 (버그 수정)
     setError("");
     setCooldown(true);
     setShowDropdown(false);
@@ -218,7 +219,7 @@ export default function StatSearch() {
   return (
     <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "20px", color: "white" }}>
       <h2 style={{ color: "#F2A900", fontSize: "24px", fontWeight: "bold", marginBottom: "20px", textAlign: "center" }}>
-        📊 전적 검색
+        📊 AI 전적 검색
       </h2>
       
       {/* 하이드레이션 오류 방지를 위해 마운트 후에만 인터랙티브 요소 렌더링 활성화 */}
@@ -333,9 +334,10 @@ export default function StatSearch() {
             </div>
           </div>
 
-          {/* 최근 10경기 AI 종합 분석 섹션 추가 */}
+          {/* 최근 10경기 AI 종합 분석 섹션 추가 - 닉네임이 바뀔 때마다 리셋되도록 key 부여 */}
           {result.recentMatches && result.recentMatches.length > 0 && (
             <RecentAISummary 
+              key={result.nickname}
               matchIds={result.recentMatches} 
               nickname={result.nickname} 
               platform={result.platform} 

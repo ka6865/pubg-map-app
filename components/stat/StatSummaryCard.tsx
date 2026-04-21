@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useState } from "react";
+import { HelpCircle } from "lucide-react";
 
 const getKDA = (k: number, a: number, d: number) => ((k + a) / (d || 1)).toFixed(2);
 const getWinRate = (w: number, p: number) => (p > 0 ? ((w / p) * 100).toFixed(1) : "0.0");
@@ -23,6 +24,8 @@ export const StatSummaryCard = ({
   data: any;
   isRanked: boolean;
 }) => {
+  const [showTooltip, setShowTooltip] = useState(false);
+
   if (!data || data.roundsPlayed === 0) {
     return (
       <div
@@ -85,7 +88,7 @@ export const StatSummaryCard = ({
         }}
       >
         <div>
-          <div style={{ color: "#888", fontSize: "12px", marginBottom: "5px" }}>K/D</div>
+          <div style={{ color: "#888", fontSize: "12px", marginBottom: "5px" }}>KDA</div>
           <div style={{ fontSize: "18px", fontWeight: "bold", color: "#F2A900" }}>
             {getKDA(data.kills, data.assists, data.deaths || data.losses)}
           </div>
@@ -105,7 +108,47 @@ export const StatSummaryCard = ({
           <div style={{ fontSize: "18px", fontWeight: "bold", color: "#F2A900" }}>{data.wins}회</div>
         </div>
         <div>
-          <div style={{ color: "#888", fontSize: "12px", marginBottom: "5px" }}>평균 기절</div>
+          <div style={{ color: "#888", fontSize: "12px", marginBottom: "5px", display: "flex", alignItems: "center", gap: "4px", position: "relative" }}>
+            평균 DBNO
+            <div 
+              onMouseEnter={() => setShowTooltip(true)}
+              onMouseLeave={() => setShowTooltip(false)}
+              style={{ cursor: "help", display: "flex", alignItems: "center", color: "#F2A900" }}
+            >
+              <HelpCircle size={12} />
+            </div>
+
+            {showTooltip && (
+              <div style={{
+                position: "absolute",
+                bottom: "100%",
+                left: "0",
+                transform: "translateY(-10px)",
+                backgroundColor: "#222",
+                color: "#fff",
+                padding: "8px 12px",
+                borderRadius: "8px",
+                fontSize: "11px",
+                whiteSpace: "nowrap",
+                zIndex: 100,
+                boxShadow: "0 4px 15px rgba(0,0,0,0.6)",
+                border: "1px solid #F2A900",
+                pointerEvents: "none",
+                fontWeight: "bold",
+                animation: "fadeIn 0.2s ease-out"
+              }}>
+                DBNO: 적을 기절시킨 횟수를 의미합니다.
+                <div style={{
+                  position: "absolute",
+                  top: "100%",
+                  left: "15px",
+                  borderWidth: "5px",
+                  borderStyle: "solid",
+                  borderColor: "#F2A900 transparent transparent transparent"
+                }} />
+              </div>
+            )}
+          </div>
           <div style={{ fontSize: "18px", fontWeight: "bold", color: "#34A853" }}>
             {getAvgKnockouts(data.dBNOs, data.roundsPlayed)}
           </div>
@@ -152,6 +195,12 @@ export const StatSummaryCard = ({
           </>
         )}
       </div>
+      <style>{`
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(-5px); }
+          to { opacity: 1; transform: translateY(-10px); }
+        }
+      `}</style>
     </div>
   );
 };

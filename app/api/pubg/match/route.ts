@@ -149,6 +149,13 @@ export async function GET(request: Request) {
     // 6. 텔레메트리에서 킬/기절 상세 데이터 추출 (AI 분석 품질 향상)
     let killDetails: any[] = [];
     let dbnoDetails: any[] = [];
+    let itemUseDetails: any[] = [];
+    let vehicleDetails: any[] = [];
+    let damageDetails: any[] = [];
+    let earlyBluezoneDamage = 0;
+    let lateBluezoneDamage = 0;
+    let matchStartTime: number | null = null;
+    const playerPositions: Record<string, { time: string, x: number, y: number }[]> = {};
 
     try {
       const telemetryAsset = data.included?.find(
@@ -181,15 +188,69 @@ export async function GET(request: Request) {
           const teamNames = new Set(teamStats.map((m: any) => m.name.toLowerCase()));
           const teamAccountIds = new Set(teamStats.map((m: any) => m.playerId));
 
+          // 매치 시작 시간 확인
+          const matchStartEvent = telData.find(e => e._T === "LogMatchStart");
+          if (matchStartEvent) {
+            matchStartTime = new Date(matchStartEvent._D).getTime();
+          }
+
           if (Array.isArray(telData)) {
+            // 위치 데이터 사전 수집 (팀원별)
+            telData.forEach((e: any) => {
+              if (e._T === "LogPlayerPosition" && e.character && (teamNames.has(e.character.name.toLowerCase()) || teamAccountIds.has(e.character.accountId))) {
+                const name = e.character.name;
+                if (!playerPositions[name]) playerPositions[name] = [];
+                playerPositions[name].push({
+                  time: e._D,
+                  x: e.character.location.x,
+                  y: e.character.location.y
+                });
+              }
+            });
+
+            // 특정 시점의 팀원 거리를 계산하는 헬퍼 함수
+            const getTeammateDistances = (targetName: string, eventTime: string, sourceX: number, sourceY: number) => {
+              const distances: Record<string, number> = {};
+              const eventTs = new Date(eventTime).getTime();
+              
+              Object.entries(playerPositions).forEach(([name, positions]) => {
+                if (name === targetName) return;
+                
+                // 이벤트 시점과 가장 가까운 위치 찾기
+                let closestPos = positions[0];
+                let minDiff = Infinity;
+                
+                positions.forEach(p => {
+                  const diff = Math.abs(new Date(p.time).getTime() - eventTs);
+                  if (diff < minDiff) {
+                    minDiff = diff;
+                    closestPos = p;
+                  }
+                });
+
+                if (closestPos) {
+                  const dx = sourceX - closestPos.x;
+                  const dy = sourceY - closestPos.y;
+                  const dist = Math.sqrt(dx * dx + dy * dy);
+                  distances[name] = Math.round(dist / 100); // cm -> m
+                }
+              });
+              return distances;
+            };
+
             // 킬 이벤트 (v1 + v2)
             killDetails = telData
               .filter((e: any) => {
                 const type = e._T;
                 if (type !== "LogPlayerKill" && type !== "LogPlayerKillV2") return false;
                 const attacker = e.killer || e.attacker;
-                if (!attacker) return false;
-                return teamNames.has(attacker.name?.toLowerCase()) || teamAccountIds.has(attacker.accountId);
+                const victim = e.victim;
+                
+                // 팀원이 킬을 했거나(attacker), 팀원이 죽은 경우(victim) 모두 포함
+                const isTeamAttacker = attacker && (teamNames.has(attacker.name?.toLowerCase()) || teamAccountIds.has(attacker.accountId));
+                const isTeamVictim = victim && (teamNames.has(victim.name?.toLowerCase()) || teamAccountIds.has(victim.accountId));
+                
+                return isTeamAttacker || isTeamVictim;
               })
               .map((k: any) => {
                 const weaponId =
@@ -222,6 +283,8 @@ export async function GET(request: Request) {
                   isHeadshot: reason === "HeadShot" || reason === "ArmShot",
                   reason: reason || "일반",
                   victimName: k.victim?.name || "Unknown",
+                  time: k._D, // 이벤트 발생 시간
+                  teammateDistances: k.victim?.location ? getTeammateDistances(k.victim.name, k._D, k.victim.location.x, k.victim.location.y) : {}
                 };
               });
 
@@ -254,8 +317,71 @@ export async function GET(request: Request) {
                   weaponRaw: weaponId,
                   distanceM: Math.round(rawDist / 100),
                   victimName: k.victim?.name || "Unknown",
+                  time: k._D,
+                  teammateDistances: k.victim?.location ? getTeammateDistances(k.victim.name, k._D, k.victim.location.x, k.victim.location.y) : {}
                 };
               });
+
+            // 아이템 사용 로그 (투척물 위주)
+            const throwableIds = ["Item_Weapon_SmokeBomb_C", "Item_Weapon_Grenade_C", "Item_Weapon_Molotov_C", "Item_Weapon_FlashBang_C"];
+            itemUseDetails = telData
+              .filter((e: any) => {
+                if (e._T !== "LogItemUse") return false;
+                if (!throwableIds.includes(e.item?.itemId)) return false;
+                return teamNames.has(e.character?.name?.toLowerCase());
+              })
+              .map((e: any) => ({
+                playerName: e.character?.name,
+                itemId: e.item?.itemId,
+                itemName: getWeaponName(e.item?.itemId),
+                time: e._D
+              }));
+
+            // 데미지 로그 (백업 분석용)
+            damageDetails = telData
+              .filter((e: any) => {
+                if (e._T !== "LogPlayerTakeDamage") return false;
+                const attacker = e.attacker;
+                const victim = e.victim;
+                if (!attacker || !victim) return false;
+                
+                // 팀원이 때렸거나 맞았을 때
+                const isTeamAttacker = teamNames.has(attacker.name?.toLowerCase());
+                const isTeamVictim = teamNames.has(victim.name?.toLowerCase());
+                
+                // 자기장 데미지 분석 (3페이즈/약 12분 기준 분리)
+                if (isTeamVictim && e.damageTypeCategory === "Damage_BlueZone") {
+                  if (matchStartTime) {
+                    const elapsedMs = new Date(e._D).getTime() - matchStartTime;
+                    if (elapsedMs >= 720000) { // 12분(3단계 시작점) 이후
+                      lateBluezoneDamage += (e.damage || 0);
+                    } else {
+                      earlyBluezoneDamage += (e.damage || 0);
+                    }
+                  } else {
+                    lateBluezoneDamage += (e.damage || 0);
+                  }
+                }
+
+                return isTeamAttacker || isTeamVictim;
+              })
+              .map((e: any) => ({
+                attackerName: e.attacker?.name,
+                victimName: e.victim?.name,
+                damage: e.damage,
+                weapon: getWeaponName(e.damageCauserName),
+                time: e._D
+              }))
+              .slice(-50); // 최근 교전 위주로 50개만 제한 (토큰 절약)
+
+            // 차량 탑승 로그
+            vehicleDetails = telData
+              .filter((e: any) => e._T === "LogVehicleRide" && teamNames.has(e.character?.name?.toLowerCase()))
+              .map((e: any) => ({
+                playerName: e.character?.name,
+                vehicleId: e.vehicle?.vId,
+                time: e._D
+              }));
           }
         }
       }
@@ -291,6 +417,11 @@ export async function GET(request: Request) {
       totalTeamDamage, // 팀 총 데미지
       killDetails,   // 텔레메트리 기반 킬 상세 (무기, 거리, 헤드샷)
       dbnoDetails,   // 텔레메트리 기반 기절 상세
+      itemUseDetails, // 아이템 사용 상세 (투척물 등)
+      vehicleDetails, // 차량 이용 상세
+      damageDetails,  // 데미지 상세 (백업 분석용)
+      earlyBluezoneDamage, // 초반 자기장 피해
+      lateBluezoneDamage,  // 3페이즈 이후 자기장 피해
     });
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });

@@ -167,6 +167,10 @@ export async function POST(request: Request) {
 
         let killDetails: any[] = [];
         let dbnoDetails: any[] = [];
+        let lateBluezoneDamage = 0;
+        let teammateDistancesAtDeath: any = null;
+        let matchStartTime: number | null = null;
+        const playerPositions: Record<string, { time: string, x: number, y: number }[]> = {};
 
         if (telemetryUrl) {
           try {
@@ -192,8 +196,57 @@ export async function POST(request: Request) {
               }
 
               const telData: any[] = JSON.parse(telDataStr);
-
+              
               if (Array.isArray(telData)) {
+                // 매치 시작 및 팀원 위치 수집
+                telData.forEach(e => {
+                  if (e._T === "LogMatchStart") matchStartTime = new Date(e._D).getTime();
+                  if (e._T === "LogPlayerPosition" && e.character) {
+                    const name = e.character.name;
+                    if (!playerPositions[name]) playerPositions[name] = [];
+                    playerPositions[name].push({ time: e._D, x: e.character.location.x, y: e.character.location.y });
+                  }
+                });
+
+                // 거리 계산 헬퍼 함수
+                const getTeammateDistances = (targetName: string, eventTime: string, sourceX: number, sourceY: number) => {
+                  const distances: Record<string, number> = {};
+                  const eventTs = new Date(eventTime).getTime();
+                  Object.entries(playerPositions).forEach(([name, positions]) => {
+                    if (name === targetName) return;
+                    let closestPos = positions[0];
+                    let minDiff = Infinity;
+                    positions.forEach(p => {
+                      const diff = Math.abs(new Date(p.time).getTime() - eventTs);
+                      if (diff < minDiff) { minDiff = diff; closestPos = p; }
+                    });
+                    if (closestPos) {
+                      const dist = Math.sqrt(Math.pow(sourceX - closestPos.x, 2) + Math.pow(sourceY - closestPos.y, 2));
+                      distances[name] = Math.round(dist / 100);
+                    }
+                  });
+                  return distances;
+                };
+
+                // 자기장 피해 분석 (후반 피해 누적)
+                telData.forEach(e => {
+                  if (e._T === "LogPlayerTakeDamage" && e.victim?.name?.toLowerCase() === lowerNickname && e.damageTypeCategory === "Damage_BlueZone") {
+                    if (matchStartTime) {
+                      const elapsed = new Date(e._D).getTime() - matchStartTime;
+                      if (elapsed >= 720000) lateBluezoneDamage += (e.damage || 0);
+                    }
+                  }
+                });
+
+                // 사망 시점 팀원 거리 파악
+                const myDeathEvent = telData.find(e => 
+                  (e._T === "LogPlayerKill" || e._T === "LogPlayerKillV2") && 
+                  e.victim?.name?.toLowerCase() === lowerNickname
+                );
+                if (myDeathEvent && myDeathEvent.victim?.location) {
+                  teammateDistancesAtDeath = getTeammateDistances(nickname, myDeathEvent._D, myDeathEvent.victim.location.x, myDeathEvent.victim.location.y);
+                }
+
                 // [킬 이벤트] LogPlayerKill (v1) + LogPlayerKillV2 (v2) 모두 처리
                 const killEvents = telData.filter((e: any) => {
                   const type = e._T;
@@ -302,6 +355,8 @@ export async function POST(request: Request) {
           },
           killDetails,   // 텔레메트리 킬 상세 (무기, 거리, 헤드샷 여부)
           dbnoDetails,   // 텔레메트리 기절 상세
+          lateBluezoneDamage,
+          teammateDistancesAtDeath,
         });
 
         // API Rate Limit 방지 (300ms 딜레이)
@@ -365,26 +420,57 @@ export async function POST(request: Request) {
       deathTypeMap[dt] = (deathTypeMap[dt] || 0) + 1;
     }
 
+    // [NEW] 전술 패턴 집계 (고립, 자기장, 저격)
+    let totalLateBluezoneDamage = 0;
+    let isolatedDeathCount = 0;
+    let totalDeathDistanceSum = 0;
+    let deathDistanceCount = 0;
+    const srDmrWeapons = ["Kar98k", "M24", "AWM", "Mosin Nagant", "Dragunov", "Mini14", "SLR", "SKS", "Mk12", "QBU", "Mk14", "VSS"];
+    let totalSnipedEnemies = 0;
+    let totalKnockedBySniper = 0;
+
+    detailedMatches.forEach(m => {
+      totalLateBluezoneDamage += (m.lateBluezoneDamage || 0);
+      
+      // 저격전 합산
+      const matchKills = m.killDetails.filter((k: any) => k.attackerName === nickname && srDmrWeapons.includes(k.weapon)).length;
+      const matchDbnos = m.dbnoDetails.filter((k: any) => k.attackerName === nickname && srDmrWeapons.includes(k.weapon)).length;
+      totalSnipedEnemies += (matchKills + matchDbnos);
+      
+      const matchKnocked = m.killDetails.filter((k: any) => k.victimName === nickname && srDmrWeapons.includes(k.weapon)).length;
+      totalKnockedBySniper += matchKnocked;
+
+      // 거리 분석 (사망 시)
+      if (m.teammateDistancesAtDeath) {
+        const distances = Object.values(m.teammateDistancesAtDeath) as number[];
+        if (distances.length > 0) {
+          const minDist = Math.min(...distances);
+          totalDeathDistanceSum += minDist;
+          deathDistanceCount++;
+          if (minDist >= 150) isolatedDeathCount++;
+        }
+      }
+    });
+
+    const avgDeathDistance = deathDistanceCount > 0 ? Math.round(totalDeathDistanceSum / deathDistanceCount) : 0;
+    const avgLateBluezoneDamage = Math.floor(totalLateBluezoneDamage / detailedMatches.length);
+    const isolatedRate = detailedMatches.length > 0 ? Math.round((isolatedDeathCount / detailedMatches.length) * 100) : 0;
+
     // 3. AI 프롬프트 구성 (정제된 요약 데이터만 전달 - 토큰 절약)
-    const systemPrompt = `당신은 대한민국 최고의 배틀그라운드 프로팀 메인 코치입니다.
-최근 ${detailedMatches.length}경기의 상세 데이터와 텔레메트리 킬 로그를 바탕으로, 초정밀 전략 분석 리포트를 작성하세요.
+    const systemPrompt = `당신은 10경기 데이터를 통해 플레이어의 고질적인 습관을 찾아내는 냉철하고 직설적인 '1:1 전술 멘토'입니다.
+데이터 패턴을 기반으로 중복되는 실수를 날카롭게 지적하고, 실력 향상을 위한 현실적인 과제를 부여하세요.
 
-[분석 핵심 지침]
-1. 총기 숙련도 분석 (Telemetry 기반):
-   - '총기별 킬/기절 횟수'를 보고 주력 총기와 보조 총기를 판단하세요.
-   - 예: "M416로 8킬을 기록하여 중거리 AR 매커니즘이 뛰어납니다."
-2. 교전 거리 분석:
-   - 근접(0-50m) / 중거리(50-200m) / 장거리(200m+) 비율로 플레이 스타일을 진단하세요.
-3. 헤드샷 비율 진단:
-   - 헤드샷 비율이 낮으면 조준 교정 훈련을 권고하세요.
-4. KDA·데미지·생존 운영 종합 진단.
-5. 데스 유형 분석: 자기장사(bluezone/byzone 등) 비율이 높으면 운영 문제, 적 플레이어 사망(byplayer)이 높으면 교전 판단력 문제.
+[종합 분석 원칙]
+1. 고질병 진단 (결함 우선): 최근 10경기에서 반복되는 가장 치명적인 약점 3가지를 리포트의 70% 비중으로 상세히 분석하세요. 칭찬은 아주 짧고 간결하게 제한합니다.
+2. 프로 비교 금지: "프로는~", "프로 선수처럼~" 같은 비교 수식어는 절대 사용하지 마세요. 대신 플레이어의 전술 지표가 왜 비효율적인지 논리적으로 지적하세요.
+3. 데이터 기반 질책: 150m 이상 고립 사망률이 높다면 "팀워크 부재"를, 3단계 이후 자기장 피해가 높다면 "판단 지연으로 인한 운영 실패"를 데이터 수치와 함께 강하게 지적하세요.
+4. 현실적 해결책: 다음 게임에서 바로 실천할 수 있는 구체적인 가이드라인(예: "사망 전 투척물 1개는 반드시 소모하기")을 제시하세요.
 
-[작성 및 출력 절대 규칙]
-1. 언어: 반드시 100% 자연스러운 한국어(한글)로만 작성하세요. 
-2. 🛑 ⚠️ 경고: '优秀'(우수한), '稳定的'(안정적인) 같은 한자(중국어)나 'mechanism', 'bluezone' 등 쓰잘데기 없는 영단어를 단 한 글자도 섞지 마세요. 어색한 번역체 대신 "우수합니다", "안정적인" 같은 정확한 한국어로 표현하세요. (단, M416, AKM 같은 공식 무기 코드는 예외)
-3. 마크다운(##, **굵게**, 리스트)으로 전문적이고 가독성 높은 리포트 형식을 유지하세요.
-4. 구체적인 숫자와 한글 변환된 총기명을 반드시 활용해서 설명하세요.`;
+[리포트 구성 규칙]
+1. [핵심 요약]: 플레이어의 장점을 포함하여 단 1줄로 요약하세요.
+2. [치명적 패턴 진단]: 10경기 동안 반복된 가장 안 좋은 습관 3가지를 우선적으로 노출하고 분석하세요.
+3. [성장 과제]: 다음 게임에서 즉시 실행 가능한 구체적 행동 강령을 제시하세요.
+`;
 
     const userPrompt = `## 플레이어: ${nickname}
 ## 분석 기간: 최근 ${detailedMatches.length}경기
@@ -397,6 +483,10 @@ export async function POST(request: Request) {
 | 평균 딜량 | ${avgDamage} |
 | 평균 순위 | ${avgWinPlace.toFixed(1)}위 |
 | 헤드샷 킬 비율 | ${headshotRate} |
+| 평균 사망 시 팀원 거리 | ${avgDeathDistance}m |
+| 고립 사망률 | ${isolatedRate}% |
+| 경기당 평균 후반 자기장 피해 | ${avgLateBluezoneDamage}HP |
+| 종합 저격 성적 | 성공 ${totalSnipedEnemies} / 피격 ${totalKnockedBySniper} |
 
 ### 🔫 총기별 킬 횟수 (텔레메트리 기반)
 ${JSON.stringify(weaponKillCount, null, 2)}
@@ -426,12 +516,12 @@ ${detailedMatches
     const genAI = new GoogleGenerativeAI(geminiApiKey);
     let analysis = "";
 
-    // 2026년 기준 안정적인 모델 폴백 리스트
+    // 2026년 4월 기준 최적화된 모델 폴백 리스트 (Preview 명칭 반영)
     const modelsToTry = [
-      "gemini-flash-latest",
-      "gemini-2.5-flash",
-      "gemini-3.1-flash-lite-preview",
-      "gemini-pro-latest"
+      "gemini-3.1-flash-lite-preview", // 1순위: RPD 500회 (공식 프리뷰 명칭)
+      "gemini-3-flash-preview",        // 2순위: 고성능 프리뷰
+      "gemini-2.5-flash-lite",         // 3순위: 안정 버전 (Lite)
+      "gemma-3-27b"                    // 4순위: 텍스트 전용 무제한 가깝게 지원
     ];
 
     for (const modelName of modelsToTry) {
@@ -446,8 +536,11 @@ ${detailedMatches
         const errorMsg = err.message || "";
         console.warn(`[AI-SUMMARY] ${modelName} failed: ${errorMsg}`);
         
+        // 과부하(503), 할당량(429), 또는 모델 없음(404) 시 다음 모델로 전환
         if (errorMsg.includes("503") || errorMsg.includes("Service Unavailable") || 
-            errorMsg.includes("429") || errorMsg.includes("quota")) {
+            errorMsg.includes("429") || errorMsg.includes("quota") ||
+            errorMsg.includes("404") || errorMsg.includes("not found")) {
+          console.warn(`[AI-SUMMARY] Switching to next model...`);
           continue; // 다음 모델로 재시도
         }
         throw err;

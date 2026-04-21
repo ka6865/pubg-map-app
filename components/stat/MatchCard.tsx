@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { HelpCircle, BarChart2 } from "lucide-react";
 import type { MatchData, MatchTeamMember } from "../../types/stat";
 
 /**
@@ -111,6 +112,7 @@ export const MatchCard = ({
   const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [showDBNOTooltip, setShowDBNOTooltip] = useState(false);
 
   // 채팅 관련 상태 추가
   const [chatMessages, setChatMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
@@ -380,6 +382,21 @@ export const MatchCard = ({
                 }}
               >
                 킬
+              </span>
+              <span
+                style={{ color: "#555", margin: isMobile ? "0 4px" : "0 6px" }}
+              >
+                /
+              </span>
+              {stats.deathType === "생존" ? 0 : 1}{" "}
+              <span
+                style={{
+                  color: "#666",
+                  fontSize: isMobile ? "10px" : "12px",
+                  fontWeight: "normal",
+                }}
+              >
+                데스
               </span>
               <span
                 style={{ color: "#555", margin: isMobile ? "0 4px" : "0 6px" }}
@@ -723,9 +740,48 @@ export const MatchCard = ({
             <thead>
               <tr style={{ color: "#888", borderBottom: "1px solid #333" }}>
                 <th style={{ padding: "10px", textAlign: "left" }}>닉네임</th>
-                <th style={{ padding: "10px" }}>KDA</th>
+                <th style={{ padding: "10px" }}>K / D / A</th>
                 <th style={{ padding: "10px" }}>데미지</th>
-                <th style={{ padding: "10px" }}>기절</th>
+                <th style={{ padding: "10px", position: "relative" }}>
+                  <div 
+                    onMouseEnter={() => setShowDBNOTooltip(true)}
+                    onMouseLeave={() => setShowDBNOTooltip(false)}
+                    style={{ cursor: "help", display: "flex", alignItems: "center", justifyContent: "center", gap: "2px" }}
+                  >
+                    DBNO
+                    <HelpCircle size={10} style={{ color: "#F2A900" }} />
+                  </div>
+                  {showDBNOTooltip && (
+                    <div style={{
+                      position: "absolute",
+                      bottom: "100%",
+                      left: "50%",
+                      transform: "translateX(-50%) translateY(-10px)",
+                      backgroundColor: "#222",
+                      color: "#fff",
+                      padding: "6px 10px",
+                      borderRadius: "6px",
+                      fontSize: "11px",
+                      whiteSpace: "nowrap",
+                      zIndex: 100,
+                      boxShadow: "0 4px 15px rgba(0,0,0,0.6)",
+                      border: "1px solid #F2A900",
+                      pointerEvents: "none",
+                      fontWeight: "bold"
+                    }}>
+                      적을 기절시킨 횟수 (Down But Not Out)
+                      <div style={{
+                        position: "absolute",
+                        top: "100%",
+                        left: "50%",
+                        transform: "translateX(-50%)",
+                        borderWidth: "5px",
+                        borderStyle: "solid",
+                        borderColor: "#F2A900 transparent transparent transparent"
+                      }} />
+                    </div>
+                  )}
+                </th>
                 <th style={{ padding: "10px" }}>부활</th>
               </tr>
             </thead>
@@ -763,7 +819,7 @@ export const MatchCard = ({
                       {member.name}
                     </td>
                     <td style={{ padding: "10px" }}>
-                      {member.kills} / {member.assists} / {member.deaths || 1}
+                      {member.kills} / {member.deathType === 'alive' || member.deathType === '생존' ? 0 : 1} / {member.assists}
                     </td>
                     <td style={{ padding: "10px" }}>
                       {Math.floor(member.damageDealt)}

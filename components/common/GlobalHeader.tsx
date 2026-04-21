@@ -220,7 +220,7 @@ export default function GlobalHeader() {
                     : "text-black/60 hover:bg-black/10 hover:text-black/80"
                 }`}
               >
-                전적 검색
+                AI 전적 검색
                 {isStatsActive && (
                   <span className="absolute bottom-[3px] left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-[#F2A900]" />
                 )}

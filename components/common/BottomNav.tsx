@@ -32,7 +32,7 @@ export default function BottomNav() {
     },
     {
       id: 'Stats',
-      label: '전적',
+      label: 'AI 전적',
       icon: BarChart2,
       onClick: () => router.push('/stats'),
       active: pathname === '/stats' && !isMenuOpen,

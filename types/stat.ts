@@ -29,6 +29,7 @@ export interface MatchTeamMember {
   damageDealt: number;
   DBNOs: number;
   revives: number;
+  deathType?: string;
   deaths?: number;
 }
 
