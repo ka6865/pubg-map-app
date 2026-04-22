@@ -2,38 +2,10 @@ import { NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 // [AI-ANALYZE] 총기 코드명 → 한글명 변환 (매치 단일 분석용)
-const WEAPON_MAP: Record<string, string> = {
-  WeapAKM_C: "AKM", WeapBerylM762_C: "베릴 M762", WeapM416_C: "M416", "WeapSCAR-L_C": "SCAR-L",
-  WeapAUG_C: "AUG", WeapG36C_C: "G36C", WeapQBZ95_C: "QBZ", WeapK2_C: "K2", WeapAce32_C: "ACE32",
-  WeapM16A4_C: "M16A4", WeapMk47Mutant_C: "뮤턴트", WeapSKS_C: "SKS", WeapSLR_C: "SLR",
-  WeapMk14_C: "Mk14", WeapMini14_C: "미니14", WeapQBU88_C: "QBU", WeapVSS_C: "VSS",
-  WeapDragunov_C: "드라구노프", WeapKar98k_C: "Kar98k", WeapM24_C: "M24", WeapAWM_C: "AWM",
-  WeapMosinNagant_C: "모신나강", WeapWin1894_C: "윈체스터", WeapLynxAMR_C: "링스 AMR",
-  WeapUZI_C: "마이크로 UZI", WeapUMP45_C: "UMP45", WeapVector_C: "벡터", WeapTommyGun_C: "토미건",
-  WeapBizonPP19_C: "비존", WeapMP5K_C: "MP5K", WeapP90_C: "P90", WeapJS9_C: "JS9",
-  WeapS12K_C: "S12K", WeapS1897_C: "S1897", WeapS686_C: "S686", WeapDBS_C: "DBS",
-  WeapM249_C: "M249", WeapDP28_C: "DP-28", WeapMG3_C: "MG3", WeapCrossbow_C: "석궁",
-  WeapPanzerfaust100_C: "판저파우스트", WeapM79_C: "M79", WeapGrenade_C: "수류탄",
-  WeapMolotov_C: "화염병", Item_Weapon_FlashBang_C: "섬광탄", Item_Weapon_C4_C: "C4",
-};
-
-const getWeaponName = (id: string): string => {
-  if (!id || id === "None" || id === "null") return "알 수 없음";
-  if (WEAPON_MAP[id]) return WEAPON_MAP[id];
-  if (id.startsWith("Damage_")) {
-    const map: Record<string, string> = {
-      Damage_BlueZone: "자기장", Damage_RedZone: "폭격", Damage_Fall: "낙하",
-      Damage_Drowning: "익사", Damage_OutsidePlayZone: "자기장",
-    };
-    return map[id] || id.replace("Damage_", "");
-  }
-  return id.replace(/^Weap/, "").replace(/_C$/, "").replace(/_/g, " ");
-};
-
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { matchData, nickname, messages } = body;
+    const { matchData, nickname, messages, coachingStyle = "spicy" } = body;
 
     const apiKey = process.env.GOOGLE_GEMINI_API_KEY;
 
@@ -51,7 +23,17 @@ export async function POST(request: Request) {
       );
     }
 
-    const { stats, mapName, gameMode, totalTeamKills, killDetails = [], dbnoDetails = [], team = [], itemUseDetails = [], vehicleDetails = [], damageDetails = [], earlyBluezoneDamage = 0, lateBluezoneDamage = 0 } = matchData;
+    const { 
+      stats, mapName, gameMode, totalTeamKills, 
+      killDetails = [], dbnoDetails = [], team = [], 
+      itemUseDetails = [], damageDetails = [], 
+      myEarlyBluezoneDamage = 0, myLateBluezoneDamage = 0, 
+      teamEarlyBluezoneDamage = 0, teamLateBluezoneDamage = 0,
+      matchStartTime = 0,
+      matchStats = { avgDamage: 0, avgKills: 0, totalParticipants: 0 },
+      myRank = { damageRank: 0, damagePercentile: 0, killRank: 0 },
+      combatPressure = { totalHits: 0, uniqueVictims: [], maxHitDistance: 0, utilityDamage: 0, utilityHits: 0 }
+    } = matchData;
     const lowerNickname = nickname.toLowerCase();
 
     // 1. 사용자(Me)와 팀원(Teammates) 데이터 분리
@@ -127,8 +109,16 @@ export async function POST(request: Request) {
     ].sort((a, b) => new Date(a.time).getTime() - new Date(b.time).getTime())
      .slice(-10); // 마지막 교전 집중 분석을 위해 최근 10개만
 
+    const formatElapsedTime = (eventTime: string) => {
+      if (!matchStartTime) return "시간정보 없음";
+      const elapsedSec = Math.floor((new Date(eventTime).getTime() - matchStartTime) / 1000);
+      const m = Math.floor(elapsedSec / 60);
+      const s = elapsedSec % 60;
+      return `${m}:${s.toString().padStart(2, '0')}`;
+    };
+
     const timelineText = timelineEvents.map(e => {
-        const timeStr = new Date(e.time).toLocaleTimeString("ko-KR", { minute: "2-digit", second: "2-digit" });
+        const timeStr = formatElapsedTime(e.time);
         if (e.type === "킬/사망") return `  [${timeStr}] ${e.attackerName} -> ${e.victimName} (${e.weapon})`;
         if (e.type === "기절") return `  [${timeStr}] ${e.attackerName} -> ${e.victimName} 기절 (${e.weapon})`;
         return `  [${timeStr}] ${e.playerName} -> ${e.itemName} 사용`;
@@ -155,6 +145,12 @@ export async function POST(request: Request) {
     const knockedBySniperCount = [...killDetails, ...dbnoDetails].filter(k => k.victimName === nickname && srDmrWeapons.includes(k.weapon)).length;
     const sniperDuelReport = `저격 성공 ${snipedEnemiesCount}회 / 피격 패배 ${knockedBySniperCount}회`;
 
+    // 7. 교전 효율(Trade Efficiency) 및 피킹 능력 산출
+    const totalDamageTaken = damageDetails
+      .filter((d: any) => d.victimName?.toLowerCase() === lowerNickname)
+      .reduce((sum: number, d: any) => sum + (d.damage || 0), 0);
+    const tradeEfficiency = totalDamageTaken > 0 ? (stats.damageDealt / totalDamageTaken).toFixed(2) : stats.damageDealt.toFixed(2);
+
     const playerReportSummary = `
 현재 매치 요약:
 - 플레이어: ${nickname} (맵: ${mapName}, 모드: ${gameMode}, 순위: #${stats.winPlace})
@@ -165,8 +161,17 @@ export async function POST(request: Request) {
 - 사망 유형: ${stats.deathType || "정보 없음"}
 - 마지막 교전: ${deathDetailText}
 - 교전 시 팀원 거리: ${myDeath?.teammateDistances ? Object.entries(myDeath.teammateDistances).map(([name, dist]) => `${name}(${dist}m)`).join(", ") : "정보 없음"}
-- 자기장 피해: 초반 ${Math.floor(earlyBluezoneDamage)} HP / 3단계 이후 ${Math.floor(lateBluezoneDamage)} HP (후반 피해가 클수록 운영 실패)
+- 내 자기장 피해: 초반 ${Math.floor(myEarlyBluezoneDamage)} HP / 3단계 이후 ${Math.floor(myLateBluezoneDamage)} HP (1:1 코칭용)
+- 팀 전체 자기장 피해: 초반 ${Math.floor(teamEarlyBluezoneDamage)} HP / 3단계 이후 ${Math.floor(teamLateBluezoneDamage)} HP (운영 판단용)
+- 교전 효율(Trade): ${tradeEfficiency} (낸 데미지 / 받은 데미지. 1.0 이상이면 피킹/교전 우위)
 - 아군 백업: ${backupStatus}
+
+[V3 전술 분석 지표]
+- 상대적 우위: 매치 딜량 상위 ${100 - myRank.damagePercentile}% (정규 참가자 ${matchStats.totalParticipants}명 중 딜량 ${myRank.damageRank}위 / 킬 ${myRank.killRank}위)
+- 매치 평균 대비: 내 딜량(${Math.floor(stats.damageDealt)}) vs 매치 평균(${matchStats.avgDamage})
+- 교전 압박(Pressure): 총 ${combatPressure.totalHits}회 적중 / ${combatPressure.uniqueVictims?.length || 0}명의 적을 동시에 압박
+- 피킹 정밀도: 최대 적중 거리 ${combatPressure.maxHitDistance}m (기절 여부와 무관한 순수 타격 기록)
+- 투척물 효율: ${combatPressure.utilityHits}회 적중 / 누적 데미지 ${combatPressure.utilityDamage} (수류탄/화염병 등)
 
 [내 무기 분석]
 - 총기별 킬: ${JSON.stringify(weaponKillMap)}
@@ -183,35 +188,29 @@ ${teammateSummaryText || "- 팀원 정보 없음 (솔로 매치)"}
 ${timelineText || "  상세 타임라인 정보 없음"}
     `.trim();
 
-    const systemPrompt = `
-너는 배틀그라운드 유저의 성장을 돕는 '날카로운 1:1 전술 멘토'야.
-흔한 칭찬보다는 플레이어의 데이터를 기반으로 실질적인 실력을 향상시킬 수 있는 '현실적이고 뼈아픈 조언'을 제공하는 것이 네 역할이야.
+    const mildPrompt = `
+너는 유저의 성장을 진심으로 응원하는 '다정한 실력파 코치'야. 
+[상대적 우위]와 [교전 압박] 지표를 핵심으로 분석해줘.
+킬이 낮더라도 [교전 압박(Hits)]이 높다면 "팀의 승리를 위해 묵묵히 화력을 지원하고 적을 묶어둔 훌륭한 서포터였다"는 점을 꼭 칭찬해줘.
+최대 적중 거리가 높다면 "정밀한 사격 능력을 갖추고 있다"며 사용자에게 자신감을 북돋아줘.
+"고생하셨어요! 이 부분은 정말 센스 있었네요" 처럼 따뜻하면서도 전문적인 톤을 유지해.
 
-[최우선 절대 규칙 (Output Constraints)]
-1. 언어: 반드시 100% 자연스러운 한국어(한글)로만 답변하세요.
-2. 🛑 ⚠️ 경고: '优秀', 'mechanism' 등의 외국어(중국어/영어)를 절대 섞지 마세요.
-3. 톤앤매너: 칭찬은 30%, 문제점 및 보완사항 지적은 70% 비중으로 구성하세요. "프로처럼 하라"는 식의 입기만 좋은 말은 생략하고, "교전 승률을 높이기 위해 ~가 반드시 필요하다"는 식의 실용적인 화법을 채택하세요.
-4. 데이터 기반 질책: 제공된 텔레메트리 수치(거리, 피해량, 자기장 피해, 아군 거리 등)를 근거로 논리적으로 반박할 수 없는 날카로운 피드백을 제공하세요.
-5. 팀워크 분석: 제공된 [우리 팀원 활약상] 데이터를 바탕으로 닉네임을 언급하며 구체적으로 피드백하세요.
-
-[전문 분석 및 코칭 가이드라인]
-1. 상황 맥락 파악(Context-Aware): 초반 난전에서 살아남은 것은 인정하되, 그 과정에서 소모된 자원이나 위치 선점의 미흡함을 짚어주세요.
-2. 무기군 역할 분담: SMG/산탄총 사용 시 "초반에 잘 버텼다" 정도로 짧게 언급하고, 후반 운영을 위한 주력 AR/DMR 확보 및 교체 실기 여부를 강하게 지적하세요.
-3. 마스터피스 전술 분석: 
-    - 거리 가이드라인:
-        * 0~50m: 밀집 대형 (즉시 지원 가능하나 동시 타격 위험)
-        * 50~100m: 표준 전술 거리 (최적의 화력 지원 각)
-        * 150m 이상: 고립 위험 (백업 지연으로 인한 각개격파 1순위)
-    - 양각 vs 고립 판별: 아군과의 거리가 150m 이상이고 백업이 전무하다면 "무리한 우회로 인한 고립"으로 지적하고 구체적인 거리 조정을 제안하세요.
-    - 저격전 코칭: 
-        * SR/DMR로 적의 저격에 기절한 횟수(피격 패배)가 많다면 "피킹(Peeking) 각 노출이 너무 길거나 움직임이 단조롭다"고 질책하세요.
-    - 자기장 운영: 3페이즈(단계) 이후 자기장 피해(lateBluezoneDamage)가 30HP 이상이라면 "교전 실력 이전에 판단 지연에 따른 운영 실패"임을 강하게 지적하세요.
-    - 유틸리티 활용: 연막탄이나 투척물이 인벤토리에 있음에도 쓰지 않고 죽었다면 "죽기 전에 투척물 1개는 반드시 소모하라"는 식의 실전 지침을 주세요.
-4. 배그 전문 용어: 파밍, 자기장, 존버, 양각, 인서클 등 한국 게이머의 용어를 자연스럽게 활용하세요.
-
-[데이터 배경]
+[분석 데이터 요약]
 ${playerReportSummary}
-    `.trim();
+`.trim();
+
+    const spicyPrompt = `
+당신은 아주 냉정하고 날카로운 실전형 '독설 교관'입니다.
+제공된 데이터를 통해 플레이어의 한심한 실책과 전술적 무능을 낱낱이 파헤쳐 팩폭을 가하십시오.
+- 핵심 기조: "실력 없는 친절함은 배그에서 죽음뿐이다."
+- 강조 포인트: 낮은 킬 대비 높은 데미지(결단력 부족), 고립사 빈도, 낮은 투척물 효율 등을 비웃거나 강하게 질책하십시오.
+- 말투: "~하십시오", "~입니까?"와 같은 딱딱하고 권위적인 군대 교관 어투를 사용하십시오.
+
+[분석 데이터 요약]
+${playerReportSummary}
+`.trim();
+
+    const systemPrompt = coachingStyle === "mild" ? mildPrompt : spicyPrompt;
 
     // 대화 내역(messages) 포맷팅: Gemini는 단일 텍스트 프롬프트로 처리하여 문맥 유지
     const history = messages || [];

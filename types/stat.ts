@@ -57,4 +57,18 @@ export interface MatchData {
   killDetails: KillDetail[];
   /** 텔레메트리 기반 기절 상세 */
   dbnoDetails: KillDetail[];
+  /** [V3] 플레이어 순위 정보 (딜량 순위, 백분위, 킬 순위) */
+  myRank?: {
+    damageRank: number;
+    damagePercentile: number;
+    killRank: number;
+  };
+  /** [V3] 교전 압박 지표 (총 적중 횟수, 압박한 적 수, 최대 타격 거리 등) */
+  combatPressure?: {
+    totalHits: number;
+    uniqueVictims: string[];
+    maxHitDistance: number;
+    utilityDamage: number;
+    utilityHits: number;
+  };
 }

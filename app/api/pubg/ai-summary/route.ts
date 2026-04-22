@@ -97,7 +97,7 @@ const MAP_NAME_KR: Record<string, string> = {
 export async function POST(request: Request) {
   console.log("[AI-SUMMARY] 초정밀 분석 요청 시작 (Telemetry Mode)");
   try {
-    const { matchIds, nickname, platform } = await request.json();
+    const { matchIds, nickname, platform, coachingStyle = "spicy" } = await request.json();
 
     if (!matchIds || matchIds.length === 0) {
       return NextResponse.json({ error: "매치 데이터가 없습니다." }, { status: 400 });
@@ -167,8 +167,10 @@ export async function POST(request: Request) {
 
         let killDetails: any[] = [];
         let dbnoDetails: any[] = [];
-        let lateBluezoneDamage = 0;
+        let myLateBluezoneDamage = 0;
+        let totalMatchDamageTaken = 0;
         let teammateDistancesAtDeath: any = null;
+        const combatPressure = { totalHits: 0, uniqueVictims: new Set<string>(), maxHitDistance: 0, utilityDamage: 0, utilityHits: 0 };
         let matchStartTime: number | null = null;
         const playerPositions: Record<string, { time: string, x: number, y: number }[]> = {};
 
@@ -230,10 +232,36 @@ export async function POST(request: Request) {
 
                 // 자기장 피해 분석 (후반 피해 누적)
                 telData.forEach(e => {
-                  if (e._T === "LogPlayerTakeDamage" && e.victim?.name?.toLowerCase() === lowerNickname && e.damageTypeCategory === "Damage_BlueZone") {
-                    if (matchStartTime) {
-                      const elapsed = new Date(e._D).getTime() - matchStartTime;
-                      if (elapsed >= 720000) lateBluezoneDamage += (e.damage || 0);
+                  if (e._T === "LogPlayerTakeDamage" && e.victim?.name?.toLowerCase() === lowerNickname) {
+                    if (e.damageTypeCategory === "Damage_BlueZone" || e.damageTypeCategory === "Damage_OutsidePlayZone") {
+                      if (matchStartTime) {
+                        const elapsed = new Date(e._D).getTime() - matchStartTime;
+                        if (elapsed >= 720000) myLateBluezoneDamage += (e.damage || 0);
+                      }
+                    } else if (e.attacker) {
+                      // 자기장이 아닌 일반 교전 피해 합산
+                      totalMatchDamageTaken += (e.damage || 0);
+                    }
+                  }
+                });
+
+                // [V3] 교전 압박 및 투척물 분석
+                telData.forEach(e => {
+                  if (e._T === "LogPlayerTakeDamage" && e.attacker && (e.attacker.name?.toLowerCase() === lowerNickname || e.attacker.accountId === accountId)) {
+                    if (e.victim && e.victim.name !== nickname) {
+                      combatPressure.totalHits++;
+                      combatPressure.uniqueVictims.add(e.victim.name);
+                      if (e.attacker.location && e.victim.location) {
+                        const dx = e.attacker.location.x - e.victim.location.x;
+                        const dy = e.attacker.location.y - e.victim.location.y;
+                        const dist = Math.sqrt(dx * dx + dy * dy) / 100;
+                        if (dist > combatPressure.maxHitDistance) combatPressure.maxHitDistance = Math.round(dist);
+                      }
+                      const isUtility = ["Item_Weapon_Grenade_C", "ProjGrenade_C", "WeapMolotov_C", "ProjMolotov_C", "Item_Weapon_FlashBang_C"].includes(e.damageCauserName);
+                      if (isUtility) {
+                        combatPressure.utilityDamage += (e.damage || 0);
+                        combatPressure.utilityHits++;
+                      }
                     }
                   }
                 });
@@ -331,6 +359,22 @@ export async function POST(request: Request) {
           logout: "로그아웃",
         };
 
+        // [V3] 매치 백분위 계산
+        const fullParticipants = data.included.filter((item: any) => item.type === "participant");
+        const meaningfulParticipants = fullParticipants.filter((p: any) => {
+          const s = p.attributes.stats;
+          return s.damageDealt > 0 || s.timeSurvived > 60;
+        });
+
+        const sortedDamage = [...meaningfulParticipants].sort((a: any, b: any) => b.attributes.stats.damageDealt - a.attributes.stats.damageDealt);
+        const myDamageRankRaw = sortedDamage.findIndex((p: any) => p.attributes.stats.playerId === accountId);
+        const myDamageRank = myDamageRankRaw === -1 ? meaningfulParticipants.length + 1 : myDamageRankRaw + 1;
+        const myDamagePercentile = Math.round(((meaningfulParticipants.length - myDamageRank) / (meaningfulParticipants.length || 1)) * 100);
+
+        const sortedKills = [...meaningfulParticipants].sort((a: any, b: any) => b.attributes.stats.kills - a.attributes.stats.kills);
+        const myKillRankRaw = sortedKills.findIndex((p: any) => p.attributes.stats.playerId === accountId);
+        const myKillRank = myKillRankRaw === -1 ? meaningfulParticipants.length + 1 : myKillRankRaw + 1;
+
         detailedMatches.push({
           matchId: id,
           mapName: MAP_NAME_KR[data.data.attributes.mapName as string] || data.data.attributes.mapName,
@@ -355,8 +399,21 @@ export async function POST(request: Request) {
           },
           killDetails,   // 텔레메트리 킬 상세 (무기, 거리, 헤드샷 여부)
           dbnoDetails,   // 텔레메트리 기절 상세
-          lateBluezoneDamage,
+          lateBluezoneDamage: myLateBluezoneDamage,
+          damageTaken: totalMatchDamageTaken,
           teammateDistancesAtDeath,
+          combatPressure: {
+            totalHits: combatPressure.totalHits,
+            uniqueVictims: Array.from(combatPressure.uniqueVictims),
+            maxHitDistance: combatPressure.maxHitDistance,
+            utilityDamage: combatPressure.utilityDamage,
+            utilityHits: combatPressure.utilityHits
+          },
+          myRank: {
+            damageRank: myDamageRank,
+            damagePercentile: myDamagePercentile,
+            killRank: myKillRank
+          },
         });
 
         // API Rate Limit 방지 (300ms 딜레이)
@@ -422,15 +479,40 @@ export async function POST(request: Request) {
 
     // [NEW] 전술 패턴 집계 (고립, 자기장, 저격)
     let totalLateBluezoneDamage = 0;
+    let totalOverallDamageTaken = 0;
     let isolatedDeathCount = 0;
     let totalDeathDistanceSum = 0;
     let deathDistanceCount = 0;
     const srDmrWeapons = ["Kar98k", "M24", "AWM", "Mosin Nagant", "Dragunov", "Mini14", "SLR", "SKS", "Mk12", "QBU", "Mk14", "VSS"];
     let totalSnipedEnemies = 0;
     let totalKnockedBySniper = 0;
+    
+    // [V3 종합 지표]
+    let totalV3Hits = 0;
+    let totalV3UniqueVictims = 0;
+    let maxV3Distance = 0;
+    let totalV3UtilityHits = 0;
+    let totalV3UtilityDamage = 0;
+    let totalDamagePercentileSum = 0;
+    let totalKillRankSum = 0;
+    let bestKillRank = 999;
 
     detailedMatches.forEach(m => {
       totalLateBluezoneDamage += (m.lateBluezoneDamage || 0);
+      totalOverallDamageTaken += (m.damageTaken || 0);
+      
+      // V3 지표 합산
+      totalV3Hits += (m.combatPressure?.totalHits || 0);
+      const matchVictims = m.combatPressure?.uniqueVictims?.length || 0;
+      totalV3UniqueVictims += matchVictims;
+      if ((m.combatPressure?.maxHitDistance || 0) > maxV3Distance) maxV3Distance = m.combatPressure.maxHitDistance;
+      totalV3UtilityHits += (m.combatPressure?.utilityHits || 0);
+      totalV3UtilityDamage += (m.combatPressure?.utilityDamage || 0);
+      totalDamagePercentileSum += (m.myRank?.damagePercentile || 0);
+      
+      const currentKillRank = m.myRank?.killRank || 999;
+      totalKillRankSum += currentKillRank;
+      if (currentKillRank < bestKillRank) bestKillRank = currentKillRank;
       
       // 저격전 합산
       const matchKills = m.killDetails.filter((k: any) => k.attackerName === nickname && srDmrWeapons.includes(k.weapon)).length;
@@ -455,22 +537,36 @@ export async function POST(request: Request) {
     const avgDeathDistance = deathDistanceCount > 0 ? Math.round(totalDeathDistanceSum / deathDistanceCount) : 0;
     const avgLateBluezoneDamage = Math.floor(totalLateBluezoneDamage / detailedMatches.length);
     const isolatedRate = detailedMatches.length > 0 ? Math.round((isolatedDeathCount / detailedMatches.length) * 100) : 0;
+    const overallTradeEfficiency = totalOverallDamageTaken > 0 ? (totalDamage / totalOverallDamageTaken).toFixed(2) : (totalDamage / 1).toFixed(2);
+    const avgDamagePercentile = Math.round(totalDamagePercentileSum / (detailedMatches.length || 1));
+    const avgKillRank = (totalKillRankSum / (detailedMatches.length || 1)).toFixed(1);
 
     // 3. AI 프롬프트 구성 (정제된 요약 데이터만 전달 - 토큰 절약)
-    const systemPrompt = `당신은 10경기 데이터를 통해 플레이어의 고질적인 습관을 찾아내는 냉철하고 직설적인 '1:1 전술 멘토'입니다.
-데이터 패턴을 기반으로 중복되는 실수를 날카롭게 지적하고, 실력 향상을 위한 현실적인 과제를 부여하세요.
+    const mildPrompt = `
+당신은 배틀그라운드 유저의 성장을 진심으로 응원하는 '다정한 실력파 코치'입니다.
+10경기의 데이터를 바탕으로 차분하게 전술적 피드백을 주십시오.
+- 칭찬 포인트: 교전 효율이 좋거나, 기절(DBNO) 지원이 많거나, 교전 압박(Hits)이 높은 부분 등을 꼭 찾아내어 독려하십시오.
+- 개선 포인트: 부족한 부분도 따뜻하게, 하지만 실무적으로 조언하십시오.
+- 말투: "~해요", "~군요"와 같은 부드러운 선배/코치 어투를 사용하십시오.
+`.trim();
 
-[종합 분석 원칙]
-1. 고질병 진단 (결함 우선): 최근 10경기에서 반복되는 가장 치명적인 약점 3가지를 리포트의 70% 비중으로 상세히 분석하세요. 칭찬은 아주 짧고 간결하게 제한합니다.
-2. 프로 비교 금지: "프로는~", "프로 선수처럼~" 같은 비교 수식어는 절대 사용하지 마세요. 대신 플레이어의 전술 지표가 왜 비효율적인지 논리적으로 지적하세요.
-3. 데이터 기반 질책: 150m 이상 고립 사망률이 높다면 "팀워크 부재"를, 3단계 이후 자기장 피해가 높다면 "판단 지연으로 인한 운영 실패"를 데이터 수치와 함께 강하게 지적하세요.
-4. 현실적 해결책: 다음 게임에서 바로 실천할 수 있는 구체적인 가이드라인(예: "사망 전 투척물 1개는 반드시 소모하기")을 제시하세요.
+    const spicyPrompt = `
+당신은 아주 냉정하고 날카로운 실전형 '독설 교관'입니다.
+10경기의 데이터를 통해 플레이어의 한심한 실책과 전술적 무능을 낱낱이 파헤쳐 팩폭을 가하십시오.
+- 핵심 기조: "실력 없는 친절함은 배그에서 죽음뿐이다."
+- 강조 포인트: 낮은 킬 대비 높은 데미지(결단력 부족), 고립사 빈도, 낮은 투척물 효율 등을 비웃거나 강하게 질책하십시오.
+- 말투: "~하십시오", "~입니까?"와 같은 딱딱하고 권위적인 군대 교관 어투를 사용하십시오.
+`.trim();
 
-[리포트 구성 규칙]
-1. [핵심 요약]: 플레이어의 장점을 포함하여 단 1줄로 요약하세요.
-2. [치명적 패턴 진단]: 10경기 동안 반복된 가장 안 좋은 습관 3가지를 우선적으로 노출하고 분석하세요.
-3. [성장 과제]: 다음 게임에서 즉시 실행 가능한 구체적 행동 강령을 제시하세요.
-`;
+    const systemContext = `당신은 플레이어의 고질적인 습관을 찾아내는 '1:1 전술 멘토'입니다. 
+출력 언어는 100% 한국어여야 합니다.
+
+결과 구성 규칙:
+1. [핵심 요약]: 플레이어의 최근 상태를 단 1줄로 요약.
+2. [치명적 패턴 진단]: 10경기 동안 반복된 안 좋은 습관 3가지 분석.
+3. [성장 과제]: 다음 게임 행동 강령 제시.`;
+
+    const systemPrompt = `${systemContext}\n\n${coachingStyle === "mild" ? mildPrompt : spicyPrompt}`;
 
     const userPrompt = `## 플레이어: ${nickname}
 ## 분석 기간: 최근 ${detailedMatches.length}경기
@@ -485,7 +581,13 @@ export async function POST(request: Request) {
 | 헤드샷 킬 비율 | ${headshotRate} |
 | 평균 사망 시 팀원 거리 | ${avgDeathDistance}m |
 | 고립 사망률 | ${isolatedRate}% |
-| 경기당 평균 후반 자기장 피해 | ${avgLateBluezoneDamage}HP |
+| 내 평균 후반 자기장 피해 | ${avgLateBluezoneDamage}HP |
+| 종합 교전 효율(Trade) | ${overallTradeEfficiency} (전체 평균) |
+| 내 평균 매치 백분위 | 상위 ${100 - avgDamagePercentile}% |
+| 10경기 평균 킬 순위 | ${avgKillRank}위 (최고 ${bestKillRank}위) |
+| 10경기 총 교전 압박 | ${totalV3Hits}회 적중 / ${totalV3UniqueVictims}명 압박 |
+| 역대 최장거리 유효타 | ${maxV3Distance}m |
+| 종합 투척물 효율 | ${totalV3UtilityHits}회 적중 / 누적 ${Math.round(totalV3UtilityDamage)}딜 |
 | 종합 저격 성적 | 성공 ${totalSnipedEnemies} / 피격 ${totalKnockedBySniper} |
 
 ### 🔫 총기별 킬 횟수 (텔레메트리 기반)

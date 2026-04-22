@@ -109,10 +109,14 @@ export const MatchCard = ({
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [isEventMode, setIsEventMode] = useState(false); // 이벤트 모드 맵 여부
   const [isExpanded, setIsExpanded] = useState(false);
-  const [aiAnalysis, setAiAnalysis] = useState<string | null>(null);
+  const [analyses, setAnalyses] = useState<{ mild: string | null; spicy: string | null }>({ mild: null, spicy: null });
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
   const [showDBNOTooltip, setShowDBNOTooltip] = useState(false);
+  const [showKillRankTooltip, setShowKillRankTooltip] = useState(false);
+  const [showPercentileTooltip, setShowPercentileTooltip] = useState(false);
+  const [showHitsTooltip, setShowHitsTooltip] = useState(false);
+  const [coachingStyle, setCoachingStyle] = useState<"mild" | "spicy">("spicy");
 
   // 채팅 관련 상태 추가
   const [chatMessages, setChatMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
@@ -121,7 +125,7 @@ export const MatchCard = ({
 
   const handleAnalyze = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (isAnalyzing || aiAnalysis) return;
+    if (isAnalyzing || analyses[coachingStyle]) return;
 
     setIsAnalyzing(true);
     setAiError(null);
@@ -138,13 +142,14 @@ export const MatchCard = ({
             dbnoDetails: matchData?.dbnoDetails ?? [],
           },
           nickname,
+          coachingStyle,
         }),
       });
 
       const data = await response.json();
       if (data.error) throw new Error(data.error);
       
-      setAiAnalysis(data.analysis);
+      setAnalyses(prev => ({ ...prev, [coachingStyle]: data.analysis }));
       // 초기 분석 결과를 대화 기록에 추가
       setChatMessages([{ role: "assistant", content: data.analysis }]);
     } catch (err: any) {
@@ -179,6 +184,7 @@ export const MatchCard = ({
             dbnoDetails: matchData?.dbnoDetails ?? [],
           },
           nickname,
+          coachingStyle,
           messages: slidingWindowMessages,
         }),
       });
@@ -194,6 +200,16 @@ export const MatchCard = ({
       setIsChatting(false);
     }
   };
+
+  // 모드 변경 시 해당 모드의 기존 분석 결과가 있다면 채팅창 갱신
+  useEffect(() => {
+    const existingAnalysis = analyses[coachingStyle];
+    if (existingAnalysis) {
+      setChatMessages([{ role: "assistant", content: existingAnalysis }]);
+    } else {
+      setChatMessages([]);
+    }
+  }, [coachingStyle, analyses]);
 
   useEffect(() => {
     fetch(
@@ -302,10 +318,12 @@ export const MatchCard = ({
       style={{
         marginBottom: "10px",
         borderRadius: "8px",
-        overflow: "hidden",
+        overflow: "visible", // 툴팁 가려짐 방지
         border: "1px solid #333",
         borderLeft: `4px solid ${borderColor}`,
         backgroundColor: bgColor,
+        position: "relative",
+        zIndex: isExpanded ? 10 : 1
       }}
     >
       <div
@@ -371,54 +389,107 @@ export const MatchCard = ({
                 fontSize: isMobile ? "15px" : "18px",
                 fontWeight: "bold",
                 color: "#fff",
+                display: "flex",
+                alignItems: "center",
+                gap: "8px",
+                flexWrap: "wrap"
               }}
             >
-              {stats.kills}{" "}
-              <span
-                style={{
-                  color: "#666",
-                  fontSize: isMobile ? "10px" : "12px",
-                  fontWeight: "normal",
-                }}
-              >
-                킬
-              </span>
-              <span
-                style={{ color: "#555", margin: isMobile ? "0 4px" : "0 6px" }}
-              >
-                /
-              </span>
-              {stats.deathType === "생존" ? 0 : 1}{" "}
-              <span
-                style={{
-                  color: "#666",
-                  fontSize: isMobile ? "10px" : "12px",
-                  fontWeight: "normal",
-                }}
-              >
-                데스
-              </span>
-              <span
-                style={{ color: "#555", margin: isMobile ? "0 4px" : "0 6px" }}
-              >
-                /
-              </span>
-              {stats.assists}{" "}
-              <span
-                style={{
-                  color: "#666",
-                  fontSize: isMobile ? "10px" : "12px",
-                  fontWeight: "normal",
-                }}
-              >
-                어시
-              </span>
+              <div style={{ display: "flex", alignItems: "center" }}>
+                {stats.kills}
+                <span style={{ color: "#666", fontSize: isMobile ? "10px" : "12px", fontWeight: "normal", marginLeft: "2px" }}>킬</span>
+                <span style={{ color: "#555", margin: isMobile ? "0 4px" : "0 6px" }}>/</span>
+                {stats.deathType === "생존" ? 0 : 1}
+                <span style={{ color: "#666", fontSize: isMobile ? "10px" : "12px", fontWeight: "normal", marginLeft: "2px" }}>데스</span>
+                <span style={{ color: "#555", margin: isMobile ? "0 4px" : "0 6px" }}>/</span>
+                {stats.assists}
+                <span style={{ color: "#666", fontSize: isMobile ? "10px" : "12px", fontWeight: "normal", marginLeft: "2px" }}>어시</span>
+              </div>
+
+              {/* [V3] 전술 배지 영역 */}
+              <div style={{ display: "flex", gap: "5px" }}>
+                {matchData.myRank && (
+                  <>
+                    <div 
+                      onMouseEnter={() => setShowKillRankTooltip(true)}
+                      onMouseLeave={() => setShowKillRankTooltip(false)}
+                      style={{ 
+                        fontSize: "9px", fontWeight: "900", padding: "1px 5px", borderRadius: "3px",
+                        background: matchData.myRank.killRank === 1 ? "linear-gradient(45deg, #F2A900, #FFD700)" : "rgba(255,255,255,0.06)",
+                        color: matchData.myRank.killRank === 1 ? "#000" : "#F2A900",
+                        border: "1px solid rgba(242, 169, 0, 0.2)",
+                        display: "flex", alignItems: "center", position: "relative", cursor: "help"
+                      }}
+                    >
+                      🎯 #{matchData.myRank.killRank}
+                      {showKillRankTooltip && (
+                        <div style={{
+                          position: "absolute", bottom: "100%", left: "50%", transform: "translateX(-50%) translateY(-10px)",
+                          backgroundColor: "#222", color: "#fff", padding: "6px 12px", borderRadius: "6px",
+                          fontSize: "11px", whiteSpace: "nowrap", zIndex: 1000, border: "1px solid #F2A900", pointerEvents: "none",
+                          boxShadow: "0 4px 15px rgba(0,0,0,0.8)"
+                        }}>
+                          매치 전체 참가자 중 내 킬 순위입니다.
+                        </div>
+                      )}
+                    </div>
+                    <div 
+                      onMouseEnter={() => setShowPercentileTooltip(true)}
+                      onMouseLeave={() => setShowPercentileTooltip(false)}
+                      style={{ 
+                        fontSize: "9px", fontWeight: "900", padding: "1px 5px", borderRadius: "3px",
+                        background: matchData.myRank.damagePercentile >= 95 ? "linear-gradient(45deg, #34A853, #2ecc71)" : "rgba(52, 168, 83, 0.08)",
+                        color: "#fff",
+                        border: "1px solid rgba(52, 168, 83, 0.2)",
+                        display: "flex", alignItems: "center", position: "relative", cursor: "help"
+                      }}
+                    >
+                      🏆 {Math.max(1, 100 - matchData.myRank.damagePercentile)}%
+                      {showPercentileTooltip && (
+                        <div style={{
+                          position: "absolute", bottom: "100%", left: "50%", transform: "translateX(-50%) translateY(-10px)",
+                          backgroundColor: "#222", color: "#fff", padding: "6px 12px", borderRadius: "6px",
+                          fontSize: "11px", whiteSpace: "nowrap", zIndex: 1000, border: "1px solid #34A853", pointerEvents: "none",
+                          boxShadow: "0 4px 15px rgba(0,0,0,0.8)"
+                        }}>
+                          딜량 기준 정규 참가자 중 내 상위 백분위입니다.
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
+                {matchData.combatPressure && matchData.combatPressure.totalHits > 0 && (
+                  <div 
+                    onMouseEnter={() => setShowHitsTooltip(true)}
+                    onMouseLeave={() => setShowHitsTooltip(false)}
+                    style={{ 
+                      fontSize: "9px", fontWeight: "900", padding: "1px 5px", borderRadius: "3px",
+                      background: "rgba(248, 113, 113, 0.08)",
+                      color: "#f87171",
+                      border: "1px solid rgba(248, 113, 113, 0.2)",
+                      display: "flex", alignItems: "center", position: "relative", cursor: "help"
+                    }}
+                  >
+                    🔥 {matchData.combatPressure.totalHits}
+                    {showHitsTooltip && (
+                      <div style={{
+                        position: "absolute", bottom: "100%", left: "50%", transform: "translateX(-50%) translateY(-10px)",
+                        backgroundColor: "#222", color: "#fff", padding: "6px 12px", borderRadius: "6px",
+                        fontSize: "11px", whiteSpace: "nowrap", zIndex: 1000, border: "1px solid #f87171", pointerEvents: "none",
+                        boxShadow: "0 4px 15px rgba(0,0,0,0.8)"
+                      }}>
+                        적에게 직접 타격(Hit)을 가해 압박을 준 횟수입니다.
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
             <div
               style={{
                 fontSize: isMobile ? "11px" : "13px",
                 color: "#aaa",
-                margin: "4px 0",
+                margin: "2px 0",
               }}
             >
               딜량{" "}
@@ -540,7 +611,28 @@ export const MatchCard = ({
             </div>
           </div>
 
-          <div style={{ marginBottom: "20px", display: "flex", justifyContent: "center", gap: "10px", flexWrap: "wrap" }}>
+          <div style={{ marginBottom: "20px", display: "flex", justifyContent: "center", gap: "10px", flexDirection: isMobile ? "column" : "row", alignItems: "center" }}>
+            <div style={{ display: "flex", gap: "4px", backgroundColor: "rgba(255,255,255,0.05)", padding: "4px", borderRadius: "10px", border: "1px solid #333" }}>
+              <button 
+                onClick={(e) => { e.stopPropagation(); setCoachingStyle("mild"); }}
+                style={{ 
+                  padding: "8px 12px", borderRadius: "7px", fontSize: "12px", cursor: "pointer", border: "none",
+                  backgroundColor: coachingStyle === "mild" ? "#34A853" : "transparent",
+                  color: coachingStyle === "mild" ? "#fff" : "#888",
+                  transition: "all 0.2s", fontWeight: "bold"
+                }}
+              >다정한 코치 😊</button>
+              <button 
+                onClick={(e) => { e.stopPropagation(); setCoachingStyle("spicy"); }}
+                style={{ 
+                  padding: "8px 12px", borderRadius: "7px", fontSize: "12px", cursor: "pointer", border: "none",
+                  backgroundColor: coachingStyle === "spicy" ? "#f87171" : "transparent",
+                  color: coachingStyle === "spicy" ? "#fff" : "#888",
+                  transition: "all 0.2s", fontWeight: "bold"
+                }}
+              >독설 교관 ⚡</button>
+            </div>
+
             <a
               href={`/maps/${(
                 { 에란겔: "erangel", 미라마: "miramar", 태이고: "taego", 론도: "rondo", 비켄디: "vikendi", 데스턴: "deston" }[mapName] || mapName || "erangel"
@@ -549,22 +641,19 @@ export const MatchCard = ({
                 display: "inline-flex",
                 alignItems: "center",
                 gap: "8px",
-                backgroundColor: "rgba(242, 169, 0, 0.15)",
-                border: "1px solid #F2A900",
+                backgroundColor: "rgba(242, 169, 0, 0.1)",
+                border: "1px solid rgba(242, 169, 0, 0.3)",
                 color: "#F2A900",
-                padding: "10px 20px",
-                borderRadius: "8px",
+                padding: "10px 18px",
+                borderRadius: "10px",
                 fontWeight: "bold",
-                fontSize: "14px",
+                fontSize: "13px",
                 textDecoration: "none",
                 transition: "all 0.2s",
               }}
-              className="hover:bg-[#F2A900] hover:text-black"
+              className="hover:bg-[#F2A900]/20"
             >
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-                <path d="M8 5v14l11-7z" />
-              </svg>
-              매치 궤적 복기 (BETA)
+              궤적 복기
             </a>
 
             <button
@@ -574,26 +663,24 @@ export const MatchCard = ({
                 display: "inline-flex",
                 alignItems: "center",
                 gap: "8px",
-                backgroundColor: aiAnalysis ? "rgba(52, 168, 83, 0.15)" : "rgba(255, 255, 255, 0.05)",
-                border: aiAnalysis ? "1px solid #34A853" : "1px solid #444",
-                color: aiAnalysis ? "#34A853" : "#fff",
+                backgroundColor: analyses[coachingStyle] ? "rgba(52, 168, 83, 0.1)" : "rgba(255, 255, 255, 0.05)",
+                border: analyses[coachingStyle] ? "1px solid rgba(52, 168, 83, 0.3)" : "1px solid #333",
+                color: analyses[coachingStyle] ? "#34A853" : "#fff",
                 padding: "10px 20px",
-                borderRadius: "8px",
+                borderRadius: "10px",
                 fontWeight: "bold",
-                fontSize: "14px",
-                cursor: isAnalyzing || aiAnalysis ? "default" : "pointer",
+                fontSize: "13px",
+                cursor: isAnalyzing || analyses[coachingStyle] ? "default" : "pointer",
                 transition: "all 0.2s",
               }}
-              className={!isAnalyzing && !aiAnalysis ? "hover:bg-white/10" : ""}
+              className={!isAnalyzing && !analyses[coachingStyle] ? "hover:bg-white/10" : ""}
             >
               {isAnalyzing ? (
-                <div style={{ width: "18px", height: "18px", border: "2px solid #fff", borderTop: "2px solid transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
+                <div style={{ width: "16px", height: "16px", border: "2px solid #fff", borderTop: "2px solid transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
               ) : (
-                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
-                  <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-1-13h2v6h-2zm0 8h2v2h-2z" />
-                </svg>
+                <BarChart2 size={16} />
               )}
-              {isAnalyzing ? "AI 분석 중..." : aiAnalysis ? "분석 완료" : "AI 실시간 분석"}
+              {isAnalyzing ? (coachingStyle === "mild" ? "멘토링 분석 중..." : "실책 파헤치는 중...") : analyses[coachingStyle] ? "분석 완료" : (analyses["mild"] || analyses["spicy"]) ? "다른 모드로 분석" : "AI 코칭 시작"}
             </button>
           </div>
 
@@ -604,7 +691,7 @@ export const MatchCard = ({
                 padding: "15px",
                 backgroundColor: "rgba(0, 0, 0, 0.3)",
                 borderRadius: "16px",
-                border: `1px solid ${aiError ? "#f87171" : "rgba(255,255,255,0.05)"}`,
+                border: `1px solid ${aiError ? "#f87171" : coachingStyle === "mild" ? "rgba(52, 168, 83, 0.3)" : "rgba(248, 113, 113, 0.3)"}`,
                 maxHeight: "500px",
                 display: "flex",
                 flexDirection: "column",
@@ -621,8 +708,8 @@ export const MatchCard = ({
                 paddingBottom: "10px",
                 borderBottom: "1px solid rgba(255,255,255,0.05)"
               }}>
-                <span style={{ fontSize: "16px" }}>{aiError ? "⚠️" : "🤖"}</span>
-                {aiError ? "분석 에러" : "AI 매치 어시스턴트"}
+                <span style={{ fontSize: "16px" }}>{aiError ? "⚠️" : coachingStyle === "mild" ? "😇" : "🔥"}</span>
+                {aiError ? "분석 에러" : coachingStyle === "mild" ? "다정한 코칭" : "독설 교관의 팩트 폭격"}
               </h4>
 
               <div style={{ 
@@ -759,12 +846,12 @@ export const MatchCard = ({
                       transform: "translateX(-50%) translateY(-10px)",
                       backgroundColor: "#222",
                       color: "#fff",
-                      padding: "6px 10px",
+                      padding: "6px 12px",
                       borderRadius: "6px",
                       fontSize: "11px",
                       whiteSpace: "nowrap",
-                      zIndex: 100,
-                      boxShadow: "0 4px 15px rgba(0,0,0,0.6)",
+                      zIndex: 1000,
+                      boxShadow: "0 4px 15px rgba(0,0,0,0.8)",
                       border: "1px solid #F2A900",
                       pointerEvents: "none",
                       fontWeight: "bold"
