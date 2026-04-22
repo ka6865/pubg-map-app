@@ -514,13 +514,13 @@ export async function POST(request: Request) {
       totalKillRankSum += currentKillRank;
       if (currentKillRank < bestKillRank) bestKillRank = currentKillRank;
       
-      // 저격전 합산
-      const matchKills = m.killDetails.filter((k: any) => k.attackerName === nickname && srDmrWeapons.includes(k.weapon)).length;
-      const matchDbnos = m.dbnoDetails.filter((k: any) => k.attackerName === nickname && srDmrWeapons.includes(k.weapon)).length;
+      // 저격전 합산 (weaponRaw 필드 사용)
+      const matchKills = m.killDetails.filter((k: any) => srDmrWeapons.some(w => k.weaponRaw?.includes(w))).length;
+      const matchDbnos = m.dbnoDetails.filter((k: any) => srDmrWeapons.some(w => k.weaponRaw?.includes(w))).length;
       totalSnipedEnemies += (matchKills + matchDbnos);
       
-      const matchKnocked = m.killDetails.filter((k: any) => k.victimName === nickname && srDmrWeapons.includes(k.weapon)).length;
-      totalKnockedBySniper += matchKnocked;
+      const matchKnockedBySniper = m.killDetails.filter((k: any) => k.victimName === nickname && srDmrWeapons.some(w => k.weaponRaw?.includes(w))).length;
+      totalKnockedBySniper += matchKnockedBySniper;
 
       // 거리 분석 (사망 시)
       if (m.teammateDistancesAtDeath) {
@@ -541,7 +541,7 @@ export async function POST(request: Request) {
     const avgDamagePercentile = Math.round(totalDamagePercentileSum / (detailedMatches.length || 1));
     const avgKillRank = (totalKillRankSum / (detailedMatches.length || 1)).toFixed(1);
 
-    // 3. AI 프롬프트 구성 (정제된 요약 데이터만 전달 - 토큰 절약)
+    // 3. AI 프롬프트 구성
     const mildPrompt = `
 당신은 배틀그라운드 유저의 성장을 진심으로 응원하는 '다정한 실력파 코치'입니다.
 10경기의 데이터를 바탕으로 차분하게 전술적 피드백을 주십시오.
@@ -551,22 +551,47 @@ export async function POST(request: Request) {
 `.trim();
 
     const spicyPrompt = `
-당신은 아주 냉정하고 날카로운 실전형 '독설 교관'입니다.
-10경기의 데이터를 통해 플레이어의 한심한 실책과 전술적 무능을 낱낱이 파헤쳐 팩폭을 가하십시오.
+당신은 아주 냉정하고 날카로운 실전형 '독설가'이자 '팩트 폭격기'입니다.
+10경기의 데이터를 통해 플레이어의 실책과 전술적 무능을 낱낱이 파헤쳐 뼈를 때리는 분석을 가하십시오.
 - 핵심 기조: "실력 없는 친절함은 배그에서 죽음뿐이다."
-- 강조 포인트: 낮은 킬 대비 높은 데미지(결단력 부족), 고립사 빈도, 낮은 투척물 효율 등을 비웃거나 강하게 질책하십시오.
-- 말투: "~하십시오", "~입니까?"와 같은 딱딱하고 권위적인 군대 교관 어투를 사용하십시오.
+- 강조 포인트: 낮은 킬 대비 높은 데미지(결단력 부족), 고립사 빈도, 낮은 투척물 효율 등을 날카롭게 비판하십시오.
+- 말투: 군대 어투가 아닌, 차갑고 시니컬한 말투를 사용하십시오. "~해", "~이야?" 보다는 "~하죠", "~했네요" 정도로 끝내되 내용은 매우 공격적이고 날카로워야 합니다.
+`.trim();
+
+    const debatePrompt = `
+당신은 '다정한 코치(착한맛)'와 '팩트 폭격기(매운맛)' 두 사람의 대화를 진행하는 사회자이자 두 캐릭터 그 자체입니다.
+제시된 10경기의 데이터를 바탕으로 두 사람이 플레이어의 실력에 대해 '끝장 토론'을 벌이는 시나리오를 작성하십시오.
+
+대화 규칙:
+1. 시작: '착한맛 코치'가 데이터에서 칭찬할 점을 찾아내며 부드럽게 대화를 시작합니다.
+2. 반박: '매운맛 폭격기'가 즉시 그 칭찬을 반박하며, 데이터 이면에 숨겨진 실책이나 고질적인 문제점을 날카롭게 지적합니다.
+3. 전개: 위와 같은 방식으로 서로 의견을 2~3회 주고받습니다. (상대방의 의견을 인용하며 논리적으로 공격/방어하세요)
+4. 결론: 마지막에는 두 사람이 합의한 '플레이어를 위한 최종 생존 지침'을 3가지로 요약하여 제시합니다.
+
+캐릭터 말투:
+- 착한맛 코치: "~해요", "~군요" (부드럽고 격려하는 따뜻한 말투)
+- 매운맛 폭격기: "~죠", "~한가요?" (차갑고 시니컬하며, 비꼬는 듯한 느낌을 주는 날카로운 말투. 군대식은 지양)
+
+형식:
+[착한맛 코치]: (대사)
+[매운맛 폭격기]: (대사)
+...
+[최종 합의 결론]: (내용)
 `.trim();
 
     const systemContext = `당신은 플레이어의 고질적인 습관을 찾아내는 '1:1 전술 멘토'입니다. 
 출력 언어는 100% 한국어여야 합니다.
 
 결과 구성 규칙:
-1. [핵심 요약]: 플레이어의 최근 상태를 단 1줄로 요약.
-2. [치명적 패턴 진단]: 10경기 동안 반복된 안 좋은 습관 3가지 분석.
-3. [성장 과제]: 다음 게임 행동 강령 제시.`;
+1. 선택된 코칭 스타일에 맞춰 답변하십시오.
+2. 만약 스타일이 'debate'라면 위의 대화 규칙을 엄격히 준수하십시오.
+`;
 
-    const systemPrompt = `${systemContext}\n\n${coachingStyle === "mild" ? mildPrompt : spicyPrompt}`;
+    let finalPrompt = "";
+    if (coachingStyle === "mild") finalPrompt = `${systemContext}\n\n${mildPrompt}`;
+    else if (coachingStyle === "spicy") finalPrompt = `${systemContext}\n\n${spicyPrompt}`;
+    else if (coachingStyle === "debate") finalPrompt = `${systemContext}\n\n${debatePrompt}`;
+    else finalPrompt = `${systemContext}\n\n${spicyPrompt}`;
 
     const userPrompt = `## 플레이어: ${nickname}
 ## 분석 기간: 최근 ${detailedMatches.length}경기
@@ -616,43 +641,50 @@ ${detailedMatches
   .join("\n")}`;
 
     const genAI = new GoogleGenerativeAI(geminiApiKey);
-    let analysis = "";
 
-    // 2026년 4월 기준 최적화된 모델 폴백 리스트 (Preview 명칭 반영)
     const modelsToTry = [
-      "gemini-3.1-flash-lite-preview", // 1순위: RPD 500회 (공식 프리뷰 명칭)
-      "gemini-3-flash-preview",        // 2순위: 고성능 프리뷰
-      "gemini-2.5-flash-lite",         // 3순위: 안정 버전 (Lite)
-      "gemma-3-27b"                    // 4순위: 텍스트 전용 무제한 가깝게 지원
+      "gemini-3.1-flash-lite-preview",
+      "gemini-3-flash-preview",
+      "gemini-2.5-flash-lite",
+      "gemma-3-27b"
     ];
 
     for (const modelName of modelsToTry) {
       try {
-        console.log(`[AI-SUMMARY] Attempting summary with ${modelName}...`);
+        console.log(`[AI-SUMMARY] Attempting streaming summary with ${modelName}...`);
         const model = genAI.getGenerativeModel({ model: modelName });
-        const result = await model.generateContent(`${systemPrompt}\n\n${userPrompt}`);
-        analysis = result.response.text();
         
-        if (analysis) break;
+        // 스트리밍 요청으로 변경
+        const result = await model.generateContentStream(`${finalPrompt}\n\n${userPrompt}`);
+        
+        // 가독성 있는 스트림 응답 생성
+        const stream = new ReadableStream({
+          async start(controller) {
+            for await (const chunk of result.stream) {
+              const chunkText = chunk.text();
+              controller.enqueue(new TextEncoder().encode(chunkText));
+            }
+            controller.close();
+          },
+        });
+
+        return new Response(stream, {
+          headers: {
+            "Content-Type": "text/plain; charset=utf-8",
+            "Transfer-Encoding": "chunked",
+          },
+        });
       } catch (err: any) {
         const errorMsg = err.message || "";
         console.warn(`[AI-SUMMARY] ${modelName} failed: ${errorMsg}`);
-        
-        // 과부하(503), 할당량(429), 또는 모델 없음(404) 시 다음 모델로 전환
-        if (errorMsg.includes("503") || errorMsg.includes("Service Unavailable") || 
-            errorMsg.includes("429") || errorMsg.includes("quota") ||
-            errorMsg.includes("404") || errorMsg.includes("not found")) {
-          console.warn(`[AI-SUMMARY] Switching to next model...`);
-          continue; // 다음 모델로 재시도
+        if (errorMsg.includes("503") || errorMsg.includes("429") || errorMsg.includes("404")) {
+          continue;
         }
         throw err;
       }
     }
     
-    if (!analysis) throw new Error("분석 결과를 생성할 수 없습니다.");
-    if (!analysis) throw new Error("결과 생성 실패");
-    
-    return NextResponse.json({ analysis });
+    throw new Error("분석 스트림을 생성할 수 없습니다.");
   } catch (error: any) {
     console.error("[AI-SUMMARY] 치명적 에러:", error);
     return NextResponse.json({ error: error.message || "오류 발생" }, { status: 500 });
