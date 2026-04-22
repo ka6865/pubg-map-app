@@ -14,10 +14,10 @@ export const PlayerMarkerRenderer = ({ telemetryData }: { telemetryData: any }) 
   const teamNames = useMemo(() => telemetryData?.teamNames ?? [], [telemetryData?.teamNames]);
   const showNames = telemetryData?.showPlayerNames !== false;
   const isActive = telemetryData?.isActive !== false && !!currentStates;
-  const currentTimeMs = telemetryData?.currentTimeMs;
 
-  const { deadNodes, groggyNodes, footNodes, vehicleNodes } = useMemo(() => {
-    if (!isActive) return { deadNodes: [], groggyNodes: [], footNodes: [], vehicleNodes: [] };
+
+  const { groggyNodes, footNodes, vehicleNodes } = useMemo(() => {
+    if (!isActive) return { groggyNodes: [], footNodes: [], vehicleNodes: [] };
 
     const allPlayers = Object.values(currentStates) as any[];
     
@@ -172,7 +172,7 @@ export const PlayerMarkerRenderer = ({ telemetryData }: { telemetryData: any }) 
     });
 
     return { groggyNodes, footNodes, vehicleNodes };
-  }, [isActive, currentStates, hiddenPlayers, showNames, teamNames, currentTimeMs]);
+  }, [isActive, currentStates, hiddenPlayers, showNames, teamNames]);
 
   if (!isActive) return null;
 

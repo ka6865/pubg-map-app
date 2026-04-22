@@ -1,10 +1,7 @@
 import { Metadata } from 'next';
 import { supabase } from '@/lib/supabase';
-import { getTabSeo, getBreadcrumbJsonLd } from '@/lib/seo-config';
-import { JsonLdProps } from '@/types/seo';
+import { getTabSeo } from '@/lib/seo-config';
 import BoardListClient from '@/components/board/BoardListClient';
-
-const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://bgms.kr";
 
 export async function generateMetadata(): Promise<Metadata> {
   return getTabSeo("Board");
@@ -60,19 +57,6 @@ export default async function BoardPage({
   } else {
     console.error("Board RSC Fetch Error:", error);
   }
-
-  const jsonLd: JsonLdProps[] = [
-    {
-      "@context": "https://schema.org",
-      "@type": "WebSite",
-      "name": "BGMS",
-      "url": baseUrl,
-    },
-    getBreadcrumbJsonLd([
-      { name: "홈", item: "/" },
-      { name: "커뮤니티", item: "/board" }
-    ]) as JsonLdProps
-  ];
 
   return (
     <div className="w-full h-full overflow-y-auto bg-[#121212] flex flex-col pt-6">

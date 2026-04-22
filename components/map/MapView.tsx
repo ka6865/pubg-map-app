@@ -1,4 +1,4 @@
-import React, { memo, useRef, useState, useEffect, useCallback } from "react";
+import React, { memo, useRef } from "react";
 import getApiUrl from "../../lib/api-config";
 import {
   MapContainer,
@@ -18,7 +18,7 @@ import type { MapTab, MapMarker, AuthUser, PendingVehicle } from "../../types/ma
 import ReportForm from "./ReportForm";
 import HotDropLayer from "./HotDropLayer";
 import { supabase } from "../../lib/supabase";
-import { CATEGORY_INFO, MAP_CATEGORIES, MAP_DIMENSIONS } from "../../lib/map_config";
+import { MAP_DIMENSIONS } from "../../lib/map_config";
 import { toast } from "sonner";
 
 // 리팩토링으로 분리된 텔레메트리 컴포넌트 임포트

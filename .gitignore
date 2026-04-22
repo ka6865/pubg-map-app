@@ -61,3 +61,6 @@ generate-tiles.js
 mcp_config.json
 skills-lock.json
 scratch/
+
+# AI Guide
+.pubg-telemetry-guide.md

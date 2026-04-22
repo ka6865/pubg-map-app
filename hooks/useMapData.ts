@@ -83,7 +83,7 @@ export function useMapData(activeMapId: string, injectedUser: AuthUser | null) {
             }));
             setPendingVehicles(mappedPending as PendingVehicle[]);
           }
-        } catch (e) {
+        } catch {
           // 테이블 부재 시 조용히 넘어감
           console.log("[useMapData] pending_markers 테이블을 찾을 수 없어 건너뜁니다.");
         }

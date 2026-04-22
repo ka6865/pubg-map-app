@@ -53,30 +53,19 @@ interface MapProps {
   initialIsWriting?: boolean;
 }
 
-export default function Map({ initialMapId, postId, initialIsWriting }: MapProps) {
-  const router = useRouter();
+export default function Map({ initialMapId, postId }: MapProps) {
   const searchParams = useSearchParams();
   const activeMapId = initialMapId || searchParams?.get("tab") || "Erangel";
-  const activePostId = postId || searchParams?.get("postId");
-  const { user: authUser, loading: authLoading } = useAuth();
+  const { user: authUser } = useAuth();
 
   const {
     currentUser,
     userProfile,
-    optimisticNickname,
     dbVehicles,
     pendingVehicles,
-    isDataLoading,
-    setOptimisticNickname,
-    fetchUserProfile,
   } = useMapData(activeMapId, authUser);
 
-  const isAuthLoading = authLoading || isDataLoading;
-  const currentPostId = activePostId;
-
   const [isSidebarOpen, setSidebarOpen] = useState(true);
-  // URL 쿼리 파라미터 mypage=1 여부로 마이페이지 여부 결정
-  const isMyPage = searchParams?.get("mypage") === "1";
   const [isMobile, setIsMobile] = useState(false);
 
   // DB 기반 카테고리 마스터 정보 로드
@@ -127,10 +116,6 @@ export default function Map({ initialMapId, postId, initialIsWriting }: MapProps
     return () => window.removeEventListener("resize", checkMobile);
   }, []);
 
-  const displayName = useMemo(
-    () => optimisticNickname || userProfile?.nickname || "익명",
-    [optimisticNickname, userProfile]
-  );
   const isAdmin = userProfile?.role === "admin";
 
   const toggleFilter = (id: string) =>
@@ -142,18 +127,6 @@ export default function Map({ initialMapId, postId, initialIsWriting }: MapProps
   const enableDefaultVehicleFilters = () => {
     setFilters((prev) => ({ ...prev, Esports: true, Garage: true }));
   };
-
-  const handleTabClick = (tabId: string) => {
-    if (tabId === "Board") {
-      router.push('/board');
-    } else if (tabId === "Stats") {
-      router.push('/stats');
-    } else {
-      router.push(`/maps/${tabId.toLowerCase()}`);
-    }
-  };
-
-
 
   const currentMap = MAP_LIST.find((m) => m.id === activeMapId) || MAP_LIST[0];
   const bounds: [[number, number], [number, number]] = [

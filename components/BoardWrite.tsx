@@ -138,7 +138,7 @@ export default function BoardWrite({
     };
   }, []);
 
-  const uploadImage = async (file: File) => {
+  const uploadImage = useCallback(async (file: File) => {
     try {
       const options = {
         maxSizeMB: IMAGE_CONFIG.COMPRESSION_MAX_SIZE_MB,
@@ -163,7 +163,7 @@ export default function BoardWrite({
       console.error("Image upload/compression error:", error);
       toast.error("이미지 업로드 중 오류가 발생했습니다.");
     }
-  };
+  }, []);
 
   const imageHandler = useCallback(() => {
     const existingInputs = document.querySelectorAll(".quill-image-input");
@@ -218,7 +218,7 @@ export default function BoardWrite({
         if (document.body.contains(input)) document.body.removeChild(input);
       }
     };
-  }, []);
+  }, [uploadImage]);
 
   const handleWrapperClick = useCallback(() => {
     if (quillRef.current) {

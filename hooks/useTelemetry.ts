@@ -269,7 +269,7 @@ export function useTelemetry(matchId: string | null, nickname: string | null, ma
         }
       }
     }
-  }, [currentTimeMs, events]);
+  }, [currentTimeMs, events, teamNames]);
 
   return {
     events,

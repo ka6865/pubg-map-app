@@ -5,7 +5,6 @@ import { AuthProvider } from "@/components/AuthProvider";
 import { Toaster } from "sonner";
 import GlobalHeader from "@/components/common/GlobalHeader";
 import BottomNav from "@/components/common/BottomNav";
-import Footer from "@/components/common/Footer";
 import { Suspense } from "react";
 import JsonLd from "@/components/seo/JsonLd";
 import { GoogleAnalytics } from '@next/third-parties/google';

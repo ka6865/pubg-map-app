@@ -6,15 +6,12 @@ import { supabase } from "../lib/supabase";
 import { toast } from "sonner";
 import MiniStatWidget from "./stat/MiniStatWidget";
 import { 
-  ArrowLeft, User as UserIcon, Save, LogOut, Trash2, 
+  User as UserIcon, Save, LogOut, Trash2, 
   Gamepad2, Settings, ShieldCheck, ExternalLink,
   Mail, ChevronRight, Activity, MessageSquare, FileText, Heart
 } from "lucide-react";
 
-const USER_CONFIG = {
-  MIN_NICKNAME_LENGTH: 2,
-  MAX_NICKNAME_LENGTH: 15,
-} as const;
+
 
 import type { UserProfile } from "../types/map";
 import type { User } from '@supabase/supabase-js';
@@ -78,21 +75,7 @@ function DashboardCard({
   );
 }
 
-// 💎 대전 정보를 담은 미니 위젯
-function InfoBadge({ label, value, color = '#F2A900' }: { label: string; value: string; color?: string }) {
-  return (
-    <div style={{ 
-      backgroundColor: 'rgba(255,255,255,0.03)', 
-      padding: '12px 16px', 
-      borderRadius: '12px',
-      border: '1px solid rgba(255,255,255,0.05)',
-      flex: 1
-    }}>
-      <p style={{ margin: 0, fontSize: '10px', color: 'rgba(255,255,255,0.3)', marginBottom: '4px' }}>{label}</p>
-      <p style={{ margin: 0, fontSize: '15px', fontWeight: 800, color: color }}>{value}</p>
-    </div>
-  );
-}
+
 
 export default function MyPage({ initialCurrentUser, initialUserProfile, initialActivityStats }: MyPageProps) {
   const router = useRouter();

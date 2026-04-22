@@ -17,7 +17,7 @@ function cleanUrl(url: string) {
     allowed.forEach(p => { if (params.has(p)) newParams.set(p, params.get(p)!); });
     urlObj.search = newParams.toString();
     return urlObj.toString();
-  } catch (e) { return url; }
+  } catch { return url; }
 }
 
 // AI 요약 헬퍼 함수 (2026년 표준 모델 Gemini 2.5-Flash 적용)

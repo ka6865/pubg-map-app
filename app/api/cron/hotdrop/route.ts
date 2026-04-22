@@ -221,7 +221,7 @@ async function extractLandings(
 // UPSERT → Supabase
 // ─────────────────────────────────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 async function upsertHeatmap(
   supabase: any,
   mapSlug: string,
@@ -257,13 +257,13 @@ async function upsertHeatmap(
   }));
 
   // batch UPSERT (Supabase는 count 누적을 RPC로 처리)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+   
   const { error } = await (supabase as any).rpc("upsert_hotdrop_counts", { rows: JSON.stringify(rows) });
   if (error) {
     console.error("[hotdrop] upsert RPC error:", error.message);
     // RPC 없을 경우 fallback: 개별 upsert
     for (const row of rows) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+       
       await (supabase as any)
         .from("hotdrop_heatmap")
         .upsert(
@@ -278,7 +278,7 @@ async function upsertHeatmap(
 // 이전 시즌 정리
 // ─────────────────────────────────────────────
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+ 
 async function cleanupOldSeasons(
   supabase: any,
   currentSeasonId: string

@@ -1,0 +1,91 @@
+
+> pubg-map-app@0.1.0 lint
+> eslint
+
+
+/Users/kangheesung/Desktop/pubg-map-app/app/api/admin/patch-notes/sync/route.ts
+  20:12  warning  'e' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/kangheesung/Desktop/pubg-map-app/app/api/cron/hotdrop/route.ts
+  224:1  warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+  260:3  warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+  266:7  warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+  281:1  warning  Unused eslint-disable directive (no problems were reported from '@typescript-eslint/no-explicit-any')
+
+/Users/kangheesung/Desktop/pubg-map-app/app/api/cron/patch-notes/route.ts
+  144:7  warning  'date' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/Users/kangheesung/Desktop/pubg-map-app/app/api/pubg/match/route.ts
+   96:12  warning  '_e' is defined but never used  @typescript-eslint/no-unused-vars
+  153:14  warning  '_e' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/kangheesung/Desktop/pubg-map-app/app/board/page.tsx
+  64:9  warning  'jsonLd' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/Users/kangheesung/Desktop/pubg-map-app/app/login/page.tsx
+  13:10  warning  'isMounted' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  24:15  warning  'data' is assigned a value but never used       @typescript-eslint/no-unused-vars
+
+/Users/kangheesung/Desktop/pubg-map-app/components/BoardWrite.tsx
+  141:9  warning  The 'uploadImage' function makes the dependencies of useEffect Hook (at line 268) change on every render. To fix this, wrap the definition of 'uploadImage' in its own useCallback() Hook  react-hooks/exhaustive-deps
+
+/Users/kangheesung/Desktop/pubg-map-app/components/Map.tsx
+   56:53  warning  'initialIsWriting' is defined but never used                @typescript-eslint/no-unused-vars
+   70:5   warning  'setOptimisticNickname' is assigned a value but never used  @typescript-eslint/no-unused-vars
+   71:5   warning  'fetchUserProfile' is assigned a value but never used       @typescript-eslint/no-unused-vars
+   74:9   warning  'isAuthLoading' is assigned a value but never used          @typescript-eslint/no-unused-vars
+   75:9   warning  'currentPostId' is assigned a value but never used          @typescript-eslint/no-unused-vars
+   79:9   warning  'isMyPage' is assigned a value but never used               @typescript-eslint/no-unused-vars
+  130:9   warning  'displayName' is assigned a value but never used            @typescript-eslint/no-unused-vars
+  146:9   warning  'handleTabClick' is assigned a value but never used         @typescript-eslint/no-unused-vars
+
+/Users/kangheesung/Desktop/pubg-map-app/components/MyPage.tsx
+   9:3   warning  'ArrowLeft' is defined but never used             @typescript-eslint/no-unused-vars
+  14:7   warning  'USER_CONFIG' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  82:10  warning  'InfoBadge' is defined but never used             @typescript-eslint/no-unused-vars
+
+/Users/kangheesung/Desktop/pubg-map-app/components/board/BoardDetailClient.tsx
+  174:14  warning  'e' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/kangheesung/Desktop/pubg-map-app/components/board/BoardListClient.tsx
+  3:17  warning  'useId' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/kangheesung/Desktop/pubg-map-app/components/board/BoardWriteClient.tsx
+  10:15  warning  'Post' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/kangheesung/Desktop/pubg-map-app/components/common/GlobalHeader.tsx
+  6:47  warning  'Menu' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/kangheesung/Desktop/pubg-map-app/components/map/HotDropLayer.tsx
+  28:10  warning  'status' is assigned a value but never used  @typescript-eslint/no-unused-vars
+  29:10  warning  'season' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/Users/kangheesung/Desktop/pubg-map-app/components/map/MapShell.tsx
+  1:33  warning  'useEffect' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/kangheesung/Desktop/pubg-map-app/components/map/MapView.tsx
+   1:31  warning  'useState' is defined but never used        @typescript-eslint/no-unused-vars
+   1:41  warning  'useEffect' is defined but never used       @typescript-eslint/no-unused-vars
+   1:52  warning  'useCallback' is defined but never used     @typescript-eslint/no-unused-vars
+  21:10  warning  'CATEGORY_INFO' is defined but never used   @typescript-eslint/no-unused-vars
+  21:25  warning  'MAP_CATEGORIES' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/kangheesung/Desktop/pubg-map-app/components/map/MobileBottomSheet.tsx
+  6:40  warning  'SlidersHorizontal' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/kangheesung/Desktop/pubg-map-app/components/map/ReportForm.tsx
+  4:10  warning  'CATEGORY_INFO' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/kangheesung/Desktop/pubg-map-app/components/map/telemetry/PlayerMarkerRenderer.tsx
+  17:9  warning  'currentTimeMs' is assigned a value but never used  @typescript-eslint/no-unused-vars
+
+/Users/kangheesung/Desktop/pubg-map-app/hooks/useMapData.ts
+  86:18  warning  'e' is defined but never used  @typescript-eslint/no-unused-vars
+
+/Users/kangheesung/Desktop/pubg-map-app/utils/supabase/server.ts
+  18:20  warning  'error' is defined but never used  @typescript-eslint/no-unused-vars
+  27:20  warning  'error' is defined but never used  @typescript-eslint/no-unused-vars
+
+✖ 41 problems (0 errors, 41 warnings)
+  0 errors and 4 warnings potentially fixable with the `--fix` option.
+

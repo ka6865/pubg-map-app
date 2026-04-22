@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { supabase } from '../../lib/supabase';
 import { toast } from 'sonner';
 
@@ -10,18 +10,13 @@ import { toast } from 'sonner';
  */
 export default function Login() {
   const [isLoading, setIsLoading] = useState<string | null>(null);
-  const [isMounted, setIsMounted] = useState(false);
 
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
-  
   const handleSocialLogin = async (provider: 'kakao' | 'google') => {
     setIsLoading(provider);
     try {
       const redirectTo = `${window.location.origin}/auth/callback`;
       
-      const { data, error } = await supabase.auth.signInWithOAuth({
+      const { error } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
           redirectTo,
