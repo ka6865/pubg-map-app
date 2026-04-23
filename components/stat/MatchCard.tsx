@@ -1,6 +1,21 @@
+"use client";
+
 import React, { useState, useEffect } from "react";
-import { HelpCircle, BarChart2 } from "lucide-react";
-import type { MatchData, MatchTeamMember } from "../../types/stat";
+import { 
+  ChevronDown, 
+  Target, 
+  Zap, 
+  Shield, 
+  Crosshair, 
+  BarChart2, 
+  Trophy,
+  Flame,
+  MousePointer2,
+  Clock,
+  Swords,
+  User
+} from "lucide-react";
+import type { MatchData } from "../../types/stat";
 
 /**
  * 간단한 마크다운 파서를 통해 AI 응답을 시각적으로 예쁘게 렌더링합니다.
@@ -10,12 +25,8 @@ const renderMarkdown = (text: string) => {
   const lines = text.split('\n');
   
   return lines.map((line, idx) => {
-    // 빈 줄 처리
-    if (!line.trim()) {
-      return <div key={idx} style={{ height: "6px" }} />;
-    }
+    if (!line.trim()) return <div key={idx} className="h-2" />;
     
-    // 헤더 처리 (###, ##, #)
     let isHeader = false;
     let headerLevel = 0;
     if (line.startsWith('### ')) { isHeader = true; headerLevel = 3; }
@@ -23,902 +34,338 @@ const renderMarkdown = (text: string) => {
     else if (line.startsWith('# ')) { isHeader = true; headerLevel = 1; }
     
     let content = line;
-    if (isHeader) {
-      content = line.replace(/^#+\s/, '');
+    if (isHeader) content = line.replace(/^#+\s/, '');
+
+    const isList = /^[*\-]\s/.test(content.trim());
+    const isBold = /\*\*(.*?)\*\*/g.test(content);
+
+    let elements: React.ReactNode = content;
+    if (isBold) {
+      const parts = content.split(/(\*\*.*?\*\*)/g);
+      elements = parts.map((part, pIdx) => {
+        if (part.startsWith('**') && part.endsWith('**')) {
+          return <strong key={pIdx} className="text-white font-bold">{part.slice(2, -2)}</strong>;
+        }
+        return part;
+      });
     }
 
-    // 리스트 처리 (-, *, 1.)
-    const isList = /^[*\-]\s/.test(content);
-    const isNumList = /^\d+\.\s/.test(content);
-    if (isList) content = content.replace(/^[*\-]\s/, '');
-    if (isNumList) content = content.replace(/^\d+\.\s/, '');
-
-    // 볼드 처리 (**text**)
-    const parts = content.split(/(\*\*.*?\*\*)/g);
-
-    const renderedLine = parts.map((part, i) => {
-      if (part.startsWith('**') && part.endsWith('**')) {
-        return <strong key={i} style={{ color: '#F2A900', fontWeight: 'bold' }}>{part.slice(2, -2)}</strong>;
-      }
-      return <span key={i}>{part}</span>;
-    });
-
     if (isHeader) {
-      const fontSize = headerLevel === 1 ? '16px' : (headerLevel === 2 ? '15px' : '14px');
       return (
-        <div key={idx} style={{ 
-          fontSize: fontSize, 
-          fontWeight: 'bold', 
-          color: '#34A853', 
-          marginTop: idx === 0 ? "0" : "16px", 
-          marginBottom: "8px",
-          borderBottom: headerLevel <= 2 ? "1px solid rgba(255,255,255,0.05)" : "none",
-          paddingBottom: headerLevel <= 2 ? "6px" : "0",
-          display: "flex",
-          alignItems: "center",
-          gap: "6px"
-        }}>
-          <span style={{ fontSize: "14px" }}>{headerLevel === 1 ? "🎯" : headerLevel === 2 ? "📊" : "💡"}</span>
-          {renderedLine}
+        <div key={idx} className="flex items-center gap-2 mt-4 mb-2">
+          <div className="w-1 h-4 bg-indigo-500 rounded-full" />
+          <h3 className={`font-black text-white ${headerLevel === 1 ? 'text-lg' : 'text-md'}`}>
+            {elements}
+          </h3>
         </div>
       );
     }
-    
+
+    if (isList) {
+      return (
+        <div key={idx} className="flex gap-2 mb-1 pl-2">
+          <span className="text-indigo-400">•</span>
+          <span className="text-gray-300 text-sm leading-relaxed">{elements}</span>
+        </div>
+      );
+    }
+
     return (
-      <div key={idx} style={{ 
-        display: isList || isNumList ? 'flex' : 'block',
-        marginLeft: isList || isNumList ? '12px' : '0',
-        marginBottom: "6px",
-        lineHeight: "1.6"
-      }}>
-        {(isList || isNumList) && (
-          <span style={{ 
-            color: '#34A853', 
-            marginRight: '8px',
-            fontSize: isList ? '10px' : '12px',
-            marginTop: isList ? '3px' : '0',
-            fontWeight: isNumList ? 'bold' : 'normal'
-          }}>
-            {isList ? '▶' : line.match(/^\d+\./)?.[0]}
-          </span>
-        )}
-        <div style={{ flex: 1 }}>{renderedLine}</div>
-      </div>
+      <p key={idx} className="text-gray-400 text-sm leading-relaxed mb-2 pl-1">
+        {elements}
+      </p>
     );
   });
 };
 
-/**
- * 개별 매치의 결과 요약과 아코디언(상세 펼치기) 형태의 팀원 스탯을 렌더링하는 컨테이너입니다.
- */
-export const MatchCard = ({
-  matchId,
-  nickname,
-  platform,
-  isMobile,
-  onNicknameClick,
-}: {
+interface MatchCardProps {
   matchId: string;
   nickname: string;
   platform: string;
   isMobile: boolean;
   onNicknameClick?: (nickname: string) => void;
-}) => {
+}
+
+export const MatchCard = ({ matchId, nickname, platform, isMobile, onNicknameClick }: MatchCardProps) => {
   const [matchData, setMatchData] = useState<MatchData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [fetchError, setFetchError] = useState<string | null>(null);
-  const [isEventMode, setIsEventMode] = useState(false); // 이벤트 모드 맵 여부
   const [isExpanded, setIsExpanded] = useState(false);
-  const [analyses, setAnalyses] = useState<{ mild: string | null; spicy: string | null }>({ mild: null, spicy: null });
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [aiError, setAiError] = useState<string | null>(null);
-  const [showDBNOTooltip, setShowDBNOTooltip] = useState(false);
-  const [showKillRankTooltip, setShowKillRankTooltip] = useState(false);
-  const [showPercentileTooltip, setShowPercentileTooltip] = useState(false);
-  const [showHitsTooltip, setShowHitsTooltip] = useState(false);
   const [coachingStyle, setCoachingStyle] = useState<"mild" | "spicy">("spicy");
+  const [analysis, setAnalysis] = useState<string | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
-  // 채팅 관련 상태 추가
-  const [chatMessages, setChatMessages] = useState<{ role: "user" | "assistant"; content: string }[]>([]);
-  const [chatInput, setChatInput] = useState("");
-  const [isChatting, setIsChatting] = useState(false);
+  useEffect(() => {
+    const fetchMatch = async () => {
+      try {
+        const res = await fetch(`/api/pubg/match?matchId=${matchId}&nickname=${nickname}&platform=${platform}`);
+        const data = await res.json();
+        if (!data.error) setMatchData(data);
+      } catch (err) {
+        console.error("Match Fetch Error:", err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchMatch();
+  }, [matchId, nickname, platform]);
 
   const handleAnalyze = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (isAnalyzing || analyses[coachingStyle]) return;
+    if (isAnalyzing || (analysis && coachingStyle)) return;
 
     setIsAnalyzing(true);
-    setAiError(null);
-
     try {
-      // killDetails, dbnoDetails는 match API에서 텔레메트리 기반으로 수집된 데이터
-      const response = await fetch("/api/pubg/ai-analyze", {
+      const res = await fetch("/api/pubg/ai-analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          matchData: {
-            ...matchData,
-            killDetails: matchData?.killDetails ?? [],
-            dbnoDetails: matchData?.dbnoDetails ?? [],
-          },
-          nickname,
-          coachingStyle,
-        }),
+        body: JSON.stringify({ matchData, nickname, coachingStyle })
       });
-
-      const data = await response.json();
-      if (data.error) throw new Error(data.error);
-      
-      setAnalyses(prev => ({ ...prev, [coachingStyle]: data.analysis }));
-      // 초기 분석 결과를 대화 기록에 추가
-      setChatMessages([{ role: "assistant", content: data.analysis }]);
-    } catch (err: any) {
-      console.error("AI 분석 실패:", err);
-      setAiError(err.message || "AI 분석 중 오류가 발생했습니다.");
+      const data = await res.json();
+      if (data.analysis) setAnalysis(data.analysis);
+    } catch (err) {
+      console.error("Analysis Error:", err);
     } finally {
       setIsAnalyzing(false);
     }
   };
 
-  const handleSendChat = async () => {
-    if (!chatInput.trim() || isChatting) return;
-
-    const userMessage = { role: "user" as const, content: chatInput };
-    const updatedMessages = [...chatMessages, userMessage];
-    
-    setChatMessages(updatedMessages);
-    setChatInput("");
-    setIsChatting(true);
-
-    try {
-      // 토큰 절약을 위해 최신 대화 6개만 슬라이딩 윈도우로 전송
-      const slidingWindowMessages = updatedMessages.slice(-6);
-
-      const response = await fetch("/api/pubg/ai-analyze", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          matchData: {
-            ...matchData,
-            killDetails: matchData?.killDetails ?? [],
-            dbnoDetails: matchData?.dbnoDetails ?? [],
-          },
-          nickname,
-          coachingStyle,
-          messages: slidingWindowMessages,
-        }),
-      });
-
-      const data = await response.json();
-      if (data.error) throw new Error(data.error);
-
-      setChatMessages([...updatedMessages, { role: "assistant", content: data.analysis }]);
-    } catch (err: any) {
-      console.error("채팅 응답 실패:", err);
-      setChatMessages([...updatedMessages, { role: "assistant", content: "알 수 없는 오류가 발생했습니다. 다시 질문해 주세요." }]);
-    } finally {
-      setIsChatting(false);
-    }
-  };
-
-  // 모드 변경 시 해당 모드의 기존 분석 결과가 있다면 채팅창 갱신
-  useEffect(() => {
-    const existingAnalysis = analyses[coachingStyle];
-    if (existingAnalysis) {
-      setChatMessages([{ role: "assistant", content: existingAnalysis }]);
-    } else {
-      setChatMessages([]);
-    }
-  }, [coachingStyle, analyses]);
-
-  useEffect(() => {
-    fetch(
-      `/api/pubg/match?matchId=${matchId}&nickname=${nickname}&platform=${platform}`
-    )
-      .then((res) => res.json())
-      .then((data) => {
-        if (data?.isEventMode) {
-          // 이벤트 모드 맵(Desert_Main_BinarySpot 등)은 조용히 숨김 처리
-          setIsEventMode(true);
-          setMatchData(null);
-        } else if (data?.error) {
-          setFetchError(data.error as string);
-          setMatchData(null);
-        } else {
-          setMatchData(data as MatchData);
-        }
-      })
-      .catch((err: unknown) => {
-        console.error("매치 데이터 로드 실패:", err);
-        setFetchError("매치 정보를 불러오는 중 오류가 발생했습니다.");
-        setMatchData(null);
-      })
-      .finally(() => {
-        setLoading(false);
-      });
-  }, [matchId, nickname, platform]);
-
-  if (loading)
-    return (
-      <div
-        style={{
-          height: "100px",
-          backgroundColor: "#1a1a1a",
-          border: "1px solid #333",
-          borderRadius: "8px",
-          marginBottom: "10px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "#555",
-        }}
-      >
-        매치 정보 불러오는 중...
-      </div>
-    );
-
-  // 이벤트 모드 맵(Desert_Main_BinarySpot 등)은 목록에서 완전히 제외
-  if (isEventMode) return null;
-
-  if (!matchData) {
-    if (fetchError) {
-      return (
-        <div
-          style={{
-            height: "100px",
-            backgroundColor: "#1a1a1a",
-            border: "1px solid #333",
-            borderRadius: "8px",
-            marginBottom: "10px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "#f87171",
-            fontSize: "12px",
-            padding: "0 8px",
-            textAlign: "center",
-          }}
-        >
-          {fetchError}
-        </div>
-      );
-    }
-    return null;
+  if (loading) {
+    return <div className="h-24 bg-white/5 border border-white/10 rounded-2xl animate-pulse mb-3" />;
   }
 
-  const {
-    stats,
-    mapName,
-    createdAt,
-    gameMode,
-    team,
-    totalTeamKills,
-    totalTeamDamage,
-  } = matchData;
-  
-  const isChicken = stats.winPlace === 1;
-  const isTop10 = stats.winPlace <= 10;
+  if (!matchData) return null;
 
-  const timeDiff = Math.floor(
-    (new Date().getTime() - new Date(createdAt).getTime()) / 1000
-  );
+  const isRanked = matchData.gameMode.includes("ranked") || matchData.gameMode === "squad" || matchData.gameMode === "squad-fpp";
+  const isWin = matchData.stats.winPlace === 1;
+  const isTop10 = matchData.stats.winPlace <= 10;
   
-  const timeStr =
-    timeDiff < 3600
-      ? `${Math.floor(timeDiff / 60)}분 전`
-      : timeDiff < 86400
-      ? `${Math.floor(timeDiff / 3600)}시간 전`
-      : `${Math.floor(timeDiff / 86400)}일 전`;
+  // 게임 모드별 최대 팀 수/인원 계산 로직
+  const getTotalScale = () => {
+    if (matchData.myRank?.totalTeams) return matchData.myRank.totalTeams;
+    
+    const mode = matchData.gameMode.toLowerCase();
+    const isRankedMode = matchData.gameMode.includes("ranked") || isRanked;
+    
+    if (mode.includes("solo")) return 100;
+    if (mode.includes("duo")) return 50;
+    if (isRankedMode) return 16;
+    if (mode.includes("squad")) return 25;
+    
+    // 만약 순위가 폴백값보다 크면 순위에 맞춤
+    return Math.max(25, matchData.stats.winPlace);
+  };
 
-  const borderColor = isChicken ? "#F2A900" : isTop10 ? "#34A853" : "#444";
-  const bgColor = isChicken ? "rgba(242, 169, 0, 0.05)" : "#1a1a1a";
+  const totalScale = getTotalScale();
+  
+  const themeColor = isRanked ? "amber-500" : "indigo-500";
+  const borderColor = isRanked ? "border-amber-500/30 hover:border-amber-500/60" : "border-white/10 hover:border-white/20";
+  const bgGradient = isRanked 
+    ? "bg-gradient-to-br from-black/80 via-black/60 to-[#1a1508]" 
+    : "bg-black/40 hover:bg-black/50";
 
   return (
-    <div
-      style={{
-        marginBottom: "10px",
-        borderRadius: "8px",
-        overflow: "visible", // 툴팁 가려짐 방지
-        border: "1px solid #333",
-        borderLeft: `4px solid ${borderColor}`,
-        backgroundColor: bgColor,
-        position: "relative",
-        zIndex: isExpanded ? 10 : 1
-      }}
-    >
-      <div
+    <div className={`mb-4 rounded-[2rem] border transition-all duration-300 overflow-hidden shadow-2xl ${borderColor} ${bgGradient} ${isExpanded ? 'bg-black/80 ring-1 ring-white/5' : ''}`}>
+      {/* Header Area */}
+      <div 
         onClick={() => setIsExpanded(!isExpanded)}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          padding: "15px 20px",
-          cursor: "pointer",
-        }}
-        onMouseOver={(e) =>
-          (e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.03)")
-        }
-        onMouseOut={(e) =>
-          (e.currentTarget.style.backgroundColor = "transparent")
-        }
+        className="p-5 flex flex-col md:flex-row md:items-center justify-between cursor-pointer group gap-4"
       >
-        <div
-          style={{
-            minWidth: isMobile ? "20px" : "80px",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            borderRight: "1px solid #333",
-            paddingRight: isMobile ? "8px" : "12px",
-            flexShrink: 0,
-          }}
-        >
-          <div
-            style={{
-              fontSize: isMobile ? "14px" : "20px",
-              fontWeight: "900",
-              color: borderColor,
-            }}
-          >
-            #{stats.winPlace}
+        <div className="flex items-center gap-4">
+          <div className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center font-black transition-transform group-hover:scale-105 ${
+            isWin ? 'bg-amber-500 text-black shadow-[0_0_20px_rgba(245,158,11,0.3)]' : 
+            isTop10 ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 
+            'bg-white/5 text-gray-400 border border-white/10'
+          }`}>
+            <span className="text-[9px] uppercase tracking-tighter opacity-70">Rank</span>
+            <span className="text-xl">#{matchData.stats.winPlace}</span>
+            <span className="text-[8px] opacity-50 mt-0.5">/ {totalScale}</span>
           </div>
-          <div
-            style={{
-              fontSize: isMobile ? "9px" : "11px",
-              color: "#888",
-              marginTop: "4px",
-              whiteSpace: "nowrap",
-            }}
-          >
-            {gameMode}
+
+          <div className="flex flex-col gap-0.5">
+            <div className="flex items-center gap-2">
+              <span className="text-white font-black text-lg tracking-tight">{matchData.mapName}</span>
+              <div className="flex gap-1.5">
+                <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider flex items-center gap-1 ${isRanked ? 'bg-amber-500/20 text-amber-500 border border-amber-500/30' : 'bg-white/10 text-gray-400 border border-white/10'}`}>
+                  {isRanked && <Swords size={10} />}
+                  {isRanked ? "경쟁전" : "일반전"}
+                </span>
+                <span className="px-2 py-0.5 bg-white/5 rounded text-[10px] text-gray-500 font-bold uppercase tracking-wider">
+                  {matchData.gameMode}
+                </span>
+              </div>
+            </div>
+            <div className="flex gap-4 items-center">
+              <div className="flex items-baseline gap-1">
+                <span className="text-red-400 font-black text-sm">{matchData.stats.kills}</span>
+                <span className="text-[10px] text-red-400/60 font-bold uppercase">Kills</span>
+              </div>
+              <div className="w-1 h-1 bg-white/10 rounded-full" />
+              <div className="flex items-baseline gap-1">
+                <span className="text-indigo-400 font-black text-sm">{Math.floor(matchData.stats.damageDealt)}</span>
+                <span className="text-[10px] text-indigo-400/60 font-bold uppercase">Dmg</span>
+              </div>
+            </div>
           </div>
         </div>
 
-        <div
-          style={{
-            flex: 1,
-            paddingLeft: isMobile ? "10px" : "15px",
-            display: "flex",
-            gap: isMobile ? "10px" : "15px",
-            alignItems: "center",
-          }}
-        >
-          <div>
-            <div
-              style={{
-                fontSize: isMobile ? "15px" : "18px",
-                fontWeight: "bold",
-                color: "#fff",
-                display: "flex",
-                alignItems: "center",
-                gap: "8px",
-                flexWrap: "wrap"
-              }}
-            >
-              <div style={{ display: "flex", alignItems: "center" }}>
-                {stats.kills}
-                <span style={{ color: "#666", fontSize: isMobile ? "10px" : "12px", fontWeight: "normal", marginLeft: "2px" }}>킬</span>
-                <span style={{ color: "#555", margin: isMobile ? "0 4px" : "0 6px" }}>/</span>
-                {stats.deathType === "생존" ? 0 : 1}
-                <span style={{ color: "#666", fontSize: isMobile ? "10px" : "12px", fontWeight: "normal", marginLeft: "2px" }}>데스</span>
-                <span style={{ color: "#555", margin: isMobile ? "0 4px" : "0 6px" }}>/</span>
-                {stats.assists}
-                <span style={{ color: "#666", fontSize: isMobile ? "10px" : "12px", fontWeight: "normal", marginLeft: "2px" }}>어시</span>
+        {/* V3 Tactical Badges */}
+        <div className="flex items-center justify-between md:justify-end gap-3">
+          {matchData.myRank && (
+            <div className="flex gap-2">
+              <div className="px-3 py-1.5 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center gap-2 group/rank">
+                <Trophy size={14} className="text-amber-500 group-hover/rank:scale-110 transition-transform" />
+                <span className="text-[11px] font-black text-amber-500">킬 순위 #{matchData.myRank.killRank || 1}</span>
               </div>
-
-              {/* [V3] 전술 배지 영역 */}
-              <div style={{ display: "flex", gap: "5px" }}>
-                {matchData.myRank && (
-                  <>
-                    <div 
-                      onMouseEnter={() => setShowKillRankTooltip(true)}
-                      onMouseLeave={() => setShowKillRankTooltip(false)}
-                      style={{ 
-                        fontSize: "9px", fontWeight: "900", padding: "1px 5px", borderRadius: "3px",
-                        background: matchData.myRank.killRank === 1 ? "linear-gradient(45deg, #F2A900, #FFD700)" : "rgba(255,255,255,0.06)",
-                        color: matchData.myRank.killRank === 1 ? "#000" : "#F2A900",
-                        border: "1px solid rgba(242, 169, 0, 0.2)",
-                        display: "flex", alignItems: "center", position: "relative", cursor: "help"
-                      }}
-                    >
-                      🎯 #{matchData.myRank.killRank}
-                      {showKillRankTooltip && (
-                        <div style={{
-                          position: "absolute", bottom: "100%", left: "50%", transform: "translateX(-50%) translateY(-10px)",
-                          backgroundColor: "#222", color: "#fff", padding: "6px 12px", borderRadius: "6px",
-                          fontSize: "11px", whiteSpace: "nowrap", zIndex: 1000, border: "1px solid #F2A900", pointerEvents: "none",
-                          boxShadow: "0 4px 15px rgba(0,0,0,0.8)"
-                        }}>
-                          매치 전체 참가자 중 내 킬 순위입니다.
-                        </div>
-                      )}
-                    </div>
-                    <div 
-                      onMouseEnter={() => setShowPercentileTooltip(true)}
-                      onMouseLeave={() => setShowPercentileTooltip(false)}
-                      style={{ 
-                        fontSize: "9px", fontWeight: "900", padding: "1px 5px", borderRadius: "3px",
-                        background: matchData.myRank.damagePercentile >= 95 ? "linear-gradient(45deg, #34A853, #2ecc71)" : "rgba(52, 168, 83, 0.08)",
-                        color: "#fff",
-                        border: "1px solid rgba(52, 168, 83, 0.2)",
-                        display: "flex", alignItems: "center", position: "relative", cursor: "help"
-                      }}
-                    >
-                      🏆 {Math.max(1, 100 - matchData.myRank.damagePercentile)}%
-                      {showPercentileTooltip && (
-                        <div style={{
-                          position: "absolute", bottom: "100%", left: "50%", transform: "translateX(-50%) translateY(-10px)",
-                          backgroundColor: "#222", color: "#fff", padding: "6px 12px", borderRadius: "6px",
-                          fontSize: "11px", whiteSpace: "nowrap", zIndex: 1000, border: "1px solid #34A853", pointerEvents: "none",
-                          boxShadow: "0 4px 15px rgba(0,0,0,0.8)"
-                        }}>
-                          딜량 기준 정규 참가자 중 내 상위 백분위입니다.
-                        </div>
-                      )}
-                    </div>
-                  </>
-                )}
-                {matchData.combatPressure && matchData.combatPressure.totalHits > 0 && (
-                  <div 
-                    onMouseEnter={() => setShowHitsTooltip(true)}
-                    onMouseLeave={() => setShowHitsTooltip(false)}
-                    style={{ 
-                      fontSize: "9px", fontWeight: "900", padding: "1px 5px", borderRadius: "3px",
-                      background: "rgba(248, 113, 113, 0.08)",
-                      color: "#f87171",
-                      border: "1px solid rgba(248, 113, 113, 0.2)",
-                      display: "flex", alignItems: "center", position: "relative", cursor: "help"
-                    }}
-                  >
-                    🔥 {matchData.combatPressure.totalHits}
-                    {showHitsTooltip && (
-                      <div style={{
-                        position: "absolute", bottom: "100%", left: "50%", transform: "translateX(-50%) translateY(-10px)",
-                        backgroundColor: "#222", color: "#fff", padding: "6px 12px", borderRadius: "6px",
-                        fontSize: "11px", whiteSpace: "nowrap", zIndex: 1000, border: "1px solid #f87171", pointerEvents: "none",
-                        boxShadow: "0 4px 15px rgba(0,0,0,0.8)"
-                      }}>
-                        적에게 직접 타격(Hit)을 가해 압박을 준 횟수입니다.
-                      </div>
-                    )}
-                  </div>
-                )}
+              <div className="px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center gap-2 group/perc">
+                <Flame size={14} className="text-emerald-500 group-hover/perc:animate-pulse" />
+                <div className="flex flex-col">
+                  <span className="text-[11px] font-black text-emerald-500 leading-none">상위 {100 - matchData.myRank.damagePercentile}%</span>
+                  <span className="text-[8px] font-bold text-emerald-500/60 leading-none mt-1">딜량 상위</span>
+                </div>
               </div>
             </div>
-            <div
-              style={{
-                fontSize: isMobile ? "11px" : "13px",
-                color: "#aaa",
-                margin: "2px 0",
-              }}
-            >
-              딜량{" "}
-              <span style={{ fontWeight: "bold", color: "#ddd" }}>
-                {Math.floor(stats.damageDealt)}
-              </span>
-            </div>
-          </div>
-          <div style={{ color: "#888", fontSize: isMobile ? "10px" : "12px" }}>
-            <div
-              style={{
-                fontWeight: "bold",
-                color: "#ccc",
-                marginBottom: "4px",
-                fontSize: isMobile ? "11px" : "13px",
-              }}
-            >
-              {mapName}
-            </div>
-            <div>{timeStr}</div>
-          </div>
-        </div>
-
-        <div
-          style={{
-            width: isMobile ? "80px" : "160px",
-            paddingLeft: isMobile ? "6px" : "10px",
-            borderLeft: "1px solid #333",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              gap: "2px",
-              overflow: "hidden",
-            }}
-          >
-            {team.map((member) => (
-              <div
-                key={member.name}
-                style={{
-                  fontSize: isMobile ? "10px" : "12px",
-                  color: member.name === nickname ? "#fff" : "#888",
-                  fontWeight: member.name === nickname ? "bold" : "normal",
-                  whiteSpace: "nowrap",
-                  textOverflow: "ellipsis",
-                  overflow: "hidden",
-                  cursor: member.name === nickname ? "default" : "pointer",
-                }}
-                onClick={(e) => {
-                  if (member.name !== nickname && onNicknameClick) {
-                    e.stopPropagation();
-                    onNicknameClick(member.name);
-                  }
-                }}
-                className={member.name !== nickname ? "hover:text-[#F2A900] transition-colors" : ""}
-              >
-                {member.name}
-              </div>
-            ))}
-          </div>
-          <div
-            style={{
-              color: "#888",
-              fontSize: isMobile ? "14px" : "18px",
-              transform: isExpanded ? "rotate(180deg)" : "rotate(0deg)",
-              transition: "transform 0.2s",
-            }}
-          >
-            ▼
+          )}
+          <div className="p-2 hover:bg-white/5 rounded-full transition-colors">
+            <ChevronDown className={`text-gray-500 transition-transform duration-500 ${isExpanded ? 'rotate-180' : ''}`} />
           </div>
         </div>
       </div>
 
+      {/* Expanded Content */}
       {isExpanded && (
-        <div
-          style={{
-            backgroundColor: "#111",
-            borderTop: "1px solid #333",
-            padding: "20px",
-          }}
-        >
-          <div
-            style={{
-              display: "flex",
-              gap: isMobile ? "15px" : "30px",
-              marginBottom: "20px",
-              paddingBottom: "15px",
-              borderBottom: "1px dashed #333",
-              flexWrap: "wrap",
-            }}
-          >
-            <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: isMobile ? "2px" : "8px" }}>
-              <span style={{ color: "#888", fontSize: "12px" }}>팀 총 킬:</span>
-              <span style={{ fontWeight: "bold", color: "#F2A900" }}>
-                {totalTeamKills}
-              </span>
-            </div>
-            <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: isMobile ? "2px" : "8px" }}>
-              <span style={{ color: "#888", fontSize: "12px" }}>
-                팀 총 데미지:
-              </span>
-              <span style={{ fontWeight: "bold", color: "#34A853" }}>
-                {Math.floor(totalTeamDamage)}
-              </span>
-            </div>
-            <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: isMobile ? "2px" : "8px" }}>
-              <span style={{ color: "#888", fontSize: "12px" }}>
-                팀 생존 시간:
-              </span>
-              <span style={{ fontWeight: "bold", color: "#fff", whiteSpace: "nowrap" }}>
-                {Math.floor(stats.timeSurvived / 60)}분{" "}
-                {stats.timeSurvived % 60}초
-              </span>
-            </div>
+        <div className="p-6 pt-0 border-t border-white/5 animate-in slide-in-from-top-4 duration-500">
+          {/* Detailed Stats Grid */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
+            <StatBox icon={<Crosshair size={16} />} label="헤드샷" value={matchData.stats.headshotKills} color="text-red-400" />
+            <StatBox icon={<Zap size={16} />} label="어시스트" value={matchData.stats.assists} color="text-indigo-400" />
+            <StatBox icon={<Shield size={16} />} label="기절시킴" value={matchData.stats.DBNOs} color="text-yellow-400" />
+            <StatBox icon={<Clock size={16} />} label="생존시간" value={`${Math.floor(matchData.stats.timeSurvived / 60)}분`} color="text-green-400" />
           </div>
 
-          <div style={{ marginBottom: "20px", display: "flex", justifyContent: "center", gap: "10px", flexDirection: isMobile ? "column" : "row", alignItems: "center" }}>
-            <div style={{ display: "flex", gap: "4px", backgroundColor: "rgba(255,255,255,0.05)", padding: "4px", borderRadius: "10px", border: "1px solid #333" }}>
-              <button 
-                onClick={(e) => { e.stopPropagation(); setCoachingStyle("mild"); }}
-                style={{ 
-                  padding: "8px 12px", borderRadius: "7px", fontSize: "12px", cursor: "pointer", border: "none",
-                  backgroundColor: coachingStyle === "mild" ? "#34A853" : "transparent",
-                  color: coachingStyle === "mild" ? "#fff" : "#888",
-                  transition: "all 0.2s", fontWeight: "bold"
-                }}
-              >다정한 코치 😊</button>
-              <button 
-                onClick={(e) => { e.stopPropagation(); setCoachingStyle("spicy"); }}
-                style={{ 
-                  padding: "8px 12px", borderRadius: "7px", fontSize: "12px", cursor: "pointer", border: "none",
-                  backgroundColor: coachingStyle === "spicy" ? "#f87171" : "transparent",
-                  color: coachingStyle === "spicy" ? "#fff" : "#888",
-                  transition: "all 0.2s", fontWeight: "bold"
-                }}
-              >독설 교관 ⚡</button>
+          {/* AI Analysis Section */}
+          <div className="mt-8">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className={`w-8 h-8 ${isRanked ? 'bg-amber-500/20' : 'bg-indigo-500/20'} rounded-lg flex items-center justify-center`}>
+                  <BarChart2 size={16} className={isRanked ? 'text-amber-500' : 'text-indigo-400'} />
+                </div>
+                <span className="text-white font-black">AI 전술 코칭</span>
+              </div>
+              
+              <div className="flex gap-2 bg-black/40 p-1 rounded-xl border border-white/10">
+                <button 
+                  onClick={(e) => { e.stopPropagation(); setCoachingStyle("mild"); setAnalysis(null); }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${coachingStyle === 'mild' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'text-gray-500 hover:text-gray-300'}`}
+                >
+                  다정한 맛
+                </button>
+                <button 
+                  onClick={(e) => { e.stopPropagation(); setCoachingStyle("spicy"); setAnalysis(null); }}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${coachingStyle === 'spicy' ? 'bg-red-500 text-white shadow-lg shadow-red-500/20' : 'text-gray-500 hover:text-gray-300'}`}
+                >
+                  매운맛
+                </button>
+              </div>
             </div>
 
-            <a
-              href={`/maps/${(
-                { 에란겔: "erangel", 미라마: "miramar", 태이고: "taego", 론도: "rondo", 비켄디: "vikendi", 데스턴: "deston" }[mapName] || mapName || "erangel"
-              ).toLowerCase()}?playback=${matchId}&nickname=${encodeURIComponent(nickname)}`}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "8px",
-                backgroundColor: "rgba(242, 169, 0, 0.1)",
-                border: "1px solid rgba(242, 169, 0, 0.3)",
-                color: "#F2A900",
-                padding: "10px 18px",
-                borderRadius: "10px",
-                fontWeight: "bold",
-                fontSize: "13px",
-                textDecoration: "none",
-                transition: "all 0.2s",
-              }}
-              className="hover:bg-[#F2A900]/20"
-            >
-              궤적 복기
-            </a>
-
-            <button
-              onClick={handleAnalyze}
-              disabled={isAnalyzing}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "8px",
-                backgroundColor: analyses[coachingStyle] ? "rgba(52, 168, 83, 0.1)" : "rgba(255, 255, 255, 0.05)",
-                border: analyses[coachingStyle] ? "1px solid rgba(52, 168, 83, 0.3)" : "1px solid #333",
-                color: analyses[coachingStyle] ? "#34A853" : "#fff",
-                padding: "10px 20px",
-                borderRadius: "10px",
-                fontWeight: "bold",
-                fontSize: "13px",
-                cursor: isAnalyzing || analyses[coachingStyle] ? "default" : "pointer",
-                transition: "all 0.2s",
-              }}
-              className={!isAnalyzing && !analyses[coachingStyle] ? "hover:bg-white/10" : ""}
-            >
-              {isAnalyzing ? (
-                <div style={{ width: "16px", height: "16px", border: "2px solid #fff", borderTop: "2px solid transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
-              ) : (
-                <BarChart2 size={16} />
-              )}
-              {isAnalyzing ? (coachingStyle === "mild" ? "멘토링 분석 중..." : "실책 파헤치는 중...") : analyses[coachingStyle] ? "분석 완료" : (analyses["mild"] || analyses["spicy"]) ? "다른 모드로 분석" : "AI 코칭 시작"}
-            </button>
+            {analysis ? (
+              <div className="p-6 bg-black/40 rounded-3xl border border-white/10 animate-in fade-in zoom-in duration-500">
+                {renderMarkdown(analysis)}
+              </div>
+            ) : (
+              <button 
+                onClick={handleAnalyze}
+                disabled={isAnalyzing}
+                className={`w-full py-10 ${isRanked ? 'bg-amber-500/5 border-amber-500/20 hover:bg-amber-500/10' : 'bg-indigo-500/5 border-indigo-500/20 hover:bg-indigo-500/10'} border-2 border-dashed rounded-3xl flex flex-col items-center gap-3 group transition-all`}
+              >
+                {isAnalyzing ? (
+                  <div className={`w-6 h-6 border-2 border-white/10 ${isRanked ? 'border-t-amber-500' : 'border-t-indigo-500'} rounded-full animate-spin`} />
+                ) : (
+                  <MousePointer2 className={`${isRanked ? 'text-amber-500' : 'text-indigo-400'} group-hover:scale-110 transition-transform`} />
+                )}
+                <span className={`${isRanked ? 'text-amber-500' : 'text-indigo-400'} font-bold text-sm`}>
+                  {isAnalyzing ? "전장 데이터를 복기하는 중..." : "이 매치 정밀 분석 시작하기"}
+                </span>
+              </button>
+            )}
           </div>
 
-          {(chatMessages.length > 0 || aiError) && (
-            <div
-              style={{
-                marginBottom: "20px",
-                padding: "15px",
-                backgroundColor: "rgba(0, 0, 0, 0.3)",
-                borderRadius: "16px",
-                border: `1px solid ${aiError ? "#f87171" : coachingStyle === "mild" ? "rgba(52, 168, 83, 0.3)" : "rgba(248, 113, 113, 0.3)"}`,
-                maxHeight: "500px",
-                display: "flex",
-                flexDirection: "column",
-                gap: "15px",
-              }}
-            >
-              <h4 style={{ 
-                margin: "0", 
-                color: aiError ? "#f87171" : "#34A853", 
-                fontSize: "13px", 
-                display: "flex", 
-                alignItems: "center", 
-                gap: "8px",
-                paddingBottom: "10px",
-                borderBottom: "1px solid rgba(255,255,255,0.05)"
-              }}>
-                <span style={{ fontSize: "16px" }}>{aiError ? "⚠️" : coachingStyle === "mild" ? "😇" : "🔥"}</span>
-                {aiError ? "분석 에러" : coachingStyle === "mild" ? "다정한 코칭" : "독설 교관의 팩트 폭격"}
-              </h4>
-
-              <div style={{ 
-                flex: 1, 
-                overflowY: "auto", 
-                display: "flex", 
-                flexDirection: "column", 
-                gap: "12px",
-                paddingRight: "5px"
-              }}>
-                {chatMessages.map((msg, idx) => (
+          {/* Team Members List (웅장한 리뉴얼) */}
+          <div className="mt-10 pt-8 border-t border-white/5">
+            <div className="flex items-center gap-2 mb-6">
+              <span className="text-xs text-gray-500 font-black uppercase tracking-[0.2em]">Team Combat Performance</span>
+              <div className="flex-1 h-px bg-gradient-to-r from-white/10 to-transparent" />
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              {matchData.team?.map((member, idx) => {
+                const isMe = member.name === nickname;
+                return (
                   <div 
                     key={idx} 
-                    style={{ 
-                      alignSelf: msg.role === "user" ? "flex-end" : "flex-start",
-                      maxWidth: msg.role === "user" ? "85%" : "100%",
-                      width: msg.role === "user" ? "auto" : "100%",
-                      padding: "12px 16px",
-                      borderRadius: msg.role === "user" ? "16px 16px 2px 16px" : "8px",
-                      backgroundColor: msg.role === "user" ? "rgba(255,255,255,0.1)" : "rgba(0, 0, 0, 0.2)",
-                      border: `1px solid ${msg.role === "user" ? "rgba(255,255,255,0.1)" : "rgba(52, 168, 83, 0.2)"}`,
-                      fontSize: "13px",
-                      color: "#eee",
-                      whiteSpace: msg.role === "user" ? "pre-wrap" : "normal"
-                    }}
-                  >
-                    {msg.role === "assistant" ? renderMarkdown(msg.content) : msg.content}
-                  </div>
-                ))}
-                {isChatting && (
-                  <div style={{ alignSelf: "flex-start", color: "#888", fontSize: "12px", paddingLeft: "10px", fontStyle: "italic" }}>
-                    AI 코치가 데이터를 분석하며 생각 중...
-                  </div>
-                )}
-                {aiError && (
-                  <div style={{ color: "#f87171", fontSize: "13px", textAlign: "center", padding: "10px" }}>
-                    {aiError}
-                  </div>
-                )}
-              </div>
-
-              {/* 채팅 입력창 */}
-              {!aiError && (
-                <div style={{ 
-                  marginTop: "5px", 
-                  display: "flex", 
-                  gap: "8px",
-                  paddingTop: "10px",
-                  borderTop: "1px solid rgba(255,255,255,0.05)"
-                }}>
-                  <input 
-                    type="text"
-                    value={chatInput}
-                    onChange={(e) => setChatInput(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && handleSendChat()}
-                    placeholder="AI에게 이 매치에 대해 질문해 보세요..."
-                    disabled={isChatting}
-                    style={{
-                      flex: 1,
-                      backgroundColor: "rgba(255,255,255,0.05)",
-                      border: "1px solid rgba(255,255,255,0.1)",
-                      borderRadius: "20px",
-                      padding: "8px 16px",
-                      fontSize: "13px",
-                      color: "#fff",
-                      outline: "none"
-                    }}
-                  />
-                  <button
-                    onClick={handleSendChat}
-                    disabled={isChatting || !chatInput.trim()}
-                    style={{
-                      backgroundColor: isChatting || !chatInput.trim() ? "rgba(255,255,255,0.05)" : "#34A853",
-                      color: "#fff",
-                      border: "none",
-                      borderRadius: "50%",
-                      width: "34px",
-                      height: "34px",
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      cursor: isChatting || !chatInput.trim() ? "default" : "pointer",
-                      transition: "all 0.2s"
-                    }}
-                  >
-                    {isChatting ? (
-                      <div style={{ width: "14px", height: "14px", border: "2px solid #fff", borderTop: "2px solid transparent", borderRadius: "50%", animation: "spin 1s linear infinite" }} />
-                    ) : (
-                      <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
-                        <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
-                      </svg>
+                    onClick={() => !isMe && onNicknameClick?.(member.name)}
+                    className={`relative p-4 rounded-3xl border transition-all group/member
+                    ${isMe 
+                      ? (isRanked ? 'bg-amber-500/10 border-amber-500/30' : 'bg-indigo-500/10 border-indigo-500/30') 
+                      : 'bg-white/5 border-white/5 hover:bg-white/10 hover:border-white/20 cursor-pointer active:scale-95'
+                    }`}>
+                    
+                    {isMe && (
+                      <div className={`absolute -top-2 -right-2 px-2 py-0.5 rounded-lg text-[8px] font-black uppercase tracking-tighter
+                        ${isRanked ? 'bg-amber-500 text-black' : 'bg-indigo-500 text-white'}`}>
+                        YOU
+                      </div>
                     )}
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
 
-          <style>{`
-            @keyframes spin {
-              from { transform: rotate(0deg); }
-              to { transform: rotate(360deg); }
-            }
-          `}</style>
-
-          <table
-            style={{
-              width: "100%",
-              fontSize: isMobile ? "11px" : "13px",
-              color: "#ccc",
-              borderCollapse: "collapse",
-              textAlign: "center",
-            }}
-          >
-            <thead>
-              <tr style={{ color: "#888", borderBottom: "1px solid #333" }}>
-                <th style={{ padding: "10px", textAlign: "left" }}>닉네임</th>
-                <th style={{ padding: "10px" }}>K / D / A</th>
-                <th style={{ padding: "10px" }}>데미지</th>
-                <th style={{ padding: "10px", position: "relative" }}>
-                  <div 
-                    onMouseEnter={() => setShowDBNOTooltip(true)}
-                    onMouseLeave={() => setShowDBNOTooltip(false)}
-                    style={{ cursor: "help", display: "flex", alignItems: "center", justifyContent: "center", gap: "2px" }}
-                  >
-                    DBNO
-                    <HelpCircle size={10} style={{ color: "#F2A900" }} />
-                  </div>
-                  {showDBNOTooltip && (
-                    <div style={{
-                      position: "absolute",
-                      bottom: "100%",
-                      left: "50%",
-                      transform: "translateX(-50%) translateY(-10px)",
-                      backgroundColor: "#222",
-                      color: "#fff",
-                      padding: "6px 12px",
-                      borderRadius: "6px",
-                      fontSize: "11px",
-                      whiteSpace: "nowrap",
-                      zIndex: 1000,
-                      boxShadow: "0 4px 15px rgba(0,0,0,0.8)",
-                      border: "1px solid #F2A900",
-                      pointerEvents: "none",
-                      fontWeight: "bold"
-                    }}>
-                      적을 기절시킨 횟수 (Down But Not Out)
-                      <div style={{
-                        position: "absolute",
-                        top: "100%",
-                        left: "50%",
-                        transform: "translateX(-50%)",
-                        borderWidth: "5px",
-                        borderStyle: "solid",
-                        borderColor: "#F2A900 transparent transparent transparent"
-                      }} />
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center
+                        ${isMe 
+                          ? (isRanked ? 'bg-amber-500/20 text-amber-500' : 'bg-indigo-500/20 text-indigo-400') 
+                          : 'bg-white/5 text-gray-500'
+                        }`}>
+                        <User size={18} />
+                      </div>
+                      <div className="flex flex-col min-w-0">
+                        <span className={`text-sm font-black truncate ${isMe ? 'text-white' : 'text-gray-300'}`}>
+                          {member.name}
+                        </span>
+                        <span className="text-[10px] text-gray-500 font-bold">Player No.{idx + 1}</span>
+                      </div>
                     </div>
-                  )}
-                </th>
-                <th style={{ padding: "10px" }}>부활</th>
-              </tr>
-            </thead>
-            <tbody>
-              {team
-                .slice()
-                .sort((a, b) => b.kills - a.kills)
-                .map((member: MatchTeamMember) => (
-                  <tr
-                    key={member.name}
-                    style={{
-                      backgroundColor:
-                        member.name === nickname
-                          ? "rgba(255,255,255,0.05)"
-                          : "transparent",
-                      borderBottom: "1px solid #222",
-                    }}
-                  >
-                    <td
-                      style={{
-                        padding: "10px",
-                        fontWeight:
-                          member.name === nickname ? "bold" : "normal",
-                        color: member.name === nickname ? "#fff" : "#aaa",
-                        textAlign: "left",
-                        cursor: member.name === nickname ? "default" : "pointer",
-                      }}
-                      onClick={() => {
-                        if (member.name !== nickname && onNicknameClick) {
-                          onNicknameClick(member.name);
-                        }
-                      }}
-                      className={member.name !== nickname ? "hover:text-[#F2A900] transition-colors" : ""}
-                    >
-                      {member.name}
-                    </td>
-                    <td style={{ padding: "10px" }}>
-                      {member.kills} / {member.deathType === 'alive' || member.deathType === '생존' ? 0 : 1} / {member.assists}
-                    </td>
-                    <td style={{ padding: "10px" }}>
-                      {Math.floor(member.damageDealt)}
-                    </td>
-                    <td style={{ padding: "10px" }}>{member.DBNOs}</td>
-                    <td style={{ padding: "10px" }}>{member.revives}</td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="bg-black/20 p-2 rounded-xl flex flex-col items-center">
+                        <span className="text-[9px] text-gray-500 font-bold uppercase">Kills</span>
+                        <span className="text-sm font-black text-red-400">{member.kills}</span>
+                      </div>
+                      <div className="bg-black/20 p-2 rounded-xl flex flex-col items-center">
+                        <span className="text-[9px] text-gray-500 font-bold uppercase">Assists</span>
+                        <span className="text-sm font-black text-indigo-400">{member.assists}</span>
+                      </div>
+                      <div className="bg-black/20 p-2 rounded-xl flex flex-col items-center">
+                        <span className="text-[9px] text-gray-500 font-bold uppercase">DBNOs</span>
+                        <span className="text-sm font-black text-yellow-500">{member.DBNOs}</span>
+                      </div>
+                      <div className="bg-black/20 p-2 rounded-xl flex flex-col items-center">
+                        <span className="text-[9px] text-gray-500 font-bold uppercase">Damage</span>
+                        <span className="text-sm font-black text-white">{Math.floor(member.damageDealt)}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
     </div>
   );
 };
+
+const StatBox = ({ icon, label, value, color }: { icon: React.ReactNode, label: string, value: string | number, color: string }) => (
+  <div className="bg-black/40 p-4 rounded-2xl border border-white/5 flex flex-col items-center gap-1 group hover:border-white/10 transition-colors">
+    <div className={`${color} mb-1 opacity-70 group-hover:scale-110 transition-transform`}>{icon}</div>
+    <span className="text-[10px] text-gray-500 font-black uppercase tracking-tighter">{label}</span>
+    <span className="text-lg font-black text-white">{value}</span>
+  </div>
+);

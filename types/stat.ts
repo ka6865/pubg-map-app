@@ -62,6 +62,8 @@ export interface MatchData {
     damageRank: number;
     damagePercentile: number;
     killRank: number;
+    totalTeams?: number;
+    totalPlayers?: number;
   };
   /** [V3] 교전 압박 지표 (총 적중 횟수, 압박한 적 수, 최대 타격 거리 등) */
   combatPressure?: {

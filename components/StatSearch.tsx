@@ -8,12 +8,22 @@ import { RecentAISummary } from "./stat/RecentAISummary";
 
 const STORAGE_KEY_RECENT = "pubg_recent_searches_v2";
 const STORAGE_KEY_FAVORITES = "pubg_favorites_v2";
+const STORAGE_KEY_LAST_SEARCH = "pubg_last_search_v2";
 
 import type { UserProfile } from "../types/map";
 import { useAuth } from "./AuthProvider";
+import { useRouter, useParams } from "next/navigation";
 import { supabase } from "../lib/supabase";
+
+interface StatSearchProps {
+  initialPlatform?: string;
+  initialNickname?: string;
+}
+
 /** 전적 검색 메인 컴포넌트 */
-export default function StatSearch() {
+export default function StatSearch({ initialPlatform, initialNickname }: StatSearchProps) {
+  const router = useRouter();
+  const params = useParams();
   const { user } = useAuth();
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const mounted = React.useSyncExternalStore(
@@ -27,8 +37,8 @@ export default function StatSearch() {
   const nicknameId = useId();
   const seasonId = useId();
 
-  const [platform, setPlatform] = useState("steam");
-  const [nickname, setNickname] = useState("");
+  const [platform, setPlatform] = useState(initialPlatform || "steam");
+  const [nickname, setNickname] = useState(initialNickname || "");
   const [loading, setLoading] = useState(false);
   const [cooldown, setCooldown] = useState(false);
   const [result, setResult] = useState<any>(null);
@@ -54,6 +64,13 @@ export default function StatSearch() {
 
     const savedFavorites = localStorage.getItem(STORAGE_KEY_FAVORITES);
     if (savedFavorites) setFavorites(JSON.parse(savedFavorites));
+
+    const savedLast = localStorage.getItem(STORAGE_KEY_LAST_SEARCH);
+    if (savedLast) {
+      const { nickname: lastNick, platform: lastPlat } = JSON.parse(savedLast);
+      if (lastNick) setNickname(lastNick);
+      if (lastPlat) setPlatform(lastPlat);
+    }
   }, []);
 
   useEffect(() => {
@@ -103,6 +120,14 @@ export default function StatSearch() {
         localStorage.setItem(STORAGE_KEY_RECENT, JSON.stringify(updated));
         return updated;
       });
+
+      // 마지막 검색어 저장
+      localStorage.setItem(STORAGE_KEY_LAST_SEARCH, JSON.stringify({ nickname: actualName, platform: searchPlatform }));
+
+      // URL 업데이트 (동적 라우팅)
+      if (params.nickname !== actualName || params.platform !== searchPlatform) {
+        router.push(`/stats/${searchPlatform}/${actualName}`);
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -112,13 +137,20 @@ export default function StatSearch() {
   }, [selectedSeason, nickname, platform, cooldown]);
 
   useEffect(() => {
-    if (userProfile?.pubg_nickname && !result && !loading) {
+    // 1. URL 파라미터가 있는 경우 우선순위 1위
+    if (initialNickname && !result && !loading) {
+      handleSearch(selectedSeason, initialNickname, initialPlatform);
+      return;
+    }
+
+    // 2. 로그인 유저 프로필 연동 (URL 파라미터가 없을 때만)
+    if (!initialNickname && userProfile?.pubg_nickname && !result && !loading) {
       const userPlatform = userProfile.pubg_platform || "steam";
       setNickname(userProfile.pubg_nickname);
       setPlatform(userPlatform);
       handleSearch(selectedSeason, userProfile.pubg_nickname, userPlatform);
     }
-  }, [userProfile, result, loading, selectedSeason, handleSearch]);
+  }, [userProfile, result, loading, selectedSeason, handleSearch, initialNickname, initialPlatform]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_FAVORITES, JSON.stringify(favorites));
