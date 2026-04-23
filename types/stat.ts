@@ -65,7 +65,15 @@ export interface MatchData {
     totalTeams?: number;
     totalPlayers?: number;
   };
-  /** [V3] 교전 압박 지표 (총 적중 횟수, 압박한 적 수, 최대 타격 거리 등) */
+  /** [V31] 전술적 몰살 여부 */
+  teamWipeOccurred?: boolean;
+  /** [V32] 선제 타격 지표 */
+  initiativeStats?: {
+    total: number;
+    success: number;
+    rate: number;
+  };
+  /** [V3] 교전 압박 지표 */
   combatPressure?: {
     totalHits: number;
     uniqueVictims: string[];

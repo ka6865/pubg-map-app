@@ -50,34 +50,22 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
     setError(null);
 
     try {
-      const response = await fetch("/api/pubg/ai-summary", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ matchIds, nickname, platform, coachingStyle: "debate" }),
+      const response = await fetch('/api/pubg/ai-summary', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          matchIds: matchIds, 
+          nickname, 
+          platform: platform 
+        })
       });
 
       if (!response.ok) throw new Error("분석 중 오류가 발생했습니다.");
 
-      const reader = response.body?.getReader();
-      const decoder = new TextDecoder();
-      let fullText = "";
+      // V44 적용: 스트리밍 코드 싹 지우고 JSON 한 방에 받기!
+      const data = await response.json();
+      setDebateData(data);
 
-      if (reader) {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          fullText += decoder.decode(value, { stream: true });
-        }
-        
-        try {
-          const cleanJson = fullText.replace(/```json\n?|```/g, "").trim();
-          const parsed = JSON.parse(cleanJson);
-          setDebateData(parsed);
-        } catch (e) {
-          console.error("JSON 파싱 에러:", e, fullText);
-          setError("데이터를 정리하는 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.");
-        }
-      }
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -112,7 +100,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
         className="w-full p-8 bg-indigo-500/5 border-2 border-dashed border-indigo-500/30 rounded-3xl text-indigo-400 font-bold flex flex-col items-center gap-4 hover:bg-indigo-500/10 transition-all active:scale-[0.98]"
       >
         <span className="text-4xl">🔥</span>
-        <span>최근 10경기 AI 끝장 토론 시작 (V19 Tactical)</span>
+        <span>최근 10경기 AI 끝장 토론 시작 (2.0 Tactical)</span>
       </button>
     );
   }
@@ -121,7 +109,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
     return (
       <div className="p-12 bg-white/5 rounded-3xl border border-white/10 text-center">
         <div className="w-12 h-12 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin mx-auto mb-6" />
-        <p className="text-gray-400 animate-pulse">V19 분석 엔진이 정밀 텔레메트리 데이터를 대조 중입니다...</p>
+        <p className="text-gray-400 animate-pulse">2.0 분석 엔진이 정밀 텔레메트리 데이터를 대조 중입니다...</p>
       </div>
     );
   }
@@ -231,7 +219,14 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
                 <div className="h-4 bg-white/5 rounded-full overflow-hidden p-1 border border-white/5">
                   <div 
                     className="h-full bg-gradient-to-r from-yellow-500 to-yellow-300 rounded-full transition-all duration-1000 shadow-[0_0_15px_rgba(234,179,8,0.4)]" 
-                    style={{ width: `${Math.min(100, (debateData.visuals.killContrib?.solo || 0) * 20)}%` }} 
+                    style={{ 
+                      width: `${(() => {
+                        const solo = debateData.visuals.killContrib?.solo || 0;
+                        const cleanup = debateData.visuals.killContrib?.cleanup || 0;
+                        const total = solo + cleanup;
+                        return total > 0 ? (solo / total) * 100 : 0;
+                      })()}%` 
+                    }} 
                   />
                 </div>
                 <div className="text-[11px] text-white/40 font-bold leading-relaxed">
@@ -247,7 +242,14 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
                 <div className="h-4 bg-white/5 rounded-full overflow-hidden p-1 border border-white/5">
                   <div 
                     className="h-full bg-gradient-to-r from-green-500 to-green-300 rounded-full transition-all duration-1000 shadow-[0_0_15px_rgba(34,197,94,0.4)]" 
-                    style={{ width: `${Math.min(100, (debateData.visuals.killContrib?.cleanup || 0) * 20)}%` }} 
+                    style={{ 
+                      width: `${(() => {
+                        const solo = debateData.visuals.killContrib?.solo || 0;
+                        const cleanup = debateData.visuals.killContrib?.cleanup || 0;
+                        const total = solo + cleanup;
+                        return total > 0 ? (cleanup / total) * 100 : 0;
+                      })()}%` 
+                    }} 
                   />
                 </div>
                 <div className="text-[11px] text-white/40 font-bold leading-relaxed">
@@ -270,8 +272,16 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
           </div>
           <div className="text-[10px] text-red-400 font-black uppercase mb-1 tracking-widest">평균 반격 속도</div>
-          <div className="text-3xl font-black text-white mb-1">{debateData?.visuals?.tradeLatency || "0.00s"}</div>
-          <div className="text-[9px] text-gray-500 font-medium">피격 후 대응 사격까지 걸린 시간</div>
+          <div className="text-3xl font-black text-white mb-1">
+            {debateData?.visuals?.tradeLatency === "N/A" ? (
+              <span className="text-2xl text-gray-500">측정 불가</span>
+            ) : (
+              debateData?.visuals?.tradeLatency || "0.00s"
+            )}
+          </div>
+          <div className="text-[9px] text-gray-500 font-medium">
+            {debateData?.visuals?.tradeLatency === "N/A" ? "아군 기절 등 백업 상황 미발생" : "피격 후 대응 사격까지 걸린 시간"}
+          </div>
         </div>
       </div>
 
@@ -292,24 +302,24 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
                   issue.winner === "kind" ? "bg-green-500/20 text-green-400 border border-green-500/30" : 
                   "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30"
                 }`}>
-                  {issue.winner === "spicy" ? "⚡ SPICY WIN" : issue.winner === "kind" ? "😊 KIND WIN" : "🤝 DRAW"}
+                  {issue.winner === "spicy" ? "매운맛 승" : issue.winner === "kind" ? "착한맛 승" : "무승부"}
                 </div>
-                <span className={`transform transition-transform text-gray-500 ${openIssueIdx === idx ? "rotate-180" : ""}`}>▼</span>
+                <svg className={`w-6 h-6 text-white/50 transition-transform ${openIssueIdx === idx ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
               </div>
             </button>
 
             {openIssueIdx === idx && (
-              <div className="p-6 pt-0 border-t border-white/5 animate-in slide-in-from-top-4 duration-300">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-                  <div className={`p-5 rounded-2xl border transition-all ${issue.winner === "kind" ? "bg-green-500/5 border-green-500/20" : "bg-black/20 border-white/5 opacity-60"}`}>
+              <div className="px-6 pb-6 animate-in slide-in-from-top-4 duration-300">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className={`p-5 rounded-2xl border transition-all ${issue.winner === "kind" ? "bg-green-500/5 border-green-500/30 ring-1 ring-green-500/20" : "bg-black/30 border-white/10"}`}>
                     <div className="flex items-center gap-2 mb-3">
                       <span className="text-lg">😊</span>
                       <span className="text-xs font-black text-green-400 uppercase">KIND COACH</span>
                     </div>
                     <p className="text-sm text-gray-300 leading-relaxed font-medium">&quot;{issue.kindOpinion}&quot;</p>
                   </div>
-
-                  <div className={`p-5 rounded-2xl border transition-all ${issue.winner === "spicy" ? "bg-red-500/5 border-red-500/20" : "bg-black/20 border-white/5 opacity-60"}`}>
+ 
+                  <div className={`p-5 rounded-2xl border transition-all ${issue.winner === "spicy" ? "bg-red-500/5 border-red-500/30 ring-1 ring-red-500/20" : "bg-black/30 border-white/10"}`}>
                     <div className="flex items-center gap-2 mb-3">
                       <span className="text-lg">⚡</span>
                       <span className="text-xs font-black text-red-400 uppercase">SPICY BOMBER</span>

@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { supabase } from "../../../../lib/supabase";
 
+export const maxDuration = 60;
+
 const MAP_NAMES: Record<string, string> = {
   Erangel_Main: "에란겔",
   Baltic_Main: "에란겔",
@@ -90,32 +92,40 @@ export async function GET(request: Request) {
 
     const accountId = myInfo.attributes.stats.playerId;
 
-    // [DB] V30 개인 캐시 체크
+    // [DB] V37 개인 캐시 체크 (신규 필드 포함 여부 확인)
     try {
       const { data: fullCache } = await supabase.from("processed_match_telemetry").select("data").eq("match_id", matchId).eq("player_id", lowerNickname).single();
-      if (fullCache && (fullCache.data as any).fullResult?.v >= 30) {
-        console.log(`[DB] V30 Player Cache Hit: ${matchId} for ${lowerNickname}`);
+      if (fullCache && (fullCache.data as any).fullResult?.v >= 2.0) {
+        console.log(`[DB] 2.0 Player Cache Hit: ${matchId} for ${lowerNickname}`);
         return NextResponse.json((fullCache.data as any).fullResult);
       }
     } catch {}
 
     const myRoster = rosters.find((r: any) => r.relationships.participants.data.some((p: any) => p.id === myInfo.id));
     const teamStats = myRoster ? myRoster.relationships.participants.data.map((pRef: any) => participants.find((p: any) => p.id === pRef.id)?.attributes.stats).filter(Boolean) : [myInfo.attributes.stats];
-    const teamNames = new Set(teamStats.map((m: any) => normalizeName(m.name)));
+    const teamNames = new Set<string>();
+    const teammateAccountIds = new Set<string>();
+    teamStats.forEach((m: any) => {
+        teamNames.add(normalizeName(m.name));
+        teammateAccountIds.add(m.playerId);
+    });
+    console.log(`[DEBUG-V45] Team Members:`, Array.from(teamNames));
 
     // [STEP 1] 벤치마크 지표 산출
     const meaningfulParticipants = participants.filter((p: any) => p.attributes.stats.damageDealt > 0 || p.attributes.stats.timeSurvived > 60);
     const sortedDamage = [...meaningfulParticipants].sort((a, b) => b.attributes.stats.damageDealt - a.attributes.stats.damageDealt);
-    const myDamageRank = sortedDamage.findIndex(p => p.attributes.stats.playerId === accountId) + 1;
+    const myDamageRank = sortedDamage.findIndex((p: any) => p.attributes.stats.playerId === accountId) + 1;
     const myDamagePercentile = Math.round(((meaningfulParticipants.length - myDamageRank) / meaningfulParticipants.length) * 100);
     
     const top15Players = sortedDamage.slice(0, 15);
-    const top15Baseline = {
-      avgDamage: Math.round(top15Players.reduce((acc, p) => acc + p.attributes.stats.damageDealt, 0) / 15),
-      avgKills: Number((top15Players.reduce((acc, p) => acc + p.attributes.stats.kills, 0) / 15).toFixed(1)),
-      realTradeLatency: 850, realInitiativeSuccess: 55, realDeathDistance: 25
-    };
-
+    
+    // [V40] 실시간 매치 벤치마크 (실제 상위 15인 평균)
+    const realTop15AvgDamage = top15Players.length > 0 
+      ? Math.round(top15Players.reduce((acc: number, p: any) => acc + (p.attributes?.stats?.damageDealt || 0), 0) / top15Players.length)
+      : 250;
+    const realTop15AvgKills = top15Players.length > 0
+      ? Number((top15Players.reduce((acc: number, p: any) => acc + (p.attributes?.stats?.kills || 0), 0) / top15Players.length).toFixed(1))
+      : 2.5;
     // [킬 순위 계산]
     const sortedKills = [...meaningfulParticipants].sort((a, b) => {
       if (b.attributes.stats.kills !== a.attributes.stats.kills) {
@@ -123,7 +133,7 @@ export async function GET(request: Request) {
       }
       return b.attributes.stats.damageDealt - a.attributes.stats.damageDealt;
     });
-    const myKillRank = sortedKills.findIndex(p => p.attributes.stats.playerId === accountId) + 1;
+    const myKillRank = sortedKills.findIndex((p: any) => p.attributes.stats.playerId === accountId) + 1;
 
     // [STEP 2] 텔레메트리 다운로드 및 분석 (Master Cache 적용)
     let telData: any[] = [];
@@ -142,52 +152,209 @@ export async function GET(request: Request) {
         const telRes = await fetch(telemetryAsset.attributes.URL);
         telData = await telRes.json();
         
-        // [DB] 마스터 캐시 저장 (Fire and Forget)
+        // [2.0] 데이터 다이어트 최적화 유지 (30,000건)
+        const essentialEvents = telData.filter((e: any) => 
+          ["LogMatchStart", "LogPlayerKill", "LogPlayerKillV2", "LogPlayerMakeDBNO", "LogPlayerTakeDamage", "LogItemUse"].includes(e._T)
+        ).slice(0, 30000);
+
         supabase.from("match_master_telemetry").upsert({
           match_id: matchId, map_name: matchAttr.mapName, game_mode: matchAttr.gameMode,
-          telemetry_events: telData.slice(0, 50000) // 용량 제한 안전장치
+          telemetry_events: essentialEvents
         }).then(({ error }) => {
           if (error) console.error(`[DB] Master Cache Save Failed: ${matchId}`, error);
-          else console.log(`[DB] Master Telemetry Cached: ${matchId}`);
+          else console.log(`[DB] Master Telemetry (Filtered 2.0) Cached: ${matchId}`);
         });
       }
     }
 
-    // [V30] 정밀 지표 변수 및 텔레메트리 1차 루프
+    // [V37] 텔레메트리 시간순 정렬 (판정 정확도 향상)
+    telData.sort((a, b) => new Date(a._D).getTime() - new Date(b._D).getTime());
+
+    // [V37] 전역 전투 트래커 (상위 15인 실측용)
+    const playerCombatData = new Map<string, { total: number; success: number; sessions: Map<string, any> }>();
+    const top15Names = new Set(top15Players.map((p: any) => normalizeName(p.attributes.stats.name)));
+
+    // [V37] 정밀 지표 변수
     const goldenTimeDamage = { early: 0, mid1: 0, mid2: 0, late: 0 };
     const killContribution = { solo: 0, cleanup: 0, other: 0 };
+    const itemUseEvents: string[] = [];
     const teammateKnockEvents: any[] = [];
     const myDamageEvents: any[] = [];
-    let bluezoneWasteCount = 0; let lastBluezoneDamageTime = 0;
+    const myActionTimestamps: number[] = [];
+    let bluezoneWasteCount = 0; 
+    let lastBluezoneDamageTime = 0;
+    let bluezoneDamageAccum = 0;
+
     const startEvent = telData.find(e => e._T === "LogMatchStart");
     const matchStartTime = startEvent ? new Date(startEvent._D).getTime() : 0;
 
     telData.forEach((e: any) => {
       const ts = new Date(e._D).getTime();
       const elapsed = (ts - matchStartTime) / 1000;
-      if (e._T === "LogPlayerTakeDamage" && e.attacker && normalizeName(e.attacker.name) === lowerNickname && e.victim && normalizeName(e.victim.name) !== lowerNickname) {
-        const dmg = e.damage || 0;
-        if (elapsed <= 300) goldenTimeDamage.early += dmg;
-        else if (elapsed <= 900) goldenTimeDamage.mid1 += dmg;
-        else if (elapsed <= 1500) goldenTimeDamage.mid2 += dmg;
-        else goldenTimeDamage.late += dmg;
-        myDamageEvents.push({ ts, victim: e.victim.name, dmg });
+
+      // 1. 선제 타격 시도 감지 (User + Top15)
+      if (e._T === "LogPlayerTakeDamage" && e.attacker && e.victim && normalizeName(e.attacker.name) !== normalizeName(e.victim.name)) {
+        const attackerName = normalizeName(e.attacker.name);
+        const victimName = normalizeName(e.victim.name);
+        const attackerId = e.attacker.accountId;
+
+        if (attackerName === lowerNickname || top15Names.has(attackerName)) {
+          let pData = playerCombatData.get(attackerName);
+          if (!pData) {
+            pData = { total: 0, success: 0, sessions: new Map() };
+            playerCombatData.set(attackerName, pData);
+          }
+
+          const session = pData.sessions.get(victimName);
+          // [V39] 세션 만료 시간을 120초로 연장
+          if (!session || ts - Math.max(session.lastHitByEnemy, session.lastHitByUser) > 120000) {
+            pData.sessions.set(victimName, { 
+              lastHitByEnemy: 0, 
+              lastHitByUser: ts, 
+              userStarted: true, 
+              alreadySucceeded: false 
+            });
+            pData.total++;
+          } else {
+            session.lastHitByUser = ts;
+            // 이미 내가 먼저 시작한 세션이라면, 적에게 맞더라도 userStarted 유지
+          }
+        }
+
+        // 피해 수신 (시작 주도권 상실 체크)
+        const victimNameNorm = normalizeName(e.victim.name);
+        if (victimNameNorm === lowerNickname || top15Names.has(victimNameNorm)) {
+          const pData = playerCombatData.get(victimNameNorm);
+          if (pData) {
+            const session = pData.sessions.get(attackerName);
+            // [V39] 적에게 먼저 맞았을 때 세션 생성 (유효 기간 120초)
+            if (!session || ts - Math.max(session.lastHitByEnemy, session.lastHitByUser) > 120000) {
+              pData.sessions.set(attackerName, { lastHitByEnemy: ts, lastHitByUser: 0, userStarted: false, alreadySucceeded: false });
+            } else {
+              session.lastHitByEnemy = ts;
+              // 내가 이미 쏜 적에게 나중에 맞는 것이라면 userStarted=true는 유지됨 (건드리지 않음)
+            }
+          }
+        }
       }
-      if (e._T === "LogPlayerMakeDBNO" && e.victim && teamNames.has(normalizeName(e.victim.name)) && normalizeName(e.victim.name) !== lowerNickname) {
-        teammateKnockEvents.push({ ts, victim: e.victim.name, attacker: e.attacker?.name });
+
+      // 2. 성공 판정 (Knock, Kill or KillV2)
+      if ((e._T === "LogPlayerKill" || e._T === "LogPlayerKillV2" || e._T === "LogPlayerMakeDBNO")) {
+        // [V44] Kill/KillV2는 killer/attacker, DBNO는 maker/attacker 필드를 전수 체크
+        const killer = e.killer || e.maker || e.attacker; 
+        if (killer && e.victim) {
+          const victimName = normalizeName(e.victim.name);
+          
+          // [V41] 아군 처치 제외 및 팀 단위 성공 판정
+          if (!teamNames.has(victimName)) {
+            // 이 희생자에게 교전을 '먼저 시작'했던 모든 우리 팀원에게 성공 부여
+            teamNames.forEach((member: string) => {
+              const memberData = playerCombatData.get(member);
+              if (memberData) {
+                const session = memberData.sessions.get(victimName);
+                // 기절이든 킬이든 먼저 쏜 사람에게 성공 부여 (중복 방지: alreadySucceeded)
+                if (session?.userStarted && !session.alreadySucceeded) {
+                  memberData.success++;
+                  session.alreadySucceeded = true;
+                }
+              }
+            });
+          }
+        }
       }
+
+      // 3. 유저 전용 추가 지표 수집
+      // [V52] 데미지 및 아이템 사용 추적 (Attacker/Character 필드 통합 처리)
+      if (e._T === "LogPlayerTakeDamage") {
+        const attackerName = normalizeName(e.attacker?.name || e.character?.name || "");
+        if (attackerName === lowerNickname && normalizeName(e.victim?.name) !== lowerNickname) {
+          const dmg = e.damage || 0;
+          if (elapsed <= 300) goldenTimeDamage.early += dmg;
+          else if (elapsed <= 900) goldenTimeDamage.mid1 += dmg;
+          else if (elapsed <= 1500) goldenTimeDamage.mid2 += dmg;
+          else goldenTimeDamage.late += dmg;
+          myDamageEvents.push({ ts, victim: e.victim?.name, dmg });
+        }
+      }
+
+      if (e._T === "LogItemUse") {
+        const charName = normalizeName(e.character?.name || "");
+        if (charName === lowerNickname) {
+          const itemId = e.item?.itemId || e.itemId || "";
+          if (itemId) itemUseEvents.push(itemId);
+        }
+      }
+
+      // [V37] 유저의 공격적 액션(기절/사망 유발) 기록
+      if ((e._T === "LogPlayerKill" || e._T === "LogPlayerKillV2" || e._T === "LogPlayerMakeDBNO")) {
+        const actor = e.killer || e.maker || e.attacker; 
+        if (actor && normalizeName(actor.name) === lowerNickname) {
+          myActionTimestamps.push(ts);
+        }
+      }
+      
+      // [V47] 3. 아군 기절/사망 감지 (Trade 분석 시작점)
+      if ((e._T === "LogPlayerMakeDBNO" || e._T === "LogPlayerKill" || e._T === "LogPlayerKillV2") && e.victim) {
+        const victimNameNorm = normalizeName(e.victim.name);
+        const isTeammate = teamNames.has(victimNameNorm);
+        
+        // 디버깅: 모든 아군 관련 사망/기절 이벤트 출력
+        if (isTeammate) {
+          console.log(`[DEBUG-V47] Teammate Event: ${e._T} | Victim: ${e.victim.name} | isUser: ${victimNameNorm === lowerNickname}`);
+        }
+
+        if (isTeammate && victimNameNorm !== lowerNickname) {
+          const alreadyTracked = teammateKnockEvents.some(tk => tk.victim === e.victim.name && ts - tk.ts < 10000);
+          if (!alreadyTracked) {
+            teammateKnockEvents.push({ ts, victim: e.victim.name, attacker: (e.attacker || e.killer || e.maker)?.name });
+          }
+        }
+      }
+
       if (e._T === "LogPlayerTakeDamage" && normalizeName(e.victim?.name) === lowerNickname && (e.damageTypeCategory === "Damage_BlueZone" || e.damageTypeCategory === "Damage_OutsidePlayZone")) {
         lastBluezoneDamageTime = ts;
+        bluezoneDamageAccum += (e.damage || 0);
       }
+
       if (e._T === "LogPlayerKill" && normalizeName(e.victim?.name) === lowerNickname) {
-        if (lastBluezoneDamageTime > 0 && ts - lastBluezoneDamageTime < 120000) bluezoneWasteCount++;
+        if (bluezoneDamageAccum >= 30 && ts - lastBluezoneDamageTime < 30000) {
+          bluezoneWasteCount++;
+        }
       }
     });
+    console.log(`[DEBUG-V47] Found ${teammateKnockEvents.length} teammate knock/death events.`);
+    console.log(`[DEBUG-V47] Found ${myDamageEvents.length} user damage events.`);
+
+    // [V31] 전술적 몰살(Team Wipe) 감지 로직 (Duo 대응)
+    const teamSize = teamStats.length;
+    const wipeThreshold = teamSize >= 4 ? 3 : teamSize;
+    const teamDeaths = telData
+      .filter(e => (e._T === "LogPlayerKill" || e._T === "LogPlayerKillV2") && teamNames.has(normalizeName(e.victim?.name)))
+      .map(e => new Date(e._D).getTime())
+      .sort((a, b) => a - b);
+    
+    let teamWipeOccurred = false;
+    if (teamDeaths.length >= wipeThreshold) {
+      const interval = (teamDeaths[teamDeaths.length - 1] - teamDeaths[0]) / 1000;
+      const timeLimit = teamSize >= 4 ? 90 : 60;
+      if (interval <= timeLimit && myInfo.attributes.stats.winPlace > 1) {
+        teamWipeOccurred = true;
+      }
+    }
 
     const myKillEvents = telData.filter(e => (e._T === "LogPlayerKill" || e._T === "LogPlayerKillV2") && normalizeName(e.killer?.name || e.attacker?.name) === lowerNickname);
+    // myActionTimestamps는 위 loop에서 이미 수집됨
+    
     myKillEvents.forEach(k => {
-      const victimName = k.victim.name;
-      const victimDamage = telData.filter(e => e._T === "LogPlayerTakeDamage" && e.victim?.name === victimName);
+      const victimName = k.victim?.name;
+      if (!victimName) return;
+      // [V37] 플레이어 간 피해만 포함 (환경 피해 제외)
+      const victimDamage = telData.filter(e => 
+        e._T === "LogPlayerTakeDamage" && 
+        e.victim?.name === victimName &&
+        e.attacker &&
+        !["Damage_BlueZone", "Damage_RedZone", "Damage_Fall", "Damage_Drowning"].includes(e.damageTypeCategory)
+      );
       const myTotalDmg = victimDamage.filter(e => normalizeName(e.attacker?.name) === lowerNickname).reduce((acc, e) => acc + (e.damage || 0), 0);
       const totalDmg = victimDamage.reduce((acc, e) => acc + (e.damage || 0), 0);
       if (myTotalDmg >= totalDmg * 0.7) killContribution.solo++;
@@ -197,13 +364,57 @@ export async function GET(request: Request) {
 
     let totalLatency = 0; let latencyCount = 0;
     teammateKnockEvents.forEach(tk => {
-      const firstResponse = myDamageEvents.find(md => md.ts > tk.ts && md.ts < tk.ts + 15000);
+      const firstResponse = myDamageEvents.find(md => md.ts > tk.ts && md.ts < tk.ts + 30000);
       if (firstResponse) { totalLatency += (firstResponse.ts - tk.ts); latencyCount++; }
     });
 
+    // [V37] 복수(Trade) 지표 집계 (DB 용량 최적화를 위해 집계값만 저장)
+    const coverAttempts = teammateKnockEvents.filter((tk, idx) => {
+      const damageToFoe = myDamageEvents.filter(md => md.ts > tk.ts && md.ts < tk.ts + 30000).reduce((acc, md) => acc + md.dmg, 0);
+      const hasAction = myActionTimestamps.some(ats => ats > tk.ts && ats < tk.ts + 30000);
+      console.log(`[DEBUG-2.0] Knock #${idx} at ${tk.ts} (Victim: ${tk.victim}, Attacker: ${tk.attacker}) -> DamageToFoe: ${damageToFoe}, HasAction: ${hasAction}`);
+      return damageToFoe > 0 || hasAction;
+    }).length;
+    console.log(`[DEBUG-2.0] Final Cover Attempts: ${coverAttempts} / ${teammateKnockEvents.length}`);
+
+    const tradeStats = {
+      teammateKnocks: teammateKnockEvents.length,
+      userCoverAttempts: coverAttempts,
+      coverRate: teammateKnockEvents.length > 0 ? Math.round((coverAttempts / teammateKnockEvents.length) * 100) : 0,
+      tradeLatencyMs: latencyCount > 0 ? totalLatency / latencyCount : 0
+    };
+    // detailedTeamwork raw 배열은 제거함
+
+    // [V37] 최종 지표 산출
+    const myCombatData = playerCombatData.get(lowerNickname) || { total: 0, success: 0 };
+    const top15CombatRates = Array.from(playerCombatData.entries())
+      .filter(([name, data]) => top15Names.has(name))
+      .map(([name, data]) => (data.total > 0 ? (data.success / data.total) * 100 : 0))
+      .filter(rate => rate > 0);
+
+    const realTop15InitiativeAvg = top15CombatRates.length > 0 
+      ? Math.round(top15CombatRates.reduce((a, b) => a + b, 0) / top15CombatRates.length)
+      : 55; // 데이터 부족 시 기본값
+
+    const top15Baseline = {
+      avgDamage: realTop15AvgDamage, // [실측] 해당 매치 상위 15인 평균
+      avgKills: realTop15AvgKills,   // [실측] 해당 매치 상위 15인 평균
+      realTradeLatency: 1800,      // [표준] 상위권 권장 지표 (V49 현실화: 0.8s -> 1.8s)
+      realInitiativeSuccess: 55,   // [표준] 상위권 권장 지표
+      realDeathDistance: 30        // [표준] 상위권 권장 지표
+    };
+
+    const itemUseSummary = {
+      smokes: itemUseEvents.filter(id => id.includes("SmokeBomb")).length,
+      frags: itemUseEvents.filter(id => id.includes("Grenade") && !id.includes("Smoke")).length,
+      heals: itemUseEvents.filter(id => id.includes("MedKit") || id.includes("FirstAid")).length,
+      boosts: itemUseEvents.filter(id => id.includes("PainKiller") || id.includes("EnergyDrink")).length
+    };
+
     const finalResult = {
       matchId, mapName: MAP_NAMES[matchAttr.mapName] || matchAttr.mapName, createdAt: matchAttr.createdAt, gameMode: matchAttr.gameMode,
-      stats: myInfo.attributes.stats, team: teamStats, v: 30, top10Baseline: top15Baseline,
+      stats: myInfo.attributes.stats, team: teamStats, v: 2.0, top10Baseline: top15Baseline,
+      tradeStats, // tradeStats 내부에 tradeLatencyMs 포함됨
       myRank: { 
         damageRank: myDamageRank, 
         damagePercentile: myDamagePercentile, 
@@ -211,18 +422,36 @@ export async function GET(request: Request) {
         totalTeams: rosters.length,
         totalPlayers: participants.length
       },
-      goldenTimeDamage, killContribution, avgTradeLatency: latencyCount > 0 ? totalLatency / latencyCount : 0,
-      bluezoneWasteCount, initiativeSuccessRate: 50, processedAt: new Date().toISOString()
+      teamWipeOccurred,
+      initiativeSuccessRate: myCombatData.total > 0 ? Math.round((myCombatData.success / myCombatData.total) * 100) : 0,
+      initiativeStats: {
+        total: myCombatData.total,
+        success: myCombatData.success,
+        rate: myCombatData.total > 0 ? Math.round((myCombatData.success / myCombatData.total) * 100) : 0
+      },
+      goldenTimeDamage, 
+      killContribution, 
+      tradeLatency: latencyCount > 0 ? totalLatency / latencyCount : 0,
+      itemUseSummary, 
+      bluezoneWasteCount, 
+      survivalTimeSec: myInfo.attributes.stats.timeSurvived || 0,
+      processedAt: new Date().toISOString()
     };
 
-    // [DB] 최종 분석 결과 저장
-    supabase.from("processed_match_telemetry").upsert({
-      match_id: matchId, player_id: lowerNickname,
-      data: { fullResult: finalResult }
-    }).then(({ error }) => {
-      if (error) console.error(`[DB] Player Cache Save Failed: ${matchId}`, error);
-      else console.log(`[DB] User Analysis (V30) Cached: ${matchId} for ${lowerNickname}`);
-    });
+    // [V43] Supabase 캐시 저장 (Non-blocking: Fire-and-Forget)
+    (supabase
+      .from("processed_match_telemetry")
+      .upsert({
+        match_id: matchId,
+        player_id: lowerNickname,
+        data: { fullResult: finalResult },
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'match_id,player_id' }) as any)
+      .then(({ error: upsertError }: any) => {
+        if (upsertError) console.error("[DB] Cache Upsert Error:", upsertError);
+        else console.log(`[DB] User Analysis (2.0) Cached: ${matchId} for ${lowerNickname}`);
+      })
+      .catch((dbErr: any) => console.error("[DB] Critical Cache Error:", dbErr));
 
     return NextResponse.json(finalResult);
   } catch (error: any) {
