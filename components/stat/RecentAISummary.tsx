@@ -32,6 +32,7 @@ interface DebateData {
   signature?: string;
   signatureSub?: string;
   visuals?: {
+    latency: { backup: string; opportunity: string };
     backupLatency: string;
     reactionLatency: string;
     initiativeSuccess: string;
@@ -112,7 +113,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
         className="w-full p-8 bg-indigo-500/5 border-2 border-dashed border-indigo-500/30 rounded-3xl text-indigo-400 font-bold flex flex-col items-center gap-4 hover:bg-indigo-500/10 transition-all active:scale-[0.98]"
       >
         <span className="text-4xl">🔥</span>
-        <span>최근 10경기 AI 끝장 토론 시작 (V3.0 Tactical)</span>
+        <span>최근 10경기 AI 끝장 토론 시작 (V5.0 Tactical)</span>
       </button>
     );
   }
@@ -121,10 +122,16 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
     return (
       <div className="p-12 bg-white/5 rounded-3xl border border-white/10 text-center">
         <div className="w-12 h-12 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin mx-auto mb-6" />
-        <p className="text-gray-400 animate-pulse">V3.0 전술 분석 엔진이 정밀 텔레메트리 데이터를 대조 중입니다...</p>
+        <p className="text-gray-400 animate-pulse">V5.0 정밀 전술 분석 엔진이 텔레메트리 데이터를 대조 중입니다...</p>
       </div>
     );
   }
+
+  const parseRate = (s: string | undefined) => {
+    if (!s) return 0;
+    const n = parseInt(s);
+    return isNaN(n) ? 0 : n;
+  };
 
   return (
     <div className="flex flex-col gap-8 animate-in fade-in duration-700">
@@ -133,13 +140,13 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
         <SpiderChart 
           nickname={nickname}
           data={{
-            combat: Math.min(100, (parseInt(String(debateData.visuals?.initiativeSuccess || "0")) * 0.8) + (debateData.visuals?.killContrib?.solo || 0) * 5),
-            survival: Math.min(100, (parseInt(String(debateData.visuals?.goldenTime?.late || "0")) / 10) + 50),
+            combat: Math.min(100, (parseRate(debateData.visuals?.initiativeSuccess) * 0.8) + (debateData.visuals?.killContrib?.solo || 0) * 5),
+            survival: Math.min(100, (parseRate(String(debateData.visuals?.goldenTime?.late || "0")) / 10) + 50),
             growth: 75, // 가공 데이터 부족시 기본값
             vision: 60,
             teamwork: Math.min(100, 
               debateData.visuals?.tactical 
-                ? (parseInt(debateData.visuals.tactical.suppRate) + parseInt(debateData.visuals.tactical.smokeRate) + parseInt(debateData.visuals.tactical.reviveRate)) / 3 + 40
+                ? (parseRate(debateData.visuals.tactical.suppRate) + parseRate(debateData.visuals.tactical.smokeRate) + parseRate(debateData.visuals.tactical.reviveRate)) / 3 + 40
                 : (debateData.visuals?.backupLatency !== "N/A" ? 85 : 40)
             ),
           }}
@@ -319,9 +326,24 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
             </div>
             <div className="text-[9px] text-orange-400 font-black uppercase mb-1 tracking-widest">커버 속도</div>
             <div className="text-2xl font-black text-white mb-1">
-              {debateData?.visuals?.backupLatency === "N/A" ? "N/A" : (debateData?.visuals?.backupLatency || "0.00s")}
+              {debateData?.visuals?.latency?.backup || debateData?.visuals?.backupLatency || "측정 불가"}
             </div>
-            <div className="text-[8px] text-gray-500 font-medium leading-tight">아군 기절 시 백업</div>
+            {(debateData?.visuals?.latency?.opportunity || debateData?.visuals?.latency?.backup === "측정 불가" || debateData?.visuals?.backupLatency === "측정 불가") && (
+              <div className="text-[10px] text-orange-400/80 font-black mb-1">
+                {debateData?.visuals?.latency?.opportunity || "기록 없음"}
+              </div>
+            )}
+            {debateData?.visuals?.latency?.backup === "측정 불가" || debateData?.visuals?.backupLatency === "측정 불가" ? (
+              <div className="text-[8px] text-orange-300/50 font-bold leading-tight">
+                아군 기절 시 교전 참여 기록이 <br/> 최근 10경기 내에 없습니다.
+              </div>
+            ) : debateData?.visuals?.backupLatency === "상황 없음" ? (
+              <div className="text-[8px] text-emerald-400/50 font-bold leading-tight">
+                최근 10경기 동안 아군이 <br/> 기절한 상황 자체가 없었습니다.
+              </div>
+            ) : (
+              <div className="text-[8px] text-gray-500 font-medium leading-tight">아군 기절 시 백업</div>
+            )}
           </div>
         </div>
       </div>
@@ -337,7 +359,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
               <div className="w-8 h-8 bg-emerald-500/20 rounded-lg flex items-center justify-center">
                 <ShieldAlert size={16} className="text-emerald-400" />
               </div>
-              <span className="text-white font-black">10경기 전술 마스터리 (V3.0)</span>
+              <span className="text-white font-black">10경기 전술 마스터리 (V5.0)</span>
             </div>
             
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
@@ -350,7 +372,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
                   </span>
                 )}
                 <div className="w-full h-1 bg-white/5 rounded-full mt-1 overflow-hidden">
-                  <div className="h-full bg-orange-400" style={{ width: debateData.visuals.tactical.suppRate }} />
+                  <div className="h-full bg-orange-400" style={{ width: `${parseRate(debateData.visuals.tactical.suppRate)}%` }} />
                 </div>
               </div>
               <div className="flex flex-col gap-1">
@@ -367,7 +389,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
                   </div>
                 )}
                 <div className="w-full h-1 bg-white/5 rounded-full mt-1 overflow-hidden">
-                  <div className="h-full bg-blue-400" style={{ width: debateData.visuals.tactical.smokeRate }} />
+                  <div className="h-full bg-blue-400" style={{ width: `${parseRate(debateData.visuals.tactical.smokeRate)}%` }} />
                 </div>
               </div>
               <div className="flex flex-col gap-1">
@@ -379,11 +401,11 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
                   </span>
                 )}
                 <div className="w-full h-1 bg-white/5 rounded-full mt-1 overflow-hidden">
-                  <div className="h-full bg-pink-400" style={{ width: debateData.visuals.tactical.reviveRate }} />
+                  <div className="h-full bg-pink-400" style={{ width: `${parseRate(debateData.visuals.tactical.reviveRate)}%` }} />
                 </div>
               </div>
               <div className="flex flex-col gap-1">
-                <span className="text-[10px] text-purple-400 font-black uppercase">복수/미끼 누적</span>
+                <span className="text-[10px] text-purple-400 font-black uppercase">전술 대응력 (복수/미끼)</span>
                 <span className="text-2xl font-black text-white">{debateData.visuals.tactical.baitCount}회</span>
                 <div className="text-[9px] text-gray-500 font-bold mt-1">최근 10경기 합계</div>
               </div>

@@ -24,11 +24,12 @@ export async function POST(request: Request) {
       .from("processed_match_telemetry")
       .select("match_id, data")
       .in("match_id", matchIds.slice(0, 10))
+      .eq("player_id", lowerNickname);
     const cachedMap: Map<string, any> = new Map();
     if (cachedMatches) {
       cachedMatches.forEach(m => {
         const fullResult = (m.data as any)?.fullResult;
-        if (fullResult && fullResult.v >= 4.9) cachedMap.set(m.match_id, fullResult);
+        if (fullResult && fullResult.v >= 5.0 && fullResult.tradeStats?.suppCount !== undefined) cachedMap.set(m.match_id, fullResult);
       });
     }
     
@@ -53,7 +54,7 @@ export async function POST(request: Request) {
             const res = await fetch(`${baseUrl}/api/pubg/match?matchId=${id}&nickname=${nickname}&platform=${platform}`);
             if (res.ok) {
               const data = await res.json();
-              if (data && data.v >= 4.9) {
+              if (data && data.v >= 5.0 && data.tradeStats?.suppCount !== undefined) {
                 newResultsMap.set(id, data);
               }
             }
@@ -76,19 +77,23 @@ export async function POST(request: Request) {
     const totalKills = detailedMatches.reduce((acc: number, m: any) => acc + (m.stats?.kills || 0), 0);
     const totalDamage = detailedMatches.reduce((acc: number, m: any) => acc + (m.stats?.damageDealt || 0), 0);
     const avgDamage = Math.floor(totalDamage / detailedMatches.length);
+    const avgKills = Number((totalKills / detailedMatches.length).toFixed(1));
     
     // [V37] itemUseSummary 활용
     const totalSmokesUsed = detailedMatches.reduce((acc: number, m: any) => acc + (m.itemUseSummary?.smokes || 0), 0);
     const totalFragsUsed = detailedMatches.reduce((acc: number, m: any) => acc + (m.itemUseSummary?.frags || 0), 0);
     
-    let totalDeathDistanceSum = 0;
-    let deathDistanceCount = 0;
+    let totalTeammateKnocks = 0, totalSuppCount = 0, totalSmokeCount = 0, totalRevCount = 0, totalBaitCount = 0;
+    let totalDangerousKnocks = 0, totalSmokeOpps = 0, totalTeamSmokeCovered = 0, totalEnemyTeamWipes = 0;
+    let totalDeathDistanceSum = 0, deathDistanceCount = 0;
     const backupLatencies: number[] = [];
     const reactionLatencies: number[] = [];
-    let teamWipeMatches = 0;
-    const allWipeTimelines: any[] = [];
+    const goldenTime = { early: 0, mid1: 0, mid2: 0, late: 0 };
+    const killContrib = { solo: 0, cleanup: 0, other: 0 };
+    let bluezoneWasteMatches = 0;
 
     detailedMatches.forEach((m: any) => {
+      // 1. 거리 및 전멸 집계
       if (m.teammateDistancesAtDeath) {
         const distances = Object.values(m.teammateDistancesAtDeath) as number[];
         if (distances.length > 0) {
@@ -96,43 +101,31 @@ export async function POST(request: Request) {
           deathDistanceCount++;
         }
       }
-      if (m.teamWipeOccurred) {
-        teamWipeMatches++;
-        if (m.wipeTimeline) allWipeTimelines.push(m.wipeTimeline);
+      if (m.tradeStats?.enemyTeamWipes) {
+        totalEnemyTeamWipes += m.tradeStats.enemyTeamWipes;
       }
-      
-      // [V2.3] 커버(Backup) 및 반응(Reaction) 속도 집계
+
+      // 2. 레이턴시 집계
       if (m.tradeStats?.backupLatencyMs && m.tradeStats.backupLatencyMs > 0) {
         backupLatencies.push(m.tradeStats.backupLatencyMs);
       } else if (m.tradeStats?.tradeLatencyMs && m.tradeStats.tradeLatencyMs > 0) {
-        // 하위 호환성 유지
         backupLatencies.push(m.tradeStats.tradeLatencyMs);
       }
-
       if (m.tradeStats?.reactionLatencyMs && m.tradeStats.reactionLatencyMs > 0) {
         reactionLatencies.push(m.tradeStats.reactionLatencyMs);
       }
-    });
 
-    let totalTeammateKnocks = 0, totalSuppCount = 0, totalSmokeCount = 0, totalRevCount = 0, totalBaitCount = 0;
-    let totalDangerousKnocks = 0, totalSmokeOpps = 0, totalTeamSmokeCovered = 0;
-    const goldenTime = { early: 0, mid1: 0, mid2: 0, late: 0 };
-    const killContrib = { solo: 0, cleanup: 0, other: 0 };
-    let bluezoneWasteMatches = 0;
-
-    detailedMatches.forEach((m: any) => {
-      // [V3.0] 전술 지표 집계
+      // 3. 전술 지표 집계
       totalTeammateKnocks += m.tradeStats?.teammateKnocks || 0;
       totalDangerousKnocks += m.tradeStats?.dangerousKnocks ?? m.tradeStats?.teammateKnocks ?? 0;
       totalSuppCount += m.tradeStats?.suppCount || 0;
-      // smokeOpps는 dangerousKnocks와 동일 (위험 상황 전체가 연막 기회)
       totalSmokeOpps += m.tradeStats?.smokeOpps ?? m.tradeStats?.dangerousKnocks ?? m.tradeStats?.teammateKnocks ?? 0;
       totalSmokeCount += m.tradeStats?.smokeCount || 0;
       totalTeamSmokeCovered += m.tradeStats?.teamSmokeCovered || 0;
       totalRevCount += m.tradeStats?.revCount || 0;
       totalBaitCount += m.tradeStats?.baitCount || 0;
 
-      // [V37] 골든 타임 및 킬 기여도
+      // 4. 골든 타임 및 킬 기여도
       if (m.goldenTimeDamage && (m.survivalTimeSec || 0) >= 600) {
         goldenTime.early += m.goldenTimeDamage.early;
         goldenTime.mid1 += m.goldenTimeDamage.mid1;
@@ -155,7 +148,7 @@ export async function POST(request: Request) {
     const avgDeathDistanceStr = deathDistanceCount > 0 ? `${Math.round(totalDeathDistanceSum / deathDistanceCount)}m` : "측정 불가";
     const avgBackupLatency = backupLatencies.length > 0 
       ? (backupLatencies.reduce((a, b) => a + b, 0) / backupLatencies.length / 1000).toFixed(2) + "s" 
-      : "N/A";
+      : (totalTeammateKnocks === 0 ? "상황 없음" : "측정 불가");
     const avgReactionLatency = reactionLatencies.length > 0 
       ? (reactionLatencies.reduce((a, b) => a + b, 0) / reactionLatencies.length / 1000).toFixed(2) + "s" 
       : "N/A";
@@ -189,23 +182,22 @@ export async function POST(request: Request) {
       { key: "smoke", gap: 60 - (totalTeammateKnocks > 0 ? Math.round((totalSmokeCount / totalTeammateKnocks) * 100) : 0), label: "연막 세이브 확률", hint: `성공률 ${ totalTeammateKnocks > 0 ? Math.round((totalSmokeCount / totalTeammateKnocks) * 100) : 0 }% (권장 60%)` },
       { key: "revive", gap: 80 - (totalTeammateKnocks > 0 ? Math.round((totalRevCount / totalTeammateKnocks) * 100) : 0), label: "부활 기여도", hint: `직접 부활 ${ totalTeammateKnocks > 0 ? Math.round((totalRevCount / totalTeammateKnocks) * 100) : 0 }% (권장 80%)` },
       { key: "distance", gap: userAvgDist - avgRealDeathDistanceFinal, label: "팀워크 및 거리", hint: `평균 거리 ${userAvgDist}m (상위권 ${avgRealDeathDistanceFinal}m)` },
-      { key: "wipe", gap: (teamWipeMatches - 2) * 20, label: "전술적 몰살", hint: `실제 발생 ${teamWipeMatches}회 (상위권 2회 미만)` },
+      { key: "wipe", gap: (2 - (totalEnemyTeamWipes / detailedMatches.length)) * 20, label: "전술적 몰살", hint: `팀 전멸 기여 ${totalEnemyTeamWipes}회 (상위권 경기당 2회 이상 참여)` },
+      { key: "damage", gap: (avgBaselineDamageFinal - avgDamage) / 5, label: "전술적 화력 효율", hint: `평균 딜량 ${avgDamage} (Benchmark ${avgBaselineDamageFinal})` },
       ...(totalTeammateKnocks > 0 ? [{ 
-        key: "trade", gap: 70 - avgTradeSuccessRate, label: "복수 성공률", 
-        hint: `트레이드 성공률 ${avgTradeSuccessRate}% (권장 70%)` 
+        key: "trade", gap: 70 - avgTradeSuccessRate, label: "전술 대응력", 
+        hint: `전술 대응력 ${avgTradeSuccessRate}% (권장 70%)` 
       }] : [])
     ];
     
-    const sortedByGap = [...metrics].sort((a, b) => b.gap - a.gap);
-    const weaknesses = sortedByGap.slice(0, 2);
+    // [V5.07] 딜량 지표는 전술의 핵심이므로 항상 포함하고, 나머지는 Gap 순위로 선정
+    const damageMetric = metrics.find(m => m.key === "damage")!;
+    const otherMetrics = metrics.filter(m => m.key !== "damage")
+      .sort((a, b) => b.gap - a.gap)
+      .slice(0, 3);
     
-    const strengths = [...metrics]
-      .filter(m => !weaknesses.some(w => w.key === m.key))
-      .sort((a, b) => a.gap - b.gap)
-      .slice(0, 2);
-
-    const top4Issues = [...weaknesses, ...strengths];
-
+    const top4Issues = [damageMetric, ...otherMetrics].filter(Boolean);
+    
     const issueGuides = top4Issues.map((issue, idx) => {
       const type = issue.gap > 0 ? "약점" : "강점";
       return `${idx + 1}. (${type}) ${issue.label}: ${issue.hint}`;
@@ -216,62 +208,82 @@ export async function POST(request: Request) {
     const mainMode = Object.entries(modeCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || "squad";
 
     const promptLines = [
-      "당신은 PUBG 전문 분석가 팀입니다. 두 명의 코치가 [" + mainMode + "] 모드 데이터를 바탕으로 유저의 최근 10경기 데이터를 정밀 토론합니다. 이 과정은 상호 비방과 데이터에 기반한 논리적 공방으로 진행되며, 최종 응답은 반드시 지정된 JSON 포맷만 출력해야 합니다.",
+      "당신들은 PUBG 전술 분석 데스크의 두 전문 코치입니다. 주어진 유저의 최근 10경기 V5.0 전술 데이터(Tactical Analytics)를 바탕으로, 단순한 수치 나열이 아닌 '상황적 맥락'과 '전술적 판단'에 대한 심도 있는 끝장 토론을 진행하십시오.",
       "",
-      "[토론 구조 강화 규칙 - '독백 금지']",
-      "- 'KIND COACH'와 'SPICY BOMBER'는 서로의 주장을 경청하고 반박하는 '대화형 토론'을 진행해야 합니다.",
-      "- kindOpinion은 반드시 spicyOpinion의 핵심 비판을 직접 인용하고 반박하는 문장으로 시작하십시오.",
-      "- spicyOpinion은 팩트로 유저를 압박하며 독설을 아끼지 마십시오.",
-      "- 두 코치 모두 '그러나', '반면에', '그건 오산입니다' 같은 반박 접속사를 반드시 사용하십시오.",
+      "[코치 페르소나 설정]",
+      "1. KIND COACH (전술적 옹호자 & 멘탈 케어):",
+      "   - 유저의 플레이에 숨겨진 '이타적 헌신'과 '전술적 의도'를 찾아냅니다.",
+      "   - 킬/데스와 같은 표면적 결과보다 연막 투척, 견제 사격, 부활 시도 등 V5.0 지표를 근거로 칭찬합니다.",
+      "   - SPICY의 비판을 수용하되, \"하지만 그 상황에선 최선의 선택이었습니다\"라며 데이터를 기반으로 방어합니다.",
+      "2. SPICY BOMBER (냉혹한 실적주의 분석가):",
+      "   - 오직 결과와 벤치마크(상위권 평균)를 기준으로 팩트 폭격을 가하지만, 단순히 '부활' 수치 하나로 플레이를 평가하지 않습니다.",
+      "   - 아군이 기절했을 때 유저가 '무엇'을 했는지(연막 투척, 견제 사격, 백업 딜링)를 종합적으로 보고, 아무것도 하지 않았을 때만 날카롭게 비판합니다.",
+      "   - \"구급상자\" 같은 초보적인 비유는 절대 금지하며, '부활(Revive)', '트레이드(Trade)', '백업 사격' 등 전문 전술 용어만 사용하십시오.",
+      "   - \"부활을 안 한 게 문제가 아니라, 그 시간에 적을 압박하지 못한 게 실책입니다\"처럼 전술적 공백을 찌르는 비판을 합니다.",
       "",
-      "[데이터 벤치마크 (상위권 평균)]",
-      `- 상위권 반격 속도(Backup): ${avgRealTradeLatencyFinal}초`,
-      `- 상위권 선제 타격 성공률: ${avgRealInitiativeSuccessFinal}%`,
-      `- 상위권 평균 팀원 거리: ${avgRealDeathDistanceFinal}m`,
+      "[토론 전개 및 대화형 구조 규칙 (매우 중요)]",
+      "- '독백'은 절대 금지됩니다. 두 코치의 의견은 반드시 핑퐁(Ping-pong)처럼 이어져야 합니다.",
+      "- SPICY가 먼저 문제점을 날카롭게 찌르면(spicyOpinion), KIND가 SPICY의 논리를 직접 언급(\"SPICY 코치님 말씀도 맞지만...\")하며 반박하는(kindOpinion) 흐름을 만드십시오.",
+      "- 모든 주장은 반드시 하단에 제공된 [분석 데이터]의 숫자를 명시적으로 인용해야 합니다. (예: \"견제 사격을 5회나...\")",
+      "",
+      "- '부활 성공률'이 낮더라도 '견제 사격'이나 '연막 세이브' 확률이 높다면, 이는 '직접 구호' 대신 '화력 지원'과 '시야 차단'으로 팀원을 보호한 유능한 전술적 선택으로 해석하십시오. 이 경우 '팀워크 부족'으로 비난하는 것은 절대 금지입니다.",
+      "- 모든 수치는 상호 연관되어 있습니다. 예를 들어 '팀원 거리'가 가깝고 '부활 기여도'만 낮다면 '교전 최전방에서 먼저 쓰러졌거나 적을 먼저 잡았기 때문'이라는 점을 적극 반영하십시오.",
       "",
       "[이번 분석의 핵심 쟁점 - 반드시 아래 4가지 주제로 다룰 것]",
       issueGuides,
       "",
-      "반드시 아래 구조의 JSON 객체로 응답하세요.",
+      "[승패(Winner) 판정 및 평가(Evaluation) 가이드라인]",
+      "- 무승부(draw): 유저의 지표가 벤치마크와 거의 일치하거나, 의도는 좋았으나 결과가 아쉬울 때. 두 코치가 서로 한 발씩 양보하며 결론을 냅니다.",
+      "- KIND 승리(kind): 유저의 전술적 지표(연막, 견제, 부활)나 반응 속도가 상위권 기준을 상회할 때. SPICY 교관도 수긍해야 합니다.",
+      "- SPICY 승리(spicy): 유저의 지표가 벤치마크에 심각하게 미달할 때. 핑계의 여지가 없는 치명적 실수일 경우.",
+      "- evaluation(최종 평가): 두 코치의 논쟁을 하나로 요약하고, 해당 주제에 대한 유저의 '현재 상태 진단'을 한 문장으로 명확히 정리하십시오.",
+      "",
+      "[데이터 벤치마크 (Elite Standard)]",
+      `- 상위권 반격 속도(Backup): ${avgRealTradeLatencyFinal}초 이내`,
+      `- 상위권 선제 타격 효율: ${avgRealInitiativeSuccessFinal}% 이상`,
+      `- 상위권 평균 팀원 거리: ${avgRealDeathDistanceFinal}m 내외`,
+      "",
+      "반드시 아래 구조의 JSON 객체로만 응답하세요. 백틱(```)이나 추가 텍스트 없이 순수 JSON만 출력하십시오.",
       "{",
-      '  "signature": "유니크한 마스터리 타이틀",',
-      '  "signatureSub": "플레이 스타일 정의",',
+      '  "visuals": {',
+      '    "latency": { "backup": "0.00s", "opportunity": "아군 기절 상황 횟수 (예: 14회)" }',
+      '  },',
+      '  "signature": "유저의 플레이 스타일을 관통하는 칭호 (예: 칠흑의 연막 마에스트로)",',
+      '  "signatureSub": "해당 칭호를 부여한 전술적 이유 (1문장)",',
       '  "debateIssues": [',
       "    {",
-      '      "topic": "주제",',
-      '      "question": "핵심 질문",',
-      '      "kindOpinion": "반박으로 시작하는 옹호",',
-      '      "spicyOpinion": "허점을 찌르는 팩트 폭격",',
-      '      "winner": "kind | spicy | tie 중 선택. (중요: 유저 수치가 벤치마크와 일치하거나 더 우수하면 반드시 tie 또는 kind를 선택할 것. 억지 비난 금지)",',
-      '      "reason": "판정 이유 (데이터에 기반하여 1문장으로 작성)",',
-      '      "evaluation": "전체적인 요약 및 향후 훈련 방향 (다정한 코치와 독설 교관이 합의한 최종 결론)",',
-      '      "userStats": [{ "label": "항목", "value": "수치", "detail": "예: 3/5회 또는 N/A" }],',
-      '      "benchmarkStats": [{ "label": "항목(업계평균)", "value": "수치", "detail": "예: 권장값 또는 N/A" }]',
+      '      "topic": "쟁점의 핵심 키워드",',
+      '      "question": "토론의 화두가 되는 날카로운 질문 (예: 아군이 쓰러졌을 때 그의 총구는 어디를 향했는가?)",',
+      '      "spicyOpinion": "상위권 지표와 비교하여 문제점을 짚어내는 SPICY의 차가운 독설",',
+      '      "kindOpinion": "SPICY의 주장을 맞받아치며 전술적 이타성을 옹호하는 KIND의 따뜻한 반박",',
+      '      "winner": "kind | spicy | draw",',
+      '      "reason": "해당 판정이 내려진 결정적 이유 (데이터 기반 1문장)",',
+      '      "evaluation": "해당 쟁점에 대한 종합적인 피드백 및 개선 방향 (두 코치의 합의점)",',
+      '      "userStats": [{ "label": "항목명", "value": "실제 수치", "detail": "보충 설명" }],',
+      '      "benchmarkStats": [{ "label": "항목명", "value": "상위권 평균", "detail": "기준값" }]',
       "    }",
       "  ],",
-      "[판정 가이드라인]",
-      "1. 데이터가 상위권 벤치마크보다 우수할 경우(예: 몰살 0회, 거리 30m 유지 등), 독설 교관의 '억지 비난'은 절대 승리할 수 없습니다. 이 경우 반드시 'kind' 승리 또는 'tie' 판정을 내리십시오.",
-      "2. '매운맛'의 논리가 아무리 화려해도 수치적 팩트(Benchmark 달성 여부)를 이길 수 없습니다. 수치가 증명한다면 다정한 코치의 칭찬이 정답입니다.",
-      "3. 'spicy' 판정은 유저의 지표가 벤치마크에 미달하여 명백한 개선이 필요할 때만 제한적으로 사용하십시오.",
-      "4. 수치가 벤치마크와 완벽히 일치하면 무조건 'tie' 판정을 내리십시오.",
-      "",
-      '  "finalVerdict": "최종 판결",',
-      '  "actionItems": [{ "icon": "🎯", "title": "지침", "desc": "조언" }]'
+      '  "finalVerdict": "유저의 최근 10경기에 대한 총평 (명언이나 강렬한 한 줄 평)",',
+      '  "actionItems": [',
+      '    { "icon": "🎯", "title": "구체적인 훈련 목표 (예: 연막탄 단축키 지정)", "desc": "실제 게임에 즉시 적용 가능한 실전 팁" }',
+      "  ]",
+      "}"
     ];
 
     const finalPrompt = promptLines.join("\n");
     const userPrompt = `
-### 📊 분석 데이터 및 코칭 가이드
-- [V3.0 전술 기여] 견제 사격: ${totalSuppCount}회, 연막 세이브: ${totalSmokeCount}회, 직접 부활: ${totalRevCount}회, 복수/미끼 성공: ${totalBaitCount}회
-- [실측] 선제 공격 시도: ${detailedMatches.reduce((acc: number, m: any) => acc + (m.initiativeStats?.total || 0), 0)}회, 성공률: ${userInitiativeRate}% (벤치마크: ${avgRealInitiativeSuccessFinal}%)
+### 📊 [핵심] V5.0 화력 및 전술 실측 데이터
+- 평균 화력: 10경기 평균 딜량 ${avgDamage} (엘리트 벤치마크: ${avgBaselineDamageFinal}), 평균 ${avgKills}킬
+- 전술 기여: 견제 사격 ${totalSuppCount}회, 연막 세이브 ${totalSmokeCount}회, 직접 부활 ${totalRevCount}회, 전술 대응 ${totalBaitCount}회
+- [실측] 선제 공격 시도: ${detailedMatches.reduce((acc: number, m: any) => acc + (m.initiativeStats?.total || 0), 0)}회, 성공률: ${userInitiativeRate}% (Benchmark: ${avgRealInitiativeSuccessFinal}%)
 - [실측] 평균 반응 속도(Reaction): ${avgReactionLatency} (피격 시 반격 시간)
 - [실측] 평균 커버 속도(Backup): ${avgBackupLatency} (아군 기절 시 지원 시간)
-- [V3.0] 골든 타임 분석: 0-5분(${goldenTime.early}), 5-15분(${goldenTime.mid1}), 15-25분(${goldenTime.mid2}), 25분+(${goldenTime.late})
-- [V3.0] 킬 기여도: 솔로킬(${killContrib.solo}), 클린업(${killContrib.cleanup})
-- [V3.0] 블루존 낭비: 10경기 중 ${bluezoneWasteMatches}회
-- 리스크: 전술적 몰살 ${teamWipeMatches}회, 평균 팀원 거리 ${userAvgDist}m (상위권: ${avgRealDeathDistanceFinal}m)
+- [V5.0] 골든 타임 분석: 0-5분(${goldenTime.early}), 5-15분(${goldenTime.mid1}), 15-25분(${goldenTime.mid2}), 25분+(${goldenTime.late})
+- [V5.0] 킬 기여도: 솔로킬(${killContrib.solo}), 클린업(${killContrib.cleanup})
+- [V5.0] 블루존 낭비: 10경기 중 ${bluezoneWasteMatches}회
+- 리스크: 전술적 몰살(팀 전멸 기여) ${totalEnemyTeamWipes}회, 평균 팀원 거리 ${userAvgDist}m (Elite: ${avgRealDeathDistanceFinal}m)
 - 아군 기절 총 횟수: ${totalTeammateKnocks}회 (이 중 ${totalSuppCount + totalSmokeCount + totalRevCount}회 전술적 대응 완료)
-- 트레이드 커버 속도: ${avgBackupLatency} (권장: 1.8s 미만)
+- 트레이드 커버 권장 속도: 1.8s 미만 (현재 유저: ${avgBackupLatency})
 `;
 
     const genAI = new GoogleGenerativeAI(geminiApiKey);
@@ -301,7 +313,7 @@ export async function POST(request: Request) {
         });
         const response = await model.generateContent(finalPrompt + "\n\n" + userPrompt);
         fullText = response.response.text();
-        if (fullText) break; 
+        if (fullText) break;
       } catch (err: any) { 
         console.warn(`[AI-SUMMARY] ${modelName} failed:`, err.message);
         continue; 
@@ -322,8 +334,16 @@ export async function POST(request: Request) {
       cleanJson = cleanJson.substring(startIdx, endIdx + 1);
       const parsed = JSON.parse(cleanJson);
       
-      // [V3.0] 서버 실측 시각화 데이터 준비
+      // [V5.07] 서버 실측 시각화 및 데이터 보정 로직 복구
+      if (!parsed.visuals) parsed.visuals = {};
+      if (!parsed.visuals.latency) parsed.visuals.latency = {};
+      
+      // 실측 데이터 강제 주입 (AI 누락 방지)
+      parsed.visuals.latency.backup = avgBackupLatency;
+      parsed.visuals.latency.opportunity = `아군 기절 상황 ${totalTeammateKnocks}회`;
+      
       const precomputedVisuals = {
+        ...parsed.visuals,
         backupLatency: avgBackupLatency,
         reactionLatency: avgReactionLatency,
         initiativeSuccess: !isNaN(userInitiativeRate) ? `${userInitiativeRate}%` : "0%",
@@ -342,12 +362,10 @@ export async function POST(request: Request) {
         }
       };
 
-      const finalData = {
+      return NextResponse.json({
         ...parsed,
         visuals: precomputedVisuals
-      };
-
-      return NextResponse.json(finalData);
+      });
     } catch (e) {
       console.error("[AI-SUMMARY] Parse Error:", e, fullText);
       // 파싱 실패 시 텍스트라도 응답 (폴백)
