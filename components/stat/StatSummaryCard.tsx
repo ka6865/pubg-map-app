@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { HelpCircle } from "lucide-react";
+import { HelpCircle, Trophy, Target, Swords, Shield, Clock, Crosshair, Users } from "lucide-react";
 
 const getKDA = (k: number, a: number, d: number) => ((k + a) / (d || 1)).toFixed(2);
 const getWinRate = (w: number, p: number) => (p > 0 ? ((w / p) * 100).toFixed(1) : "0.0");
@@ -12,195 +12,154 @@ const getSurvivalTime = (time: number, p: number) => {
   return `${Math.floor(avgSec / 60)}분 ${avgSec % 60}초`;
 };
 
-/**
- * 특정 게임 모드(솔로, 듀오, 스쿼드)의 통계 수치를 요약하여 보여주는 카드 컴포넌트입니다.
- */
-export const StatSummaryCard = ({
-  title,
-  data,
-  isRanked,
-}: {
-  title: string;
-  data: any;
-  isRanked: boolean;
-}) => {
+export const StatSummaryCard = ({ title, data, isRanked }: { title: string; data: any; isRanked: boolean }) => {
   const [showTooltip, setShowTooltip] = useState(false);
 
   if (!data || data.roundsPlayed === 0) {
     return (
-      <div
-        style={{
-          flex: 1,
-          minWidth: "300px",
-          backgroundColor: "#1a1a1a",
-          border: "1px solid #333",
-          borderRadius: "12px",
-          padding: "20px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "#666",
-        }}
-      >
+      <div className="flex-1 min-w-[340px] h-[480px] bg-black/40 border border-white/5 rounded-[40px] flex items-center justify-center text-white/20 font-black uppercase tracking-widest backdrop-blur-md">
         {title} 기록 없음
       </div>
     );
   }
 
-  const top10 = isRanked
-    ? (data.top10Ratio * 100).toFixed(1)
-    : getWinRate(data.top10s, data.roundsPlayed);
+  const top10 = isRanked ? (data.top10Ratio * 100).toFixed(1) : getWinRate(data.top10s, data.roundsPlayed);
 
   return (
-    <div
-      style={{
-        flex: 1,
-        minWidth: "300px",
-        backgroundColor: "#1a1a1a",
-        border: "1px solid #333",
-        borderRadius: "12px",
-        overflow: "hidden",
-      }}
-    >
-      <div
-        style={{
-          padding: "15px 20px",
-          backgroundColor: isRanked ? "#3b2f15" : "#252525",
-          borderBottom: "1px solid #333",
-          fontWeight: "bold",
-          display: "flex",
-          justifyContent: "space-between",
-        }}
-      >
-        <span>{title}</span>
-        {isRanked && (
-          <span style={{ color: "#F2A900" }}>
-            {data.currentTier?.tier || "Unranked"} {data.currentTier?.subTier || ""} ({data.currentRankPoint || 0} RP)
-          </span>
-        )}
-      </div>
-      <div
-        style={{
-          padding: "20px",
-          display: "grid",
-          gridTemplateColumns: "repeat(3, 1fr)",
-          gap: "20px",
-        }}
-      >
-        <div>
-          <div style={{ color: "#888", fontSize: "12px", marginBottom: "5px" }}>KDA</div>
-          <div style={{ fontSize: "18px", fontWeight: "bold", color: "#F2A900" }}>
-            {getKDA(data.kills, data.assists, data.deaths || data.losses)}
+    <div className="flex-1 min-w-[340px] h-[480px] bg-black/60 border border-white/10 rounded-[40px] overflow-hidden shadow-2xl backdrop-blur-2xl group transition-all hover:border-indigo-500/30 flex flex-col">
+      {/* Header Section */}
+      <div className={`p-8 bg-gradient-to-br ${isRanked ? 'from-amber-600/20 to-transparent' : 'from-gray-600/20 to-transparent'} relative shrink-0`}>
+        <div className="absolute top-0 right-0 p-6 opacity-10 group-hover:scale-110 transition-transform">
+          {isRanked ? <Trophy size={64} className="text-amber-500" /> : <Shield size={64} className="text-gray-400" />}
+        </div>
+        
+        <div className="flex flex-col gap-2 relative z-10">
+          <div className="flex items-center gap-3">
+            <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${isRanked ? 'bg-amber-500/20 text-amber-500 border border-amber-500/30' : 'bg-gray-500/20 text-gray-400 border border-gray-500/30'}`}>
+              {isRanked ? "경쟁전" : "일반전"}
+            </span>
+            <span className="text-white/40 font-black text-xs uppercase tracking-tighter">{title} 기록</span>
           </div>
-        </div>
-        <div>
-          <div style={{ color: "#888", fontSize: "12px", marginBottom: "5px" }}>승률</div>
-          <div style={{ fontSize: "18px", fontWeight: "bold" }}>
-            {getWinRate(data.wins, data.roundsPlayed)}%
-          </div>
-        </div>
-        <div>
-          <div style={{ color: "#888", fontSize: "12px", marginBottom: "5px" }}>Top10</div>
-          <div style={{ fontSize: "18px", fontWeight: "bold" }}>{top10}%</div>
-        </div>
-        <div>
-          <div style={{ color: "#888", fontSize: "12px", marginBottom: "5px" }}>우승 횟수</div>
-          <div style={{ fontSize: "18px", fontWeight: "bold", color: "#F2A900" }}>{data.wins}회</div>
-        </div>
-        <div>
-          <div style={{ color: "#888", fontSize: "12px", marginBottom: "5px", display: "flex", alignItems: "center", gap: "4px", position: "relative" }}>
-            평균 DBNO
-            <div 
-              onMouseEnter={() => setShowTooltip(true)}
-              onMouseLeave={() => setShowTooltip(false)}
-              style={{ cursor: "help", display: "flex", alignItems: "center", color: "#F2A900" }}
-            >
-              <HelpCircle size={12} />
-            </div>
-
-            {showTooltip && (
-              <div style={{
-                position: "absolute",
-                bottom: "100%",
-                left: "0",
-                transform: "translateY(-10px)",
-                backgroundColor: "#222",
-                color: "#fff",
-                padding: "8px 12px",
-                borderRadius: "8px",
-                fontSize: "11px",
-                whiteSpace: "nowrap",
-                zIndex: 100,
-                boxShadow: "0 4px 15px rgba(0,0,0,0.6)",
-                border: "1px solid #F2A900",
-                pointerEvents: "none",
-                fontWeight: "bold",
-                animation: "fadeIn 0.2s ease-out"
-              }}>
-                DBNO: 적을 기절시킨 횟수를 의미합니다.
-                <div style={{
-                  position: "absolute",
-                  top: "100%",
-                  left: "15px",
-                  borderWidth: "5px",
-                  borderStyle: "solid",
-                  borderColor: "#F2A900 transparent transparent transparent"
-                }} />
+          
+          <div className="flex justify-between items-end">
+            <h4 className="text-2xl font-black text-white tracking-tight">{isRanked ? (data.currentTier?.tier || "Unranked") : title}</h4>
+            {isRanked && (
+              <div className="text-right">
+                <div className="text-amber-500 font-black text-xl leading-none">{data.currentRankPoint || 0} <span className="text-xs">RP</span></div>
+                <div className="text-[10px] text-white/30 font-bold uppercase tracking-widest">{data.currentTier?.subTier || ""} 티어</div>
               </div>
             )}
           </div>
-          <div style={{ fontSize: "18px", fontWeight: "bold", color: "#34A853" }}>
-            {getAvgKnockouts(data.dBNOs, data.roundsPlayed)}
+        </div>
+      </div>
+
+      {/* Stats Grid */}
+      <div className="p-8 grid grid-cols-3 gap-y-10 gap-x-6">
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2 text-white/30">
+            <Target size={12} />
+            <span className="text-[10px] font-black uppercase tracking-wider">KDA</span>
+          </div>
+          <div className="text-2xl font-black text-amber-500 tracking-tighter">
+            {getKDA(data.kills, data.assists, data.deaths || data.losses)}
           </div>
         </div>
-        <div>
-          <div style={{ color: "#888", fontSize: "12px", marginBottom: "5px" }}>평균 딜량</div>
-          <div style={{ fontSize: "18px", fontWeight: "bold", color: "#34A853" }}>
+
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2 text-white/30">
+            <Crosshair size={12} />
+            <span className="text-[10px] font-black uppercase tracking-wider">승률</span>
+          </div>
+          <div className="text-2xl font-black text-white tracking-tighter">
+            {getWinRate(data.wins, data.roundsPlayed)}%
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2 text-white/30">
+            <Users size={12} />
+            <span className="text-[10px] font-black uppercase tracking-wider">Top 10</span>
+          </div>
+          <div className="text-2xl font-black text-white tracking-tighter">{top10}%</div>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2 text-white/30">
+            <Trophy size={12} />
+            <span className="text-[10px] font-black uppercase tracking-wider">우승</span>
+          </div>
+          <div className="text-xl font-black text-amber-500">{data.wins} <span className="text-[10px] text-white/20">회</span></div>
+        </div>
+
+        <div className="flex flex-col gap-1 relative">
+          <div className="flex items-center gap-2 text-white/30">
+            <Swords size={12} />
+            <span className="text-[10px] font-black uppercase tracking-wider">평균 DBNO</span>
+            <button onMouseEnter={() => setShowTooltip(true)} onMouseLeave={() => setShowTooltip(false)} className="text-amber-500/50 hover:text-amber-500 transition-colors">
+              <HelpCircle size={10} />
+            </button>
+          </div>
+          <div className="text-xl font-black text-green-400">
+            {getAvgKnockouts(data.dBNOs, data.roundsPlayed)}
+          </div>
+          {showTooltip && (
+            <div className="absolute bottom-full left-0 mb-2 p-3 bg-black border border-amber-500/50 rounded-xl text-[10px] text-white/80 font-bold z-50 w-48 shadow-2xl animate-in fade-in slide-in-from-bottom-1">
+              DBNO: 적을 기절시킨 횟수를 의미합니다.
+            </div>
+          )}
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2 text-white/30">
+            <Target size={12} />
+            <span className="text-[10px] font-black uppercase tracking-wider">평균 딜량</span>
+          </div>
+          <div className="text-xl font-black text-green-400">
             {getAvgDmg(data.damageDealt, data.roundsPlayed)}
           </div>
         </div>
-        <div>
-          <div style={{ color: "#888", fontSize: "12px", marginBottom: "5px" }}>게임 수</div>
-          <div style={{ fontSize: "18px", fontWeight: "bold" }}>{data.roundsPlayed}</div>
+
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center gap-2 text-white/30">
+            <Users size={12} />
+            <span className="text-[10px] font-black uppercase tracking-wider">총 게임 수</span>
+          </div>
+          <div className="text-xl font-black text-white/70">{data.roundsPlayed}</div>
         </div>
+
         {isRanked ? (
-          <div>
-            <div style={{ color: "#888", fontSize: "12px", marginBottom: "5px" }}>총 어시스트</div>
-            <div style={{ fontSize: "18px", fontWeight: "bold" }}>{data.assists}</div>
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2 text-white/30">
+              <Users size={12} />
+              <span className="text-[10px] font-black uppercase tracking-wider">어시스트</span>
+            </div>
+            <div className="text-xl font-black text-white/70">{data.assists}</div>
           </div>
         ) : (
-          <div>
-            <div style={{ color: "#888", fontSize: "12px", margin: "0 0 5px 0" }}>여포 (최다킬)</div>
-            <div style={{ fontSize: "18px", fontWeight: "bold" }}>{data.roundMostKills}</div>
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2 text-white/30">
+              <Swords size={12} />
+              <span className="text-[10px] font-black uppercase tracking-wider">최다 킬</span>
+            </div>
+            <div className="text-xl font-black text-white/70">{data.roundMostKills}</div>
           </div>
         )}
+
         {!isRanked && (
-          <>
-            <div>
-              <div style={{ color: "#888", fontSize: "12px", marginBottom: "5px" }}>헤드샷</div>
-              <div style={{ fontSize: "18px", fontWeight: "bold" }}>
-                {getHeadshot(data.headshotKills, data.kills)}%
-              </div>
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2 text-white/30">
+              <Clock size={12} />
+              <span className="text-[10px] font-black uppercase tracking-wider">평균 생존</span>
             </div>
-            <div>
-              <div style={{ color: "#888", fontSize: "12px", marginBottom: "5px" }}>저격 (최장거리)</div>
-              <div style={{ fontSize: "18px", fontWeight: "bold" }}>{data.longestKill.toFixed(1)}m</div>
+            <div className="text-xs font-black text-white/50">
+              {getSurvivalTime(data.timeSurvived, data.roundsPlayed)}
             </div>
-            <div>
-              <div style={{ color: "#888", fontSize: "12px", marginBottom: "5px" }}>평균 생존</div>
-              <div style={{ fontSize: "16px", fontWeight: "bold" }}>
-                {getSurvivalTime(data.timeSurvived, data.roundsPlayed)}
-              </div>
-            </div>
-          </>
+          </div>
         )}
       </div>
-      <style>{`
-        @keyframes fadeIn {
-          from { opacity: 0; transform: translateY(-5px); }
-          to { opacity: 1; transform: translateY(-10px); }
-        }
-      `}</style>
+      
+      {/* Footer Accent */}
+      <div className={`mt-auto h-1 w-full bg-gradient-to-r ${isRanked ? 'from-amber-600 to-transparent' : 'from-indigo-600 to-transparent'} opacity-30 shrink-0`} />
     </div>
   );
 };

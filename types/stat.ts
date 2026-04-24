@@ -81,4 +81,33 @@ export interface MatchData {
     utilityDamage: number;
     utilityHits: number;
   };
+  /** [V3.0] 전술 지표 (견제, 세이브, 복수 등) */
+  tradeStats?: {
+    teammateKnocks: number;
+    suppCount: number;
+    smokeCount: number;
+    revCount: number;
+    baitCount: number;
+    backupLatencyMs: number;
+    reactionLatencyMs: number;
+    coverRate: number;
+  };
+  /** [V3.0] 상세 전술 타임라인 */
+  tacticalTimeline?: Array<{
+    victim: string;
+    distUserToTeammate: number;
+    distUserToEnemy: number;
+    heightDiff: number;
+    hasSuppression: boolean;
+    hasSmoke: boolean;
+    hasRevive: boolean;
+  }>;
+  /** [V3] 골든타임 딜량 */
+  goldenTimeDamage?: {
+    early: number;
+    mid1: number;
+    mid2: number;
+    late: number;
+  };
+  v: number;
 }

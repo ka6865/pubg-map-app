@@ -13,7 +13,12 @@ import {
   MousePointer2,
   Clock,
   Swords,
-  User
+  User,
+  Wind,
+  Heart,
+  Skull,
+  ShieldAlert,
+  TrendingUp
 } from "lucide-react";
 import type { MatchData } from "../../types/stat";
 
@@ -135,7 +140,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, onNicknameCli
 
   if (!matchData) return null;
 
-  const isRanked = matchData.gameMode.includes("ranked") || matchData.gameMode === "squad" || matchData.gameMode === "squad-fpp";
+  const isRanked = (matchData.gameMode || "").includes("ranked") || matchData.gameMode === "squad" || matchData.gameMode === "squad-fpp";
   const isWin = matchData.stats.winPlace === 1;
   const isTop10 = matchData.stats.winPlace <= 10;
   
@@ -143,8 +148,8 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, onNicknameCli
   const getTotalScale = () => {
     if (matchData.myRank?.totalTeams) return matchData.myRank.totalTeams;
     
-    const mode = matchData.gameMode.toLowerCase();
-    const isRankedMode = matchData.gameMode.includes("ranked") || isRanked;
+    const mode = (matchData.gameMode || "").toLowerCase();
+    const isRankedMode = (matchData.gameMode || "").includes("ranked") || isRanked;
     
     if (mode.includes("solo")) return 100;
     if (mode.includes("duo")) return 50;
@@ -241,6 +246,90 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, onNicknameCli
             <StatBox icon={<Shield size={16} />} label="기절시킴" value={matchData.stats.DBNOs} color="text-yellow-400" />
             <StatBox icon={<Clock size={16} />} label="생존시간" value={`${Math.floor(matchData.stats.timeSurvived / 60)}분`} color="text-green-400" />
           </div>
+
+          {/* V3.0 Tactical Contribution Dashboard */}
+          {matchData.tradeStats && (
+            <div className="mt-8">
+              <div className="flex items-center gap-2 mb-4">
+                <div className="w-8 h-8 bg-emerald-500/20 rounded-lg flex items-center justify-center">
+                  <ShieldAlert size={16} className="text-emerald-400" />
+                </div>
+                <span className="text-white font-black">전술적 기여도 (V3.0)</span>
+              </div>
+              
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <TacticalBox 
+                  icon={<Flame size={18} />} 
+                  label="견제 사격" 
+                  value={matchData.tradeStats.suppCount} 
+                  subLabel="아군 위기 시 지원"
+                  color="text-orange-400"
+                  bgColor="bg-orange-400/10"
+                />
+                <TacticalBox 
+                  icon={<Wind size={18} />} 
+                  label="연막 세이브" 
+                  value={matchData.tradeStats.smokeCount} 
+                  subLabel="골든타임(5초) 내 투척"
+                  color="text-blue-400"
+                  bgColor="bg-blue-400/10"
+                />
+                <TacticalBox 
+                  icon={<Heart size={18} />} 
+                  label="부활 성공" 
+                  value={matchData.tradeStats.revCount} 
+                  subLabel="직접 구조 완료"
+                  color="text-pink-400"
+                  bgColor="bg-pink-400/10"
+                />
+                <TacticalBox 
+                  icon={<Skull size={18} />} 
+                  label="복수/미끼 성공" 
+                  value={matchData.tradeStats.baitCount} 
+                  subLabel="아군 희생 후 제압"
+                  color="text-purple-400"
+                  bgColor="bg-purple-400/10"
+                />
+              </div>
+
+              {/* Response Latency & Backup Rate */}
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="bg-black/40 p-4 rounded-2xl border border-white/5 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-indigo-500/20 rounded-xl flex items-center justify-center">
+                      <Clock size={18} className="text-indigo-400" />
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-gray-500 font-black uppercase">평균 백업 반응속도</p>
+                      <p className="text-sm font-black text-white">
+                        {matchData.tradeStats.backupLatencyMs > 0 
+                          ? (matchData.tradeStats.backupLatencyMs / 1000).toFixed(2) + "초" 
+                          : "데이터 없음"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[10px] text-gray-500 font-black uppercase">커버 성공률</p>
+                    <p className="text-lg font-black text-indigo-400">{matchData.tradeStats.coverRate}%</p>
+                  </div>
+                </div>
+                
+                <div className="bg-black/40 p-4 rounded-2xl border border-white/5 flex items-center gap-3">
+                  <div className="w-10 h-10 bg-amber-500/20 rounded-xl flex items-center justify-center">
+                    <TrendingUp size={18} className="text-amber-500" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-gray-500 font-black uppercase">순수 반응 속도 (Reaction)</p>
+                    <p className="text-sm font-black text-white">
+                      {matchData.tradeStats.reactionLatencyMs > 0 
+                        ? (matchData.tradeStats.reactionLatencyMs / 1000).toFixed(2) + "초" 
+                        : "데이터 없음"}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* AI Analysis Section */}
           <div className="mt-8">
@@ -367,5 +456,18 @@ const StatBox = ({ icon, label, value, color }: { icon: React.ReactNode, label: 
     <div className={`${color} mb-1 opacity-70 group-hover:scale-110 transition-transform`}>{icon}</div>
     <span className="text-[10px] text-gray-500 font-black uppercase tracking-tighter">{label}</span>
     <span className="text-lg font-black text-white">{value}</span>
+  </div>
+);
+
+const TacticalBox = ({ icon, label, value, subLabel, color, bgColor }: { icon: React.ReactNode, label: string, value: number, subLabel: string, color: string, bgColor: string }) => (
+  <div className={`p-4 rounded-3xl border border-white/5 ${bgColor} flex flex-col gap-3 group hover:border-white/20 transition-all`}>
+    <div className="flex items-center justify-between">
+      <div className={`${color} group-hover:scale-110 transition-transform`}>{icon}</div>
+      <span className="text-2xl font-black text-white">{value}</span>
+    </div>
+    <div>
+      <p className="text-[11px] text-white font-black uppercase tracking-tight">{label}</p>
+      <p className="text-[9px] text-gray-500 font-bold leading-tight mt-1">{subLabel}</p>
+    </div>
   </div>
 );

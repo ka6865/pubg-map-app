@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 
 // [AI-ANALYZE] 총기 코드명 → 한글명 변환 (매치 단일 분석용)
 export async function POST(request: Request) {
@@ -24,7 +24,7 @@ export async function POST(request: Request) {
     }
 
     const { 
-      stats, mapName, gameMode, totalTeamKills, 
+      stats, mapName, gameMode = "squad", totalTeamKills, 
       killDetails = [], dbnoDetails = [], team = [], 
       itemUseDetails = [], damageDetails = [], 
       myEarlyBluezoneDamage = 0, myLateBluezoneDamage = 0, 
@@ -166,12 +166,14 @@ export async function POST(request: Request) {
 - 교전 효율(Trade): ${tradeEfficiency} (낸 데미지 / 받은 데미지. 1.0 이상이면 피킹/교전 우위)
 - 아군 백업: ${backupStatus}
 
-[V3 전술 분석 지표]
-- 상대적 우위: 매치 딜량 상위 ${100 - myRank.damagePercentile}% (정규 참가자 ${matchStats.totalParticipants}명 중 딜량 ${myRank.damageRank}위 / 킬 ${myRank.killRank}위)
-- 매치 평균 대비: 내 딜량(${Math.floor(stats.damageDealt)}) vs 매치 평균(${matchStats.avgDamage})
-- 교전 압박(Pressure): 총 ${combatPressure.totalHits}회 적중 / ${combatPressure.uniqueVictims?.length || 0}명의 적을 동시에 압박
-- 피킹 정밀도: 최대 적중 거리 ${combatPressure.maxHitDistance}m (기절 여부와 무관한 순수 타격 기록)
-- 투척물 효율: ${combatPressure.utilityHits}회 적중 / 누적 데미지 ${combatPressure.utilityDamage} (수류탄/화염병 등)
+[V3.0 전술 분석 지표]
+- 상대적 우위: 매치 딜량 상위 ${100 - (myRank?.damagePercentile || 0)}% (정규 참가자 ${matchStats?.totalParticipants || 0}명 중 딜량 ${myRank?.damageRank || 0}위 / 킬 ${myRank?.killRank || 0}위)
+- 매치 평균 대비: 내 딜량(${Math.floor(stats.damageDealt)}) vs 매치 평균(${matchStats?.avgDamage || 0})
+- 교전 압박(Pressure): 총 ${combatPressure?.totalHits || 0}회 적중 / ${combatPressure?.uniqueVictims?.length || 0}명의 적을 동시에 압박
+- 전술 기여: 견제사격 ${matchData.tradeStats?.suppCount || 0}회, 연막세이브 ${matchData.tradeStats?.smokeCount || 0}회, 직접부활 ${matchData.tradeStats?.revCount || 0}회, 복수/미끼 ${matchData.tradeStats?.baitCount || 0}회
+- 대응 속도: 평균 백업 ${matchData.tradeStats?.backupLatencyMs > 0 ? (matchData.tradeStats.backupLatencyMs/1000).toFixed(2) : "N/A"}초 (커버율 ${matchData.tradeStats?.coverRate || 0}%)
+- 피킹 정밀도: 최대 적중 거리 ${combatPressure?.maxHitDistance || 0}m
+- 투척물 효율: ${combatPressure?.utilityHits || 0}회 적중 / 누적 데미지 ${combatPressure?.utilityDamage || 0}
 
 [내 무기 분석]
 - 총기별 킬: ${JSON.stringify(weaponKillMap)}
@@ -243,11 +245,19 @@ ${playerReportSummary}
     ];
 
     const genAI = new GoogleGenerativeAI(apiKey);
+    
+    // [V3.0] 세이프티 설정 추가 (독설 코칭 스타일 허용)
+    const safetySettings = [
+      { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+      { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+      { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+      { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+    ];
 
     for (const modelName of modelsToTry) {
       try {
         console.log(`[AI-ANALYZE] Attempting analysis with ${modelName}...`);
-        const model = genAI.getGenerativeModel({ model: modelName });
+        const model = genAI.getGenerativeModel({ model: modelName, safetySettings });
         const result = await model.generateContent(promptText);
         analysis = result.response.text();
         

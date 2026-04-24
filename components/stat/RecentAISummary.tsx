@@ -1,6 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
+import { SpiderChart } from "./SpiderChart";
+import { ShieldAlert, Clock, TrendingUp, Flame, Wind, Heart, Skull } from "lucide-react";
 
 interface DebateStat {
   label: string;
@@ -30,11 +32,21 @@ interface DebateData {
   signature?: string;
   signatureSub?: string;
   visuals?: {
-    tradeLatency: string;
+    backupLatency: string;
+    reactionLatency: string;
     initiativeSuccess: string;
     goldenTime?: { early: number; mid1: number; mid2: number; late: number };
     killContrib?: { solo: number; cleanup: number };
     bluezoneWaste?: number;
+    tactical?: {
+      suppRate: string;
+      smokeRate: string;
+      reviveRate: string;
+      baitCount: number;
+      suppRaw?: { count: number; total: number };
+      smokeRaw?: { count: number; total: number; teamCover?: number };
+      reviveRaw?: { count: number; total: number };
+    };
   };
 }
 
@@ -100,7 +112,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
         className="w-full p-8 bg-indigo-500/5 border-2 border-dashed border-indigo-500/30 rounded-3xl text-indigo-400 font-bold flex flex-col items-center gap-4 hover:bg-indigo-500/10 transition-all active:scale-[0.98]"
       >
         <span className="text-4xl">🔥</span>
-        <span>최근 10경기 AI 끝장 토론 시작 (2.0 Tactical)</span>
+        <span>최근 10경기 AI 끝장 토론 시작 (V3.0 Tactical)</span>
       </button>
     );
   }
@@ -109,13 +121,31 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
     return (
       <div className="p-12 bg-white/5 rounded-3xl border border-white/10 text-center">
         <div className="w-12 h-12 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin mx-auto mb-6" />
-        <p className="text-gray-400 animate-pulse">2.0 분석 엔진이 정밀 텔레메트리 데이터를 대조 중입니다...</p>
+        <p className="text-gray-400 animate-pulse">V3.0 전술 분석 엔진이 정밀 텔레메트리 데이터를 대조 중입니다...</p>
       </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-8 animate-in fade-in duration-700">
+      {/* [V2.1] LOL PS 스타일 레이더 차트 */}
+      {debateData && (
+        <SpiderChart 
+          nickname={nickname}
+          data={{
+            combat: Math.min(100, (parseInt(String(debateData.visuals?.initiativeSuccess || "0")) * 0.8) + (debateData.visuals?.killContrib?.solo || 0) * 5),
+            survival: Math.min(100, (parseInt(String(debateData.visuals?.goldenTime?.late || "0")) / 10) + 50),
+            growth: 75, // 가공 데이터 부족시 기본값
+            vision: 60,
+            teamwork: Math.min(100, 
+              debateData.visuals?.tactical 
+                ? (parseInt(debateData.visuals.tactical.suppRate) + parseInt(debateData.visuals.tactical.smokeRate) + parseInt(debateData.visuals.tactical.reviveRate)) / 3 + 40
+                : (debateData.visuals?.backupLatency !== "N/A" ? 85 : 40)
+            ),
+          }}
+        />
+      )}
+
       <div className="flex justify-around items-center p-6 bg-black/40 rounded-3xl border border-white/10 backdrop-blur-md shadow-2xl">
         <div className="text-center group">
           <div className="text-3xl font-black text-green-400 mb-1">{score.kind}</div>
@@ -168,13 +198,13 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
           </div>
 
           <div className="space-y-12 relative z-10">
-            <div className="relative pt-12">
-              <div className="grid grid-cols-4 gap-6 h-48 items-end relative">
+            <div className="relative pt-6 md:pt-12">
+              <div className="grid grid-cols-4 gap-2 md:gap-6 h-40 md:h-48 items-end relative">
                 {[
-                  { label: "0-5분", val: debateData.visuals.goldenTime.early, color: "from-blue-400 to-blue-600", desc: "초반 교전" },
-                  { label: "5-15분", val: debateData.visuals.goldenTime.mid1, color: "from-indigo-400 to-indigo-600", desc: "중반 대치" },
-                  { label: "15-25분", val: debateData.visuals.goldenTime.mid2, color: "from-purple-400 to-purple-600", desc: "후반 운영" },
-                  { label: "25분+", val: debateData.visuals.goldenTime.late, color: "from-pink-400 to-pink-600", desc: "엔딩 싸움" },
+                  { label: "0-5분", val: debateData.visuals.goldenTime.early, color: "from-blue-400 to-blue-600", desc: "초반교전" },
+                  { label: "5-15분", val: debateData.visuals.goldenTime.mid1, color: "from-indigo-400 to-indigo-600", desc: "중반대치" },
+                  { label: "15-25분", val: debateData.visuals.goldenTime.mid2, color: "from-purple-400 to-purple-600", desc: "후반운영" },
+                  { label: "25분+", val: debateData.visuals.goldenTime.late, color: "from-pink-400 to-pink-600", desc: "엔딩싸움" },
                 ].map((item, idx) => {
                   const maxVal = Math.max(
                     debateData.visuals?.goldenTime?.early || 0,
@@ -185,24 +215,24 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
                   );
                   const barHeight = Math.max(5, (item.val / maxVal) * 100);
                   return (
-                    <div key={idx} className="flex flex-col items-center gap-5 group cursor-default h-full">
-                      <div className="relative w-full flex-1 flex items-end justify-center bg-white/10 rounded-2xl overflow-hidden border border-white/10 shadow-inner">
-                        <div className="absolute top-4 inset-x-0 text-center z-20">
-                          <div className="text-[14px] font-black text-white drop-shadow-md group-hover:scale-110 transition-transform">
+                    <div key={idx} className="flex flex-col items-center gap-3 md:gap-5 group cursor-default h-full">
+                      <div className="relative w-full flex-1 flex items-end justify-center bg-white/10 rounded-xl md:rounded-2xl overflow-hidden border border-white/10 shadow-inner">
+                        <div className="absolute top-2 md:top-4 inset-x-0 text-center z-20">
+                          <div className="text-[10px] md:text-[14px] font-black text-white drop-shadow-md group-hover:scale-110 transition-transform">
                             {Math.round(item.val).toLocaleString()}
                           </div>
-                          <div className="text-[9px] font-black text-white/40 uppercase">DMG</div>
+                          <div className="text-[7px] md:text-[9px] font-black text-white/40 uppercase">DMG</div>
                         </div>
                         <div 
                           className={`w-full bg-gradient-to-t ${item.color} transition-all duration-1000 ease-out shadow-[0_-4px_20px_rgba(0,0,0,0.5)] relative z-10`} 
                           style={{ height: `${barHeight}%` }}
                         >
-                          <div className="absolute top-0 left-0 right-0 h-1 bg-white/30" />
+                          <div className="absolute top-0 left-0 right-0 h-0.5 md:h-1 bg-white/30" />
                         </div>
                       </div>
-                      <div className="flex flex-col items-center gap-1">
-                        <div className="text-[14px] text-white font-black tracking-tight">{item.label}</div>
-                        <div className="text-[10px] text-white/40 font-black uppercase tracking-tighter">{item.desc}</div>
+                      <div className="flex flex-col items-center gap-0.5 md:gap-1">
+                        <div className="text-[10px] md:text-[14px] text-white font-black tracking-tighter md:tracking-tight whitespace-nowrap">{item.label}</div>
+                        <div className="text-[8px] md:text-[10px] text-white/40 font-black uppercase tracking-tighter whitespace-nowrap">{item.desc}</div>
                       </div>
                     </div>
                   );
@@ -210,11 +240,13 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-12 pt-10 border-t border-white/10">
-              <div className="flex flex-col gap-5">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12 pt-10 border-t border-white/10">
+              <div className="flex flex-col gap-4 md:gap-5">
                 <div className="flex items-center justify-between">
-                  <div className="text-[13px] text-white/50 font-black tracking-widest uppercase">Solo Dominance</div>
-                  <div className="px-3 py-1 bg-yellow-400/10 rounded-lg text-[14px] text-yellow-400 font-black tracking-tighter">{debateData.visuals.killContrib?.solo || 0} KILLS</div>
+                  <div className="text-[12px] md:text-[13px] text-white/50 font-black tracking-widest uppercase">솔로 교전력</div>
+                  <div className="px-3 py-1 bg-yellow-400/10 rounded-lg text-[13px] md:text-[14px] text-yellow-400 font-black tracking-tighter">
+                    {debateData.visuals.killContrib?.solo || 0} / {(debateData.visuals.killContrib?.solo || 0) + (debateData.visuals.killContrib?.cleanup || 0)} 킬
+                  </div>
                 </div>
                 <div className="h-4 bg-white/5 rounded-full overflow-hidden p-1 border border-white/5">
                   <div 
@@ -229,15 +261,17 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
                     }} 
                   />
                 </div>
-                <div className="text-[11px] text-white/40 font-bold leading-relaxed">
+                <div className="text-[10px] md:text-[11px] text-white/40 font-bold leading-relaxed">
                   내 딜 비중 70% 이상의 <span className="text-white/70">순수 무력 솔로 킬</span>
                 </div>
               </div>
 
-              <div className="flex flex-col gap-5">
+              <div className="flex flex-col gap-4 md:gap-5">
                 <div className="flex items-center justify-between">
-                  <div className="text-[13px] text-white/50 font-black tracking-widest uppercase">Team Cleanup</div>
-                  <div className="px-3 py-1 bg-green-400/10 rounded-lg text-[14px] text-green-400 font-black tracking-tighter">{debateData.visuals.killContrib?.cleanup || 0} KILLS</div>
+                  <div className="text-[12px] md:text-[13px] text-white/50 font-black tracking-widest uppercase">팀 백업 마무리</div>
+                  <div className="px-3 py-1 bg-green-400/10 rounded-lg text-[13px] md:text-[14px] text-green-400 font-black tracking-tighter">
+                    {debateData.visuals.killContrib?.cleanup || 0} / {(debateData.visuals.killContrib?.solo || 0) + (debateData.visuals.killContrib?.cleanup || 0)} 킬
+                  </div>
                 </div>
                 <div className="h-4 bg-white/5 rounded-full overflow-hidden p-1 border border-white/5">
                   <div 
@@ -252,7 +286,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
                     }} 
                   />
                 </div>
-                <div className="text-[11px] text-white/40 font-bold leading-relaxed">
+                <div className="text-[10px] md:text-[11px] text-white/40 font-bold leading-relaxed">
                   팀원이 깎아둔 적을 <span className="text-white/70">확실히 마무리한 해결사 킬</span>
                 </div>
               </div>
@@ -261,29 +295,102 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="relative group p-6 bg-indigo-500/10 border border-indigo-500/20 rounded-[28px] text-center transition-all hover:bg-indigo-500/15">
           <div className="text-[10px] text-indigo-400 font-black uppercase mb-1 tracking-widest">선제 타격 효율</div>
           <div className="text-3xl font-black text-white mb-1">{debateData?.visuals?.initiativeSuccess || "0%"}</div>
           <div className="text-[9px] text-gray-500 font-medium">먼저 쐈을 때 킬로 이어진 비율</div>
         </div>
-        <div className="relative group p-6 bg-red-500/10 border border-red-500/20 rounded-[28px] text-center transition-all hover:bg-red-500/15">
-          <div className="absolute top-4 right-4 text-white/20 hover:text-white/60 cursor-help transition-colors" title="아군 기절 후 15초 이내에 적에게 데미지를 입히면 '복수 시도'로 인정됩니다. 0%라면 백업 사격이 전혀 없었다는 뜻입니다.">
-            <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="relative group p-5 bg-red-500/10 border border-red-500/20 rounded-[28px] text-center transition-all hover:bg-red-500/15">
+            <div className="absolute top-3 right-3 text-white/20 hover:text-white/60 cursor-help transition-colors" title="내가 적에게 맞은 후, 5초 이내에 그 적에게 다시 데미지를 입히기까지 걸린 시간입니다. 순수 피지컬 지표입니다.">
+              <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            </div>
+            <div className="text-[9px] text-red-400 font-black uppercase mb-1 tracking-widest">반응 속도</div>
+            <div className="text-2xl font-black text-white mb-1">
+              {debateData?.visuals?.reactionLatency === "N/A" ? "N/A" : (debateData?.visuals?.reactionLatency || "0.00s")}
+            </div>
+            <div className="text-[8px] text-gray-500 font-medium leading-tight">피격 시 반격 속도</div>
           </div>
-          <div className="text-[10px] text-red-400 font-black uppercase mb-1 tracking-widest">평균 반격 속도</div>
-          <div className="text-3xl font-black text-white mb-1">
-            {debateData?.visuals?.tradeLatency === "N/A" ? (
-              <span className="text-2xl text-gray-500">측정 불가</span>
-            ) : (
-              debateData?.visuals?.tradeLatency || "0.00s"
-            )}
-          </div>
-          <div className="text-[9px] text-gray-500 font-medium">
-            {debateData?.visuals?.tradeLatency === "N/A" ? "아군 기절 등 백업 상황 미발생" : "피격 후 대응 사격까지 걸린 시간"}
+
+          <div className="relative group p-5 bg-orange-500/10 border border-orange-500/20 rounded-[28px] text-center transition-all hover:bg-orange-500/15">
+            <div className="absolute top-3 right-3 text-white/20 hover:text-white/60 cursor-help transition-colors" title="아군 기절 후 30초 이내에 해당 적에게 데미지를 입히기까지 걸린 시간입니다. 팀 백업 능력을 나타냅니다.">
+              <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            </div>
+            <div className="text-[9px] text-orange-400 font-black uppercase mb-1 tracking-widest">커버 속도</div>
+            <div className="text-2xl font-black text-white mb-1">
+              {debateData?.visuals?.backupLatency === "N/A" ? "N/A" : (debateData?.visuals?.backupLatency || "0.00s")}
+            </div>
+            <div className="text-[8px] text-gray-500 font-medium leading-tight">아군 기절 시 백업</div>
           </div>
         </div>
       </div>
+
+      {/* [V3.0] Tactical Mastery Summary */}
+      {debateData?.visuals?.tactical && (
+        <div className="p-8 bg-black/60 rounded-[32px] border border-white/10 shadow-xl overflow-hidden relative">
+          <div className="absolute top-0 right-0 p-6 opacity-5">
+            <ShieldAlert size={120} className="text-emerald-500" />
+          </div>
+          <div className="relative z-10 flex flex-col gap-6">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-emerald-500/20 rounded-lg flex items-center justify-center">
+                <ShieldAlert size={16} className="text-emerald-400" />
+              </div>
+              <span className="text-white font-black">10경기 전술 마스터리 (V3.0)</span>
+            </div>
+            
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] text-orange-400 font-black uppercase">견제 사격 성공률</span>
+                <span className="text-2xl font-black text-white">{debateData.visuals.tactical.suppRate}</span>
+                {debateData.visuals.tactical.suppRaw && (
+                  <span className="text-[10px] text-orange-300/60 font-bold">
+                    {debateData.visuals.tactical.suppRaw.count}회 / {debateData.visuals.tactical.suppRaw.total}위험상황
+                  </span>
+                )}
+                <div className="w-full h-1 bg-white/5 rounded-full mt-1 overflow-hidden">
+                  <div className="h-full bg-orange-400" style={{ width: debateData.visuals.tactical.suppRate }} />
+                </div>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] text-blue-400 font-black uppercase">연막 세이브 확률</span>
+                <span className="text-2xl font-black text-white">{debateData.visuals.tactical.smokeRate}</span>
+                {debateData.visuals.tactical.smokeRaw && (
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-[10px] text-blue-300/60 font-bold">
+                      {debateData.visuals.tactical.smokeRaw.count}회 / {debateData.visuals.tactical.smokeRaw.total}위험상황
+                    </span>
+                    {(debateData.visuals.tactical.smokeRaw.teamCover ?? 0) > 0 && (
+                      <span className="text-[9px] text-cyan-400/70 font-bold">↔ 팀커버 {debateData.visuals.tactical.smokeRaw.teamCover}회</span>
+                    )}
+                  </div>
+                )}
+                <div className="w-full h-1 bg-white/5 rounded-full mt-1 overflow-hidden">
+                  <div className="h-full bg-blue-400" style={{ width: debateData.visuals.tactical.smokeRate }} />
+                </div>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] text-pink-400 font-black uppercase">부활 성공률</span>
+                <span className="text-2xl font-black text-white">{debateData.visuals.tactical.reviveRate}</span>
+                {debateData.visuals.tactical.reviveRaw && (
+                  <span className="text-[10px] text-pink-300/60 font-bold">
+                    {debateData.visuals.tactical.reviveRaw.count}회 / {debateData.visuals.tactical.reviveRaw.total}회 기절
+                  </span>
+                )}
+                <div className="w-full h-1 bg-white/5 rounded-full mt-1 overflow-hidden">
+                  <div className="h-full bg-pink-400" style={{ width: debateData.visuals.tactical.reviveRate }} />
+                </div>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] text-purple-400 font-black uppercase">복수/미끼 누적</span>
+                <span className="text-2xl font-black text-white">{debateData.visuals.tactical.baitCount}회</span>
+                <div className="text-[9px] text-gray-500 font-bold mt-1">최근 10경기 합계</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="flex flex-col gap-4">
         {debateData?.debateIssues.map((issue, idx) => (
@@ -338,9 +445,12 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
                     <div className="flex flex-col gap-3">
                       <div className="text-[9px] text-indigo-400 font-black uppercase tracking-wider bg-indigo-500/10 self-start px-2 py-0.5 rounded">Player Stats</div>
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                        {issue.userStats.map((stat, sIdx) => (
+                        {issue.userStats.map((stat: { label: string; value: string; detail?: string }, sIdx: number) => (
                           <div key={sIdx} className="flex flex-col">
                             <div className="text-xl font-black text-white">{stat.value}</div>
+                            {stat.detail && stat.detail !== "N/A" && (
+                              <div className="text-[9px] text-indigo-300/60 font-bold">{stat.detail}</div>
+                            )}
                             <div className="text-[9px] text-gray-500 font-bold uppercase">{stat.label}</div>
                           </div>
                         ))}
@@ -350,9 +460,12 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
                     <div className="flex flex-col gap-3">
                       <div className="text-[9px] text-gray-400 font-black uppercase tracking-wider bg-white/5 self-start px-2 py-0.5 rounded">Benchmark (Top 15)</div>
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                        {issue.benchmarkStats.map((stat, sIdx) => (
+                        {issue.benchmarkStats.map((stat: { label: string; value: string; detail?: string }, sIdx: number) => (
                           <div key={sIdx} className="flex flex-col">
                             <div className="text-xl font-black text-gray-400">{stat.value}</div>
+                            {stat.detail && stat.detail !== "N/A" && (
+                              <div className="text-[9px] text-gray-500/60 font-bold">{stat.detail}</div>
+                            )}
                             <div className="text-[9px] text-gray-500 font-bold uppercase">{stat.label}</div>
                           </div>
                         ))}
