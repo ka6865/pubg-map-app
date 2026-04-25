@@ -175,7 +175,7 @@ export async function POST(request: Request) {
 [V3.0 전술 분석 지표]
 - 상대적 우위: 매치 딜량 상위 ${100 - (myRank?.damagePercentile || 0)}% (정규 참가자 ${myRank?.totalPlayers || 0}명 중 딜량 ${myRank?.damageRank || 0}위 / 킬 ${myRank?.killRank || 0}위)
 - 글로벌 엘리트 대비: 내 딜량(${Math.floor(stats.damageDealt)}) vs 랭커 평균(${eliteBenchmark?.avgDamage || 0})
-- 전술 반응 속도 비교: 내 백업(${(matchData.tradeStats?.backupLatencyMs/1000).toFixed(2)}s) vs 랭커 평균(${(eliteBenchmark?.realTradeLatency/1000).toFixed(2)}s)
+- 전술 반응 속도 비교: 내 백업(${matchData.tradeStats?.backupLatencyMs > 0 ? (matchData.tradeStats.backupLatencyMs/1000).toFixed(2) + 's' : 'N/A'}) vs 랭커 평균(${(eliteBenchmark?.realTradeLatency/1000).toFixed(2)}s)
 - 주도권 성공률 비교: 내 성공률(${myCombatData.total > 0 ? Math.round((myCombatData.success / myCombatData.total) * 100) : 0}%) vs 랭커 평균(${eliteBenchmark?.realInitiativeSuccess}%)
 - 팀원 거리 유지: 내 평균(${deathDistance || 30}m) vs 랭커 평균(${eliteBenchmark?.realDeathDistance}m)
 - 교전 압박(Pressure): 총 ${combatPressure?.totalHits || 0}회 적중 / ${combatPressure?.uniqueVictims?.length || 0}명의 적을 동시에 압박
@@ -205,6 +205,7 @@ ${timelineText || "  상세 타임라인 정보 없음"}
 킬이 낮더라도 [교전 압박(Hits)]이 높다면 "팀의 승리를 위해 묵묵히 화력을 지원하고 적을 묶어둔 훌륭한 서포터였다"는 점을 꼭 칭찬해줘.
 최대 적중 거리가 높다면 "정밀한 사격 능력을 갖추고 있다"며 사용자에게 자신감을 북돋아줘.
 "고생하셨어요! 이 부분은 정말 센스 있었네요" 처럼 따뜻하면서도 전문적인 톤을 유지해.
+기회(Opportunity)가 0인 항목에 대해서는 아예 언급하지 않는 것이 자연스러워.
 
 [분석 데이터 요약]
 ${playerReportSummary}
@@ -217,7 +218,7 @@ ${playerReportSummary}
 - 지표 해석 가이드 (절대 준수): 
   1. 킬당 데미지(Damage per Kill)가 80~160 사이라면 "가장 이상적이고 결정력 있는 사격"을 한 것입니다. 이 수치를 두고 '비겁하다', '양념만 쳤다', '숟가락 얹었다'는 식으로 비난하는 것은 금지하며, 오히려 "효율적인 자원 관리와 결정력"으로 평가하십시오. 킬당 데미지가 250 이상일 때만 "확킬을 못 찍는 결단력 부족"으로 질책하십시오.
   2. 킬/딜 기여도(Participation)가 40%를 넘는다면 당신의 독설 대상에서 "버스 승객"이나 "방관자"라는 표현은 삭제하십시오. 그는 팀의 주축(Main Force)입니다.
-  3. 기회(Opportunity)가 0인 항목에 대해서는 절대로 비난하지 마십시오.
+  3. 기회(Opportunity)가 0인 항목에 대해서는 절대로 비난하거나 언급하지 마십시오. (예: 아군 기절이 없었으면 '연막 세이브'나 '부활' 지표가 0이어도 정상임)
 
 [분석 데이터 요약]
 ${playerReportSummary}
@@ -242,7 +243,8 @@ ${playerReportSummary}
         ? `\n특히 이번 경기 #${stats.winPlace}위로 준우승했습니다. [마지막 교전 정보]를 토대로 1등을 놓친 결정적 이유를 포함시켜 주세요.`
         : "";
 
-      promptText = `${systemPrompt}\n\n이 매치 데이터를 바탕으로 심층 분석 리포트를 [전반적인 매치 성격], [무기 및 교전 분석], [운영 디테일 진단], [프로 코치의 조언] 형식에 맞춰 작성해줘.${rankContext}`;
+      promptText = `${systemPrompt}\n\n이 매치 데이터를 바탕으로 유저가 한눈에 읽을 수 있도록 **정확히 3~5줄 내외**로 '알찬 요약 피드백'을 작성해줘. 
+      [전반적인 총평], [핵심 실책 또는 칭찬], [개선할 점]을 문장 속에 자연스럽게 녹여내되, 별도의 소제목은 붙이지 마세요.${rankContext}`;
     }
 
     let analysis = "";

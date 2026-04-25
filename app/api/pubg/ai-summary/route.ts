@@ -88,12 +88,27 @@ export async function POST(request: Request) {
     let totalDeathDistanceSum = 0, deathDistanceCount = 0;
     const backupLatencies: number[] = [];
     const reactionLatencies: number[] = [];
+    
     const goldenTime = { early: 0, mid1: 0, mid2: 0, late: 0 };
     const killContrib = { solo: 0, cleanup: 0, other: 0 };
     let bluezoneWasteMatches = 0;
     let goldenTimeMatchCount = 0;
 
+    const getMapSizeCategory = (mName: string) => {
+      const largeMaps = ["Erangel", "Miramar", "Taego", "Rondo", "Vikendi", "Deston", "Tiger", "Desert", "Baltic", "Chimera"]; // 8x8 maps
+      if (largeMaps.some(lm => mName.includes(lm) || lm.includes(mName))) return "Large";
+      return "Small"; // Sanhok, Karakin, etc.
+    };
+
+    const mapCounts: Record<string, number> = {};
+    const sizeCounts: Record<string, number> = { "Large": 0, "Small": 0 };
+    
     detailedMatches.forEach((m: any) => {
+      const mName = m.mapName || "Unknown";
+      mapCounts[mName] = (mapCounts[mName] || 0) + 1;
+      const size = getMapSizeCategory(mName);
+      sizeCounts[size]++;
+
       // 1. 거리 및 전멸 집계
       if (m.teammateDistancesAtDeath) {
         const distances = Object.values(m.teammateDistancesAtDeath) as number[];
@@ -109,8 +124,6 @@ export async function POST(request: Request) {
       // 2. 레이턴시 집계
       if (m.tradeStats?.backupLatencyMs && m.tradeStats.backupLatencyMs > 0) {
         backupLatencies.push(m.tradeStats.backupLatencyMs);
-      } else if (m.tradeStats?.tradeLatencyMs && m.tradeStats.tradeLatencyMs > 0) {
-        backupLatencies.push(m.tradeStats.tradeLatencyMs);
       }
       if (m.tradeStats?.reactionLatencyMs && m.tradeStats.reactionLatencyMs > 0) {
         reactionLatencies.push(m.tradeStats.reactionLatencyMs);
@@ -145,6 +158,7 @@ export async function POST(request: Request) {
       if (m.bluezoneWasteCount) bluezoneWasteMatches++;
     });
 
+    const mainMapSize = sizeCounts["Large"] >= sizeCounts["Small"] ? "Large" : "Small";
     const userInitiativeRate = Math.round(detailedMatches.reduce((acc: number, m: any) => acc + (m.initiativeSuccessRate || m.initiativeStats?.rate || 0), 0) / detailedMatches.length);
     const totalTradeAttempts = totalSuppCount + totalSmokeCount + totalRevCount;
 
@@ -162,7 +176,11 @@ export async function POST(request: Request) {
     let avgBaselineKillsFinal = Number((detailedMatches.reduce((acc: number, m: any) => acc + (m.eliteBenchmark?.avgKills || 0), 0) / detailedMatches.length).toFixed(1));
     
     // [V2.1] 실시간 엘리트 벤치마크 로드 (20건 이상 쌓였을 때만 활성화)
-    const { data: globalStats } = await supabase.from("global_benchmarks").select("latency_ms, initiative_rate, team_distance, revive_rate, smoke_rate, supp_count, team_wipes, utility_count, survival_time, solo_kill_rate, burst_damage, damage, kills");
+    const { data: globalStats } = await supabase
+      .from("global_benchmarks")
+      .select("latency_ms, initiative_rate, team_distance, revive_rate, smoke_rate, supp_count, team_wipes, utility_count, survival_time, solo_kill_rate, burst_damage, damage, kills, map_name")
+      .not("game_mode", "ilike", "%tdm%")
+      .not("game_mode", "ilike", "%event%");
     
     let avgRealTradeLatencyFinal = (detailedMatches.reduce((acc: number, m: any) => acc + (m.eliteBenchmark?.realTradeLatency || 800), 0) / detailedMatches.length / 1000).toFixed(2);
     let avgRealInitiativeSuccessFinal = Math.round(detailedMatches.reduce((acc: number, m: any) => acc + (m.eliteBenchmark?.realInitiativeSuccess || 50), 0) / detailedMatches.length);
@@ -180,26 +198,37 @@ export async function POST(request: Request) {
     let avgRealBurstDamageFinal = 150;
 
     if (globalStats && globalStats.length >= 20) {
-      const validLatency = globalStats.filter(s => (s.latency_ms || 0) > 0);
+      // [V5.41] 맵 크기별(Large/Small) 벤치마크 필터링
+      let targetStats = globalStats;
+      const sizeSpecific = globalStats.filter(s => getMapSizeCategory(s.map_name || "") === mainMapSize);
+      
+      if (sizeSpecific.length >= 20) {
+        targetStats = sizeSpecific;
+        console.log(`[AI-SUMMARY] Synced with ${mainMapSize}-Size Benchmarks (n=${sizeSpecific.length})`);
+      } else {
+        console.log(`[AI-SUMMARY] Fallback to Global Benchmarks (Size ${mainMapSize} only has ${sizeSpecific.length} samples)`);
+      }
+
+      const validLatency = targetStats.filter(s => (s.latency_ms || 0) > 0);
       if (validLatency.length > 0) {
         avgRealTradeLatencyFinal = (validLatency.reduce((acc, s) => acc + s.latency_ms, 0) / validLatency.length / 1000).toFixed(2);
       }
       
       // [V5.36] 기본 지표 및 전술 지표 통합 갱신
-      avgBaselineDamageFinal = Math.round(globalStats.reduce((acc, s) => acc + (s.damage || 0), 0) / globalStats.length);
-      avgBaselineKillsFinal = Number((globalStats.reduce((acc, s) => acc + (s.kills || 0), 0) / globalStats.length).toFixed(1));
-      avgRealInitiativeSuccessFinal = Math.round(globalStats.reduce((acc, s) => acc + (s.initiative_rate || 50), 0) / globalStats.length);
-      avgRealDeathDistanceFinal = Math.round(globalStats.reduce((acc, s) => acc + (s.team_distance || 30), 0) / globalStats.length);
-      avgRealReviveRateFinal = Math.round(globalStats.reduce((acc, s) => acc + (s.revive_rate || 80), 0) / globalStats.length);
-      avgRealSmokeRateFinal = Math.round(globalStats.reduce((acc, s) => acc + (s.smoke_rate || 60), 0) / globalStats.length);
-      avgRealSuppCountFinal = Number((globalStats.reduce((acc, s) => acc + (s.supp_count || 3), 0) / globalStats.length).toFixed(1));
-      avgRealTeamWipesFinal = Number((globalStats.reduce((acc, s) => acc + (s.team_wipes || 1), 0) / globalStats.length).toFixed(1));
-      avgRealUtilityCountFinal = Number((globalStats.reduce((acc, s) => acc + (s.utility_count || 0), 0) / globalStats.length).toFixed(1));
-      avgRealSurvivalTimeFinal = Math.round(globalStats.reduce((acc, s) => acc + (s.survival_time || 0), 0) / globalStats.length);
-      avgRealSoloKillRateFinal = Math.round(globalStats.reduce((acc, s) => acc + (s.solo_kill_rate || 0), 0) / globalStats.length);
-      avgRealBurstDamageFinal = Math.round(globalStats.reduce((acc, s) => acc + (s.burst_damage || 0), 0) / globalStats.length);
-      console.log(`[AI-SUMMARY] Synced with Global Benchmarks (n=${globalStats.length})`);
-    }
+      avgBaselineDamageFinal = Math.round(targetStats.reduce((acc, s) => acc + (s.damage || 0), 0) / targetStats.length);
+      avgBaselineKillsFinal = Number((targetStats.reduce((acc, s) => acc + (s.kills || 0), 0) / targetStats.length).toFixed(1));
+      avgRealInitiativeSuccessFinal = Math.round(targetStats.reduce((acc, s) => acc + (s.initiative_rate || 50), 0) / targetStats.length);
+      avgRealDeathDistanceFinal = Math.round(targetStats.reduce((acc, s) => acc + (s.team_distance || 30), 0) / targetStats.length);
+      avgRealReviveRateFinal = Math.round(targetStats.reduce((acc, s) => acc + (s.revive_rate || 80), 0) / targetStats.length);
+      avgRealSmokeRateFinal = Math.round(targetStats.reduce((acc, s) => acc + (s.smoke_rate || 60), 0) / targetStats.length);
+      avgRealSuppCountFinal = Number((targetStats.reduce((acc, s) => acc + (s.supp_count || 3), 0) / targetStats.length).toFixed(1));
+      avgRealTeamWipesFinal = Number((targetStats.reduce((acc, s) => acc + (s.team_wipes || 1), 0) / targetStats.length).toFixed(1));
+      avgRealUtilityCountFinal = Number((targetStats.reduce((acc, s) => acc + (s.utility_count || 0), 0) / targetStats.length).toFixed(1));
+      avgRealSurvivalTimeFinal = Math.round(targetStats.reduce((acc, s) => acc + (s.survival_time || 0), 0) / targetStats.length);
+      avgRealSoloKillRateFinal = Math.round(targetStats.reduce((acc, s) => acc + (s.solo_kill_rate || 0), 0) / targetStats.length);
+      avgRealBurstDamageFinal = Math.min(avgBaselineDamageFinal, Math.round(targetStats.reduce((acc, s) => acc + (s.burst_damage || 0), 0) / targetStats.length));
+    }    
+
 
     const avgTradeSuccessRate = totalTeammateKnocks > 0 ? Math.round((totalTradeAttempts / totalTeammateKnocks) * 100) : 0;
     const userAvgDist = deathDistanceCount > 0 ? Math.round(totalDeathDistanceSum / deathDistanceCount) : 30;
@@ -268,6 +297,12 @@ export async function POST(request: Request) {
       "[이번 분석의 핵심 쟁점 - 반드시 아래 4가지 주제로 다룰 것]",
       issueGuides,
       "",
+      "[데이터 대칭성 및 라벨링 규칙 (CRITICAL)]",
+      "- userStats와 benchmarkStats는 반드시 동일한 개수, 동일한 순서, 동일한 라벨(label)을 가져야 합니다.",
+      "- 예: userStats[0]이 '직접 부활'이면, benchmarkStats[0]도 반드시 '직접 부활'이어야 하며 단위도 일치해야 합니다.",
+      "- 모든 수치 비교는 'Apple-to-Apple'이어야 하며, 하나라도 어긋나면 전술 분석 데이터로서 무효입니다.",
+      "- '견제 사격 성공률'이라는 명칭 대신 반드시 '견제 지원 사격 강도'를 사용하십시오.",
+      "",
       "[승패(Winner) 판정 및 평가(Evaluation) 가이드라인]",
       "- 무승부(draw): 유저의 지표가 벤치마크와 거의 일치하거나, 의도는 좋았으나 결과가 아쉬울 때. 두 코치가 서로 한 발씩 양보하며 결론을 냅니다.",
       "- KIND 승리(kind): 유저의 전술적 지표(연막, 견제, 부활)나 반응 속도가 상위권 기준을 상회할 때. SPICY 교관도 수긍해야 합니다.",
@@ -282,6 +317,7 @@ export async function POST(request: Request) {
       `- 상위권 순수 킬비중(Solo Kill): ${avgRealSoloKillRateFinal}%`,
       `- 상위권 교전 폭발력(Burst Damage): ${avgRealBurstDamageFinal}`,
       `- 상위권 팀 전멸 기여(Wipe): ${avgRealTeamWipesFinal}회`,
+      `- 상위권 견제 지원 사격 강도: ${avgRealSuppCountFinal}회 (위험 상황 당 압박 횟수)`,
       "",
       "반드시 아래 구조의 JSON 객체로만 응답하세요. 백틱(```)이나 추가 텍스트 없이 순수 JSON만 출력하십시오.",
       "{",
@@ -293,19 +329,19 @@ export async function POST(request: Request) {
       '  "debateIssues": [',
       "    {",
       '      "topic": "쟁점의 핵심 키워드",',
-      '      "question": "토론의 화두가 되는 날카로운 질문 (예: 아군이 쓰러졌을 때 그의 총구는 어디를 향했는가?)",',
+      '      "question": "토론의 화두가 되는 날카로운 질문",',
       '      "spicyOpinion": "상위권 지표와 비교하여 문제점을 짚어내는 SPICY의 차가운 독설",',
-      '      "kindOpinion": "SPICY의 주장을 맞받아치며 전술적 이타성을 옹호하는 KIND의 따뜻한 반박",',
+      '      "kindOpinion": "KIND의 따뜻한 반박",',
       '      "winner": "kind | spicy | draw",',
-      '      "reason": "해당 판정이 내려진 결정적 이유 (데이터 기반 1문장)",',
-      '      "evaluation": "해당 쟁점에 대한 종합적인 피드백 및 개선 방향 (두 코치의 합의점)",',
-      '      "userStats": [{ "label": "항목명", "value": "실제 수치", "detail": "보충 설명" }],',
-      '      "benchmarkStats": [{ "label": "항목명", "value": "상위권 평균", "detail": "기준값" }]',
+      '      "reason": "판정 이유 (데이터 기반 1문장)",',
+      '      "evaluation": "종합적인 개선 방향",',
+      '      "userStats": [ { "label": "라벨A", "value": "유저값" }, { "label": "라벨B", "value": "유저값" } ],',
+      '      "benchmarkStats": [ { "label": "라벨A", "value": "상위권값" }, { "label": "라벨B", "value": "상위권값" } ]',
       "    }",
       "  ],",
-      '  "finalVerdict": "유저의 최근 10경기에 대한 총평 (명언이나 강렬한 한 줄 평)",',
+      '  "finalVerdict": "유저의 최근 10경기에 대한 총평",',
       '  "actionItems": [',
-      '    { "icon": "🎯", "title": "구체적인 훈련 목표 (예: 연막탄 단축키 지정)", "desc": "실제 게임에 즉시 적용 가능한 실전 팁" }',
+      '    { "icon": "🎯", "title": "훈련 목표", "desc": "실전 팁" }',
       "  ]",
       "}"
     ];

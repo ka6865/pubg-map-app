@@ -68,12 +68,6 @@ export interface MatchData {
   };
   /** [V31] 전술적 몰살 여부 */
   teamWipeOccurred?: boolean;
-  /** [V32] 선제 타격 지표 */
-  initiativeStats?: {
-    total: number;
-    success: number;
-    rate: number;
-  };
   /** [V3] 교전 압박 지표 */
   combatPressure?: {
     totalHits: number;
@@ -85,13 +79,39 @@ export interface MatchData {
   /** [V3.0] 전술 지표 (견제, 세이브, 복수 등) */
   tradeStats?: {
     teammateKnocks: number;
+    dangerousKnocks?: number;
+    smokeOpps?: number;
     suppCount: number;
     smokeCount: number;
+    teamSmokeCovered?: number;
     revCount: number;
     baitCount: number;
     backupLatencyMs: number;
     reactionLatencyMs: number;
     coverRate: number;
+    enemyTeamWipes?: number;
+  };
+  /** [V31] 선제 타격 지표 */
+  initiativeStats?: {
+    total: number;
+    success: number;
+    rate: number;
+  };
+  /** [V31] 벤치마크 데이터 */
+  eliteBenchmark?: {
+    avgDamage: number;
+    avgKills: number;
+    realTradeLatency: number;
+    realInitiativeSuccess: number;
+    realDeathDistance: number;
+    realReviveRate: number;
+    realSmokeRate: number;
+    realSuppCount?: number;
+    realTeamWipes?: number;
+    realUtilityCount?: number;
+    realSurvivalTime?: number;
+    realSoloKillRate?: number;
+    realBurstDamage?: number;
   };
   /** [V3.0] 상세 전술 타임라인 */
   tacticalTimeline?: Array<{

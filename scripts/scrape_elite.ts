@@ -44,7 +44,7 @@ async function scrapeEliteData() {
     const seasonId = currentSeason.id;
     console.log(`✅ 현재 시즌: ${seasonId}`);
 
-    const gameModes = ["squad"]; 
+    const gameModes = ["squad", "squad-fpp"]; 
     let topPlayers: any[] = [];
     let activeMode = "";
 

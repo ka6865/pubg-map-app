@@ -419,11 +419,11 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
                     <div className="flex flex-col gap-0.5 mt-0.5">
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <span className="text-[10px] text-blue-300/60 font-bold whitespace-nowrap">
-                          {debateData.visuals.tactical.smokeRaw.count}회 / {debateData.visuals.tactical.smokeRaw.total}위험상황
+                          {debateData.visuals.tactical.smokeRaw.count} / {debateData.visuals.tactical.smokeRaw.total} 회
                         </span>
                         {(debateData.visuals.tactical.smokeRaw.teamCover ?? 0) > 0 && (
-                          <span className="text-[9px] text-cyan-400 font-black whitespace-nowrap bg-cyan-400/10 px-1 rounded">
-                            팀커버 {debateData.visuals.tactical.smokeRaw.teamCover}
+                          <span className="text-[9px] text-cyan-400 font-black whitespace-nowrap bg-cyan-400/20 px-1.5 py-0.5 rounded border border-cyan-400/30">
+                            팀커버 +{debateData.visuals.tactical.smokeRaw.teamCover}
                           </span>
                         )}
                       </div>
@@ -498,42 +498,33 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
                   </div>
                 </div>
 
-                <div className="mt-8 p-6 bg-black/40 rounded-2xl border border-white/5 flex flex-col gap-8">
-                  <div className="flex flex-col gap-1 text-center md:text-left">
-                    <span className="text-[10px] text-gray-500 font-black uppercase tracking-widest">데이터 증거</span>
-                    <span className="text-lg font-black text-white">{issue.topic} 수치 분석</span>
+                <div className="mt-8 p-6 bg-black/40 rounded-2xl border border-white/5">
+                  <div className="flex flex-col gap-1 text-center md:text-left mb-8">
+                    <span className="text-[10px] text-gray-500 font-black uppercase tracking-widest">데이터 증거 (Tactical Evidence)</span>
+                    <span className="text-lg font-black text-white">{issue.topic} 상세 비교</span>
                   </div>
                   
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div className="flex flex-col gap-3">
-                      <div className="text-[9px] text-indigo-400 font-black uppercase tracking-wider bg-indigo-500/10 self-start px-2 py-0.5 rounded">Player Stats</div>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                        {issue.userStats.map((stat: { label: string; value: string; detail?: string }, sIdx: number) => (
-                          <div key={sIdx} className="flex flex-col">
-                            <div className="text-xl font-black text-white">{stat.value}</div>
-                            {stat.detail && stat.detail !== "N/A" && (
-                              <div className="text-[9px] text-indigo-300/60 font-bold">{stat.detail}</div>
-                            )}
-                            <div className="text-[9px] text-gray-500 font-bold uppercase">{stat.label}</div>
+                  <div className="space-y-4">
+                    {issue.userStats.map((uStat: { label: string; value: string }, sIdx: number) => {
+                      const bStat = issue.benchmarkStats[sIdx];
+                      return (
+                        <div key={sIdx} className="grid grid-cols-11 items-center gap-2 p-4 bg-white/5 rounded-xl border border-white/5 group hover:bg-white/10 transition-colors">
+                          <div className="col-span-4 text-right">
+                            <div className="text-lg md:text-xl font-black text-indigo-400">{uStat.value}</div>
+                            <div className="text-[9px] text-gray-500 font-bold uppercase">{uStat.label}</div>
                           </div>
-                        ))}
-                      </div>
-                    </div>
+                          
+                          <div className="col-span-3 flex flex-col items-center justify-center gap-1">
+                            <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center text-[10px] font-black text-white/20 group-hover:text-white/40 border border-white/10">VS</div>
+                          </div>
 
-                    <div className="flex flex-col gap-3">
-                      <div className="text-[9px] text-gray-400 font-black uppercase tracking-wider bg-white/5 self-start px-2 py-0.5 rounded">ELITE STANDARD</div>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                        {issue.benchmarkStats.map((stat: { label: string; value: string; detail?: string }, sIdx: number) => (
-                          <div key={sIdx} className="flex flex-col">
-                            <div className="text-xl font-black text-gray-400">{stat.value}</div>
-                            {stat.detail && stat.detail !== "N/A" && (
-                              <div className="text-[9px] text-gray-500/60 font-bold">{stat.detail}</div>
-                            )}
-                            <div className="text-[9px] text-gray-500 font-bold uppercase">{stat.label}</div>
+                          <div className="col-span-4 text-left">
+                            <div className="text-lg md:text-xl font-black text-gray-400">{bStat?.value || "N/A"}</div>
+                            <div className="text-[9px] text-gray-500 font-bold uppercase">{bStat?.label || uStat.label}</div>
                           </div>
-                        ))}
-                      </div>
-                    </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
@@ -551,7 +542,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
           <p className="text-xl md:text-2xl font-black text-white leading-tight mb-8">&quot;{debateData?.finalVerdict}&quot;</p>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {debateData?.actionItems.map((item, idx) => (
+            {debateData?.actionItems.map((item: { icon: string; title: string; desc: string }, idx: number) => (
               <div key={idx} className="flex items-start gap-4 p-4 bg-white/5 rounded-2xl border border-white/10 hover:bg-white/10 transition-colors">
                 <span className="text-2xl">{item.icon}</span>
                 <div className="flex flex-col gap-1">

@@ -57,8 +57,27 @@ export async function GET(request: Request) {
       return NextResponse.json((fullCache.data as any).fullResult);
     }
 
-    // 글로벌 엘리트 벤치마크 데이터 로드 (전체 랭커 데이터 기반)
-    const { data: elitePool } = await supabase.from("global_benchmarks").select("*");
+    // [V5.31] 매치 속성에 따른 엘리트 벤치마크 필터링 (TPP/FPP, Squad/Solo 구분)
+    const isFpp = matchAttr.gameMode.includes('fpp');
+    const isSquad = matchAttr.gameMode.includes('squad');
+    
+    let eliteQuery = supabase.from("global_benchmarks").select("latency_ms, initiative_rate, team_distance, revive_rate, smoke_rate, damage, kills, supp_count, team_wipes, utility_count, survival_time, solo_kill_rate, burst_damage");
+    
+    // 현재 매치와 유사한 환경의 벤치마크 우선 조회
+    if (isFpp) eliteQuery = eliteQuery.ilike('game_mode', '%fpp%');
+    else eliteQuery = eliteQuery.not('game_mode', 'ilike', '%fpp%');
+    
+    if (isSquad) eliteQuery = eliteQuery.ilike('game_mode', '%squad%');
+    
+    const { data: elitePoolRaw } = await eliteQuery;
+    
+    // 데이터가 너무 적으면(10개 미만) 다시 전체에서 가져옴 (폴백)
+    let elitePool = elitePoolRaw;
+    if (!elitePool || elitePool.length < 10) {
+      const { data: fallbackPool } = await supabase.from("global_benchmarks").select("*").limit(200);
+      elitePool = fallbackPool;
+    }
+
     const eliteAvgDamage = elitePool?.length ? Math.round(elitePool.reduce((a, b) => a + (b.damage || 0), 0) / elitePool.length) : 450;
     const eliteAvgKills = elitePool?.length ? Number((elitePool.reduce((a, b) => a + (b.kills || 0), 0) / elitePool.length).toFixed(1)) : 3.0;
     const validLatencies = elitePool?.filter(p => (p.latency_ms || 0) > 0) || [];
@@ -69,6 +88,10 @@ export async function GET(request: Request) {
     const eliteAvgInitiative = elitePool?.length ? Math.round(elitePool.reduce((a, b) => a + (b.initiative_rate || 55), 0) / elitePool.length) : 55;
     const eliteAvgDistance = elitePool?.length ? Math.round(elitePool.reduce((a, b) => a + (b.team_distance || 30), 0) / elitePool.length) : 30;
     const eliteAvgWipes = elitePool?.length ? Number((elitePool.reduce((a, b) => a + (b.team_wipes || 1), 0) / elitePool.length).toFixed(1)) : 1.5;
+    const eliteAvgUtility = elitePool?.length ? Number((elitePool.reduce((a, b) => a + (b.utility_count || 0), 0) / elitePool.length).toFixed(1)) : 2.5;
+    const eliteAvgSurvival = elitePool?.length ? Math.round(elitePool.reduce((a, b) => a + (b.survival_time || 0), 0) / elitePool.length) : 1200;
+    const eliteAvgSoloKill = elitePool?.length ? Math.round(elitePool.reduce((a, b) => a + (b.solo_kill_rate || 0), 0) / elitePool.length) : 35;
+    const eliteAvgBurst = elitePool?.length ? Math.round(elitePool.reduce((a, b) => a + (b.burst_damage || 0), 0) / elitePool.length) : 150;
 
     // 텔레메트리 로드 및 V3.0 다이어트
     const telemetryAsset = data.included.find((item: any) => item.type === "asset");
@@ -193,20 +216,26 @@ export async function GET(request: Request) {
         });
       }
 
-      // 2. 행동 수집
+      // 2. 행동 수집 (아이템 사용 중복 제거: LogPlayerAttack과 LogItemUse가 동시에 발생할 수 있음)
       if (e._T === "LogPlayerAttack" && attackerName === lowerNickname) {
         const weaponId = (e.weaponId || "").toLowerCase();
         if (weaponId.includes("smoke") || weaponId.includes("grenade") || weaponId.includes("molotov")) {
-          itemUseDetails.push({ time: e._D, playerName: attackerName, itemId: e.weaponId, itemName: e.weaponId });
-          if (weaponId.includes("smoke")) smokeUseEvents.push({ ts, loc: e.attacker?.loc });
+          const isDuplicate = itemUseDetails.some(prev => prev.itemId === e.weaponId && Math.abs(new Date(prev.time).getTime() - ts) < 1000);
+          if (!isDuplicate) {
+            itemUseDetails.push({ time: e._D, playerName: attackerName, itemId: e.weaponId, itemName: e.weaponId });
+            if (weaponId.includes("smoke")) smokeUseEvents.push({ ts, loc: e.attacker?.loc });
+          }
         }
         myAttackEvents.push({ ts, loc: e.attacker?.loc });
       }
       if (e._T === "LogItemUse" && attackerName === lowerNickname) {
         if (e.itemId) { 
-          itemUseEvents.push(e.itemId); 
-          itemUseDetails.push({ time: e._D, playerName: attackerName, itemId: e.itemId, itemName: e.itemId });
-          if (e.itemId.toLowerCase().includes("smoke")) smokeUseEvents.push({ ts, loc: e.character?.loc }); 
+          const isDuplicate = itemUseDetails.some(prev => prev.itemId === e.itemId && Math.abs(new Date(prev.time).getTime() - ts) < 1000);
+          if (!isDuplicate) {
+            itemUseEvents.push(e.itemId); 
+            itemUseDetails.push({ time: e._D, playerName: attackerName, itemId: e.itemId, itemName: e.itemId });
+            if (e.itemId.toLowerCase().includes("smoke")) smokeUseEvents.push({ ts, loc: e.character?.loc }); 
+          }
         }
       }
       if (e._T === "LogPlayerRevive") {
@@ -455,20 +484,22 @@ export async function GET(request: Request) {
         realReviveRate: eliteAvgReviveRate,
         realSmokeRate: eliteAvgSmokeRate,
         realSuppCount: eliteAvgSuppCount,
-        realTeamWipes: eliteAvgWipes
+        realTeamWipes: eliteAvgWipes,
+        realUtilityCount: eliteAvgUtility,
+        realSurvivalTime: eliteAvgSurvival,
+        realSoloKillRate: eliteAvgSoloKill,
+        realBurstDamage: eliteAvgBurst
       }
     };
 
-    // [V5.26] 상위권 벤치마크 데이터 수집 조건 정밀화
-    // 1. (경쟁전 여부 OR 강제 수집 플래그), 2. 고성능 기준 통과
-    const isCompetitive = matchAttr.gameMode.includes('competitive') || matchAttr.matchType === 'competitive';
+    const lowerGameMode = matchAttr.gameMode.toLowerCase();
+    const isNotTdmOrEvent = !lowerGameMode.includes('tdm') && !lowerGameMode.includes('event') && !lowerGameMode.includes('training') && !lowerGameMode.includes('zombie') && !lowerGameMode.includes('war') && !lowerGameMode.includes('lab');
+    const isNotBotMatch = matchAttr.matchType !== 'ai';
+    
     const myStats = myInfo.attributes.stats;
     const isHighPerformer = myStats.damageDealt >= minDamageThreshold || (myStats.winPlace <= 3 && myStats.damageDealt >= (minDamageParam ? minDamageThreshold : 250));
 
-    const isTpp = !matchAttr.gameMode.includes('fpp');
-    const isNotTdm = matchAttr.gameMode !== 'tdm';
-
-    if ((isCompetitive || forceBenchmark) && isHighPerformer && isTpp && isNotTdm) {
+    if ((isNotTdmOrEvent && isNotBotMatch || forceBenchmark) && isHighPerformer) {
       supabase.from("global_benchmarks").upsert({
         match_id: matchId,
         player_id: lowerNickname,
@@ -476,6 +507,7 @@ export async function GET(request: Request) {
         kills: myStats.kills,
         win_place: myStats.winPlace,
         game_mode: matchAttr.gameMode,
+        map_name: matchAttr.mapName,
         latency_ms: tradeCount > 0 ? Math.min(Math.round(tradeLatSum / tradeCount), 10000) : 0,
         initiative_rate: myCombatData.total > 0 ? Math.round((myCombatData.success / myCombatData.total) * 100) : 0,
         revive_rate: teammateKnocks > 0 ? Math.round((revCount / teammateKnocks) * 100) : 0,
@@ -486,7 +518,7 @@ export async function GET(request: Request) {
         utility_count: combatPressure.utilityHits,
         survival_time: Math.round(myStats.timeSurvived || 0),
         solo_kill_rate: myStats.kills > 0 ? Math.round((killContribution.solo / myStats.kills) * 100) : 0,
-        burst_damage: Math.round(goldenTimeDamage.early + goldenTimeDamage.mid1 + goldenTimeDamage.mid2 + goldenTimeDamage.late),
+        burst_damage: Math.round(Math.min(myStats.damageDealt, goldenTimeDamage.early + goldenTimeDamage.mid1 + goldenTimeDamage.mid2 + goldenTimeDamage.late)),
         created_at: new Date().toISOString()
       }, { onConflict: "match_id, player_id" }).then();
     }

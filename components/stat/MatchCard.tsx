@@ -322,6 +322,14 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, onNicknameCli
                   color="text-yellow-400"
                   bgColor="bg-yellow-400/10"
                 />
+                <TacticalBox 
+                  icon={<TrendingUp size={18} />} 
+                  label="주도권 성공률" 
+                  value={`${matchData.initiativeStats?.rate || 0}%`} 
+                  subLabel={`먼저 쏴서 이긴 비율`}
+                  color="text-cyan-400"
+                  bgColor="bg-cyan-400/10"
+                />
               </div>
 
               {/* Response Latency & Backup Rate */}
