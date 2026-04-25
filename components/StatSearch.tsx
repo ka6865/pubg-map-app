@@ -137,20 +137,29 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
   }, [selectedSeason, nickname, platform, cooldown]);
 
   useEffect(() => {
+    // URL 파라미터가 변경되면 이전 에러와 결과를 초기화하여 새로운 검색을 허용
+    setError("");
+    setResult(null);
+  }, [initialNickname, initialPlatform]);
+
+  useEffect(() => {
+    // 이미 결과가 있거나, 로딩 중이거나, 에러가 발생한 상태라면 자동 검색을 시도하지 않음
+    if (result || loading || error) return;
+
     // 1. URL 파라미터가 있는 경우 우선순위 1위
-    if (initialNickname && !result && !loading) {
+    if (initialNickname) {
       handleSearch(selectedSeason, initialNickname, initialPlatform);
       return;
     }
 
     // 2. 로그인 유저 프로필 연동 (URL 파라미터가 없을 때만)
-    if (!initialNickname && userProfile?.pubg_nickname && !result && !loading) {
+    if (userProfile?.pubg_nickname) {
       const userPlatform = userProfile.pubg_platform || "steam";
       setNickname(userProfile.pubg_nickname);
       setPlatform(userPlatform);
       handleSearch(selectedSeason, userProfile.pubg_nickname, userPlatform);
     }
-  }, [userProfile, result, loading, selectedSeason, handleSearch, initialNickname, initialPlatform]);
+  }, [userProfile, result, loading, error, selectedSeason, handleSearch, initialNickname, initialPlatform]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_FAVORITES, JSON.stringify(favorites));
@@ -363,6 +372,75 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
               <StatSummaryCard title="솔로" data={result.stats?.normal?.solo} isRanked={false} />
               <StatSummaryCard title="듀오" data={result.stats?.normal?.duo} isRanked={false} />
               <StatSummaryCard title="스쿼드" data={result.stats?.normal?.squad} isRanked={false} />
+            </div>
+          </div>
+
+          {/* BGMS AI 전술 분석 시스템 설명 추가 */}
+          <div style={{ 
+            marginTop: "10px",
+            padding: "25px", 
+            backgroundColor: "rgba(242, 169, 0, 0.03)", 
+            border: "1px solid rgba(242, 169, 0, 0.15)", 
+            borderRadius: "24px",
+            backdropFilter: "blur(10px)"
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "15px" }}>
+              <div style={{ padding: "8px", backgroundColor: "#F2A900", borderRadius: "8px" }}>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+              </div>
+              <h3 style={{ fontSize: "18px", fontWeight: "900", color: "#F2A900", margin: 0, letterSpacing: "-0.5px" }}>BGMS AI 정밀 전술 분석 시스템 (V5.20)</h3>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: "20px" }}>
+              <div style={{ backgroundColor: "rgba(255,255,255,0.03)", padding: "15px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.05)" }}>
+                <div style={{ color: "#F2A900", fontSize: "12px", fontWeight: "900", marginBottom: "5px" }}>01. 정밀한 상황 판단</div>
+                <div style={{ color: "#aaa", fontSize: "13px", lineHeight: "1.6" }}>단순 킬/딜을 넘어 교전 거리, 아군 거리, 지형 고도차 등 텔레메트리 데이터를 입체적으로 분석합니다.</div>
+              </div>
+              <div style={{ backgroundColor: "rgba(255,255,255,0.03)", padding: "15px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.05)" }}>
+                <div style={{ color: "#F2A900", fontSize: "12px", fontWeight: "900", marginBottom: "5px" }}>02. 공정한 평가 로직</div>
+                <div style={{ color: "#aaa", fontSize: "13px", lineHeight: "1.6" }}>불가항력적인 후반 자기장 피해나 기회가 없던 상황은 부활 기회에서 제외하여 억울한 비난을 방지합니다.</div>
+              </div>
+              <div style={{ backgroundColor: "rgba(255,255,255,0.03)", padding: "15px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.05)" }}>
+                <div style={{ color: "#F2A900", fontSize: "12px", fontWeight: "900", marginBottom: "5px" }}>03. 실전적 전술 코칭</div>
+                <div style={{ color: "#aaa", fontSize: "13px", lineHeight: "1.6" }}>투척물 효율, 엄호 지연 시간, 팀 기여도 등을 분석하여 당신의 플레이 스타일을 날카롭게 진단합니다.</div>
+              </div>
+            </div>
+
+            {/* 지표 산출 공식 (지표 사전) 추가 */}
+            <div style={{ marginTop: "25px", borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "20px" }}>
+              <div style={{ fontSize: "14px", fontWeight: "900", color: "#F2A900", marginBottom: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
+                <span style={{ width: "4px", height: "14px", backgroundColor: "#F2A900", borderRadius: "2px" }}></span>
+                핵심 지표 산출 공식 (Metric Dictionary)
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: "15px" }}>
+                <div style={{ display: "flex", gap: "10px" }}>
+                  <div style={{ fontSize: "16px", color: "rgba(242, 169, 0, 0.5)", fontWeight: "900" }}>01</div>
+                  <div>
+                    <div style={{ color: "#eee", fontSize: "13px", fontWeight: "bold" }}>백업 속도 (Backup Latency)</div>
+                    <div style={{ color: "#777", fontSize: "12px", lineHeight: "1.5" }}>아군 기절 시점부터 유저가 적에게 첫 유효 타격(데미지/공격)을 가하기까지의 시간차를 밀리초(ms) 단위로 계산합니다.</div>
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: "10px" }}>
+                  <div style={{ fontSize: "16px", color: "rgba(242, 169, 0, 0.5)", fontWeight: "900" }}>02</div>
+                  <div>
+                    <div style={{ color: "#eee", fontSize: "13px", fontWeight: "bold" }}>반응 속도 (Reaction Latency)</div>
+                    <div style={{ color: "#777", fontSize: "12px", lineHeight: "1.5" }}>적에게 데미지를 입은 후, 해당 적에게 다시 반격을 가하거나 대응 사격을 시작하기까지 걸린 시간을 측정합니다.</div>
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: "10px" }}>
+                  <div style={{ fontSize: "16px", color: "rgba(242, 169, 0, 0.5)", fontWeight: "900" }}>03</div>
+                  <div>
+                    <div style={{ color: "#eee", fontSize: "13px", fontWeight: "bold" }}>커버 성공률 (Cover Rate)</div>
+                    <div style={{ color: "#777", fontSize: "12px", lineHeight: "1.5" }}>아군 기절 시 유저가 엄호 사격(Suppression)을 가하거나 연막탄을 투척하는 등 실질적인 세이브 행동을 수행한 비율입니다.</div>
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: "10px" }}>
+                  <div style={{ fontSize: "16px", color: "rgba(242, 169, 0, 0.5)", fontWeight: "900" }}>04</div>
+                  <div>
+                    <div style={{ color: "#eee", fontSize: "13px", fontWeight: "bold" }}>전투 주도권 (Initiative)</div>
+                    <div style={{ color: "#777", fontSize: "12px", lineHeight: "1.5" }}>교전 시작 시 유저가 먼저 선제 타격을 가했는지, 아니면 피격 후 대응했는지를 판별하여 능동적인 교전 성향을 측정합니다.</div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 

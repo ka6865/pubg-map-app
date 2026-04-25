@@ -30,9 +30,15 @@ export async function POST(request: Request) {
       myEarlyBluezoneDamage = 0, myLateBluezoneDamage = 0, 
       teamEarlyBluezoneDamage = 0, teamLateBluezoneDamage = 0,
       matchStartTime = 0,
-      matchStats = { avgDamage: 0, avgKills: 0, totalParticipants: 0 },
-      myRank = { damageRank: 0, damagePercentile: 0, killRank: 0 },
-      combatPressure = { totalHits: 0, uniqueVictims: [], maxHitDistance: 0, utilityDamage: 0, utilityHits: 0 }
+      eliteBenchmark = { 
+        avgDamage: 0, avgKills: 0, 
+        realTradeLatency: 0, realInitiativeSuccess: 0, 
+        realDeathDistance: 0, realReviveRate: 0, realSmokeRate: 0 
+      },
+      myRank = { damageRank: 0, damagePercentile: 0, killRank: 0, totalPlayers: 0 },
+      combatPressure = { totalHits: 0, uniqueVictims: [], maxHitDistance: 0, utilityDamage: 0, utilityHits: 0 },
+      myCombatData = { total: 0, success: 0 },
+      deathDistance = 30
     } = matchData;
     const lowerNickname = nickname.toLowerCase();
 
@@ -97,9 +103,9 @@ export async function POST(request: Request) {
       .join("\n");
     
     // 3. 유틸리티(투척물) 사용 요약
-    const smokeCount = itemUseDetails.filter((i: any) => i.itemId === "Item_Weapon_SmokeBomb_C").length;
-    const grenadeCount = itemUseDetails.filter((i: any) => i.itemId === "Item_Weapon_Grenade_C").length;
-    const molotovCount = itemUseDetails.filter((i: any) => i.itemId === "Item_Weapon_Molotov_C").length;
+    const smokeCount = itemUseDetails.filter((i: any) => (i.itemId || "").toLowerCase().includes("smokebomb")).length;
+    const grenadeCount = itemUseDetails.filter((i: any) => (i.itemId || "").toLowerCase().includes("grenade")).length;
+    const molotovCount = itemUseDetails.filter((i: any) => (i.itemId || "").toLowerCase().includes("molotov")).length;
     
     // 4. 교전 타임라인 재구성 (최근 10개 이벤트만 - 연관성 중심)
     const timelineEvents = [
@@ -167,10 +173,13 @@ export async function POST(request: Request) {
 - 아군 백업: ${backupStatus}
 
 [V3.0 전술 분석 지표]
-- 상대적 우위: 매치 딜량 상위 ${100 - (myRank?.damagePercentile || 0)}% (정규 참가자 ${matchStats?.totalParticipants || 0}명 중 딜량 ${myRank?.damageRank || 0}위 / 킬 ${myRank?.killRank || 0}위)
-- 매치 평균 대비: 내 딜량(${Math.floor(stats.damageDealt)}) vs 매치 평균(${matchStats?.avgDamage || 0})
+- 상대적 우위: 매치 딜량 상위 ${100 - (myRank?.damagePercentile || 0)}% (정규 참가자 ${myRank?.totalPlayers || 0}명 중 딜량 ${myRank?.damageRank || 0}위 / 킬 ${myRank?.killRank || 0}위)
+- 글로벌 엘리트 대비: 내 딜량(${Math.floor(stats.damageDealt)}) vs 랭커 평균(${eliteBenchmark?.avgDamage || 0})
+- 전술 반응 속도 비교: 내 백업(${(matchData.tradeStats?.backupLatencyMs/1000).toFixed(2)}s) vs 랭커 평균(${(eliteBenchmark?.realTradeLatency/1000).toFixed(2)}s)
+- 주도권 성공률 비교: 내 성공률(${myCombatData.total > 0 ? Math.round((myCombatData.success / myCombatData.total) * 100) : 0}%) vs 랭커 평균(${eliteBenchmark?.realInitiativeSuccess}%)
+- 팀원 거리 유지: 내 평균(${deathDistance || 30}m) vs 랭커 평균(${eliteBenchmark?.realDeathDistance}m)
 - 교전 압박(Pressure): 총 ${combatPressure?.totalHits || 0}회 적중 / ${combatPressure?.uniqueVictims?.length || 0}명의 적을 동시에 압박
-- 전술 기여: 견제사격 ${matchData.tradeStats?.suppCount || 0}회, 연막세이브 ${matchData.tradeStats?.smokeCount || 0}회, 직접부활 ${matchData.tradeStats?.revCount || 0}회, 복수/미끼 ${matchData.tradeStats?.baitCount || 0}회
+- 전술 기여 (성공/기회): 견제사격(${matchData.tradeStats?.suppCount || 0}/${matchData.tradeStats?.dangerousKnocks || 0}), 연막세이브(${matchData.tradeStats?.smokeCount || 0}/${matchData.tradeStats?.smokeOpps || 0} [Elite: ${eliteBenchmark?.realSmokeRate}%]), 직접부활(${matchData.tradeStats?.revCount || 0}/${matchData.tradeStats?.teammateKnocks || 0} [Elite: ${eliteBenchmark?.realReviveRate}%]), 복수/미끼(${matchData.tradeStats?.baitCount || 0}회)
 - 대응 속도: 평균 백업 ${matchData.tradeStats?.backupLatencyMs > 0 ? (matchData.tradeStats.backupLatencyMs/1000).toFixed(2) : "N/A"}초 (커버율 ${matchData.tradeStats?.coverRate || 0}%)
 - 피킹 정밀도: 최대 적중 거리 ${combatPressure?.maxHitDistance || 0}m
 - 투척물 효율: ${combatPressure?.utilityHits || 0}회 적중 / 누적 데미지 ${combatPressure?.utilityDamage || 0}
@@ -205,8 +214,10 @@ ${playerReportSummary}
 당신은 아주 냉정하고 날카로운 실전형 '독설 교관'입니다.
 제공된 데이터를 통해 플레이어의 한심한 실책과 전술적 무능을 낱낱이 파헤쳐 팩폭을 가하십시오.
 - 핵심 기조: "실력 없는 친절함은 배그에서 죽음뿐이다."
-- 강조 포인트: 낮은 킬 대비 높은 데미지(결단력 부족), 고립사 빈도, 낮은 투척물 효율 등을 비웃거나 강하게 질책하십시오.
-- 말투: "~하십시오", "~입니까?"와 같은 딱딱하고 권위적인 군대 교관 어투를 사용하십시오.
+- 지표 해석 가이드 (절대 준수): 
+  1. 킬당 데미지(Damage per Kill)가 80~160 사이라면 "가장 이상적이고 결정력 있는 사격"을 한 것입니다. 이 수치를 두고 '비겁하다', '양념만 쳤다', '숟가락 얹었다'는 식으로 비난하는 것은 금지하며, 오히려 "효율적인 자원 관리와 결정력"으로 평가하십시오. 킬당 데미지가 250 이상일 때만 "확킬을 못 찍는 결단력 부족"으로 질책하십시오.
+  2. 킬/딜 기여도(Participation)가 40%를 넘는다면 당신의 독설 대상에서 "버스 승객"이나 "방관자"라는 표현은 삭제하십시오. 그는 팀의 주축(Main Force)입니다.
+  3. 기회(Opportunity)가 0인 항목에 대해서는 절대로 비난하지 마십시오.
 
 [분석 데이터 요약]
 ${playerReportSummary}

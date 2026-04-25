@@ -22,6 +22,21 @@ import {
 } from "lucide-react";
 import type { MatchData } from "../../types/stat";
 
+const getRelativeTime = (dateStr: string) => {
+  if (!dateStr) return "";
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffInMs = now.getTime() - date.getTime();
+  const diffInMins = Math.floor(diffInMs / (1000 * 60));
+  const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
+  const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
+
+  if (diffInDays > 0) return `${diffInDays}일 전`;
+  if (diffInHours > 0) return `${diffInHours}시간 전`;
+  if (diffInMins > 0) return `${diffInMins}분 전`;
+  return "방금 전";
+};
+
 /**
  * 간단한 마크다운 파서를 통해 AI 응답을 시각적으로 예쁘게 렌더링합니다.
  */
@@ -140,7 +155,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, onNicknameCli
 
   if (!matchData) return null;
 
-  const isRanked = (matchData.gameMode || "").includes("ranked") || matchData.gameMode === "squad" || matchData.gameMode === "squad-fpp";
+  const isRanked = matchData.matchType === 'competitive' || (matchData.gameMode || "").includes("competitive");
   const isWin = matchData.stats.winPlace === 1;
   const isTop10 = matchData.stats.winPlace <= 10;
   
@@ -189,6 +204,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, onNicknameCli
           <div className="flex flex-col gap-0.5">
             <div className="flex items-center gap-2">
               <span className="text-white font-black text-lg tracking-tight">{matchData.mapName}</span>
+              <span className="text-[10px] text-white/30 font-bold">{getRelativeTime(matchData.createdAt)}</span>
               <div className="flex gap-1.5">
                 <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider flex items-center gap-1 ${isRanked ? 'bg-amber-500/20 text-amber-500 border border-amber-500/30' : 'bg-white/10 text-gray-400 border border-white/10'}`}>
                   {isRanked && <Swords size={10} />}
@@ -257,7 +273,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, onNicknameCli
                 <span className="text-white font-black">전술적 기여도 (V3.0)</span>
               </div>
               
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
                 <TacticalBox 
                   icon={<Flame size={18} />} 
                   label="견제 사격" 
@@ -289,6 +305,22 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, onNicknameCli
                   subLabel="아군 희생 후 제압"
                   color="text-purple-400"
                   bgColor="bg-purple-400/10"
+                />
+                <TacticalBox 
+                  icon={<Target size={18} />} 
+                  label="피킹 정밀도" 
+                  value={`${matchData.combatPressure?.maxHitDistance || 0}m`} 
+                  subLabel="최대 교전 적중 거리"
+                  color="text-emerald-400"
+                  bgColor="bg-emerald-400/10"
+                />
+                <TacticalBox 
+                  icon={<Zap size={18} />} 
+                  label="투척물 효율" 
+                  value={matchData.combatPressure?.utilityHits || 0} 
+                  subLabel={`누적 딜량 ${matchData.combatPressure?.utilityDamage || 0}`}
+                  color="text-yellow-400"
+                  bgColor="bg-yellow-400/10"
                 />
               </div>
 
@@ -459,7 +491,7 @@ const StatBox = ({ icon, label, value, color }: { icon: React.ReactNode, label: 
   </div>
 );
 
-const TacticalBox = ({ icon, label, value, subLabel, color, bgColor }: { icon: React.ReactNode, label: string, value: number, subLabel: string, color: string, bgColor: string }) => (
+const TacticalBox = ({ icon, label, value, subLabel, color, bgColor }: { icon: React.ReactNode, label: string, value: number | string, subLabel: string, color: string, bgColor: string }) => (
   <div className={`p-4 rounded-3xl border border-white/5 ${bgColor} flex flex-col gap-3 group hover:border-white/20 transition-all`}>
     <div className="flex items-center justify-between">
       <div className={`${color} group-hover:scale-110 transition-transform`}>{icon}</div>

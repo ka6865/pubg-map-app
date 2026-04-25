@@ -34,11 +34,17 @@ interface DebateData {
   visuals?: {
     latency: { backup: string; opportunity: string };
     backupLatency: string;
+    latestMatchTime?: string;
     reactionLatency: string;
     initiativeSuccess: string;
     goldenTime?: { early: number; mid1: number; mid2: number; late: number };
     killContrib?: { solo: number; cleanup: number };
     bluezoneWaste?: number;
+    modeDistribution?: {
+      ranked: number;
+      normal: number;
+      main: string;
+    };
     tactical?: {
       suppRate: string;
       smokeRate: string;
@@ -50,6 +56,21 @@ interface DebateData {
     };
   };
 }
+
+const getRelativeTime = (dateStr: string) => {
+  if (!dateStr) return "";
+  const date = new Date(dateStr);
+  const now = new Date();
+  const diffInMs = now.getTime() - date.getTime();
+  const diffInMins = Math.floor(diffInMs / (1000 * 60));
+  const diffInHours = Math.floor(diffInMs / (1000 * 60 * 60));
+  const diffInDays = Math.floor(diffInMs / (1000 * 60 * 60 * 24));
+
+  if (diffInDays > 0) return `${diffInDays}일 전`;
+  if (diffInHours > 0) return `${diffInHours}시간 전`;
+  if (diffInMins > 0) return `${diffInMins}분 전`;
+  return "방금 전";
+};
 
 export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: string[]; nickname: string; platform: string }) => {
   const [debateData, setDebateData] = useState<DebateData | null>(null);
@@ -359,7 +380,23 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
               <div className="w-8 h-8 bg-emerald-500/20 rounded-lg flex items-center justify-center">
                 <ShieldAlert size={16} className="text-emerald-400" />
               </div>
-              <span className="text-white font-black">10경기 전술 마스터리 (V5.0)</span>
+              <span className="text-white font-black">10경기 전술 마스터리 (V5.1)</span>
+              {debateData.visuals.latestMatchTime && (
+                <div className="flex items-center gap-1.5 ml-2">
+                  <div className="w-1 h-1 bg-white/20 rounded-full" />
+                  <span className="text-[10px] text-white/40 font-bold">{getRelativeTime(debateData.visuals.latestMatchTime)}</span>
+                </div>
+              )}
+              {debateData.visuals.modeDistribution && (
+                <div className="flex items-center gap-1.5 ml-2">
+                  <span className="px-2 py-0.5 bg-indigo-500/20 border border-indigo-500/30 rounded text-[9px] text-indigo-300 font-black tracking-tighter uppercase">
+                    Ranked {debateData.visuals.modeDistribution.ranked}
+                  </span>
+                  <span className="px-2 py-0.5 bg-white/5 border border-white/10 rounded text-[9px] text-white/40 font-black tracking-tighter uppercase">
+                    Normal {debateData.visuals.modeDistribution.normal}
+                  </span>
+                </div>
+              )}
             </div>
             
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
@@ -379,14 +416,18 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
                 <span className="text-[10px] text-blue-400 font-black uppercase">연막 세이브 확률</span>
                 <span className="text-2xl font-black text-white">{debateData.visuals.tactical.smokeRate}</span>
                 {debateData.visuals.tactical.smokeRaw && (
-                  <div className="flex flex-col gap-0.5">
-                    <span className="text-[10px] text-blue-300/60 font-bold">
-                      {debateData.visuals.tactical.smokeRaw.count}회 / {debateData.visuals.tactical.smokeRaw.total}위험상황
-                    </span>
-                    {(debateData.visuals.tactical.smokeRaw.teamCover ?? 0) > 0 && (
-                      <span className="text-[9px] text-cyan-400/70 font-bold">↔ 팀커버 {debateData.visuals.tactical.smokeRaw.teamCover}회</span>
-                    )}
-                  </div>
+                    <div className="flex flex-col gap-0.5 mt-0.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[10px] text-blue-300/60 font-bold whitespace-nowrap">
+                          {debateData.visuals.tactical.smokeRaw.count}회 / {debateData.visuals.tactical.smokeRaw.total}위험상황
+                        </span>
+                        {(debateData.visuals.tactical.smokeRaw.teamCover ?? 0) > 0 && (
+                          <span className="text-[9px] text-cyan-400 font-black whitespace-nowrap bg-cyan-400/10 px-1 rounded">
+                            팀커버 {debateData.visuals.tactical.smokeRaw.teamCover}
+                          </span>
+                        )}
+                      </div>
+                    </div>
                 )}
                 <div className="w-full h-1 bg-white/5 rounded-full mt-1 overflow-hidden">
                   <div className="h-full bg-blue-400" style={{ width: `${parseRate(debateData.visuals.tactical.smokeRate)}%` }} />
@@ -480,7 +521,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
                     </div>
 
                     <div className="flex flex-col gap-3">
-                      <div className="text-[9px] text-gray-400 font-black uppercase tracking-wider bg-white/5 self-start px-2 py-0.5 rounded">Benchmark (Top 15)</div>
+                      <div className="text-[9px] text-gray-400 font-black uppercase tracking-wider bg-white/5 self-start px-2 py-0.5 rounded">ELITE STANDARD</div>
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
                         {issue.benchmarkStats.map((stat: { label: string; value: string; detail?: string }, sIdx: number) => (
                           <div key={sIdx} className="flex flex-col">

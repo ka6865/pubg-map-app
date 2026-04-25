@@ -50,6 +50,7 @@ export interface MatchData {
   mapName: string;
   createdAt: string;
   gameMode: string;
+  matchType?: string;
   team: MatchTeamMember[];
   totalTeamKills: number;
   totalTeamDamage: number;
