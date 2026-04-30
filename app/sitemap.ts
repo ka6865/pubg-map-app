@@ -1,5 +1,8 @@
 import { MetadataRoute } from 'next';
 
+/**
+ * [V2] 사이트맵 최적화: 빌드 타임아웃 방지를 위해 정적 경로 위주로 구성
+ */
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // 사이트맵용 베이스 URL 설정
   let siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://bgms.kr';
