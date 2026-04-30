@@ -134,10 +134,25 @@ async function extractSimulatorData() {
   console.log(`총 추출된 매치 수: ${allMatches.length} 건`);
   console.table(mapStats);
 
-  // JSON 파일로 저장
+  // JSON 파일로 저장 (로컬)
   const outputPath = path.resolve(process.cwd(), "public/bluezone_data.json");
   fs.writeFileSync(outputPath, JSON.stringify(allMatches, null, 2));
-  console.log(`\n✅ 데이터 추출 완료! 저장 위치: ${outputPath}`);
+  console.log(`\n✅ 로컬 데이터 추출 완료! 저장 위치: ${outputPath}`);
+
+  // Supabase Storage에 업로드 (app-data 버킷)
+  console.log("☁️ Supabase Storage에 업로드 중...");
+  const { error: uploadError } = await supabase.storage
+    .from("app-data")
+    .upload("bluezone_data.json", JSON.stringify(allMatches), {
+      contentType: "application/json",
+      upsert: true,
+    });
+
+  if (uploadError) {
+    console.error("❌ Storage 업로드 에러:", uploadError);
+  } else {
+    console.log("✅ Supabase Storage 업로드 완료!");
+  }
 }
 
 extractSimulatorData();

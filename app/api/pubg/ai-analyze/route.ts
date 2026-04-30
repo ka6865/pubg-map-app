@@ -36,7 +36,7 @@ export async function POST(request: Request) {
 - 전술 지원: 견제사격 ${tradeStats.suppCount || 0}회 (Elite Avg: ${eliteBenchmark.avgSuppCount || 3}회), 연막 ${tradeStats.smokeCount || 0}회, 부활 ${tradeStats.revCount || 0}회
 - 공간 전술: 고립 지수 ${isolationData?.isolationIndex || "데이터 부족"} (Elite: ${eliteBenchmark.avgIsolationIndex || 1.0}) / 고도차 ${isolationData?.heightDiff || 0}m
 - 운영 패턴: 사망 페이즈 ${matchData.deathPhase || 0} (Elite Avg: ${eliteBenchmark.avgDeathPhase || 6} 페이즈)
-- 교전 압박: 압박 지수 ${combatPressure.pressureIndex || 0} (Elite: ${eliteBenchmark.avgPressureIndex || 1.5}) / 투척물 딜량 ${combatPressure.utilityDamage || 0}
+- 교전 압박: 압박 지수 ${combatPressure.pressureIndex || 0} (Elite: ${eliteBenchmark.avgPressureIndex || 1.5}) / 투척물 딜량 ${combatPressure.utilityDamage || 0} / 투척물 적중 ${combatPressure.utilityHits || 0}회 (이 중 섬광탄 눈뽕 적중: ${combatPressure.stunHits || 0}회)
 `.trim();
 
     const personaPrompt = isMild 
@@ -57,6 +57,7 @@ export async function POST(request: Request) {
       "- [Apple-to-Apple] 반드시 유저의 수치와 상위권 벤치마크 수치를 직접 대조하십시오.",
       "- [배지 우선순위] 유저가 획득한 배지가 있다면 이를 signature(칭호) 결정의 핵심 근거로 사용하십시오.",
       "- [팀 영향력] 내 딜량 비중이 40% 이상이면 '캐리', 15% 미만이면 '버스' 키워드를 전술적으로 활용하십시오.",
+      "- [투척물 분석 규칙] 투척물 딜량이 0이더라도 '투척물 적중' 횟수가 존재한다면, 이는 적을 향해 섬광탄을 명중시켰거나 기절한 적을 정밀하게 타격했다는 뜻입니다. 이 경우 절대 비난하지 말고 '교전 보조 능력이 탁월하다'고 강력하게 칭찬하십시오.",
       "- **핵심 규칙**: 불필요한 미사여구와 항목 나열을 절대 금지합니다. 칭호와 그에 대한 전술적 이유를 설명한 뒤, 하단에 정확히 3개의 핵심 피드백 문장만 제공하십시오.",
       "",
       "반드시 아래 구조의 JSON 객체로만 응답하세요. 백틱(\`\`\`) 없이 순수 JSON만 출력하십시오.",

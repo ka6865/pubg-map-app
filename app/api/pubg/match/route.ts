@@ -162,7 +162,7 @@ export async function GET(request: Request) {
     const zoneStrategy = { edgePlayCount: 0, fatalDelayCount: 0 };
     let totalCrossfireCount = 0, bluezoneWaste = 0;
     const dbnoIsolationSamples: number[] = []; 
-    const combatPressure = { totalHits: 0, uniqueVictims: new Set(), maxHitDistance: 0, utilityDamage: 0, utilityHits: 0 };
+    const combatPressure = { totalHits: 0, uniqueVictims: new Set(), maxHitDistance: 0, utilityDamage: 0, utilityHits: 0, stunHits: 0 };
     const teamsUserHit = new Set(), wipedTeamsByUserParticipation = new Set();
     let reactLatSum = 0, reactCount = 0, totalTimesHit = 0, deathDistance = 0, myDeathTime: string | null = null;
     let totalTeammateKnocks = 0, totalSuppCount = 0, totalSmokeCount = 0, totalBaitCount = 0;
@@ -320,7 +320,13 @@ export async function GET(request: Request) {
           vDmg.total += dmg; vDmg.user += dmg; vDmg.lastTs = ts; victimDamage.set(victimName, vDmg);
           combatPressure.totalHits++; combatPressure.uniqueVictims.add(victimName);
           const dist = calcDist3D(e.attacker?.loc, e.victim?.loc); if (dist !== 999 && dist > combatPressure.maxHitDistance) combatPressure.maxHitDistance = Math.round(dist);
-          if (["Grenade", "Molotov", "C4"].some(k => (e.damageTypeCategory || "").includes(k))) { combatPressure.utilityDamage += dmg; combatPressure.utilityHits++; }
+          if (e.damageTypeCategory?.includes("Stun") || e.damageReason?.includes("Stun")) {
+            combatPressure.stunHits++;
+            combatPressure.utilityHits++; // 히트 판정에는 포함
+          } else if (["Grenade", "Molotov", "C4"].some(k => (e.damageTypeCategory || "").includes(k))) { 
+            combatPressure.utilityDamage += dmg; 
+            combatPressure.utilityHits++; 
+          }
           
           const timeOffset = (ts - matchStartTime) / 1000 / 60;
           if (timeOffset <= 5) goldenTimeDamage.early += dmg;

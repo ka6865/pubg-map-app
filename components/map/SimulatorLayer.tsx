@@ -45,7 +45,7 @@ export function SimulatorLayer({
   // 1. 데이터 로드
   useEffect(() => {
     if (activeMode === "simulate" && bluezoneData.length === 0) {
-      fetch("/bluezone_data.json")
+      fetch("/api/bluezone")
         .then(res => res.json())
         .then(data => setBluezoneData(data))
         .catch(err => console.error("Bluezone data load failed:", err));
