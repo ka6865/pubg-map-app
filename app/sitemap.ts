@@ -1,12 +1,4 @@
 import { MetadataRoute } from 'next';
-export const revalidate = 3600; // 1시간마다 사이트맵 갱신 (자동 수집 최적화)
-import { createClient } from '@supabase/supabase-js';
-
-// 🌟 [보안/안정성] 서버 사이드 전용 Supabase 클라이언트 생성 (URL/Key 유효성 검사 추가)
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-
-const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // 사이트맵용 베이스 URL 설정
@@ -54,28 +46,5 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     },
   ];
 
-  // 🌟 [확장] 게시글들 가져오기 (빌드 타임아웃 방지를 위해 개수 제한)
-  let postEntries: MetadataRoute.Sitemap = [];
-  if (supabase) {
-    try {
-      const { data: posts, error } = await supabase
-        .from('posts')
-        .select('id, created_at')
-        .order('created_at', { ascending: false })
-        .limit(50);
-
-      if (!error && posts) {
-        postEntries = posts.map((post) => ({
-          url: `${siteUrl}/board/${post.id}`,
-          lastModified: post.created_at ? new Date(post.created_at) : new Date(),
-          changeFrequency: 'weekly',
-          priority: 0.6,
-        }));
-      }
-    } catch (error) {
-      console.error('[Sitemap Error] 게시글 로드 실패:', error);
-    }
-  }
-
-  return [...staticEntries, ...mapEntries, ...postEntries];
+  return [...staticEntries, ...mapEntries];
 }
