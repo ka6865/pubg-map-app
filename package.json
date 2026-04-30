@@ -12,10 +12,12 @@
     "build:app": "bash scripts/build-app.sh"
   },
   "dependencies": {
+    "@ai-sdk/google": "^3.0.64",
     "@google/generative-ai": "^0.24.1",
     "@next/third-parties": "^16.2.4",
     "@supabase/ssr": "^0.10.0",
     "@supabase/supabase-js": "^2.95.3",
+    "ai": "^6.0.168",
     "axios": "^1.15.2",
     "browser-image-compression": "^2.0.2",
     "discord.js": "^14.26.2",

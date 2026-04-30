@@ -58,6 +58,19 @@ export interface MatchData {
   killDetails: KillDetail[];
   /** 텔레메트리 기반 기절 상세 */
   dbnoDetails: KillDetail[];
+  /** [V6.5] 팀 기여도 지표 */
+  teamImpact?: {
+    damageImpact: number;
+    killImpact: number;
+    totalTeamDamage: number;
+    totalTeamKills: number;
+  };
+  /** [V6.5] 획득 배지 리스트 */
+  badges?: Array<{
+    id: string;
+    name: string;
+    desc: string;
+  }>;
   /** [V3] 플레이어 순위 정보 (딜량 순위, 백분위, 킬 순위) */
   myRank?: {
     damageRank: number;
@@ -86,10 +99,19 @@ export interface MatchData {
     teamSmokeCovered?: number;
     revCount: number;
     baitCount: number;
-    backupLatencyMs: number;
+    tradeLatencyMs?: number;
+    counterLatencyMs: number;
     reactionLatencyMs: number;
     coverRate: number;
     enemyTeamWipes?: number;
+  };
+  /** [V8.1] 공간 지능 지표 (고립 지수, 아군 거리 등) */
+  isolationData?: {
+    isolationIndex: number;
+    minDist: number;
+    heightDiff: number;
+    isCrossfire: boolean;
+    teammateCount: number;
   };
   /** [V31] 선제 타격 지표 */
   initiativeStats?: {
@@ -130,5 +152,7 @@ export interface MatchData {
     mid2: number;
     late: number;
   };
+  /** [V8.1] 선제 타격 성공률 (직접 필드) */
+  initiative_rate?: number;
   v: number;
 }
