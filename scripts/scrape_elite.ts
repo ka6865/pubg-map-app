@@ -71,46 +71,63 @@ async function scrapeEliteData() {
     for (const [accountId, nickname] of playerPool.entries()) {
       console.log(`\n🔍 [${nickname}] 데이터 수집 시작...`);
 
-      try {
-        // 플레이어 상세 정보 (매치 리스트) 조회
-        const pDetails = await axios.get(`${BASE_URL}/players/${accountId}`, { headers: HEADERS });
-        const matchIds = pDetails.data.data.relationships.matches.data.slice(0, 5).map((m: any) => m.id);
+      // [V11.2] API 차단 방지를 위한 플레이어 간 간격 확보 (6초)
+      await sleep(6000);
 
-        for (const matchId of matchIds) {
-          console.log(`   - 분석 중: MatchID(${matchId})`);
-          
-          // [핵 필터 및 정제] 우리 서버 API 호출 전 닉네임 정규화
-          const cleanNickname = nickname.trim();
-          
-          // 우리 서버의 매치 분석 API 호출 (V11.1 규격 적용)
-          try {
-            // [V11.1] 백엔드에서 isValidBenchmark 로직을 통해 상위 25%만 선별 저장함
-            const res = await axios.get(`${LOCAL_API_URL}?matchId=${matchId}&nickname=${encodeURIComponent(cleanNickname)}&platform=steam`);
-            
-            if (res.status === 200) {
-              const data = res.data;
-              // 인간의 범주를 벗어난 수치 (핵 의심) 필터링 - 벤치마크 오염 방지
-              if (data.stats.damageDealt > 1800 || data.stats.kills > 25) {
-                console.log(`     🚫 핵 의심 데이터 감지 (딜량: ${Math.round(data.stats.damageDealt)}, 킬: ${data.stats.kills}). 스킵.`);
-                continue;
-              }
-              const dPhase = data.deathPhase !== undefined ? `${data.deathPhase}Ph` : "N/A";
-              console.log(`     ✅ 분석 완료: V${data.v} (딜량: ${Math.round(data.stats.damageDealt)}, 생존: ${dPhase})`);
-            }
-          } catch (apiErr: any) {
-            if (apiErr.response?.status === 429) {
-              console.log("     ⚠️ Rate Limit 도달! 10초 대기...");
-              await sleep(10000);
-            } else {
-              console.log(`     ℹ️ 스킵 (이유: ${apiErr.response?.data?.error || "처리 불가 매치"})`);
-            }
+      let retryCount = 0;
+      const maxRetries = 3;
+      let matchIds: string[] = [];
+
+      while (retryCount < maxRetries) {
+        try {
+          // 플레이어 상세 정보 (매치 리스트) 조회
+          const pDetails = await axios.get(`${BASE_URL}/players/${accountId}`, { headers: HEADERS });
+          matchIds = pDetails.data.data.relationships.matches.data.slice(0, 5).map((m: any) => m.id);
+          break; // 성공 시 탈출
+        } catch (pErr: any) {
+          if (pErr.response?.status === 429) {
+            console.log(`   ⚠️ API 호출 제한(429) 감지! 30초 후 재시도... (${retryCount + 1}/${maxRetries})`);
+            await sleep(30000);
+            retryCount++;
+          } else {
+            console.error(`   ⚠️ 플레이어(${nickname}) 매치 리스트 조회 중 오류 발생: ${pErr.message}`);
+            break;
           }
-          
-          // API 레이트 리밋 방지를 위한 쿨타임
-          await sleep(2000);
         }
-      } catch (pErr) {
-        console.error(`   ⚠️ 플레이어(${nickname}) 매치 리스트 조회 중 오류 발생`);
+      }
+
+      if (matchIds.length === 0) continue;
+
+      for (const matchId of matchIds) {
+        console.log(`   - 분석 중: MatchID(${matchId})`);
+        
+        // [핵 필터 및 정제] 우리 서버 API 호출 전 닉네임 정규화
+        const cleanNickname = nickname.trim();
+        
+        // 우리 서버의 매치 분석 API 호출 (V11.1 규격 적용)
+        try {
+          const res = await axios.get(`${LOCAL_API_URL}?matchId=${matchId}&nickname=${encodeURIComponent(cleanNickname)}&platform=steam`);
+          
+          if (res.status === 200) {
+            const data = res.data;
+            if (data.stats.damageDealt > 1800 || data.stats.kills > 25) {
+              console.log(`     🚫 핵 의심 데이터 감지 (딜량: ${Math.round(data.stats.damageDealt)}, 킬: ${data.stats.kills}). 스킵.`);
+              continue;
+            }
+            const dPhase = data.deathPhase !== undefined ? `${data.deathPhase}Ph` : "N/A";
+            console.log(`     ✅ 분석 완료: V${data.v} (딜량: ${Math.round(data.stats.damageDealt)}, 생존: ${dPhase})`);
+          }
+        } catch (apiErr: any) {
+          if (apiErr.response?.status === 429) {
+            console.log("     ⚠️ Local API Rate Limit 도달! 15초 대기...");
+            await sleep(15000);
+          } else {
+            console.log(`     ℹ️ 스킵 (이유: ${apiErr.response?.data?.error || "처리 불가 매치"})`);
+          }
+        }
+        
+        // API 레이트 리밋 방지를 위한 쿨타임 (경쟁전은 텔레메트리가 커서 처리에 시간이 걸리므로 3초 대기)
+        await sleep(3000);
       }
     }
 

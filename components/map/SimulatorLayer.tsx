@@ -85,9 +85,13 @@ export function SimulatorLayer({
         return { match, dist: Math.min(dist1, dist2) };
       }).filter(m => m.dist !== Infinity);
 
-      scoredMatches.sort((a, b) => a.dist - b.dist);
-      const takeCount = Math.max(10, Math.min(50, Math.floor(scoredMatches.length * 0.3)));
-      toRender = scoredMatches.slice(0, takeCount).map(m => m.match);
+      // 비행기 경로가 너무 동떨어진 매치는 철저히 배제 (출발/도착점 오차 합이 3.5km 이상이면 버림)
+      const validMatches = scoredMatches.filter(m => m.dist < 3500);
+      validMatches.sort((a, b) => a.dist - b.dist);
+      
+      // [최적화] 필터링을 통과한 매치는 모두 사용 (최대 200개) - 데이터가 많아질수록 더 정밀한 핫스팟 형성
+      const takeCount = Math.max(5, Math.min(200, validMatches.length)); 
+      toRender = validMatches.slice(0, takeCount).map(m => m.match);
 
       // 경로 완성 시 또는 1페이즈일 때 매칭된 비행기 경로 표시
       if (currentStep <= 1) {
@@ -108,7 +112,7 @@ export function SimulatorLayer({
           const dStart = Math.sqrt(Math.pow(uA.lat - mA.lat, 2) + Math.pow(uA.lng - mA.lng, 2));
           const dEnd = Math.sqrt(Math.pow(uA.lat - mB.lat, 2) + Math.pow(uA.lng - mB.lng, 2));
 
-          if (Math.min(dStart, dEnd) < 1500) {
+          if (Math.min(dStart, dEnd) < 800) {
             return [
               L.latLng(8192 - m.flightPath[0].lat, m.flightPath[0].lng),
               L.latLng(8192 - m.flightPath[1].lat, m.flightPath[1].lng)
@@ -195,22 +199,24 @@ export function SimulatorLayer({
 
       // 3. 레이어 업데이트 또는 생성 (중복 생성 방지 핵심 로직)
       if (heatLayerRef.current) {
-        // 이미 레이어가 있다면 데이터만 교체 (매우 빠르고 잔상 없음)
+        // 데이터가 적을수록 max값을 낮춰서 색상을 진하게 만듦
+        const dynamicMax = Math.max(1.0, Math.min(2.5, heatData.length / 4));
+        heatLayerRef.current.setOptions({ max: dynamicMax });
         heatLayerRef.current.setLatLngs(heatData);
       } else {
+        // 데이터가 적을수록 max값을 낮춰서 색상을 진하게 만듦
+        const dynamicMax = Math.max(1.0, Math.min(2.5, heatData.length / 4));
         // 처음 생성할 때만 설정 적용
         heatLayerRef.current = (L as any).heatLayer(heatData, {
-          radius: 70, // 반경을 넓혀 데이터 간 중첩 유도
-          blur: 40,
+          radius: 45, // 35 -> 45로 키워서 시인성 확보
+          blur: 25,
           maxZoom: 1, 
-          max: 5.0, // 통계적 빈도: 5개 이상 겹쳐야 진한 빨간색
-          minOpacity: 0.1,
+          max: dynamicMax,
           gradient: {
-            0.1: "blue",
-            0.2: "cyan",
-            0.4: "lime",
-            0.6: "yellow",
-            0.8: "orange",
+            0.2: "blue",
+            0.4: "cyan",
+            0.6: "lime",
+            0.8: "yellow",
             1.0: "red"
           }
         }).addTo(map);
@@ -304,14 +310,14 @@ export function SimulatorLayer({
         />
       )}
       
-      {/* 과거 매칭된 매치들의 비행기 선 (0페이즈 대기/경로 완성 시 또는 1페이즈에 표시) */}
-      {currentStep <= 1 && matchedFlightPaths.map((path, idx) => (
+      {/* 과거 매칭된 매치들의 비행기 선 (점 0개일때 희미하게, 1개일때 진하게, 2개일때 숨김) */}
+      {flightPoints.length < 2 && matchedFlightPaths.map((path, idx) => (
         <Polyline
-          key={`matched-flight-${idx}`}
+          key={`matched-flight-${flightPoints.length}-${idx}`}
           positions={path}
           color="white"
-          weight={2}
-          opacity={0.15}
+          weight={flightPoints.length === 1 ? 4 : 2}
+          opacity={flightPoints.length === 1 ? 0.6 : 0.15}
           dashArray="4, 8"
           interactive={false}
         />

@@ -16,12 +16,45 @@ async function extractSimulatorData() {
   const allMatches: any[] = [];
   
   console.log("DB에서 매치 ID 목록을 가져오는 중...");
-  const { data: matches, error: matchError } = await supabase
-    .from("match_master_telemetry")
-    .select("match_id, map_name");
+  
+  // 1. processed_match_telemetry에서 competitive 매치 ID만 필터링
+  const { data: processedMatches, error: processedError } = await supabase
+    .from("processed_match_telemetry")
+    .select("match_id, data");
 
-  if (matchError || !matches) {
-    console.error("❌ 매치 ID 조회 에러:", matchError);
+  if (processedError || !processedMatches) {
+    console.error("❌ 처리된 매치 조회 에러:", processedError);
+    return;
+  }
+
+  const competitiveMatchIds = processedMatches
+    .filter((m: any) => m.data?.fullResult?.matchType === "competitive" || m.data?.matchType === "competitive")
+    .map((m: any) => m.match_id);
+
+  console.log(`경쟁전(Competitive) 매치 ${competitiveMatchIds.length}개 발견. 텔레메트리 파싱 시작...`);
+
+  // 2. match_master_telemetry에서 각 매치의 맵 정보 조회 (Batching 적용하여 HeadersOverflow 방지)
+  const matches: any[] = [];
+  const BATCH_SIZE = 100;
+  
+  for (let i = 0; i < competitiveMatchIds.length; i += BATCH_SIZE) {
+    const batchIds = competitiveMatchIds.slice(i, i + BATCH_SIZE);
+    const { data: batchData, error: matchError } = await supabase
+      .from("match_master_telemetry")
+      .select("match_id, map_name")
+      .in("match_id", batchIds);
+
+    if (matchError) {
+      console.error(`❌ 매치 ID 조회 에러 (Batch ${i}):`, matchError);
+      continue;
+    }
+    if (batchData) {
+      matches.push(...batchData);
+    }
+  }
+
+  if (matches.length === 0) {
+    console.error("❌ 조회된 매치 데이터가 없습니다.");
     return;
   }
 
