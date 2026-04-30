@@ -18,8 +18,12 @@ import {
   Heart,
   Skull,
   ShieldAlert,
-  TrendingUp
+  TrendingUp,
+  PlayCircle,
+  ExternalLink,
+  Map as MapIcon
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import type { MatchData } from "../../types/stat";
 
 const getRelativeTime = (dateStr: string) => {
@@ -103,21 +107,54 @@ interface MatchCardProps {
   nickname: string;
   platform: string;
   isMobile: boolean;
+  index?: number;
   onNicknameClick?: (nickname: string) => void;
 }
 
-export const MatchCard = ({ matchId, nickname, platform, isMobile, onNicknameClick }: MatchCardProps) => {
+export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, onNicknameClick }: MatchCardProps) => {
   const [matchData, setMatchData] = useState<MatchData | null>(null);
   const [loading, setLoading] = useState(true);
   const [isExpanded, setIsExpanded] = useState(false);
   const [coachingStyle, setCoachingStyle] = useState<"mild" | "spicy">("spicy");
   const [analysis, setAnalysis] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const router = useRouter();
+
+  // 맵 이름 매핑 (한글/영문 -> 내부 mapId)
+  const getMapId = (name: string) => {
+    const mapping: Record<string, string> = {
+      "에란겔": "erangel",
+      "미라마": "miramar",
+      "사녹": "sanhok",
+      "태이고": "taego",
+      "데스턴": "deston",
+      "론도": "rondo",
+      "비켄디": "vikendi",
+      "카라킨": "karakin",
+      "파라모": "paramo",
+      "헤이븐": "haven",
+      "Baltic_Main": "erangel",
+      "Desert_Main": "miramar",
+      "Savage_Main": "sanhok",
+      "Tiger_Main": "taego",
+      "Kiki_Main": "deston",
+      "Neon_Main": "rondo",
+      "Chimera_Main": "vikendi"
+    };
+    return mapping[name] || name.toLowerCase().replace(/_main/i, "");
+  };
+
+  const mapId = getMapId(matchData?.mapName || "");
+
+  const handleInternalReplay = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    router.push(`/maps/${mapId}?playback=${matchId}&nickname=${nickname}`);
+  };
 
   useEffect(() => {
     const fetchMatch = async () => {
       try {
-        const res = await fetch(`/api/pubg/match?matchId=${matchId}&nickname=${nickname}&platform=${platform}`);
+        const res = await fetch(`/api/pubg/match?matchId=${matchId}&nickname=${nickname}&platform=${platform}`, { cache: 'no-store' });
         const data = await res.json();
         if (!data.error) setMatchData(data);
       } catch (err) {
@@ -126,24 +163,71 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, onNicknameCli
         setLoading(false);
       }
     };
-    fetchMatch();
-  }, [matchId, nickname, platform]);
+    
+    // 개발 서버 환경 등에서 동시 요청으로 인한 병목을 줄이기 위해 인덱스 기반으로 딜레이 분산
+    const delay = index * 300;
+    const timer = setTimeout(() => {
+      fetchMatch();
+    }, delay);
+    
+    return () => clearTimeout(timer);
+  }, [matchId, nickname, platform, index]);
 
   const handleAnalyze = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (isAnalyzing || (analysis && coachingStyle)) return;
+    if (isAnalyzing || analysis) return;
 
     setIsAnalyzing(true);
+    setAnalysis("");
+    
+    const abortController = new AbortController();
+    let lineBuffer = "";
+    
     try {
       const res = await fetch("/api/pubg/ai-analyze", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: abortController.signal,
         body: JSON.stringify({ matchData, nickname, coachingStyle })
       });
-      const data = await res.json();
-      if (data.analysis) setAnalysis(data.analysis);
-    } catch (err) {
-      console.error("Analysis Error:", err);
+
+      if (!res.ok) throw new Error("분석 요청 실패");
+
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      let accumulatedAnalysis = "";
+
+      if (reader) {
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            lineBuffer += decoder.decode(value, { stream: true });
+            const lines = lineBuffer.split("\n");
+            lineBuffer = lines.pop() || ""; // 마지막 미완성 라인 유지
+
+            for (const line of lines) {
+              if (!line.trim()) continue;
+              try {
+                const parsed = JSON.parse(line);
+                if (parsed.type === "chunk") {
+                  accumulatedAnalysis += parsed.data;
+                  setAnalysis(accumulatedAnalysis);
+                } else if (parsed.type === "done") {
+                  // 분석 완료
+                }
+              } catch (e) {
+                console.error("NDJSON Parse Error in MatchCard:", e, line);
+              }
+            }
+          }
+        } finally {
+          reader.releaseLock();
+        }
+      }
+    } catch (err: any) {
+      if (err.name !== 'AbortError') console.error("Analysis Error:", err);
     } finally {
       setIsAnalyzing(false);
     }
@@ -225,7 +309,36 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, onNicknameCli
                 <span className="text-indigo-400 font-black text-sm">{Math.floor(matchData.stats.damageDealt)}</span>
                 <span className="text-[10px] text-indigo-400/60 font-bold uppercase">Dmg</span>
               </div>
+              {(matchData.teamImpact?.damageImpact ?? 0) > 0 && (
+                <>
+                  <div className="w-1 h-1 bg-white/10 rounded-full" />
+                  <div className="flex items-center gap-1 bg-orange-500/10 px-1.5 py-0.5 rounded border border-orange-500/20" title="팀 내 딜량 비중">
+                    <Flame size={10} className="text-orange-500" />
+                    <span className="text-[10px] text-orange-500 font-black">팀 딜량 {matchData.teamImpact?.damageImpact}%</span>
+                  </div>
+                </>
+              )}
             </div>
+            {/* Tactical Badges Display */}
+            {matchData.badges && matchData.badges.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                {matchData.badges.map((badge: any, i: number) => {
+                  let badgeIcon = "🏅";
+                  if (badge.id === "smoke_master") badgeIcon = "💨";
+                  else if (badge.id === "sharpshooter") badgeIcon = "🎯";
+                  else if (badge.id === "zone_wizard") badgeIcon = "⚡️";
+                  else if (badge.id === "last_survivor") badgeIcon = "🛡️";
+                  else if (badge.id === "damage_carry") badgeIcon = "🔥";
+                  
+                  return (
+                    <div key={i} className="flex items-center gap-1 bg-white/5 border border-white/10 px-1.5 py-0.5 rounded text-[9px] font-bold text-gray-300">
+                      <span>{badgeIcon}</span>
+                      <span>{badge.name}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 
@@ -252,6 +365,29 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, onNicknameCli
         </div>
       </div>
 
+      {/* Quick Action Bar (Floating) */}
+      <div className="px-5 pb-4 flex flex-wrap gap-3">
+        <button 
+          onClick={handleInternalReplay}
+          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-tighter transition-all hover:scale-105 active:scale-95
+            ${isRanked ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20' : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'}`}
+        >
+          <PlayCircle size={14} />
+          2D 리플레이
+        </button>
+
+        <button 
+          onClick={(e) => {
+            e.stopPropagation();
+            router.push(`/maps/${mapId}?playback=${matchId}&nickname=${nickname}&mode=full`);
+          }}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-tighter transition-all hover:scale-105 active:scale-95 bg-gradient-to-r from-yellow-500/20 to-orange-600/20 text-yellow-500 border border-yellow-500/30 shadow-[0_0_15px_rgba(245,158,11,0.1)]"
+        >
+          <span className="text-sm">💎</span>
+          고정밀 리플레이 (원본 데이터)
+        </button>
+      </div>
+
       {/* Expanded Content */}
       {isExpanded && (
         <div className="p-6 pt-0 border-t border-white/5 animate-in slide-in-from-top-4 duration-500">
@@ -263,14 +399,17 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, onNicknameCli
             <StatBox icon={<Clock size={16} />} label="생존시간" value={`${Math.floor(matchData.stats.timeSurvived / 60)}분`} color="text-green-400" />
           </div>
 
-          {/* V3.0 Tactical Contribution Dashboard */}
+          {/* V8.1 Tactical Contribution Dashboard */}
           {matchData.tradeStats && (
             <div className="mt-8">
               <div className="flex items-center gap-2 mb-4">
                 <div className="w-8 h-8 bg-emerald-500/20 rounded-lg flex items-center justify-center">
                   <ShieldAlert size={16} className="text-emerald-400" />
                 </div>
-                <span className="text-white font-black">전술적 기여도 (V3.0)</span>
+                <div className="flex flex-col">
+                  <span className="text-white font-black text-sm">전술적 기여도</span>
+                  <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Fact-Based Performance Metrics</span>
+                </div>
               </div>
               
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
@@ -281,14 +420,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, onNicknameCli
                   subLabel="아군 위기 시 지원"
                   color="text-orange-400"
                   bgColor="bg-orange-400/10"
-                />
-                <TacticalBox 
-                  icon={<Wind size={18} />} 
-                  label="연막 세이브" 
-                  value={matchData.tradeStats.smokeCount} 
-                  subLabel="골든타임(5초) 내 투척"
-                  color="text-blue-400"
-                  bgColor="bg-blue-400/10"
+                  tooltip="아군이 기절 상태일 때 주변의 적에게 데미지를 입히거나 사격하여 엄호한 횟수입니다."
                 />
                 <TacticalBox 
                   icon={<Heart size={18} />} 
@@ -297,14 +429,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, onNicknameCli
                   subLabel="직접 구조 완료"
                   color="text-pink-400"
                   bgColor="bg-pink-400/10"
-                />
-                <TacticalBox 
-                  icon={<Skull size={18} />} 
-                  label="복수/미끼 성공" 
-                  value={matchData.tradeStats.baitCount} 
-                  subLabel="아군 희생 후 제압"
-                  color="text-purple-400"
-                  bgColor="bg-purple-400/10"
+                  tooltip="기절한 팀원을 직접 끝까지 부활시켜 전장에 복귀시킨 횟수입니다."
                 />
                 <TacticalBox 
                   icon={<Target size={18} />} 
@@ -313,6 +438,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, onNicknameCli
                   subLabel="최대 교전 적중 거리"
                   color="text-emerald-400"
                   bgColor="bg-emerald-400/10"
+                  tooltip="이번 매치에서 적을 맞춘 가장 먼 거리입니다. 원거리 교전 능력을 나타냅니다."
                 />
                 <TacticalBox 
                   icon={<Zap size={18} />} 
@@ -321,100 +447,239 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, onNicknameCli
                   subLabel={`누적 딜량 ${matchData.combatPressure?.utilityDamage || 0}`}
                   color="text-yellow-400"
                   bgColor="bg-yellow-400/10"
+                  tooltip="수류탄, 화염병 등 투척물로 적에게 피해를 준 횟수와 총 데미지입니다."
                 />
                 <TacticalBox 
                   icon={<TrendingUp size={18} />} 
                   label="주도권 성공률" 
-                  value={`${matchData.initiativeStats?.rate || 0}%`} 
+                  value={`${matchData.initiative_rate || matchData.initiativeStats?.rate || 0}%`} 
                   subLabel={`먼저 쏴서 이긴 비율`}
                   color="text-cyan-400"
                   bgColor="bg-cyan-400/10"
+                  tooltip="선제 공격(먼저 사격)을 시작한 교전 세션 중, 승리(적 기절/킬)한 비율입니다."
+                />
+                <TacticalBox 
+                  icon={<Clock size={18} />} 
+                  label="트레이드 속도" 
+                  value={`${(matchData.tradeStats.tradeLatencyMs ?? 0) > 0 ? (matchData.tradeStats.tradeLatencyMs! / 1000).toFixed(2) : 0}s`} 
+                  subLabel={`아군 손실 후 복구`}
+                  color="text-indigo-400"
+                  bgColor="bg-indigo-400/10"
+                  tooltip="아군이 기절한 직후, 해당 적을 눕히거나 킬하여 상황을 반전시킨 평균 시간입니다. 킬/기절이 없으면 0s로 표시됩니다."
                 />
               </div>
 
-              {/* Response Latency & Backup Rate */}
-              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-black/40 p-4 rounded-2xl border border-white/5 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 bg-indigo-500/20 rounded-xl flex items-center justify-center">
-                      <Clock size={18} className="text-indigo-400" />
-                    </div>
-                    <div>
-                      <p className="text-[10px] text-gray-500 font-black uppercase">평균 백업 반응속도</p>
-                      <p className="text-sm font-black text-white">
-                        {matchData.tradeStats.backupLatencyMs > 0 
-                          ? (matchData.tradeStats.backupLatencyMs / 1000).toFixed(2) + "초" 
-                          : "데이터 없음"}
-                      </p>
-                    </div>
+              {/* [V8.1] Space Intelligence - Isolation Index */}
+              {matchData.isolationData && (
+                <div className="mt-6 p-6 bg-white/5 border border-white/10 rounded-[2.5rem] relative overflow-hidden group/space">
+                  <div className="absolute top-0 right-0 p-6 opacity-5 group-hover/space:scale-110 transition-transform">
+                    <Wind size={80} className="text-white" />
                   </div>
-                  <div className="text-right">
-                    <p className="text-[10px] text-gray-500 font-black uppercase">커버 성공률</p>
-                    <p className="text-lg font-black text-indigo-400">{matchData.tradeStats.coverRate}%</p>
+                  <div className="relative z-10">
+                    <div className="flex items-center gap-3 mb-6">
+                        <div className="w-10 h-10 bg-indigo-500/20 rounded-2xl flex items-center justify-center">
+                          <Zap size={20} className="text-indigo-400" />
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-white font-black">공간 지능 분석</span>
+                          <span className="text-[10px] text-gray-500 font-bold tracking-widest">Spatial Tactical Intelligence</span>
+                        </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <div className="flex flex-col gap-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-gray-400 font-bold">최근접 아군 거리</span>
+                            <span className="text-sm font-black text-white">{matchData.isolationData.minDist}m</span>
+                          </div>
+                          <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
+                            <div 
+                              className="h-full bg-indigo-500 transition-all duration-1000" 
+                              style={{ width: `${Math.max(0, 100 - (matchData.isolationData.minDist / 2))}%` }}
+                            />
+                          </div>
+                      </div>
+                      <div className="flex flex-col gap-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-gray-400 font-bold">고도 일치성</span>
+                            <span className="text-sm font-black text-white">{matchData.isolationData.heightDiff}m 차이</span>
+                          </div>
+                          <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
+                            <div 
+                              className="h-full bg-emerald-500 transition-all duration-1000" 
+                              style={{ width: `${Math.max(0, 100 - (matchData.isolationData.heightDiff * 5))}%` }}
+                            />
+                          </div>
+                      </div>
+                      <div className="flex flex-col gap-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-gray-400 font-bold">교전 노출 위험</span>
+                            <span className="text-sm font-black text-white">{matchData.isolationData.isCrossfire ? "위험" : "안전"}</span>
+                          </div>
+                          <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
+                            <div 
+                              className={`h-full transition-all duration-1000 ${matchData.isolationData.isCrossfire ? 'bg-red-500' : 'bg-emerald-500'}`}
+                              style={{ width: matchData.isolationData.isCrossfire ? '100%' : '20%' }}
+                            />
+                          </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
-                
-                <div className="bg-black/40 p-4 rounded-2xl border border-white/5 flex items-center gap-3">
-                  <div className="w-10 h-10 bg-amber-500/20 rounded-xl flex items-center justify-center">
-                    <TrendingUp size={18} className="text-amber-500" />
-                  </div>
-                  <div>
-                    <p className="text-[10px] text-gray-500 font-black uppercase">순수 반응 속도 (Reaction)</p>
-                    <p className="text-sm font-black text-white">
-                      {matchData.tradeStats.reactionLatencyMs > 0 
-                        ? (matchData.tradeStats.reactionLatencyMs / 1000).toFixed(2) + "초" 
-                        : "데이터 없음"}
-                    </p>
-                  </div>
-                </div>
-              </div>
+              )}
             </div>
           )}
 
           {/* AI Analysis Section */}
           <div className="mt-8">
-            <div className="flex items-center justify-between mb-4">
+            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6">
               <div className="flex items-center gap-2">
-                <div className={`w-8 h-8 ${isRanked ? 'bg-amber-500/20' : 'bg-indigo-500/20'} rounded-lg flex items-center justify-center`}>
-                  <BarChart2 size={16} className={isRanked ? 'text-amber-500' : 'text-indigo-400'} />
+                <div className={`w-10 h-10 ${isRanked ? 'bg-amber-500/20' : 'bg-indigo-500/20'} rounded-xl flex items-center justify-center`}>
+                  <BarChart2 size={20} className={isRanked ? 'text-amber-500' : 'text-indigo-400'} />
                 </div>
-                <span className="text-white font-black">AI 전술 코칭</span>
+                <div>
+                  <h3 className="text-white font-black text-lg">AI 전술 코칭</h3>
+                  <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Tactical Analysis</p>
+                </div>
               </div>
               
-              <div className="flex gap-2 bg-black/40 p-1 rounded-xl border border-white/10">
+              <div className="flex gap-2 bg-black/40 p-1 rounded-2xl border border-white/10">
                 <button 
                   onClick={(e) => { e.stopPropagation(); setCoachingStyle("mild"); setAnalysis(null); }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${coachingStyle === 'mild' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' : 'text-gray-500 hover:text-gray-300'}`}
+                  className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 ${
+                    coachingStyle === 'mild' 
+                      ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' 
+                      : 'text-gray-500 hover:text-gray-300'
+                  }`}
                 >
-                  다정한 맛
+                  <span>😊</span> 다정한 맛
                 </button>
                 <button 
                   onClick={(e) => { e.stopPropagation(); setCoachingStyle("spicy"); setAnalysis(null); }}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all ${coachingStyle === 'spicy' ? 'bg-red-500 text-white shadow-lg shadow-red-500/20' : 'text-gray-500 hover:text-gray-300'}`}
+                  className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 ${
+                    coachingStyle === 'spicy' 
+                      ? 'bg-red-500 text-white shadow-lg shadow-red-500/20' 
+                      : 'text-gray-500 hover:text-gray-300'
+                  }`}
                 >
-                  매운맛
+                  <span>🔥</span> 매운맛
                 </button>
               </div>
             </div>
 
             {analysis ? (
-              <div className="p-6 bg-black/40 rounded-3xl border border-white/10 animate-in fade-in zoom-in duration-500">
-                {renderMarkdown(analysis)}
+              <div className="flex flex-col gap-6 animate-in fade-in zoom-in duration-500">
+                {(() => {
+                  try {
+                    const isJson = analysis.trim().startsWith('{');
+                    if (!isJson) return (
+                      <div className="p-8 bg-black/40 rounded-[2.5rem] border border-white/10 prose prose-invert max-w-none">
+                        {renderMarkdown(analysis)}
+                      </div>
+                    );
+                    
+                    const data = JSON.parse(analysis);
+                    const isMildTheme = coachingStyle === "mild";
+                    const accentColor = isMildTheme ? "emerald" : "red";
+                    
+                    return (
+                      <div className="flex flex-col gap-6">
+                        {/* Style Header */}
+                        <div className={`relative p-8 bg-gradient-to-br from-${accentColor}-500/10 to-transparent border border-${accentColor}-500/20 rounded-[2.5rem] overflow-hidden`}>
+                          <div className="absolute top-0 right-0 p-6 opacity-10">
+                            <span className="text-8xl">{isMildTheme ? "😊" : "🔥"}</span>
+                          </div>
+                          <div className="relative z-10">
+                            <div className="flex items-center gap-2 mb-4">
+                              <span className={`px-3 py-1 bg-${accentColor}-500/20 text-${accentColor}-400 rounded-full text-[10px] font-black uppercase tracking-widest`}>
+                                {data.coach || (isMildTheme ? "KIND COACH" : "SPICY BOMBER")}
+                              </span>
+                              <div className={`h-1 w-1 rounded-full bg-${accentColor}-500`} />
+                              <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Match Report</span>
+                            </div>
+                            <h3 className="text-3xl font-black text-white mb-2 leading-tight">{data.signature}</h3>
+                            <p className="text-gray-400 text-sm font-medium">{data.signatureSub}</p>
+                          </div>
+                        </div>
+
+                        {/* Analysis Content (3 Lines) */}
+                        <div className="flex flex-col gap-4">
+                          <div className="grid grid-cols-1 gap-3">
+                            {data.briefFeedback?.map((point: string, idx: number) => (
+                              <div key={idx} className="flex gap-4 p-4 bg-white/5 border border-white/10 rounded-2xl items-center group/point hover:bg-white/10 transition-colors">
+                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                                  idx === 0 ? 'bg-amber-500/20 text-amber-500' : 
+                                  idx === 1 ? 'bg-indigo-500/20 text-indigo-400' : 
+                                  'bg-emerald-500/20 text-emerald-400'
+                                }`}>
+                                  <span className="text-xs font-black">{idx + 1}</span>
+                                </div>
+                                <p className="text-gray-200 text-sm font-medium leading-relaxed">
+                                  {point}
+                                </p>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Final Verdict & Action Items */}
+                        <div className={`p-8 bg-black/60 border border-${accentColor}-500/30 rounded-[2.5rem] relative overflow-hidden shadow-2xl`}>
+                           <div className={`absolute inset-0 bg-${accentColor}-500/5 pointer-events-none`} />
+                           <div className="relative z-10">
+                             <div className="flex items-center gap-2 mb-4">
+                               <span className={`text-[10px] font-black text-${accentColor}-400 uppercase tracking-[0.2em]`}>Final Coaching Verdict</span>
+                               <div className="flex-1 h-px bg-white/5" />
+                             </div>
+                             <p className="text-xl font-black text-white leading-tight mb-8">&quot;{data.finalVerdict}&quot;</p>
+                             
+                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                               {data.actionItems?.map((item: any, idx: number) => (
+                                 <div key={idx} className="flex items-start gap-4 p-5 bg-white/5 rounded-[1.5rem] border border-white/10 hover:bg-white/10 transition-colors group/item">
+                                   <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center text-2xl group-hover/item:scale-110 transition-transform">
+                                     {item.icon}
+                                   </div>
+                                   <div className="flex flex-col gap-1">
+                                     <span className="text-sm font-black text-white">{item.title}</span>
+                                     <span className="text-xs text-gray-400 leading-normal font-medium">{item.desc}</span>
+                                   </div>
+                                 </div>
+                               ))}
+                             </div>
+                           </div>
+                        </div>
+                      </div>
+                    );
+                  } catch (e) {
+                    return (
+                      <div className="p-8 bg-black/40 rounded-[2.5rem] border border-white/10 prose prose-invert max-w-none">
+                        {renderMarkdown(analysis)}
+                      </div>
+                    );
+                  }
+                })()}
               </div>
             ) : (
               <button 
                 onClick={handleAnalyze}
                 disabled={isAnalyzing}
-                className={`w-full py-10 ${isRanked ? 'bg-amber-500/5 border-amber-500/20 hover:bg-amber-500/10' : 'bg-indigo-500/5 border-indigo-500/20 hover:bg-indigo-500/10'} border-2 border-dashed rounded-3xl flex flex-col items-center gap-3 group transition-all`}
+                className={`w-full py-16 ${isRanked ? 'bg-amber-500/5 border-amber-500/20 hover:bg-amber-500/10' : 'bg-indigo-500/5 border-indigo-500/20 hover:bg-indigo-500/10'} border-2 border-dashed rounded-[2.5rem] flex flex-col items-center gap-4 group transition-all relative overflow-hidden`}
               >
+                <div className="absolute inset-0 bg-gradient-to-b from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                 {isAnalyzing ? (
-                  <div className={`w-6 h-6 border-2 border-white/10 ${isRanked ? 'border-t-amber-500' : 'border-t-indigo-500'} rounded-full animate-spin`} />
+                  <div className={`w-8 h-8 border-3 border-white/10 ${isRanked ? 'border-t-amber-500' : 'border-t-indigo-500'} rounded-full animate-spin`} />
                 ) : (
-                  <MousePointer2 className={`${isRanked ? 'text-amber-500' : 'text-indigo-400'} group-hover:scale-110 transition-transform`} />
+                  <div className={`w-14 h-14 rounded-2xl ${isRanked ? 'bg-amber-500/20' : 'bg-indigo-500/20'} flex items-center justify-center group-hover:scale-110 transition-transform`}>
+                    <MousePointer2 className={isRanked ? 'text-amber-500' : 'text-indigo-400'} size={28} />
+                  </div>
                 )}
-                <span className={`${isRanked ? 'text-amber-500' : 'text-indigo-400'} font-bold text-sm`}>
-                  {isAnalyzing ? "전장 데이터를 복기하는 중..." : "이 매치 정밀 분석 시작하기"}
-                </span>
+                <div className="flex flex-col items-center gap-1 relative z-10">
+                  <span className={`${isRanked ? 'text-amber-500' : 'text-indigo-400'} font-black text-lg tracking-tight`}>
+                    {isAnalyzing ? "전장 데이터를 복기하는 중..." : "이 매치 정밀 분석 시작하기"}
+                  </span>
+                  <span className="text-gray-500 text-xs font-medium uppercase tracking-widest">
+                    {coachingStyle === 'mild' ? "KIND COACH 모드로 분석" : "SPICY BOMBER 모드로 분석"}
+                  </span>
+                </div>
               </button>
             )}
           </div>
@@ -499,11 +764,22 @@ const StatBox = ({ icon, label, value, color }: { icon: React.ReactNode, label: 
   </div>
 );
 
-const TacticalBox = ({ icon, label, value, subLabel, color, bgColor }: { icon: React.ReactNode, label: string, value: number | string, subLabel: string, color: string, bgColor: string }) => (
-  <div className={`p-4 rounded-3xl border border-white/5 ${bgColor} flex flex-col gap-3 group hover:border-white/20 transition-all`}>
+const TacticalBox = ({ icon, label, value, subLabel, color, bgColor, tooltip }: { icon: React.ReactNode, label: string, value: number | string, subLabel: string, color: string, bgColor: string, tooltip?: string }) => (
+  <div className={`p-4 rounded-3xl border border-white/5 ${bgColor} flex flex-col gap-3 group/box hover:border-white/20 transition-all relative overflow-visible`}>
     <div className="flex items-center justify-between">
-      <div className={`${color} group-hover:scale-110 transition-transform`}>{icon}</div>
-      <span className="text-2xl font-black text-white">{value}</span>
+      <div className={`${color} group-hover/box:scale-110 transition-transform`}>{icon}</div>
+      <div className="flex items-center gap-1">
+        <span className="text-xl font-black text-white">{value}</span>
+        {tooltip && (
+          <div className="relative group/tooltip">
+            <div className="w-3 h-3 rounded-full border border-white/20 flex items-center justify-center text-[8px] text-gray-500 cursor-help hover:border-white/40 hover:text-gray-300">?</div>
+            <div className="absolute bottom-full right-0 mb-2 w-48 p-2 bg-black/90 border border-white/10 rounded-xl text-[9px] text-gray-400 font-medium leading-normal opacity-0 pointer-events-none group-hover/tooltip:opacity-100 transition-opacity z-50 shadow-2xl">
+              {tooltip}
+              <div className="absolute top-full right-1 w-2 h-2 bg-black border-r border-b border-white/10 rotate-45 -translate-y-1" />
+            </div>
+          </div>
+        )}
+      </div>
     </div>
     <div>
       <p className="text-[11px] text-white font-black uppercase tracking-tight">{label}</p>

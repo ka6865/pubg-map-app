@@ -23,8 +23,6 @@ interface TelemetryPlayerProps {
   onTogglePlayer: (name: string) => void;
   showPlayerNames: boolean;
   onTogglePlayerNames: () => void;
-  showPlayerPaths: boolean;
-  onTogglePlayerPaths: () => void;
   onClose: () => void;
 }
 
@@ -50,8 +48,6 @@ export default function TelemetryPlayer({
   onTogglePlayer,
   showPlayerNames,
   onTogglePlayerNames,
-  showPlayerPaths,
-  onTogglePlayerPaths,
   onClose,
 }: TelemetryPlayerProps) {
   // 타임라인 마커 필터 상태 (기본값: 킬만 활성화)
@@ -344,19 +340,7 @@ export default function TelemetryPlayer({
             🏷️ 이름 {showPlayerNames ? "ON" : "OFF"}
           </button>
 
-          {/* 이동 경로 토글 */}
-          <button
-            onClick={onTogglePlayerPaths}
-            title={showPlayerPaths ? "이동 경로 숨기기" : "이동 경로 표시"}
-            className="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded border transition-all whitespace-nowrap"
-            style={{
-              backgroundColor: showPlayerPaths ? "rgba(16,185,129,0.2)" : "rgba(40,40,40,0.8)",
-              borderColor: showPlayerPaths ? "#10b981" : "#444",
-              color: showPlayerPaths ? "#10b981" : "#666",
-            }}
-          >
-            📍 경로 {showPlayerPaths ? "ON" : "OFF"}
-          </button>
+          {/* 이동 경로 토글 기능 제거됨 */}
 
           <select
             id="replay-speed-select"

@@ -1,4 +1,4 @@
-import React, { memo, useRef } from "react";
+import React, { memo, useRef, useEffect } from "react";
 import getApiUrl from "../../lib/api-config";
 import {
   MapContainer,
@@ -26,7 +26,7 @@ import { ZoneRenderer } from "./telemetry/ZoneRenderer";
 import { CombatRenderer } from "./telemetry/CombatRenderer";
 import { ShotRenderer } from "./telemetry/ShotRenderer";
 import { PlayerPathRenderer } from "./telemetry/PlayerPathRenderer";
-import { PlayerMarkerRenderer } from "./telemetry/PlayerMarkerRenderer";
+import { TelemetryCanvasLayer } from "./telemetry/TelemetryCanvasLayer";
 
 const mortarStartIcon = L.divIcon({
   className: "custom-mortar",
@@ -170,7 +170,7 @@ const MapInteraction = ({
 
 const MapResizer = () => {
   const map = useMap();
-  React.useEffect(() => {
+  useEffect(() => {
     const container = map.getContainer();
     const resizeObserver = new ResizeObserver(() => {
       // 컨테이너가 화면에 있고 크기가 유효할 때만 실행 (IndexSizeError 방지)
@@ -211,7 +211,8 @@ interface MapViewProps {
   pendingVehicles: PendingVehicle[];
   filters: Record<string, boolean>;
   telemetryData?: any;
-  isHotDropOn?: boolean;  // 🔥 핫드랍 히트맵 토글
+  isHotDropOn?: boolean;
+  isHighPrecision?: boolean;
 }
 
 const MapView = memo(
@@ -241,6 +242,7 @@ const MapView = memo(
     filters,
     telemetryData,
     isHotDropOn = false,
+    isHighPrecision = false,
   }: MapViewProps) => {
     const isActionRunningRef = useRef(false);
 
@@ -465,44 +467,33 @@ const MapView = memo(
                           cursor: "pointer", fontWeight: "bold", fontSize: "12px"
                         }}
                       >
-                        👍 진실 ({weight})
+                        ✅ 승인
                       </button>
-                      <button
-                        onClick={() => handleVote(v.id, "down")}
-                        title="거짓 (비추천)"
-                        style={{
-                          flex: 1, backgroundColor: "#ef4444", color: "white",
-                          border: "none", borderRadius: "4px", padding: "6px",
-                          cursor: "pointer", fontWeight: "bold", fontSize: "12px"
-                        }}
-                      >
-                        👎 거짓 ({v.down_weight || 0})
-                      </button>
+                      {isAdmin && (
+                        <>
+                          <button
+                            onClick={() => handleAdminAction(v.id, "approve")}
+                            style={{
+                              flex: 1, backgroundColor: "#3b82f6", color: "white",
+                              border: "none", borderRadius: "4px", padding: "4px 0",
+                              cursor: "pointer", fontWeight: "bold", fontSize: "11px"
+                            }}
+                          >
+                            ✅ 관리자 승인
+                          </button>
+                          <button
+                            onClick={() => handleAdminAction(v.id, "reject")}
+                            style={{
+                              flex: 1, backgroundColor: "#d93025", color: "white",
+                              border: "none", borderRadius: "4px", padding: "4px 0",
+                              cursor: "pointer", fontWeight: "bold", fontSize: "11px"
+                            }}
+                          >
+                            🗑️ 관리자 파기
+                          </button>
+                        </>
+                      )}
                     </div>
-                    {isAdmin && (
-                      <div style={{ display: "flex", gap: "8px", justifyContent: "center", marginTop: "8px", paddingTop: "8px", borderTop: "1px dashed #ccc" }}>
-                        <button
-                          onClick={() => handleAdminAction(v.id, "approve")}
-                          style={{
-                            flex: 1, backgroundColor: "#3b82f6", color: "white",
-                            border: "none", borderRadius: "4px", padding: "4px 0",
-                            cursor: "pointer", fontWeight: "bold", fontSize: "11px"
-                          }}
-                        >
-                          ✅ 관리자 승인
-                        </button>
-                        <button
-                          onClick={() => handleAdminAction(v.id, "reject")}
-                          style={{
-                            flex: 1, backgroundColor: "#d93025", color: "white",
-                            border: "none", borderRadius: "4px", padding: "4px 0",
-                            cursor: "pointer", fontWeight: "bold", fontSize: "11px"
-                          }}
-                        >
-                          🗑️ 관리자 파기
-                        </button>
-                      </div>
-                    )}
                   </div>
                 </Popup>
               </CircleMarker>
@@ -594,12 +585,20 @@ const MapView = memo(
           </>
         )}
 
-        {/* 🚀 텔레메트리 관련 렌더링 🚀 */}
-        <ZoneRenderer telemetryData={telemetryData} />
-        <CombatRenderer telemetryData={telemetryData} />
-        <ShotRenderer telemetryData={telemetryData} />
-        <PlayerPathRenderer telemetryData={telemetryData} />
-        <PlayerMarkerRenderer telemetryData={telemetryData} />
+        {/* 🚀 텔레메트리 관련 렌더링 (기존 ZoneRenderer 복구 및 캔버스 레이어) 🚀 */}
+        {telemetryData && (
+          <>
+            <ZoneRenderer 
+              telemetryData={telemetryData} 
+              showZones={telemetryData.showZone} 
+            />
+            <TelemetryCanvasLayer 
+              telemetryData={telemetryData} 
+              showZones={telemetryData.showZone}
+              isHighPrecision={isHighPrecision}
+            />
+          </>
+        )}
 
         {/* 🔥 핫드랍 히트맵 레이어 */}
         <HotDropLayer mapName={activeMapId} visible={isHotDropOn} />

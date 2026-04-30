@@ -388,7 +388,7 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
               <div style={{ padding: "8px", backgroundColor: "#F2A900", borderRadius: "8px" }}>
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
               </div>
-              <h3 style={{ fontSize: "18px", fontWeight: "900", color: "#F2A900", margin: 0, letterSpacing: "-0.5px" }}>BGMS AI 정밀 전술 분석 시스템 (V5.20)</h3>
+              <h3 style={{ fontSize: "18px", fontWeight: "900", color: "#F2A900", margin: 0, letterSpacing: "-0.5px" }}>BGMS AI 정밀 전술 분석 시스템 (V6.7 Unified)</h3>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: "20px" }}>
               <div style={{ backgroundColor: "rgba(255,255,255,0.03)", padding: "15px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.05)" }}>
@@ -415,29 +415,29 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
                 <div style={{ display: "flex", gap: "10px" }}>
                   <div style={{ fontSize: "16px", color: "rgba(242, 169, 0, 0.5)", fontWeight: "900" }}>01</div>
                   <div>
-                    <div style={{ color: "#eee", fontSize: "13px", fontWeight: "bold" }}>백업 속도 (Backup Latency)</div>
-                    <div style={{ color: "#777", fontSize: "12px", lineHeight: "1.5" }}>아군 기절 시점부터 유저가 적에게 첫 유효 타격(데미지/공격)을 가하기까지의 시간차를 밀리초(ms) 단위로 계산합니다.</div>
+                    <div style={{ color: "#eee", fontSize: "13px", fontWeight: "bold" }}>대응 사격 속도 (Counter-Attack Latency)</div>
+                    <div style={{ color: "#777", fontSize: "12px", lineHeight: "1.5" }}>유저가 피격당한 시점부터 해당 적에게 다시 유효 타격을 가하기까지의 시간차를 계산합니다.</div>
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: "10px" }}>
                   <div style={{ fontSize: "16px", color: "rgba(242, 169, 0, 0.5)", fontWeight: "900" }}>02</div>
                   <div>
-                    <div style={{ color: "#eee", fontSize: "13px", fontWeight: "bold" }}>반응 속도 (Reaction Latency)</div>
-                    <div style={{ color: "#777", fontSize: "12px", lineHeight: "1.5" }}>적에게 데미지를 입은 후, 해당 적에게 다시 반격을 가하거나 대응 사격을 시작하기까지 걸린 시간을 측정합니다.</div>
+                    <div style={{ color: "#eee", fontSize: "13px", fontWeight: "bold" }}>반격 성공률 (Counter-Attack Rate)</div>
+                    <div style={{ color: "#777", fontSize: "12px", lineHeight: "1.5" }}>피격 시 당황하지 않고 적에게 다시 반격 사격을 성공시킨 비율입니다. 위기 대처 지능을 측정합니다.</div>
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: "10px" }}>
                   <div style={{ fontSize: "16px", color: "rgba(242, 169, 0, 0.5)", fontWeight: "900" }}>03</div>
                   <div>
-                    <div style={{ color: "#eee", fontSize: "13px", fontWeight: "bold" }}>커버 성공률 (Cover Rate)</div>
-                    <div style={{ color: "#777", fontSize: "12px", lineHeight: "1.5" }}>아군 기절 시 유저가 엄호 사격(Suppression)을 가하거나 연막탄을 투척하는 등 실질적인 세이브 행동을 수행한 비율입니다.</div>
+                    <div style={{ color: "#eee", fontSize: "13px", fontWeight: "bold" }}>전투 주도권 (Initiative)</div>
+                    <div style={{ color: "#777", fontSize: "12px", lineHeight: "1.5" }}>교전 시작 시 유저가 먼저 선제 타격을 가했는지 여부를 판별하여 능동적인 교전 성향을 측정합니다.</div>
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: "10px" }}>
                   <div style={{ fontSize: "16px", color: "rgba(242, 169, 0, 0.5)", fontWeight: "900" }}>04</div>
                   <div>
-                    <div style={{ color: "#eee", fontSize: "13px", fontWeight: "bold" }}>전투 주도권 (Initiative)</div>
-                    <div style={{ color: "#777", fontSize: "12px", lineHeight: "1.5" }}>교전 시작 시 유저가 먼저 선제 타격을 가했는지, 아니면 피격 후 대응했는지를 판별하여 능동적인 교전 성향을 측정합니다.</div>
+                    <div style={{ color: "#eee", fontSize: "13px", fontWeight: "bold" }}>팀 기여 임팩트 (Team Impact)</div>
+                    <div style={{ color: "#777", fontSize: "12px", lineHeight: "1.5" }}>팀 전체 딜량/킬 중 유저가 기여한 비중을 분석하여 팀 내 화력 비중과 교전 기여도를 측정합니다.</div>
                   </div>
                 </div>
               </div>
@@ -461,13 +461,14 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
 
             {result.recentMatches && result.recentMatches.length > 0 ? (
               <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
-                {result.recentMatches.slice(0, 10).map((matchId: string) => (
+                {result.recentMatches.slice(0, 10).map((matchId: string, index: number) => (
                   <MatchCard
                     key={matchId}
                     matchId={matchId}
                     nickname={result.nickname}
                     platform={result.platform}
                     isMobile={isMobile}
+                    index={index}
                     onNicknameClick={(clickedName) => {
                       setNickname(clickedName);
                       // handleSearch는 platform을 필요로 하므로 현재 선택된 platform 전달

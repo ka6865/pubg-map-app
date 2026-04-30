@@ -28,7 +28,7 @@ export default function MiniStatWidget({ pubgNickname, platform = "steam" }: Min
         const res = await fetch(apiUrl);
         if (!res.ok) throw new Error("전적 조회 실패");
         const json = await res.json();
-        console.log("📊 PUBG API Response:", json);
+        // console.log("📊 PUBG API Response:", json);
         
         const rankedSquad = json.stats?.ranked?.squad;
         const normalSquad = json.stats?.normal?.squad;

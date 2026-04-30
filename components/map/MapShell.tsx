@@ -11,6 +11,7 @@ import TelemetryPlayer from "./TelemetryPlayer";
 import KillFeed from "./KillFeed";
 import ZoneTimer from "./ZoneTimer";
 import HomeNotice from "./HomeNotice";
+import { TelemetrySidebar } from "./telemetry/TelemetrySidebar";
 
 interface MapShellProps {
   activeMapId: string;
@@ -32,86 +33,42 @@ interface MapShellProps {
   pendingVehicles: PendingVehicle[];
 }
 
-const getDistanceToLineSegment = (
-  px: number,
-  py: number,
-  x1: number,
-  y1: number,
-  x2: number,
-  y2: number
-) => {
-  const A = px - x1;
-  const B = py - y1;
-  const C = x2 - x1;
-  const D = y2 - y1;
-  const dot = A * C + B * D;
-  const lenSq = C * C + D * D;
-  let param = -1;
-  if (lenSq !== 0) param = dot / lenSq;
-
+const getDistanceToLineSegment = (px: number, py: number, x1: number, y1: number, x2: number, y2: number) => {
+  const A = px - x1; const B = py - y1; const C = x2 - x1; const D = y2 - y1;
+  const dot = A * C + B * D; const lenSq = C * C + D * D;
+  const param = lenSq !== 0 ? dot / lenSq : -1;
   let xx, yy;
-  if (param < 0) {
-    xx = x1;
-    yy = y1;
-  } else if (param > 1) {
-    xx = x2;
-    yy = y2;
-  } else {
-    xx = x1 + param * C;
-    yy = y1 + param * D;
-  }
-
-  const dx = px - xx;
-  const dy = py - yy;
+  if (param < 0) { xx = x1; yy = y1; }
+  else if (param > 1) { xx = x2; yy = y2; }
+  else { xx = x1 + param * C; yy = y1 + param * D; }
+  const dx = px - xx; const dy = py - yy;
   return Math.sqrt(dx * dx + dy * dy);
 };
 
-const MapShell = memo(
-  ({
-    activeMapId,
-    currentMap,
-    bounds,
-    visibleVehicles,
-    icons,
-    imageHeight,
-    imageWidth,
-    isMobile,
-    isSidebarOpen,
-    filters,
-    onSetSidebarOpen,
-    onToggleFilter,
-    onGetCount,
-    onEnableDefaultVehicleFilters,
-    currentUser,
-    isAdmin,
-    pendingVehicles,
+const formatTime = (ms: number) => {
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  return `${m}:${(s % 60).toString().padStart(2, "0")}`;
+};
+
+const MapShell = memo(({
+    activeMapId, currentMap, bounds, visibleVehicles, icons, imageHeight, imageWidth,
+    isMobile, isSidebarOpen, filters, onSetSidebarOpen, onToggleFilter, onGetCount,
+    onEnableDefaultVehicleFilters, currentUser, isAdmin, pendingVehicles,
   }: MapShellProps) => {
     const router = useRouter();
     const searchParams = useSearchParams();
-
     const playbackId = searchParams?.get("playback") || null;
     const playbackNickname = searchParams?.get("nickname") || null;
     
     const {
-      events: telemetryEvents,
-      teammates: telemetryTeammates,
-      loading: telemetryLoading,
-      error: telemetryError,
-      isPlaying,
-      setIsPlaying,
-      playbackSpeed,
-      setPlaybackSpeed,
-      currentTimeMs,
-      setCurrentTimeMs,
-      maxTimeMs,
-      currentStates,
-      teamNames,
-      zoneEvents,
+      events: telemetryEvents, loading: telemetryLoading, error: telemetryError,
+      isPlaying, setIsPlaying, playbackSpeed, setPlaybackSpeed,
+      currentTimeMs, setCurrentTimeMs, maxTimeMs, currentStates, teamNames, zoneEvents,
+      isFullMode, fetchTelemetry
     } = useTelemetry(playbackId, playbackNickname, activeMapId);
 
-    const [activeMode, setActiveMode] = useState<
-      "none" | "mortar" | "flight" | "report"
-    >("none");
+    const [activeMode, setActiveMode] = useState<"none" | "mortar" | "flight" | "report">("none");
     const [mortarPoints, setMortarPoints] = useState<L.LatLng[]>([]);
     const [flightPoints, setFlightPoints] = useState<L.LatLng[]>([]);
     const [reportLocation, setReportLocation] = useState<L.LatLng | null>(null);
@@ -124,37 +81,45 @@ const MapShell = memo(
     const [showShotDots, setShowShotDots] = useState(true);
     const [hiddenPlayers, setHiddenPlayers] = useState<string[]>([]);
     const [showPlayerNames, setShowPlayerNames] = useState(true);
-    const [showPlayerPaths, setShowPlayerPaths] = useState(true);
+    const [showSmokeNotice, setShowSmokeNotice] = useState(false); // 🎯 연막탄 공지 상태
 
-    const [prevMapId, setPrevMapId] = useState(activeMapId);
-    if (activeMapId !== prevMapId) {
-      setPrevMapId(activeMapId);
-      setIsMenuOpen(false);
-    }
+    // 🎯 "오늘 하루 보지 않기" 체크 로직
+    useEffect(() => {
+      let isMounted = true;
+      if (playbackId && isFullMode) {
+        const dismissed = localStorage.getItem("smoke_notice_dismissed");
+        const today = new Date().toDateString();
+        if (dismissed !== today && isMounted) {
+          setTimeout(() => setShowSmokeNotice(true), 0);
+        }
+      } else {
+        if (isMounted) setTimeout(() => setShowSmokeNotice(false), 0);
+      }
+      return () => { isMounted = false; };
+    }, [playbackId, isFullMode]);
+
+    const handleDismissNotice = (dontShowToday: boolean) => {
+      if (dontShowToday) {
+        localStorage.setItem("smoke_notice_dismissed", new Date().toDateString());
+      }
+      setShowSmokeNotice(false);
+    };
 
     const mapScale = 8192 / imageWidth;
     const pxPerMeter = imageWidth / 8192;
 
     const handleModeToggle = (mode: "mortar" | "flight" | "report") => {
       setActiveMode(activeMode === mode ? "none" : mode);
-      setMortarPoints([]);
-      setFlightPoints([]);
-      setIsVehicleFilterOn(false);
-      setReportLocation(null);
+      setMortarPoints([]); setFlightPoints([]); setIsVehicleFilterOn(false); setReportLocation(null);
     };
 
     let flightPolygonCoords: [number, number][] = [];
     if (flightPoints.length === 2) {
-      const p1 = flightPoints[0];
-      const p2 = flightPoints[1];
-      const radiusPx = 1000 * pxPerMeter;
-      const dx = p2.lng - p1.lng;
-      const dy = p2.lat - p1.lat;
+      const p1 = flightPoints[0]; const p2 = flightPoints[1];
+      const radiusPx = 1000 * pxPerMeter; const dx = p2.lng - p1.lng; const dy = p2.lat - p1.lat;
       const len = Math.sqrt(dx * dx + dy * dy);
-
       if (len > 0) {
-        const nx = -dy / len;
-        const ny = dx / len;
+        const nx = -dy / len; const ny = dx / len;
         flightPolygonCoords = [
           [p1.lat + ny * radiusPx, p1.lng + nx * radiusPx],
           [p2.lat + ny * radiusPx, p2.lng + nx * radiusPx],
@@ -165,402 +130,206 @@ const MapShell = memo(
     }
 
     let displayedVehicles = visibleVehicles;
-    if (
-      activeMode === "flight" &&
-      flightPoints.length === 2 &&
-      isVehicleFilterOn
-    ) {
-      const p1 = flightPoints[0];
-      const p2 = flightPoints[1];
+    if (activeMode === "flight" && flightPoints.length === 2 && isVehicleFilterOn) {
       displayedVehicles = visibleVehicles.filter((v) => {
-        const distPx = getDistanceToLineSegment(
-          v.x,
-          v.y,
-          p1.lng,
-          p1.lat,
-          p2.lng,
-          p2.lat
-        );
-        const radiusMeters = distPx * mapScale;
-        const isNotVehicleStr = v.type === "Key" || v.type === "SecretRoom" || v.type === "SecurityCard";
-        return radiusMeters <= 1000 && !isNotVehicleStr;
+        const distPx = getDistanceToLineSegment(v.x, v.y, flightPoints[0].lng, flightPoints[0].lat, flightPoints[1].lng, flightPoints[1].lat);
+        return distPx * mapScale <= 1000 && !(v.type === "Key" || v.type === "SecretRoom" || v.type === "SecurityCard");
       });
     }
 
     return (
       <div className="flex w-full h-full overflow-hidden">
         {!isMobile ? (
-          <Sidebar
-            isOpen={isSidebarOpen}
-            setIsOpen={onSetSidebarOpen}
-            mapLabel={currentMap?.label || "지도"}
-            activeMapId={activeMapId}
-            filters={filters}
-            toggleFilter={onToggleFilter}
-            getCount={onGetCount}
-          />
+          <Sidebar isOpen={isSidebarOpen} setIsOpen={onSetSidebarOpen} mapLabel={currentMap?.label || "지도"} activeMapId={activeMapId} filters={filters} toggleFilter={onToggleFilter} getCount={onGetCount} />
         ) : (
-          <MobileBottomSheet
-            isOpen={isSidebarOpen}
-            setIsOpen={onSetSidebarOpen}
-            mapLabel={currentMap?.label || "지도"}
-            activeMapId={activeMapId}
-            filters={filters}
-            toggleFilter={onToggleFilter}
-            getCount={onGetCount}
-          />
+          <MobileBottomSheet isOpen={isSidebarOpen} setIsOpen={onSetSidebarOpen} mapLabel={currentMap?.label || "지도"} activeMapId={activeMapId} filters={filters} toggleFilter={onToggleFilter} getCount={onGetCount} />
         )}
 
-        <div className="relative flex-1 h-full overflow-hidden">
-          <HomeNotice />
+        <div className="flex-1 flex overflow-hidden relative bg-[#0a0a0a]">
+          {/* Left: Map Area */}
+          <div className="flex-1 flex flex-col relative min-w-0">
+            <HomeNotice />
 
-          <div className={`absolute z-[1000] flex w-full pointer-events-none transition-all ${isMobile ? 'bottom-[72px] px-6 safe-bottom' : 'top-4 right-4 justify-end'}`}>
-            <div className={`flex w-full items-start ${isMobile ? 'justify-between items-end' : 'justify-end'}`}>
-              
-              {/* 데스크탑 사이드바 열기 버튼 (좌측 상단 - MapHeader 제거 후 대비) */}
-              {!isMobile && !isSidebarOpen && (
-                <button
-                  onClick={(e) => {
-                    e.currentTarget.blur();
-                    onSetSidebarOpen(true);
-                  }}
-                  className="pointer-events-auto absolute left-4 top-0 flex items-center justify-center w-[44px] h-[44px] bg-black/80 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl active:scale-90 transition-all text-white hover:text-[#F2A900] z-[5000]"
-                >
-                  <Menu size={22} strokeWidth={2.5} />
-                </button>
-              )}
+            {/* 구형 상태바 제거됨 */}
 
-              {/* 모바일 전용 필터 버튼 (좌측) */}
-              {isMobile && (
-                <button
-                  onClick={(e) => {
-                    e.currentTarget.blur();
-                    onSetSidebarOpen(!isSidebarOpen);
-                  }}
-                  className="pointer-events-auto flex items-center justify-center w-[52px] h-[52px] bg-black/80 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl active:scale-90 transition-all text-[#F2A900]"
-                >
-                  <SlidersHorizontal size={22} strokeWidth={2.5} />
-                </button>
-              )}
-
-              {/* 지도 도구 버튼 (우측) */}
-              <div className="flex flex-col gap-3 items-end pointer-events-auto">
-                {/* 핫드랍 버튼은 지도 도구 내부로 통합됨 */}
-
-                <button
-                  onClick={(e) => {
-                    e.currentTarget.blur();
-                    setIsMenuOpen(!isMenuOpen);
-                  }}
-                  className={`pointer-events-auto flex items-center gap-2 px-6 shadow-[0_12px_40px_rgba(0,0,0,0.4)] active:scale-90 transition-all duration-300 border border-white/5 ${isMenuOpen ? "bg-red-600 text-white h-[52px] rounded-2xl text-sm" : "bg-black/80 backdrop-blur-xl text-[#F2A900] h-[52px] rounded-2xl text-base"}`}
-                >
-                  {isMenuOpen ? (
-                    <>
-                      <X size={18} strokeWidth={3} />
-                      <span className="font-black uppercase tracking-tight text-xs">닫기</span>
-                    </>
-                  ) : (
-                    <>
-                      <Hammer size={18} strokeWidth={3} />
-                      <span className="font-black uppercase tracking-tight text-xs">{isMobile ? "도구" : "지도 도구"}</span>
-                    </>
+            {/* UI Overlay Buttons */}
+            {!playbackId && (
+              <div className={`absolute z-[1000] flex w-full pointer-events-none transition-all ${isMobile ? 'bottom-[72px] px-6 safe-bottom' : 'top-4 right-4 justify-end'}`}>
+                <div className={`flex w-full items-start ${isMobile ? 'justify-between items-end' : 'justify-end'}`}>
+                  {!isMobile && !isSidebarOpen && (
+                    <button onClick={() => onSetSidebarOpen(true)} className="pointer-events-auto absolute left-4 top-0 flex items-center justify-center w-[44px] h-[44px] bg-black/80 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl active:scale-90 transition-all text-white hover:text-[#F2A900] z-[5000]">
+                      <Menu size={22} strokeWidth={2.5} />
+                    </button>
                   )}
-                </button>
-
-                {isMenuOpen && !isMobile && (
-                  <div className="flex flex-col gap-2.5 items-end animate-in fade-in slide-in-from-bottom-4 duration-300">
-                    <button
-                      onClick={() => setIsHotDropOn(!isHotDropOn)}
-                      className={`pointer-events-auto flex items-center gap-2.5 px-5 py-3.5 border border-white/10 rounded-xl font-black text-xs shadow-2xl transition-all active:scale-95 ${
-                        isHotDropOn 
-                          ? "bg-gradient-to-r from-orange-500 to-red-600 text-white border-orange-400" 
-                          : "bg-[#1a1a1a] text-orange-500 hover:text-orange-400"
-                      }`}
-                    >
-                      <div className="relative">
-                        <Flame size={16} strokeWidth={3} className={isHotDropOn ? "animate-pulse" : ""} />
-                        {isHotDropOn && (
-                          <span className="absolute inset-0 bg-orange-400 blur-md opacity-50 animate-ping"></span>
-                        )}
+                  {isMobile && (
+                    <button onClick={() => onSetSidebarOpen(!isSidebarOpen)} className="pointer-events-auto flex items-center justify-center w-[52px] h-[52px] bg-black/80 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl active:scale-90 transition-all text-[#F2A900]">
+                      <SlidersHorizontal size={22} strokeWidth={2.5} />
+                    </button>
+                  )}
+                  <div className="flex flex-col gap-3 items-end pointer-events-auto">
+                    <button onClick={() => setIsMenuOpen(!isMenuOpen)} className={`pointer-events-auto flex items-center gap-2 px-6 shadow-[0_12px_40px_rgba(0,0,0,0.4)] active:scale-90 transition-all duration-300 border border-white/5 ${isMenuOpen ? "bg-red-600 text-white h-[52px] rounded-2xl text-sm" : "bg-black/80 backdrop-blur-xl text-[#F2A900] h-[52px] rounded-2xl text-base"}`}>
+                      {isMenuOpen ? <><X size={18} strokeWidth={3} /><span className="font-black uppercase tracking-tight text-xs">닫기</span></> : <><Hammer size={18} strokeWidth={3} /><span className="font-black uppercase tracking-tight text-xs">{isMobile ? "도구" : "지도 도구"}</span></>}
+                    </button>
+                    {isMenuOpen && !isMobile && (
+                      <div className="flex flex-col gap-2.5 items-end animate-in fade-in slide-in-from-bottom-4 duration-300">
+                        <button onClick={() => setIsHotDropOn(!isHotDropOn)} className={`pointer-events-auto flex items-center gap-2.5 px-5 py-3.5 border border-white/10 rounded-xl font-black text-xs shadow-2xl transition-all active:scale-95 ${isHotDropOn ? "bg-gradient-to-r from-orange-500 to-red-600 text-white border-orange-400" : "bg-[#1a1a1a] text-orange-500 hover:text-orange-400"}`}><Flame size={16} strokeWidth={3} /><span className="uppercase tracking-tighter">핫드랍 {isHotDropOn ? "ON" : "OFF"}</span></button>
+                        <button onClick={() => setIsGridOn(!isGridOn)} className={`pointer-events-auto flex items-center gap-2.5 px-5 py-3.5 border border-white/10 rounded-xl font-black text-xs shadow-2xl transition-all active:scale-95 ${isGridOn ? "bg-[#F2A900] text-black" : "bg-[#1a1a1a] text-[#777]"}`}><MapIcon size={16} strokeWidth={3} /><span className="uppercase tracking-tighter">그리드 {isGridOn ? "ON" : "OFF"}</span></button>
+                        <button onClick={() => handleModeToggle("mortar")} className={`pointer-events-auto flex items-center gap-2.5 px-5 py-3.5 border border-white/10 rounded-xl font-black text-xs shadow-2xl transition-all active:scale-95 ${activeMode === "mortar" ? "bg-[#ea4335] text-white" : "bg-[#1a1a1a] text-[#777]"}`}><Crosshair size={16} strokeWidth={3} /><span className="uppercase tracking-tighter">박격포</span></button>
                       </div>
-                      <span className="uppercase tracking-tighter">핫드랍 {isHotDropOn ? "ON" : "OFF"}</span>
-                    </button>
-                    <button
-                      onClick={() => setIsGridOn(!isGridOn)}
-                      className={`pointer-events-auto flex items-center gap-2.5 px-5 py-3.5 border border-white/10 rounded-xl font-black text-xs shadow-2xl transition-all active:scale-95 ${isGridOn ? "bg-[#F2A900] text-black" : "bg-[#1a1a1a] text-[#777]"}`}
-                    >
-                      <MapIcon size={16} strokeWidth={3} />
-                      <span className="uppercase tracking-tighter">그리드망 {isGridOn ? "ON" : "OFF"}</span>
-                    </button>
-                    <button
-                      onClick={() => handleModeToggle("mortar")}
-                      className={`pointer-events-auto flex items-center gap-2.5 px-5 py-3.5 border border-white/10 rounded-xl font-black text-xs shadow-2xl transition-all active:scale-95 ${activeMode === "mortar" ? "bg-[#ea4335] text-white" : "bg-[#1a1a1a] text-[#777]"}`}
-                    >
-                      <Crosshair size={16} strokeWidth={3} />
-                      <span className="uppercase tracking-tighter">박격포</span>
-                    </button>
-                    <button
-                      onClick={() => handleModeToggle("flight")}
-                      className={`pointer-events-auto flex items-center gap-2.5 px-5 py-3.5 border border-white/10 rounded-xl font-black text-xs shadow-2xl transition-all active:scale-95 ${activeMode === "flight" ? "bg-[#3b82f6] text-white" : "bg-[#1a1a1a] text-[#777]"}`}
-                    >
-                      <Plane size={16} strokeWidth={3} />
-                      <span className="uppercase tracking-tighter">비행기 경로</span>
-                    </button>
-                    <button
-                      onClick={() => handleModeToggle("report")}
-                      className={`pointer-events-auto flex items-center gap-2.5 px-5 py-3.5 border border-white/10 rounded-xl font-black text-xs shadow-2xl transition-all active:scale-95 ${activeMode === "report" ? "bg-[#10b981] text-white" : "bg-[#1a1a1a] text-[#777]"}`}
-                    >
-                      <AlertCircle size={16} strokeWidth={3} />
-                      <span className="uppercase tracking-tighter">차량 제보</span>
-                    </button>
-                    {activeMode === "flight" && flightPoints.length === 2 && (
-                      <button
-                        onClick={() => {
-                          const nextState = !isVehicleFilterOn;
-                          setIsVehicleFilterOn(nextState);
-                          if (nextState && onEnableDefaultVehicleFilters)
-                            onEnableDefaultVehicleFilters();
-                        }}
-                        className={`pointer-events-auto mt-2 px-5 py-2.5 bg-black border-2 border-[#F2A900] rounded-full font-black text-[11px] text-[#F2A900] shadow-[0_0_20px_rgba(242,169,0,0.2)] animate-pulse`}
-                      >
-                        🚗 1km 주변 스캔 {isVehicleFilterOn ? "ON" : "OFF"}
-                      </button>
                     )}
                   </div>
-                )}
+                </div>
               </div>
-            </div>
+            )}
+
+            <MapView
+              activeMapId={activeMapId} currentMap={currentMap} bounds={bounds} icons={icons} imageHeight={imageHeight} imageWidth={imageWidth}
+              activeMode={activeMode} mortarPoints={mortarPoints} flightPoints={flightPoints} flightPolygonCoords={flightPolygonCoords}
+              displayedVehicles={displayedVehicles} isGridOn={isGridOn} mapScale={mapScale} setMortarPoints={setMortarPoints}
+              setFlightPoints={setFlightPoints} setIsVehicleFilterOn={setIsVehicleFilterOn} setActiveMode={setActiveMode}
+              setReportLocation={setReportLocation} reportLocation={reportLocation} currentUser={currentUser} isAdmin={isAdmin}
+              pendingVehicles={playbackId ? [] : pendingVehicles} filters={filters} isHotDropOn={isHotDropOn}
+              isHighPrecision={isFullMode}
+              telemetryData={{
+                isActive: !!playbackId, mapName: activeMapId || "Erangel", events: telemetryEvents, currentTimeMs, currentStates,
+                teamNames, zoneEvents, showZone, showCombatDots, showShotDots, hiddenPlayers, showPlayerNames,
+              }}
+            />
+
+            {playbackId && (
+              <>
+                {/* 🏆 고도화된 통합 상단 상태바 (모바일 최적화) */}
+                <div className={`absolute ${isMobile ? 'top-2' : 'top-6'} left-1/2 -translate-x-1/2 z-[1000] flex flex-col items-center gap-2 w-full max-w-xl pointer-events-none`}>
+                  {/* ℹ️ 연막탄 위치 추론 안내 공지 (모바일에서는 더 작게) */}
+                  {showSmokeNotice && (
+                    <div className={`pointer-events-auto bg-black/90 backdrop-blur-xl ${isMobile ? 'px-3 py-1.5 mx-4' : 'px-4 py-2'} rounded-xl border border-orange-500/30 shadow-[0_10px_30px_rgba(0,0,0,0.5)] flex items-center gap-3 mb-2 animate-in fade-in slide-in-from-top-2 duration-500`}>
+                      <AlertCircle size={isMobile ? 12 : 14} className="text-orange-500 shrink-0" />
+                      <div className="flex flex-col">
+                        <span className={`${isMobile ? 'text-[9px]' : 'text-[11px]'} text-white font-bold tracking-tight`}>
+                          고정밀 분석: 연막탄 위치는 투척 궤적 기반의 추론 데이터입니다.
+                        </span>
+                        <div className="flex gap-3 mt-1">
+                          <button onClick={() => handleDismissNotice(false)} className="text-[10px] text-gray-400">닫기</button>
+                          <button onClick={() => handleDismissNotice(true)} className="text-[10px] text-orange-500/80 font-bold">오늘 안보기</button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {zoneEvents.length > 0 && (
+                    <div className={`bg-black/80 backdrop-blur-md ${isMobile ? 'px-3 py-0.5' : 'px-4 py-1'} rounded-full border border-white/10 shadow-2xl flex items-center gap-3 animate-fade-in`}>
+                       <ZoneStatus currentTimeMs={currentTimeMs} zoneEvents={zoneEvents} />
+                    </div>
+                  )}
+                  
+                  <div className={`bg-[#111]/90 backdrop-blur-xl ${isMobile ? 'px-5 py-2' : 'px-8 py-3'} rounded-[2rem] border border-white/10 shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex items-center ${isMobile ? 'gap-4' : 'gap-8'}`}>
+                    <div className="flex flex-col items-center">
+                      <span className="text-[9px] text-gray-500 font-bold uppercase tracking-widest">Time</span>
+                      <span className={`${isMobile ? 'text-lg' : 'text-2xl'} font-mono font-bold text-white leading-none`}>{formatTime(currentTimeMs)}</span>
+                    </div>
+                    <div className="w-px h-6 bg-white/10" />
+                    <div className="flex flex-col items-center">
+                      <span className="text-[9px] text-[#F2A900] font-bold uppercase tracking-widest">Alive</span>
+                      <span className={`${isMobile ? 'text-lg' : 'text-2xl'} font-mono font-bold text-[#F2A900] leading-none`}>
+                        {Object.values(currentStates || {}).filter((p: any) => !p.isDead).length}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 🚀 데이터 로딩 오버레이 */}
+                {telemetryLoading && (
+                  <div className="absolute inset-0 z-[5000] bg-black/80 backdrop-blur-md flex flex-col items-center justify-center">
+                    <div className="relative">
+                      <div className={`w-20 h-20 border-4 ${isFullMode ? 'border-yellow-500/20 border-t-yellow-500' : 'border-indigo-500/20 border-t-indigo-500'} rounded-full animate-spin`} />
+                      <div className="absolute inset-0 flex items-center justify-center text-2xl animate-pulse">
+                        {isFullMode ? '💎' : '📊'}
+                      </div>
+                    </div>
+                    <h3 className="mt-6 text-white font-black text-xl tracking-tighter uppercase px-4 text-center">
+                      {isFullMode ? "초정밀 데이터 분석 중..." : "전투 데이터 복기 중..."}
+                    </h3>
+                  </div>
+                )}
+
+                {/* 모바일용 팀 리스트 토글 버튼 */}
+                {isMobile && (
+                  <button 
+                    onClick={() => setIsMenuOpen(!isMenuOpen)}
+                    className="absolute top-4 right-4 z-[2000] pointer-events-auto flex items-center justify-center w-[44px] h-[44px] bg-black/80 backdrop-blur-md border border-white/10 rounded-xl text-[#F2A900]"
+                  >
+                    <Menu size={20} />
+                  </button>
+                )}
+
+                {/* 하단 플레이어 컨트롤러 */}
+                <div className={`absolute ${isMobile ? 'bottom-20' : 'bottom-6'} left-1/2 -translate-x-1/2 z-[1000] w-full max-w-2xl px-4`}>
+                  <TelemetryPlayer
+                    events={telemetryEvents} teamNames={teamNames} isPlaying={isPlaying} setIsPlaying={setIsPlaying} playbackSpeed={playbackSpeed}
+                    setPlaybackSpeed={setPlaybackSpeed} currentTimeMs={currentTimeMs} setCurrentTimeMs={setCurrentTimeMs}
+                    maxTimeMs={maxTimeMs} loading={telemetryLoading} error={telemetryError} showZone={showZone}
+                    onToggleZone={() => setShowZone(!showZone)} showCombatDots={showCombatDots}
+                    onToggleCombatDots={() => setShowCombatDots(!showCombatDots)} showShotDots={showShotDots}
+                    onToggleShotDots={() => setShowShotDots(!showShotDots)} hiddenPlayers={hiddenPlayers}
+                    onTogglePlayer={(n) => setHiddenPlayers(prev => prev.includes(n) ? prev.filter(x => x !== n) : [...prev, n])}
+                    showPlayerNames={showPlayerNames} onTogglePlayerNames={() => setShowPlayerNames(!showPlayerNames)}
+                    onClose={() => { const p = new URLSearchParams(searchParams?.toString() || ""); p.delete("playback"); p.delete("nickname"); router.push(`/?${p.toString()}`); }}
+                  />
+                </div>
+                {telemetryEvents.length > 0 && (
+                  <div className={isMobile ? "translate-y-[-60px]" : ""}>
+                    <KillFeed events={telemetryEvents} currentTimeMs={currentTimeMs} teamNames={teamNames} playbackSpeed={playbackSpeed} />
+                  </div>
+                )}
+              </>
+            )}
           </div>
 
-          {/* ✨ 모바일 가로 툴바 (추천 방식: 아이콘 + 미니 라벨) */}
-          {isMobile && isMenuOpen && (
-            <div className="fixed bottom-[136px] left-0 right-0 z-[2000] px-4 animate-in fade-in slide-in-from-bottom-6 duration-500 pointer-events-none">
-              <div className="max-w-md mx-auto pointer-events-auto overflow-hidden">
-                <div 
-                  className="flex gap-2.5 overflow-x-auto no-scrollbar p-3 bg-black/70 backdrop-blur-2xl border border-white/10 rounded-[24px] shadow-[0_20px_50px_rgba(0,0,0,0.6)]"
-                  style={{
-                    maskImage: 'linear-gradient(to right, transparent, black 10%, black 90%, transparent)',
-                    WebkitMaskImage: 'linear-gradient(to right, transparent, black 10%, black 90%, transparent)'
-                  }}
-                >
-                  {/* 핫드랍 토글 */}
-                  <button
-                    onClick={() => setIsHotDropOn(!isHotDropOn)}
-                    className={`flex flex-col items-center justify-center min-w-[72px] h-[72px] rounded-2xl transition-all active:scale-95 border ${
-                      isHotDropOn 
-                        ? "bg-gradient-to-br from-orange-500/20 to-red-600/20 border-orange-500/50 text-orange-500" 
-                        : "bg-white/5 border-white/5 text-white/40"
-                    }`}
-                  >
-                    <Flame size={20} className={isHotDropOn ? "animate-pulse" : ""} />
-                    <span className={`text-[10px] font-black mt-1.5 uppercase tracking-tighter ${isHotDropOn ? "text-orange-500" : "text-white/40"}`}>핫드랍</span>
-                  </button>
-
-                  {/* 격자 토글 */}
-                  <button
-                    onClick={() => setIsGridOn(!isGridOn)}
-                    className={`flex flex-col items-center justify-center min-w-[72px] h-[72px] rounded-2xl transition-all active:scale-95 border ${
-                      isGridOn 
-                        ? "bg-white/10 border-white/20 text-[#F2A900]" 
-                        : "bg-white/5 border-white/5 text-white/40"
-                    }`}
-                  >
-                    <Grid size={20} />
-                    <span className={`text-[10px] font-black mt-1.5 uppercase tracking-tighter ${isGridOn ? "text-[#F2A900]" : "text-white/40"}`}>격자</span>
-                  </button>
-
-                  {/* 박격포 모드 */}
-                  <button
-                    onClick={() => {
-                      handleModeToggle("mortar");
-                      setIsMenuOpen(false);
-                    }}
-                    className={`flex flex-col items-center justify-center min-w-[72px] h-[72px] rounded-2xl transition-all active:scale-95 border ${
-                      activeMode === "mortar" 
-                        ? "bg-blue-500/20 border-blue-500/50 text-blue-400" 
-                        : "bg-white/5 border-white/5 text-white/40"
-                    }`}
-                  >
-                    <Crosshair size={20} />
-                    <span className={`text-[10px] font-black mt-1.5 uppercase tracking-tighter ${activeMode === "mortar" ? "text-blue-400" : "text-white/40"}`}>박격포</span>
-                  </button>
-
-                  {/* 비행기 라인 */}
-                  <button
-                    onClick={() => {
-                      handleModeToggle("flight");
-                      setIsMenuOpen(false);
-                    }}
-                    className={`flex flex-col items-center justify-center min-w-[72px] h-[72px] rounded-2xl transition-all active:scale-95 border ${
-                      activeMode === "flight" 
-                        ? "bg-purple-500/20 border-purple-500/50 text-purple-400" 
-                        : "bg-white/5 border-white/5 text-white/40"
-                    }`}
-                  >
-                    <Plane size={20} />
-                    <span className={`text-[10px] font-black mt-1.5 uppercase tracking-tighter ${activeMode === "flight" ? "text-purple-400" : "text-white/40"}`}>비행기</span>
-                  </button>
-
-                  {/* 제보하기 */}
-                  <button
-                    onClick={() => {
-                      handleModeToggle("report");
-                      setIsMenuOpen(false);
-                    }}
-                    className={`flex flex-col items-center justify-center min-w-[72px] h-[72px] rounded-2xl transition-all active:scale-95 border ${
-                      activeMode === "report" 
-                        ? "bg-green-500/20 border-green-500/50 text-green-400" 
-                        : "bg-white/5 border-white/5 text-white/40"
-                    }`}
-                  >
-                    <MapPin size={20} />
-                    <span className={`text-[10px] font-black mt-1.5 uppercase tracking-tighter ${activeMode === "report" ? "text-green-400" : "text-white/40"}`}>제보</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {(activeMode !== "none" || isHotDropOn) && (
-            <div className={`absolute left-1/2 -translate-x-1/2 z-[1000] flex flex-col items-center gap-3 pointer-events-none ${isMobile ? 'bottom-[136px]' : 'top-[15px]'}`}>
-              {/* 모바일 전용: 비행기 주변 1km 스캔 버튼 */}
-              {isMobile && activeMode === "flight" && flightPoints.length === 2 && (
-                <button
-                  onClick={() => {
-                    const nextState = !isVehicleFilterOn;
-                    setIsVehicleFilterOn(nextState);
-                    if (nextState && onEnableDefaultVehicleFilters) onEnableDefaultVehicleFilters();
-                  }}
-                  className={`pointer-events-auto px-6 py-3 border-2 rounded-full font-black text-xs shadow-[0_10px_30px_rgba(0,0,0,0.5)] transition-all active:scale-95 flex items-center gap-2 ${
-                    isVehicleFilterOn 
-                      ? "bg-[#F2A900] border-[#F2A900] text-black" 
-                      : "bg-black/80 border-[#F2A900] text-[#F2A900] backdrop-blur-md"
-                  }`}
-                >
-                  <span className="text-base">🚗</span>
-                  <span className="uppercase tracking-tight">비행기 주변 1km 스캔 {isVehicleFilterOn ? "ON" : "OFF"}</span>
-                </button>
-              )}
-
-              {activeMode !== "none" && (
-                <div className="bg-black/70 backdrop-blur-md text-white px-5 py-2.5 rounded-[20px] text-[13px] font-bold border border-white/10 shadow-2xl animate-in fade-in slide-in-from-top-4 duration-300">
-                  {activeMode === "mortar" && "📍 [박격포] 내 위치와 타겟을 클릭하세요"}
-                  {activeMode === "flight" && (flightPoints.length < 2 ? "📍 [비행기] 출발지와 도착지를 클릭하세요" : "✅ [비행기] 비행기 경로가 설정되었습니다")}
-                  {activeMode === "report" && "🚨 [제보] 지도에 차량 위치를 좌클릭하세요!"}
-                  <span className="text-[#F2A900] ml-2.5">(우클릭: 취소)</span>
-                </div>
-              )}
-              {isHotDropOn && (
-                <div className="bg-orange-600/20 backdrop-blur-md text-orange-200 px-5 py-2 rounded-full text-[11px] font-black border border-orange-500/30 shadow-[0_0_15px_rgba(234,88,12,0.2)] animate-in zoom-in-95 duration-500 flex items-center gap-2">
-                  <Flame size={12} className="text-orange-400 animate-pulse fill-orange-400" />
-                  <span className="uppercase tracking-tight">핫드랍: 상위 랭커 및 최근 경쟁 매치 기반 실시간 집계 중</span>
-                </div>
-              )}
-            </div>
-          )}
-
-          <MapView
-            activeMapId={activeMapId}
-            currentMap={currentMap}
-            bounds={bounds}
-            icons={icons}
-            imageHeight={imageHeight}
-            imageWidth={imageWidth}
-            activeMode={activeMode}
-            mortarPoints={mortarPoints}
-            flightPoints={flightPoints}
-            flightPolygonCoords={flightPolygonCoords}
-            displayedVehicles={displayedVehicles}
-            isGridOn={isGridOn}
-            mapScale={mapScale}
-            setMortarPoints={setMortarPoints}
-            setFlightPoints={setFlightPoints}
-            setIsVehicleFilterOn={setIsVehicleFilterOn}
-            setActiveMode={setActiveMode}
-            setReportLocation={setReportLocation}
-            reportLocation={reportLocation}
-            currentUser={currentUser}
-            isAdmin={isAdmin}
-            pendingVehicles={playbackId ? [] : pendingVehicles}
-            filters={filters}
-            isHotDropOn={isHotDropOn}
-            telemetryData={{
-              isActive: !!playbackId,
-              mapName: activeMapId || "Erangel",
-              events: telemetryEvents,
-              currentTimeMs,
-              currentStates,
-              teamNames,
-              zoneEvents,
-              showZone,
-              showCombatDots,
-              showShotDots,
-              hiddenPlayers,
-              showPlayerNames,
-              showPlayerPaths,
-              teammates: telemetryTeammates
-            }}
-          />
-
+          {/* Right Sidebar (모바일에서는 오버레이 형태로 전환) */}
           {playbackId && (
-            <TelemetryPlayer
-              events={telemetryEvents}
-              teamNames={teamNames}
-              isPlaying={isPlaying}
-              setIsPlaying={setIsPlaying}
-              playbackSpeed={playbackSpeed}
-              setPlaybackSpeed={setPlaybackSpeed}
-              currentTimeMs={currentTimeMs}
-              setCurrentTimeMs={setCurrentTimeMs}
-              maxTimeMs={maxTimeMs}
-              loading={telemetryLoading}
-              error={telemetryError}
-              showZone={showZone}
-              onToggleZone={() => setShowZone((p) => !p)}
-              showCombatDots={showCombatDots}
-              onToggleCombatDots={() => setShowCombatDots((p) => !p)}
-              showShotDots={showShotDots}
-              onToggleShotDots={() => setShowShotDots((p) => !p)}
-              hiddenPlayers={hiddenPlayers}
-              onTogglePlayer={(name) => {
-                setHiddenPlayers(prev => 
-                  prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]
-                );
-              }}
-              showPlayerNames={showPlayerNames}
-              onTogglePlayerNames={() => setShowPlayerNames(p => !p)}
-              showPlayerPaths={showPlayerPaths}
-              onTogglePlayerPaths={() => setShowPlayerPaths(p => !p)}
-              onClose={() => {
-                const newParams = new URLSearchParams(searchParams?.toString() || "");
-                newParams.delete("playback");
-                newParams.delete("nickname");
-                router.push(`/?${newParams.toString()}`);
-              }}
-            />
-          )}
-
-          {playbackId && telemetryEvents.length > 0 && (
-            <KillFeed
-              events={telemetryEvents}
-              currentTimeMs={currentTimeMs}
-              teamNames={teamNames}
-              playbackSpeed={playbackSpeed}
-            />
-          )}
-
-          {playbackId && zoneEvents.length > 0 && (
-            <ZoneTimer
-              zoneEvents={zoneEvents}
-              currentTimeMs={currentTimeMs}
-              showZone={showZone}
-            />
+            <div className={`
+              ${isMobile 
+                ? `absolute inset-y-0 right-0 z-[3000] transition-transform duration-300 ${isMenuOpen ? 'translate-x-0' : 'translate-x-full'}` 
+                : 'relative'
+              }
+            `}>
+              {isMobile && isMenuOpen && (
+                <div 
+                  className="absolute inset-0 -left-full bg-black/40 backdrop-blur-sm z-[-1]"
+                  onClick={() => setIsMenuOpen(false)}
+                />
+              )}
+              <TelemetrySidebar currentStates={currentStates} teamNames={teamNames} />
+            </div>
           )}
         </div>
       </div>
     );
-  }
-);
+});
 
 MapShell.displayName = "MapShell";
+
+const ZoneStatus = ({ currentTimeMs, zoneEvents }: { currentTimeMs: number, zoneEvents: any[] }) => {
+  const currentZone = zoneEvents.find(z => z.relativeTimeMs > currentTimeMs) || zoneEvents[zoneEvents.length - 1];
+  if (!currentZone) return null;
+  
+  const isMoving = currentZone.isMoving;
+  const remainingSec = Math.max(0, Math.floor((currentZone.relativeTimeMs - currentTimeMs) / 1000));
+  const m = Math.floor(remainingSec / 60);
+  const s = remainingSec % 60;
+  const timeStr = `${m}:${s.toString().padStart(2, "0")}`;
+
+  return (
+    <div className="flex items-center gap-2">
+      <div className={`w-2 h-2 rounded-full ${isMoving ? "bg-blue-500 animate-pulse" : "bg-white/40"}`} />
+      <span className="text-[11px] font-bold text-gray-300">
+        {isMoving ? "자기장 이동 중" : `자기장 대기 (${currentZone.phase}단계)`}
+      </span>
+      <span className="text-[11px] font-mono font-bold text-[#F2A900] ml-1">
+        {timeStr}
+      </span>
+    </div>
+  );
+};
+
 export default MapShell;
