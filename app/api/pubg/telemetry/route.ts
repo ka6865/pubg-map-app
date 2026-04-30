@@ -6,6 +6,7 @@ export async function GET(request: Request) {
   const nickname = searchParams.get("nickname");
   const mapName = searchParams.get("mapName") || "Erangel";
   const platform = searchParams.get("platform") || "steam";
+  const mode = searchParams.get("mode") || "lite";
 
   if (!matchId || !nickname) {
     return NextResponse.json(
@@ -24,11 +25,13 @@ export async function GET(request: Request) {
     erangel: 819200, miramar: 819200, taego: 819200, deston: 819200, rondo: 819200, vikendi: 819200,
     sanhok: 409600, paramo: 307200, karakin: 204800, haven: 102400
   };
-  const mapSize = MAP_SIZES[mapName.toLowerCase()] || 816000;
+  const mapSize = MAP_SIZES[mapName.toLowerCase()] || 819200;
+  const xOffset = mapName.toLowerCase() === "miramar" ? 1800 : 0;
+  const yOffset = mapName.toLowerCase() === "miramar" ? 1200 : 0;
   const SIMPLIFY_THRESHOLD = 500;
   
   const scaleX = (x: number) => (x / mapSize) * 8192;
-  const scaleY = (y: number) => 8192 - ((y / mapSize) * 8192);
+  const scaleY = (y: number) => (y / mapSize) * 8192;
 
   try {
     // 1. 매치 정보를 가져와서 팀원 ID 목록과 텔레메트리 URL을 확보
@@ -71,8 +74,15 @@ export async function GET(request: Request) {
       return pData ? pData.attributes.stats.playerId : null;
     }).filter(Boolean);
 
-    // 2. 텔레메트리 JSON 다운로드 및 파싱
-    const telemetryRes = await fetch(telemetryUrl);
+    const accountIdToName = new Map<string, string>();
+    participants.forEach((p: any) => {
+      const accId = p.attributes.stats.playerId;
+      const name = p.attributes.stats.name;
+      if (accId && name) accountIdToName.set(accId, name);
+    });
+
+    // 2. 텔레메트리 JSON 다운로드 및 파싱 (캐시 무효화)
+    const telemetryRes = await fetch(telemetryUrl, { cache: "no-store" });
     if (!telemetryRes.ok) throw new Error("텔레메트리 JSON 파일 다운로드 실패");
     const events = await telemetryRes.json();
 
@@ -122,61 +132,55 @@ export async function GET(request: Request) {
       }
     }
     
-    // 2차 스캔 및 정리
     if (!matchStartTimeRaw && events.length > 0) {
        matchStartTimeRaw = events[0]._D || events[0].Timestamp;
     }
     const matchStartTime = getTime(matchStartTimeRaw) || 0;
 
     const lastPosByPlayer: Record<string, { x: number, y: number }> = {};
-    const teamNamesSet = new Set<string>();
+    const lastRotByPlayer: Record<string, number> = {}; 
+    const groggyMap = new Map<string, { attackerAccountId: string, attackerName: string }>(); 
+    const teamNames = teamAccountIds.map(aid => accountIdToName.get(aid)).filter(Boolean) as string[];
+
+    // 🎯 팩트: 매치에 실제 폭발 로그가 있는지 확인 (중복 방지용)
+    const hasRealExplosions = events.some((ev: any) => (ev._T || ev.Type || "").toLowerCase() === "logexplosiveexplode");
 
     for (const ev of events) {
       try {
         const typeStr = (ev._T || ev.Type || ev.event || "UNKNOWN").toString();
         const lowerType = typeStr.toLowerCase();
-        if (typeStr === "LogMatchStart") continue;
-
         const eventTimeStr = ev._D || ev.Timestamp || "";
-        const eventTime = getTime(eventTimeStr);
+        const eventTime = new Date(eventTimeStr).getTime();
         const relativeTimeMs = eventTime - matchStartTime;
 
+        if (lowerType === "logplayermakegroggy") {
+          const victimId = ev.victim?.accountId;
+          const attackerId = ev.attacker?.accountId;
+          if (victimId && attackerId) {
+            groggyMap.set(victimId, { attackerAccountId: attackerId, attackerName: ev.attacker?.name || "" });
+          }
+        }
+
+        if (typeStr === "LogMatchStart") continue;
+
         if (lowerType === "logplayerposition") {
-          if (ev.character) {
-            const accId = ev.character.accountId;
-            const isTeam = teamAccountIds.includes(accId);
-            const tracking = enemyTracking.get(accId);
-            const inTrackingRange = tracking && (eventTime >= tracking.firstContact - 30000);
+          const char = ev.character || ev.attacker || ev.victim;
+          if (char && char.name) {
+            lastPosByPlayer[char.name] = { x: char.location?.x ?? 0, y: char.location?.y ?? 0 };
+            lastRotByPlayer[char.name] = char.rotation || 0;
 
-            if (isTeam || inTrackingRange) {
-              const name = ev.character.name;
-              const rawX = ev.character.location?.x ?? 0;
-              const rawY = ev.character.location?.y ?? 0;
-              
-              if (name) {
-                if (isTeam) teamNamesSet.add(name);
-                
-                const last = lastPosByPlayer[name];
-                if (last) {
-                  const dx = rawX - last.x; 
-                  const dy = rawY - last.y;
-                  if (Math.sqrt(dx * dx + dy * dy) < SIMPLIFY_THRESHOLD && !inTrackingRange) {
-                     continue; 
-                  }
-                }
-                lastPosByPlayer[name] = { x: rawX, y: rawY };
-              }
-
-              parsedEvents.push({
-                type: isTeam ? "position" : "enemy_position",
-                time: eventTimeStr,
-                relativeTimeMs,
-                name: name,
-                x: scaleX(rawX),
-                y: scaleY(rawY),
-                z: (ev.character.location?.z ?? 0) / 100,
-              });
-            }
+            parsedEvents.push({
+              type: "position",
+              time: eventTimeStr,
+              relativeTimeMs,
+              name: char.name,
+              teamId: char.teamId,
+              isTeam: teamAccountIds.includes(char.accountId),
+              x: scaleX(char.location?.x ?? 0),
+              y: scaleY(char.location?.y ?? 0),
+              z: (char.location?.z ?? 0) / 100,
+              health: char.health || 100,
+            });
           }
           continue;
         }
@@ -187,72 +191,214 @@ export async function GET(request: Request) {
 
         if (isKillEvent || isGroggyEvent || isReviveEvent) {
           const attackerObj = ev.finisher || ev.attacker || ev.killer || ev.reviver || null;
-          const isEnvKill = !attackerObj || attackerObj.accountId === ev.victim?.accountId;
+          const victimObj = ev.victim;
+          const isEnvKill = !attackerObj || attackerObj.accountId === victimObj?.accountId;
           const attackerName = isEnvKill ? (isReviveEvent ? "자가부활" : "환경/자연사") : (attackerObj?.name || "알 수 없음");
-          const victimName = ev.victim?.name || "알 수 없음";
+          const victimName = victimObj?.name || "알 수 없음";
 
           const isAttackerTeam = !isEnvKill && attackerObj && teamAccountIds.includes(attackerObj.accountId);
-          const isVictimTeam = ev.victim && teamAccountIds.includes(ev.victim.accountId);
+          const isVictimTeam = victimObj && teamAccountIds.includes(victimObj.accountId);
+
+          const assistants = ev.assistantAccountIds ? ev.assistantAccountIds.map((aid: string) => ({
+            accountId: aid,
+            name: accountIdToName.get(aid) || "Unknown"
+          })) : [];
+
+          if (isKillEvent && victimObj?.accountId) {
+            const groggyInfo = groggyMap.get(victimObj.accountId);
+            if (groggyInfo && groggyInfo.attackerAccountId !== attackerObj?.accountId) {
+              if (!assistants.some((a: any) => a.accountId === groggyInfo.attackerAccountId)) {
+                assistants.push({
+                  accountId: groggyInfo.attackerAccountId,
+                  name: groggyInfo.attackerName
+                });
+              }
+            }
+          }
 
           let vX = null, vY = null;
           if (!isReviveEvent) {
-            vX = ev.attacker?.viewDir?.x ?? ev.attacker?.ViewDir?.x ?? ev.finisher?.viewDir?.x ?? ev.killer?.viewDir?.x;
-            vY = ev.attacker?.viewDir?.y ?? ev.attacker?.ViewDir?.y ?? ev.finisher?.viewDir?.y ?? ev.killer?.viewDir?.y;
+            vX = ev.attacker?.viewDir?.x ?? ev.attacker?.ViewDir?.x ?? ev.finisher?.viewDir?.x ?? ev.killer?.viewDir?.x ?? ev.maker?.viewDir?.x ?? ev.dBNOMaker?.viewDir?.x;
+            vY = ev.attacker?.viewDir?.y ?? ev.attacker?.ViewDir?.y ?? ev.finisher?.viewDir?.y ?? ev.killer?.viewDir?.y ?? ev.maker?.viewDir?.y ?? ev.dBNOMaker?.viewDir?.y;
             if (vX == null || vY == null) {
-              const dx = (ev.victim?.location?.x || 0) - (attackerObj?.location?.x || ev.attacker?.location?.x || 0);
-              const dy = (ev.victim?.location?.y || 0) - (attackerObj?.location?.y || ev.attacker?.location?.y || 0);
+              const dx = (victimObj?.location?.x || 0) - (attackerObj?.location?.x || ev.attacker?.location?.x || 0);
+              const dy = (victimObj?.location?.y || 0) - (attackerObj?.location?.y || ev.attacker?.location?.y || 0);
               const mag = Math.sqrt(dx * dx + dy * dy);
               if (mag > 0) { vX = dx / mag; vY = dy / mag; }
             }
           }
 
+          const charLoc = victimObj?.location || victimObj?.Location || attackerObj?.location || ev.attacker?.location || { x: 0, y: 0 };
+          const isSystemName = ["환경/자연사", "알 수 없음", "자가부활", "자연사"].includes(attackerName) || ["환경/자연사", "알 수 없음"].includes(victimName);
+          
           parsedEvents.push({
             type: isKillEvent ? "kill" : (isGroggyEvent ? "groggy" : "revive"),
             time: eventTimeStr,
             relativeTimeMs,
             attacker: attackerName,
+            attackerAccountId: attackerObj?.accountId,
             victim: victimName,
-            x: scaleX(attackerObj?.location?.x || ev.attacker?.location?.x || 0),
-            y: scaleY(attackerObj?.location?.y || ev.attacker?.location?.y || 0),
-            victimX: scaleX(ev.victim?.location?.x || ev.victim?.location?.X || 0),
-            victimY: scaleY(ev.victim?.location?.y || ev.victim?.location?.Y || 0),
+            victimAccountId: victimObj?.accountId,
+            teamId: isAttackerTeam ? (attackerObj?.teamId ?? 999) : (victimObj?.teamId ?? 999),
+            x: scaleX(charLoc.x),
+            y: scaleY(charLoc.y),
+            victimX: scaleX(victimObj?.location?.x || 0),
+            victimY: scaleY(victimObj?.location?.y || 0),
             vX: vX, 
             vY: vY,
             weapon: ev.damageCauserName || ev.damageReason || "",
             isTeamAttacker: !!isAttackerTeam,
             isTeamVictim: !!isVictimTeam,
+            isSystem: isSystemName,
+            assistants: assistants,
           });
           continue;
         }
 
         if (lowerType === "logplayerattack") {
-          if (ev.attacker && teamAccountIds.includes(ev.attacker.accountId)) {
+          const attacker = ev.attacker;
+          if (attacker) {
+            const weapon = (ev.weapon?.itemId || ev.attackType || "").toLowerCase();
+            const isThrowable = weapon.includes("throw") || weapon.includes("smoke") || weapon.includes("grenade") || weapon.includes("m79") || weapon.includes("launcher");
+            
             parsedEvents.push({
-              type: "shot",
+              type: isThrowable ? "throw" : "shot",
               time: eventTimeStr,
               relativeTimeMs,
-              name: ev.attacker.name,
-              x: scaleX(ev.attacker.location?.x ?? 0),
-              y: scaleY(ev.attacker.location?.y ?? 0),
-              vX: ev.attacker?.viewDir?.x ?? ev.attacker?.ViewDir?.x ?? ev.viewDir?.x ?? ev.common?.isAttacking?.viewDir?.x,
-              vY: ev.attacker?.viewDir?.y ?? ev.attacker?.ViewDir?.y ?? ev.viewDir?.y ?? ev.common?.isAttacking?.viewDir?.y,
+              name: attacker.name,
+              accountId: attacker.accountId,
+              teamId: attacker.teamId,
+              isTeam: teamAccountIds.includes(attacker.accountId),
+              x: scaleX(attacker.location?.x ?? 0),
+              y: scaleY(attacker.location?.y ?? 0),
+              rotation: attacker.rotation || lastRotByPlayer[attacker.name] || 0,
+              vX: isThrowable ? null : (attacker?.viewDir?.x ?? ev.viewDir?.x),
+              vY: isThrowable ? null : (attacker?.viewDir?.y ?? ev.viewDir?.y),
               weapon: ev.weapon?.itemId || ev.attackType || "",
             });
           }
           continue;
         }
 
+        if (lowerType === "logplayertakedamage" && ev.attacker && ev.victim) {
+          parsedEvents.push({
+            type: "damage",
+            time: eventTimeStr,
+            relativeTimeMs,
+            attackerName: ev.attacker.name,
+            attackerAccountId: ev.attacker.accountId,
+            victimName: ev.victim.name,
+            victimAccountId: ev.victim.accountId,
+            damage: ev.damage,
+            x: scaleX(ev.victim.location?.x ?? 0),
+            y: scaleY(ev.victim.location?.y ?? 0),
+          });
+          continue;
+        }
+
         if (lowerType === "logvehicleride" || lowerType === "logvehicleleave") {
-          if (ev.character && teamAccountIds.includes(ev.character.accountId)) {
+          const char = ev.character || ev.attacker;
+          if (char) {
             parsedEvents.push({
               type: lowerType.includes("ride") ? "ride" : "leave",
               time: eventTimeStr,
               relativeTimeMs,
-              name: ev.character.name,
+              name: char.name,
+              accountId: char.accountId,
+              teamId: char.teamId,
+              isTeam: teamAccountIds.includes(char.accountId),
               vehicle: ev.vehicle?.vehicleId,
-              x: scaleX(ev.character.location?.x ?? 0),
-              y: scaleY(ev.character.location?.y ?? 0),
+              x: scaleX(char.location?.x ?? 0),
+              y: scaleY(char.location?.y ?? 0),
             });
+          }
+          continue;
+        }
+
+        if (lowerType === "logplayerusethrowable") {
+          // 🎯 공식 문서: 던진 주체는 character 또는 attacker 필드에 존재함
+          const char = ev.character || ev.attacker;
+          if (char) {
+            const itemId = (
+              ev.item?.itemId || 
+              ev.weapon?.itemId || 
+              ev.character?.executableItem?.itemId || 
+              ""
+            ).toLowerCase();
+            
+            // 🎯 팩트: 터미널 로그에서 확인된 긴급엄폐 수류탄 아이디(CoverStructDropHandFlare) 추가
+            const throwableKeywords = ["smokebomb", "grenade", "flashbang", "molotov", "bluezone", "deployable", "shield", "coverstruct", "decoy", "c4"];
+            
+            if (throwableKeywords.some(k => itemId.includes(k))) {
+              const rotDegree = char.rotation || lastRotByPlayer[char.name] || 0;
+              const rot = rotDegree * (Math.PI / 180);
+              
+              if (!hasRealExplosions) {
+                const estX = (char.location?.x ?? 0) + Math.sin(rot) * 2000;
+                const estY = (char.location?.y ?? 0) - Math.cos(rot) * 2000;
+
+                let vfxType = "grenade";
+                if (itemId.includes("smokebomb") || itemId.includes("smoke")) vfxType = "smoke";
+                else if (itemId.includes("flashbang")) vfxType = "flash";
+                else if (itemId.includes("molotov")) vfxType = "molotov";
+                else if (itemId.includes("bluezone")) vfxType = "bluezone";
+                else if (itemId.includes("deployable") || itemId.includes("shield") || itemId.includes("coverstruct")) vfxType = "shield";
+
+                parsedEvents.push({
+                  type: vfxType,
+                  time: eventTimeStr,
+                  relativeTimeMs: relativeTimeMs + 2500, 
+                  name: char.name,
+                  weapon: itemId,
+                  x: scaleX(estX),
+                  y: scaleY(estY),
+                  isEstimated: true
+                });
+              }
+              
+              parsedEvents.push({
+                type: "throw",
+                time: eventTimeStr,
+                relativeTimeMs,
+                name: char.name,
+                weapon: itemId,
+                x: scaleX(char.location?.x ?? 0),
+                y: scaleY(char.location?.y ?? 0),
+              });
+            }
+          }
+          continue;
+        }
+
+        if (lowerType === "logexplosiveexplode") {
+          // 🎯 공식 문서: 폭발 위치는 location 필드, 주체는 character 또는 attacker임
+          const loc = ev.location || ev.character?.location || ev.attacker?.location;
+          if (loc) {
+            const explosiveId = (
+              ev.explosiveItem?.itemId || 
+              ev.explosiveId || 
+              ev.item?.itemId ||
+              ""
+            ).toLowerCase();
+            
+            let vfxType = "grenade";
+            if (explosiveId.includes("smokebomb") || explosiveId.includes("smoke")) vfxType = "smoke";
+            else if (explosiveId.includes("flashbang")) vfxType = "flash";
+            else if (explosiveId.includes("molotov")) vfxType = "molotov";
+            else if (explosiveId.includes("bluezone")) vfxType = "bluezone";
+            else if (explosiveId.includes("deployable") || explosiveId.includes("shield") || explosiveId.includes("coverstruct")) vfxType = "shield";
+
+            parsedEvents.push({
+              type: vfxType,
+              time: eventTimeStr,
+              relativeTimeMs,
+              name: ev.character?.name || ev.attacker?.name || "",
+              weapon: explosiveId,
+              x: scaleX(loc.x),
+              y: scaleY(loc.y),
+              isRealExplosion: true
+            });
+            continue;
           }
         }
 
@@ -268,7 +414,9 @@ export async function GET(request: Request) {
             });
           }
         }
-      } catch { continue; }
+      } catch (err) {
+        continue;
+      }
     }
 
     // 3. 자기장 데이터 파싱 및 예측 계산
@@ -280,12 +428,13 @@ export async function GET(request: Request) {
         zoneEvents.push({
           time: ev._D,
           relativeTimeMs: eTime - matchStartTime,
-          blueX: gs.poisonGasWarningPosition?.x != null ? scaleX(gs.poisonGasWarningPosition.x) : null,
-          blueY: gs.poisonGasWarningPosition?.y != null ? scaleY(gs.poisonGasWarningPosition.y) : null,
-          blueRadius: gs.poisonGasWarningRadius != null ? scaleX(gs.poisonGasWarningRadius) : null, 
-          whiteX: gs.safetyZonePosition?.x != null ? scaleX(gs.safetyZonePosition.x) : null,
-          whiteY: gs.safetyZonePosition?.y != null ? scaleY(gs.safetyZonePosition.y) : null,
-          whiteRadius: gs.safetyZoneRadius != null ? scaleX(gs.safetyZoneRadius) : null,
+          // 🎯 팩트: safetyZone은 현재 자기장(Blue Zone), poisonGasWarning은 다음 안전구역(White Zone)
+          blueX: gs.safetyZonePosition?.x != null ? scaleX(gs.safetyZonePosition.x) : null,
+          blueY: gs.safetyZonePosition?.y != null ? scaleY(gs.safetyZonePosition.y) : null,
+          blueRadius: gs.safetyZoneRadius != null ? scaleX(gs.safetyZoneRadius) : null, 
+          whiteX: gs.poisonGasWarningPosition?.x != null ? scaleX(gs.poisonGasWarningPosition.x) : null,
+          whiteY: gs.poisonGasWarningPosition?.y != null ? scaleY(gs.poisonGasWarningPosition.y) : null,
+          whiteRadius: gs.poisonGasWarningRadius != null ? scaleX(gs.poisonGasWarningRadius) : null,
         });
       }
     }
@@ -316,9 +465,11 @@ export async function GET(request: Request) {
       matchId,
       startTime: matchStartTimeRaw,
       teammates: teamAccountIds,
-      teamNames: Array.from(teamNamesSet),
+      teamNames: teamNames,
       events: parsedEvents,
       zoneEvents,
+    }, {
+      headers: { "Cache-Control": "no-store" }
     });
 
   } catch (error: any) {

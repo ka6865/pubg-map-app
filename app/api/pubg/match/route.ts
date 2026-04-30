@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -45,482 +44,423 @@ export async function GET(request: Request) {
     const teamStats = myRoster ? myRoster.relationships.participants.data.map((pRef: any) => participants.find((p: any) => p.id === pRef.id)?.attributes.stats).filter(Boolean) : [myInfo.attributes.stats];
     const teamNames: Set<string> = new Set(teamStats.map((m: any) => normalizeName(m.name)));
 
-    // [V5.0] 딜량 기반 랭킹 계산 (벤치마크 필터용)
     const allStats = participants.map((p: any) => p.attributes.stats);
     const sortedByDamage = [...allStats].sort((a, b) => b.damageDealt - a.damageDealt);
     const myDamageRank = sortedByDamage.findIndex((s: any) => normalizeName(s.name) === lowerNickname) + 1;
 
-    // [DB] V5.25 캐시 체크
-    const { data: fullCache } = await supabase.from("processed_match_telemetry").select("data").eq("match_id", matchId).eq("player_id", lowerNickname).single();
-    if (fullCache && (fullCache.data as any).fullResult?.v >= 5.25) {
-      console.log(`[DB] 5.25 Cache Hit: ${matchId}`);
-      return NextResponse.json((fullCache.data as any).fullResult);
+    const { data: cached } = await supabase.from("processed_match_telemetry").select("data, updated_at").eq("match_id", matchId).eq("player_id", lowerNickname).single();
+    if (cached && (cached as any).data?.fullResult?.v >= 8.2) {
+        return NextResponse.json((cached as any).data.fullResult);
     }
 
-    // [V5.31] 매치 속성에 따른 엘리트 벤치마크 필터링 (TPP/FPP, Squad/Solo 구분)
     const isFpp = matchAttr.gameMode.includes('fpp');
     const isSquad = matchAttr.gameMode.includes('squad');
     
-    let eliteQuery = supabase.from("global_benchmarks").select("latency_ms, initiative_rate, team_distance, revive_rate, smoke_rate, damage, kills, supp_count, team_wipes, utility_count, survival_time, solo_kill_rate, burst_damage");
-    
-    // 현재 매치와 유사한 환경의 벤치마크 우선 조회
+    let eliteQuery = supabase.from("global_benchmarks").select("*");
     if (isFpp) eliteQuery = eliteQuery.ilike('game_mode', '%fpp%');
     else eliteQuery = eliteQuery.not('game_mode', 'ilike', '%fpp%');
     
-    if (isSquad) eliteQuery = eliteQuery.ilike('game_mode', '%squad%');
-    
     const { data: elitePoolRaw } = await eliteQuery;
-    
-    // 데이터가 너무 적으면(10개 미만) 다시 전체에서 가져옴 (폴백)
-    let elitePool = elitePoolRaw;
-    if (!elitePool || elitePool.length < 10) {
+    let elitePool = elitePoolRaw || [];
+    if (elitePool.length < 10) {
       const { data: fallbackPool } = await supabase.from("global_benchmarks").select("*").limit(200);
-      elitePool = fallbackPool;
+      elitePool = fallbackPool || [];
     }
 
-    const eliteAvgDamage = elitePool?.length ? Math.round(elitePool.reduce((a, b) => a + (b.damage || 0), 0) / elitePool.length) : 450;
-    const eliteAvgKills = elitePool?.length ? Number((elitePool.reduce((a, b) => a + (b.kills || 0), 0) / elitePool.length).toFixed(1)) : 3.0;
-    const validLatencies = elitePool?.filter(p => (p.latency_ms || 0) > 0) || [];
-    const eliteAvgLatency = validLatencies.length ? Math.round(validLatencies.reduce((a, b) => a + b.latency_ms, 0) / validLatencies.length) : 1800;
-    const eliteAvgReviveRate = elitePool?.length ? Math.round(elitePool.reduce((a, b) => a + (b.revive_rate || 80), 0) / elitePool.length) : 80;
-    const eliteAvgSmokeRate = elitePool?.length ? Math.round(elitePool.reduce((a, b) => a + (b.smoke_rate || 60), 0) / elitePool.length) : 60;
-    const eliteAvgSuppCount = elitePool?.length ? Number((elitePool.reduce((a, b) => a + (b.supp_count || 3), 0) / elitePool.length).toFixed(1)) : 3.0;
-    const eliteAvgInitiative = elitePool?.length ? Math.round(elitePool.reduce((a, b) => a + (b.initiative_rate || 55), 0) / elitePool.length) : 55;
-    const eliteAvgDistance = elitePool?.length ? Math.round(elitePool.reduce((a, b) => a + (b.team_distance || 30), 0) / elitePool.length) : 30;
-    const eliteAvgWipes = elitePool?.length ? Number((elitePool.reduce((a, b) => a + (b.team_wipes || 1), 0) / elitePool.length).toFixed(1)) : 1.5;
-    const eliteAvgUtility = elitePool?.length ? Number((elitePool.reduce((a, b) => a + (b.utility_count || 0), 0) / elitePool.length).toFixed(1)) : 2.5;
-    const eliteAvgSurvival = elitePool?.length ? Math.round(elitePool.reduce((a, b) => a + (b.survival_time || 0), 0) / elitePool.length) : 1200;
-    const eliteAvgSoloKill = elitePool?.length ? Math.round(elitePool.reduce((a, b) => a + (b.solo_kill_rate || 0), 0) / elitePool.length) : 35;
-    const eliteAvgBurst = elitePool?.length ? Math.round(elitePool.reduce((a, b) => a + (b.burst_damage || 0), 0) / elitePool.length) : 150;
+    const calcAvg = (arr: any[], key: string, def = 0) => arr.length ? arr.reduce((a, b) => a + (b[key] || 0), 0) / arr.length : def;
+    const eliteAvgDamage = Math.round(calcAvg(elitePool, 'damage', 450));
+    const eliteAvgKills = Number(calcAvg(elitePool, 'kills', 3.0).toFixed(1));
+    const validLatencies = elitePool.filter(p => (p.counter_latency_ms || 0) > 0);
+    const eliteAvgCounterLatency = validLatencies.length ? Math.round(validLatencies.reduce((a, b) => a + b.counter_latency_ms, 0) / validLatencies.length) : 1800;
 
-    // 텔레메트리 로드 및 V3.0 다이어트
     const telemetryAsset = data.included.find((item: any) => item.type === "asset");
     let telData: any[] = [];
     if (telemetryAsset) {
+      const TELEMETRY_VERSION = 16; // 15->16: LogPlayerCreate 추가 및 고립 지수 필터링 강화
       const { data: masterCache } = await supabase.from("match_master_telemetry").select("telemetry_events, telemetry_version").eq("match_id", matchId).single();
-      if (masterCache && (masterCache as any).telemetry_version >= 8) {
-        telData = masterCache.telemetry_events;
+      if (masterCache && (masterCache as any).telemetry_version >= TELEMETRY_VERSION) {
+        telData = (masterCache as any).telemetry_events;
       } else {
         const telRes = await fetch(telemetryAsset.attributes.URL);
         const rawTel = await telRes.json();
-        
-        // V3.0 전술 윈도잉 필터링
-        const teammateKnockTimes: number[] = rawTel.filter((e: any) => ["LogPlayerMakeDBNO", "LogPlayerKill"].includes(e._T) && teamNames.has(normalizeName(e.victim?.name))).map((e: any) => new Date(e._D).getTime());
-        
+        let positionEventCount = 0;
         telData = rawTel.filter((e: any) => {
-          const types = ["LogMatchStart", "LogPlayerKill", "LogPlayerKillV2", "LogPlayerMakeGroggy", "LogPlayerMakeDBNO", "LogPlayerTakeDamage", "LogItemUse", "LogPlayerRevive"];
-          if (types.includes(e._T)) return true;
-          if (e._T === "LogPlayerAttack") {
-            const atkName = normalizeName(e.attacker?.name || "");
-            const weapId = e.weapon?.itemId || "";
-            if (weapId.toLowerCase().includes("smoke") || weapId.toLowerCase().includes("grenade") || weapId.toLowerCase().includes("molotov")) {
-              return teamNames.has(atkName);
-            }
-            if (atkName === lowerNickname) {
-              const ts = new Date(e._D).getTime();
-              return teammateKnockTimes.some(tkTs => ts >= tkTs - 5000 && ts <= tkTs + 30000);
-            }
+          if (e._T === "LogPlayerPosition") {
+            const pName = normalizeName(e.character?.name || "");
+            if (teamNames.has(pName)) return true;
+            positionEventCount++;
+            return positionEventCount % 10 === 0; 
           }
-          return false;
-        }).slice(0, 30000).map((e: any) => {
-          if (e._T === "LogPlayerRevive") return e;
+          return ["LogMatchStart", "LogPlayerCreate", "LogPlayerKill", "LogPlayerKillV2", "LogPlayerMakeGroggy", "LogPlayerMakeDBNO", "LogPlayerTakeDamage", "LogItemUse", "LogPlayerRevive", "LogExplosiveExplode", "LogProjectileProjectileHit", "LogPlayerAttack", "LogPlayerUseThrowable", "LogGameStatePeriodic"].includes(e._T);
+        }).slice(0, 50000).map((e: any) => {
+          if (e._T === "LogPlayerRevive" || e._T === "LogPlayerCreate") return e;
+          if (e._T === "LogGameStatePeriodic") return { _T: e._T, _D: e._D, gameState: { safetyZonePosition: { x: Math.round(e.gameState.safetyZonePosition.x / 100), y: Math.round(e.gameState.safetyZonePosition.y / 100) }, safetyZoneRadius: Math.round(e.gameState.safetyZoneRadius / 100) } };
           const slim: any = { _T: e._T, _D: e._D };
-          const actors = ["attacker", "victim", "killer", "maker", "character", "reviver", "downed"];
-          actors.forEach(key => {
-            if (e[key]) {
-              slim[key] = typeof e[key] === 'string' ? { name: e[key] } : { name: e[key].name };
-              if (e[key].location) slim[key].loc = { x: e[key].location.x, y: e[key].location.y, z: e[key].location.z };
-            }
-          });
-          if (e.damage !== undefined) slim.damage = e.damage;
+          const actors = ["attacker", "victim", "killer", "maker", "dBNOMaker", "finisher", "character", "reviver", "downed"];
+          actors.forEach(key => { if (e[key]) { slim[key] = { name: (typeof e[key] === 'string' ? e[key] : e[key].name) }; const loc = e[key].location || e[key].Location; if (loc) slim[key].loc = { x: Math.round(loc.x / 100), y: Math.round(loc.y / 100), z: Math.round((loc.z || 0) / 100) }; } });
+          if (e.location) slim.location = { x: Math.round(e.location.x / 100), y: Math.round(e.location.y / 100), z: Math.round((e.location.z || 0) / 100) };
+          if (e.damage !== undefined) slim.damage = Number(e.damage.toFixed(1));
           if (e.damageTypeCategory) slim.damageTypeCategory = e.damageTypeCategory;
-          if (e.item?.itemId || e.itemId) slim.itemId = e.item?.itemId || e.itemId;
-          if (e.weapon?.itemId) slim.weaponId = e.weapon.itemId;
+          if (e.damageReason) slim.damageReason = e.damageReason;
+          const wId = e.weapon?.itemId || e.weaponId || e.explosiveId || e.itemId || e.damageCauserName;
+          if (wId) slim.weaponId = wId;
           return slim;
         });
-
-        supabase.from("match_master_telemetry").upsert({ match_id: matchId, map_name: matchAttr.mapName, game_mode: matchAttr.gameMode, telemetry_events: telData, telemetry_version: 8 }).then();
+        supabase.from("match_master_telemetry").upsert({ match_id: matchId, map_name: matchAttr.mapName, game_mode: matchAttr.gameMode, telemetry_events: telData, telemetry_version: TELEMETRY_VERSION }).then();
       }
     }
 
-    // [V3.0] 핵심 분석 엔진
     telData.sort((a, b) => new Date(a._D).getTime() - new Date(b._D).getTime());
-    const startEvent = telData.find(e => e._T === "LogMatchStart");
-    const matchStartTime = startEvent ? new Date(startEvent._D).getTime() : 0;
+    const matchStartTime = telData.find(e => e._T === "LogMatchStart") ? new Date(telData.find(e => e._T === "LogMatchStart")._D).getTime() : 0;
+    const calcDist3D = (l1: any, l2: any) => (!l1 || !l2) ? 999 : Math.sqrt(Math.pow(l1.x - l2.x, 2) + Math.pow(l1.y - l2.y, 2) + Math.pow((l1.z || 0) - (l2.z || 0), 2));
 
-    const calcDist3D = (l1: any, l2: any) => {
-      if (!l1 || !l2) return 999;
-      return Math.sqrt(Math.pow((l1.x-l2.x)/100, 2) + Math.pow((l1.y-l2.y)/100, 2) + Math.pow((l1.z-l2.z)/100, 2));
-    };
-
-    const playerCombatData = new Map<string, { total: number; success: number; sessions: Map<string, any> }>();
-    const eliteNames: Set<string> = new Set(elitePool?.map((p: any) => normalizeName(p.player_id)) || []);
-    const myAttackEvents: any[] = [], smokeUseEvents: any[] = [], teamSmokeEvents: any[] = [], myDamageEvents: any[] = [], teammateKnockEvents: any[] = [];
-    const myActionTimestamps: number[] = [], myReviveEvents: any[] = [], itemUseEvents: string[] = [];
-    const myRecentDamageTaken = new Map<string, number>();
-    const itemUseDetails: any[] = [];
-    const damageDetails: any[] = [];
+    const playerCombatData = new Map(), myAttackEvents: any[] = [], smokeUseEvents: any[] = [], myDamageEvents: any[] = [], teammateKnockEvents: any[] = [], myReviveEvents: any[] = [];
+    const myActionTimestamps: any[] = [], victimDamage = new Map(), weaponStats = new Map();
+    const myRecentDamageTaken = new Map(); 
+    const eliteNames = new Set(elitePool.map(p => normalizeName(p.player_id)));
+    let lastZoneInfo = { x: 0, y: 0, radius: 0 };
+    const zoneStrategy = { edgePlayCount: 0, fatalDelayCount: 0 };
+    let totalCrossfireCount = 0, bluezoneWaste = 0;
+    const dbnoIsolationSamples: number[] = []; 
+    const combatPressure = { totalHits: 0, uniqueVictims: new Set(), maxHitDistance: 0, utilityDamage: 0, utilityHits: 0 };
+    const teamsUserHit = new Set(), wipedTeamsByUserParticipation = new Set();
+    const bzAccum = 0; let reactLatSum = 0, reactCount = 0, totalTimesHit = 0, deathDistance = 0, myDeathTime = null;
+    let totalTeammateKnocks = 0, totalSuppCount = 0, totalSmokeCount = 0, totalBaitCount = 0;
+    const reactionLatencies: number[] = []; 
+    const myDownedIntervals: any[] = [], playerLocations = new Map(), playerAliveStatus = new Map(), recentAttacksOnUser: any[] = [], teamMapping = new Map(), teamAliveMembers = new Map();
     const goldenTimeDamage = { early: 0, mid1: 0, mid2: 0, late: 0 };
-    const bluezoneDamage = { myEarly: 0, myLate: 0, teamEarly: 0, teamLate: 0 };
-    const bluezoneKnockTimes = new Set<number>();
-    const combatPressure = { totalHits: 0, uniqueVictims: new Set<string>(), maxHitDistance: 0, utilityDamage: 0, utilityHits: 0 };
-    const teamsUserHit = new Set<string>();
-    const wipedTeamsByUserParticipation = new Set<string>();
-    let bzWaste = 0, bzLastTime = 0, bzAccum = 0, reactLatSum = 0, reactCount = 0, deathDistance = 0;
-    
-    let myDeathTime: number | null = null;
-    const myDownedIntervals: { start: number; end: number | null }[] = [];
-    
-    const teamMapping = new Map<string, string>();
-    const teamAliveMembers = new Map<string, Set<string>>();
+    const killContribution = { solo: 0, cleanup: 0 };
+    let totalIsolationSum = 0, isolationSampleCount = 0, totalMinDistSum = 0, totalHeightDiffSum = 0;
+
     rosters.forEach((r: any) => {
-      const rId = r.id;
-      const members = new Set<string>();
-      r.relationships.participants.data.forEach((pRef: any) => {
-        const p = participants.find((part: any) => part.id === pRef.id);
-        if (p) {
-          const name = normalizeName(p.attributes.stats.name);
-          teamMapping.set(name, rId);
-          members.add(name);
-        }
-      });
+      const rId = r.id, members = new Set<string>();
+      r.relationships.participants.data.forEach((pRef: any) => { const p = participants.find((part: any) => part.id === pRef.id); if (p) { const name = normalizeName(p.attributes.stats.name); teamMapping.set(name, rId); members.add(name); } });
       teamAliveMembers.set(rId, members);
     });
 
-    const victimDamage = new Map<string, { total: number; user: number }>();
-    const killContribution = { solo: 0, cleanup: 0, other: 0 };
+    const itemUseSummary = { smokes: 0, frags: 0, molotovs: 0, others: 0 };
     const myRosterId = teamMapping.get(lowerNickname);
+    
+    teamNames.forEach(name => playerAliveStatus.set(name, true));
 
     telData.forEach((e: any) => {
-      const ts = new Date(e._D).getTime();
-      const elapsed = (ts - matchStartTime) / 1000;
-      const attackerName = normalizeName(e.attacker?.name || e.killer?.name || e.maker?.name || e.character?.name || "");
+      const ts = new Date(e._D).getTime(), elapsed = (ts - matchStartTime) / 1000;
+      if (e._T === "LogGameStatePeriodic") { lastZoneInfo = { x: e.gameState.safetyZonePosition.x, y: e.gameState.safetyZonePosition.y, radius: e.gameState.safetyZoneRadius }; return; }
+      const attackerName = normalizeName(e.attacker?.name || e.killer?.name || e.maker?.name || e.dBNOMaker?.name || e.finisher?.name || e.character?.name || "");
       const victimName = normalizeName(e.victim?.name || "");
+      const updateLoc = (name: string, loc: any) => { if (name && loc) playerLocations.set(name, { x: loc.x, y: loc.y, z: loc.z || 0 }); };
+      if (e.attacker) updateLoc(attackerName, e.attacker.loc); if (e.victim) updateLoc(victimName, e.victim.loc); if (e.character) updateLoc(normalizeName(e.character.name), e.character.loc); if (e.maker) updateLoc(normalizeName(e.maker.name), e.maker.loc); if (e.dBNOMaker) updateLoc(normalizeName(e.dBNOMaker.name), e.dBNOMaker.loc);
 
-      // 1. 주도권 분석
-      if (e._T === "LogPlayerTakeDamage" && e.attacker && e.victim && attackerName !== victimName) {
+      const isVehicleDamage = (e.weaponId || "").toLowerCase().includes("vehicle") || (e.damageTypeCategory || "").toLowerCase().includes("vehicle");
+      if (e._T === "LogPlayerTakeDamage" && e.attacker && e.victim && attackerName !== victimName && !isVehicleDamage) {
         [attackerName, victimName].forEach(name => {
           if (name === lowerNickname || eliteNames.has(name)) {
-            let pData = playerCombatData.get(name);
-            if (!pData) { pData = { total: 0, success: 0, sessions: new Map() }; playerCombatData.set(name, pData); }
-            const opponent = name === attackerName ? victimName : attackerName;
-            const session = pData.sessions.get(opponent);
-            if (!session || ts - Math.max(session.lastHitByEnemy, session.lastHitByUser) > 120000) {
-              pData.sessions.set(opponent, { lastHitByEnemy: name === victimName ? ts : 0, lastHitByUser: name === attackerName ? ts : 0, userStarted: name === attackerName, alreadySucceeded: false });
-              if (name === attackerName) pData.total++;
-            } else {
-              if (name === attackerName) session.lastHitByUser = ts;
-              else session.lastHitByEnemy = ts;
-            }
+            let pData = playerCombatData.get(name); if (!pData) { pData = { total: 0, success: 0, sessions: new Map() }; playerCombatData.set(name, pData); }
+            const opponent = name === attackerName ? victimName : attackerName, session = pData.sessions.get(opponent);
+            if (!session || ts - Math.max(session.lastHitByEnemy, session.lastHitByUser) > 120000) { pData.sessions.set(opponent, { lastHitByEnemy: name === victimName ? ts : 0, lastHitByUser: name === attackerName ? ts : 0, userStarted: name === attackerName, alreadySucceeded: false }); if (name === attackerName) pData.total++; }
+            else { if (name === attackerName) session.lastHitByUser = ts; else session.lastHitByEnemy = ts; }
           }
         });
       }
 
-      // 2. 행동 수집 (아이템 사용 중복 제거: LogPlayerAttack과 LogItemUse가 동시에 발생할 수 있음)
+      if (attackerName === lowerNickname && e._T === "LogPlayerTakeDamage" && teamNames.has(victimName) === false) {
+        const isAnyTeammateDown = Array.from(playerAliveStatus.entries()).some(([name, status]) => teamNames.has(name) && name !== lowerNickname && status === "groggy");
+        if (isAnyTeammateDown) totalSuppCount++;
+      }
+
       if (e._T === "LogPlayerAttack" && attackerName === lowerNickname) {
-        const weaponId = (e.weaponId || "").toLowerCase();
-        if (weaponId.includes("smoke") || weaponId.includes("grenade") || weaponId.includes("molotov")) {
-          const isDuplicate = itemUseDetails.some(prev => prev.itemId === e.weaponId && Math.abs(new Date(prev.time).getTime() - ts) < 1000);
-          if (!isDuplicate) {
-            itemUseDetails.push({ time: e._D, playerName: attackerName, itemId: e.weaponId, itemName: e.weaponId });
-            if (weaponId.includes("smoke")) smokeUseEvents.push({ ts, loc: e.attacker?.loc });
+        const wId = (e.weaponId || "").toLowerCase();
+        if (wId.includes("smoke") || wId.includes("grenade") || wId.includes("molotov")) {
+          if (!myAttackEvents.some(prev => prev.ts === ts)) {
+             if (wId.includes("smoke")) { 
+               smokeUseEvents.push({ ts, loc: e.attacker?.loc }); 
+               itemUseSummary.smokes++; 
+               const isAnyTeammateDown = Array.from(playerAliveStatus.entries()).some(([name, status]) => teamNames.has(name) && name !== lowerNickname && status === "groggy");
+               if (isAnyTeammateDown) totalSmokeCount++;
+             }
+             else if (wId.includes("grenade")) itemUseSummary.frags++; else if (wId.includes("molotov")) itemUseSummary.molotovs++; else itemUseSummary.others++;
           }
         }
         myAttackEvents.push({ ts, loc: e.attacker?.loc });
       }
-      if (e._T === "LogItemUse" && attackerName === lowerNickname) {
-        if (e.itemId) { 
-          const isDuplicate = itemUseDetails.some(prev => prev.itemId === e.itemId && Math.abs(new Date(prev.time).getTime() - ts) < 1000);
-          if (!isDuplicate) {
-            itemUseEvents.push(e.itemId); 
-            itemUseDetails.push({ time: e._D, playerName: attackerName, itemId: e.itemId, itemName: e.itemId });
-            if (e.itemId.toLowerCase().includes("smoke")) smokeUseEvents.push({ ts, loc: e.character?.loc }); 
-          }
-        }
-      }
+      
       if (e._T === "LogPlayerRevive") {
-        const revName = normalizeName(e.reviver?.name || (typeof e.reviver === 'string' ? e.reviver : ""));
-        const vicName = normalizeName(e.victim?.name || e.character?.name || (typeof e.victim === 'string' ? e.victim : ""));
+        const revName = normalizeName(e.reviver?.name || ""), vicName = normalizeName(e.victim?.name || e.character?.name || "");
         if (revName === lowerNickname && teamNames.has(vicName)) myReviveEvents.push({ ts, victim: vicName });
-        if (vicName === lowerNickname) {
-          const last = myDownedIntervals[myDownedIntervals.length - 1];
-          if (last && last.end === null) last.end = ts;
+        if (vicName === lowerNickname) { const last = myDownedIntervals[myDownedIntervals.length - 1]; if (last && last.end === null) last.end = ts; }
+      }
+
+      if (e._T === "LogPlayerPosition") {
+        const pName = normalizeName(e.character?.name || "");
+        if (pName) {
+          playerLocations.set(pName, e.character.loc);
+          
+          const isLanded = e.character.loc.z < 10;
+          const isAfterStart = elapsed > 120;
+          
+          if (pName === lowerNickname && (isLanded || isAfterStart) && playerAliveStatus.get(lowerNickname) !== false) {
+            let minDist = 999999, minEnemyDist = 999999, hDiff = 0;
+            
+            teamNames.forEach(tName => {
+              const status = playerAliveStatus.get(tName);
+              if (tName !== lowerNickname && status !== false && status !== "groggy") {
+                const tLoc = playerLocations.get(tName);
+                if (tLoc) {
+                  const d = calcDist3D(e.character.loc, tLoc);
+                  if (d > 1 && d < minDist) { minDist = d; hDiff = Math.abs(e.character.loc.z - tLoc.z); }
+                }
+              }
+            });
+
+            playerLocations.forEach((loc, name) => {
+              const rId = teamMapping.get(name);
+              if (rId && rId !== myRosterId && playerAliveStatus.get(name) !== false) {
+                const d = calcDist3D(e.character.loc, loc);
+                if (d > 1 && d < minEnemyDist) minEnemyDist = d;
+              }
+            });
+
+            if (minDist !== 999999) {
+              totalMinDistSum += minDist;
+              totalHeightDiffSum += hDiff;
+              const distRatio = minDist / Math.max(500, minEnemyDist); 
+              totalIsolationSum += Math.min(5, distRatio);
+              isolationSampleCount++;
+            }
+          }
         }
       }
 
       if (e._T === "LogPlayerTakeDamage") {
+        if (isVehicleDamage) return;
         if (attackerName === lowerNickname && victimName !== lowerNickname) {
+          const wId = e.weaponId || "Unknown"; const wStat = weaponStats.get(wId) || { hits: 0, headshots: 0 }; wStat.hits++; if (e.damageReason === "HeadShot") wStat.headshots++; weaponStats.set(wId, wStat);
           const dmg = e.damage || 0;
-          if (elapsed <= 300) goldenTimeDamage.early += dmg; 
-          else if (elapsed <= 900) goldenTimeDamage.mid1 += dmg; 
-          else if (elapsed <= 1500) goldenTimeDamage.mid2 += dmg; 
+
+          let vDmg = victimDamage.get(victimName); if (!vDmg || ts - vDmg.lastTs > 120000) { vDmg = { total: 0, user: 0, lastTs: ts }; }
+          vDmg.total += dmg; vDmg.user += dmg; vDmg.lastTs = ts; victimDamage.set(victimName, vDmg);
+          combatPressure.totalHits++; combatPressure.uniqueVictims.add(victimName);
+          const dist = calcDist3D(e.attacker?.loc, e.victim?.loc); if (dist !== 999 && dist > combatPressure.maxHitDistance) combatPressure.maxHitDistance = Math.round(dist);
+          if (["Grenade", "Molotov", "C4"].some(k => (e.damageTypeCategory || "").includes(k))) { combatPressure.utilityDamage += dmg; combatPressure.utilityHits++; }
+          
+          const timeOffset = (ts - matchStartTime) / 1000 / 60;
+          if (timeOffset <= 5) goldenTimeDamage.early += dmg;
+          else if (timeOffset <= 15) goldenTimeDamage.mid1 += dmg;
+          else if (timeOffset <= 25) goldenTimeDamage.mid2 += dmg;
           else goldenTimeDamage.late += dmg;
-          
-          let vDmg = victimDamage.get(victimName);
-          if (!vDmg) { vDmg = { total: 0, user: 0 }; victimDamage.set(victimName, vDmg); }
-          vDmg.total += dmg;
-          vDmg.user += dmg;
-          
-          combatPressure.totalHits++;
-          combatPressure.uniqueVictims.add(victimName);
-          const dist = calcDist3D(e.attacker?.loc, e.victim?.loc);
-          if (dist !== 999 && dist > combatPressure.maxHitDistance) combatPressure.maxHitDistance = Math.round(dist);
 
-          const isUtility = (e.damageTypeCategory || "").includes("Grenade") || 
-                            (e.damageTypeCategory || "").includes("Molotov") ||
-                            (e.damageTypeCategory || "").includes("C4") ||
-                            (e.damageTypeCategory || "").includes("StickGrenade");
-          if (isUtility) {
-              combatPressure.utilityDamage += dmg;
-              combatPressure.utilityHits++;
-          }
-
-          // [V4.91] 유저가 타격한 팀 기록
-          const vRosterId = teamMapping.get(victimName);
-          if (vRosterId && vRosterId !== myRosterId) teamsUserHit.add(vRosterId);
-
-          damageDetails.push({ time: e._D, attackerName, victimName, damage: dmg, damageTypeCategory: e.damageTypeCategory });
+          const vRosterId = teamMapping.get(victimName); if (vRosterId && vRosterId !== myRosterId) teamsUserHit.add(vRosterId);
           myDamageEvents.push({ ts, victim: victimName, loc: e.attacker?.loc, victimLoc: e.victim?.loc });
-          const lastHit = myRecentDamageTaken.get(victimName);
-          if (lastHit && ts - lastHit < 5000) { reactLatSum += (ts - lastHit); reactCount++; myRecentDamageTaken.delete(victimName); }
+          const lastHit = myRecentDamageTaken.get(victimName); if (lastHit && ts - lastHit < 5000) { reactLatSum += (ts - lastHit); reactCount++; myRecentDamageTaken.delete(victimName); }
         } else if (victimName === lowerNickname && attackerName && attackerName !== lowerNickname) {
+          if (!myRecentDamageTaken.has(attackerName) || ts - myRecentDamageTaken.get(attackerName)! > 5000) { 
+            totalTimesHit++; 
+            const recentAttackers = recentAttacksOnUser.filter(a => ts - a.ts < 5000).map(a => a.attacker);
+            const uniqueAttackers = new Set(recentAttackers);
+            if (uniqueAttackers.size >= 2) totalCrossfireCount++;
+          }
           myRecentDamageTaken.set(attackerName, ts);
-          damageDetails.push({ time: e._D, attackerName, victimName, damage: e.damage, damageTypeCategory: e.damageTypeCategory });
           if (e.damageTypeCategory?.includes("BlueZone")) { 
-            bzLastTime = ts; 
-            bzAccum += (e.damage || 0); 
-            if (elapsed <= 900) bluezoneDamage.myEarly += (e.damage || 0);
-            else bluezoneDamage.myLate += (e.damage || 0);
+            const myLoc = playerLocations.get(lowerNickname);
+            if (myLoc && lastZoneInfo.radius > 0) { const dTC = Math.sqrt(Math.pow(myLoc.x - lastZoneInfo.x, 2) + Math.pow(myLoc.y - lastZoneInfo.y, 2)); if (Math.abs(dTC - lastZoneInfo.radius) < 50) zoneStrategy.edgePlayCount++; else if (dTC > lastZoneInfo.radius + 100) zoneStrategy.fatalDelayCount++; }
+            bluezoneWaste += (e.damage || 0); 
           }
         }
-
-        if (victimName !== lowerNickname && victimName !== "" && attackerName !== lowerNickname) {
-          if (teamNames.has(victimName)) {
-            if (e.damageTypeCategory?.includes("BlueZone")) {
-              bluezoneKnockTimes.add(ts);
-              if (elapsed <= 900) bluezoneDamage.teamEarly += (e.damage || 0);
-              else bluezoneDamage.teamLate += (e.damage || 0);
-            }
-          }
-          let vDmg = victimDamage.get(victimName);
-          if (!vDmg) { vDmg = { total: 0, user: 0 }; victimDamage.set(victimName, vDmg); }
-          vDmg.total += (e.damage || 0);
+        if (victimName && victimName !== lowerNickname && !teamNames.has(victimName) && attackerName !== lowerNickname) {
+          let vDmg = victimDamage.get(victimName); if (!vDmg || ts - vDmg.lastTs > 120000) { vDmg = { total: 0, user: 0, lastTs: ts }; }
+          vDmg.total += (e.damage || 0); vDmg.lastTs = ts; victimDamage.set(victimName, vDmg);
         }
       }
 
-      if (e._T === "LogPlayerMakeDBNO" || e._T === "LogPlayerKill" || e._T === "LogPlayerKillV2" || e._T === "LogPlayerMakeGroggy") {
+      if (["LogPlayerMakeDBNO", "LogPlayerKill", "LogPlayerKillV2", "LogPlayerMakeGroggy"].includes(e._T)) {
         if (attackerName === lowerNickname) myActionTimestamps.push(ts);
-        if (victimName && !teamNames.has(victimName)) {
-          teamNames.forEach((m: string) => {
-            const mData = playerCombatData.get(m);
-            const session = mData?.sessions.get(victimName);
-            if (session?.userStarted && !session.alreadySucceeded) { mData!.success++; session.alreadySucceeded = true; }
-          });
-
-          if (e._T === "LogPlayerKill" || e._T === "LogPlayerKillV2") {
-            const vDmg = victimDamage.get(victimName) || { total: 0, user: 0 };
-            if (attackerName === lowerNickname) {
-              if (vDmg.total > 0 && vDmg.user / vDmg.total >= 0.7) killContribution.solo++;
-              else killContribution.cleanup++;
-            } else {
-              killContribution.other++;
+        
+        [attackerName, victimName].forEach(name => {
+          if (name === lowerNickname || eliteNames.has(name)) {
+            const pData = playerCombatData.get(name);
+            if (pData) {
+              const opponent = name === attackerName ? victimName : attackerName;
+              const session = pData.sessions.get(opponent);
+              if (session && !session.alreadySucceeded && session.userStarted && name === attackerName) {
+                pData.success++;
+                session.alreadySucceeded = true;
+              }
             }
+          }
+        });
 
+        if (victimName && !teamNames.has(victimName)) {
+          if (["LogPlayerKill", "LogPlayerKillV2"].includes(e._T)) {
+            if (attackerName === lowerNickname) {
+              const vDmg = victimDamage.get(victimName);
+              if (vDmg) {
+                const userRatio = vDmg.user / Math.max(1, vDmg.total);
+                if (userRatio >= 0.7) killContribution.solo++; else killContribution.cleanup++;
+              } else {
+                killContribution.solo++;
+              }
+            }
+            victimDamage.delete(victimName);
             const vRosterId = teamMapping.get(victimName);
-            if (vRosterId && vRosterId !== myRosterId) {
-              const members = teamAliveMembers.get(vRosterId);
-              if (members && (e._T === "LogPlayerKill" || e._T === "LogPlayerKillV2")) {
-                members.delete(victimName);
-                if (members.size === 0) {
-                  // [V4.91] 내가 해당 팀원을 한 명이라도 사살했거나 마지막 인원을 잡은 경우 기여 인정
-                  if (teamsUserHit.has(vRosterId) || attackerName === lowerNickname) {
-                    wipedTeamsByUserParticipation.add(vRosterId);
+            if (vRosterId && vRosterId !== myRosterId) { const members = teamAliveMembers.get(vRosterId); if (members) { members.delete(victimName); if (members.size === 0 && (teamsUserHit.has(vRosterId) || attackerName === lowerNickname)) wipedTeamsByUserParticipation.add(vRosterId); } }
+          }
+        }
+        if (victimName === lowerNickname && ["LogPlayerMakeDBNO", "LogPlayerMakeGroggy"].includes(e._T)) { 
+          myDownedIntervals.push({ start: ts, end: null });
+        }
+        // [V7.4 FIX] Correctly count teammate knockdowns here, not inside LogPlayerTakeDamage block
+        if (teamNames.has(victimName) && victimName !== lowerNickname && ["LogPlayerMakeDBNO", "LogPlayerMakeGroggy"].includes(e._T)) {
+          totalTeammateKnocks++;
+          teammateKnockEvents.push(ts);
+        }
+        if (victimName === lowerNickname && ["LogPlayerMakeDBNO", "LogPlayerMakeGroggy"].includes(e._T)) {
+          const makerName = normalizeName(e.maker?.name || e.dBNOMaker?.name || "");
+          if (makerName && makerName !== lowerNickname && !teamNames.has(makerName)) {
+            const victimLoc = e.victim?.loc || playerLocations.get(lowerNickname);
+            const makerLoc = e.maker?.loc || e.dBNOMaker?.loc || playerLocations.get(makerName);
+            
+            if (victimLoc && makerLoc) {
+              let minTeammateDist = 999999;
+              teamNames.forEach(tName => {
+                const status = playerAliveStatus.get(tName);
+                if (tName !== lowerNickname && status !== false && status !== "groggy") {
+                  const tLoc = playerLocations.get(tName);
+                  if (tLoc) {
+                    let d = calcDist3D(victimLoc, tLoc);
+                    // [V7.4 Vertical Isolation] 5m+ height diff makes backup harder
+                    const teamHDiff = Math.abs(victimLoc.z - tLoc.z);
+                    if (teamHDiff > 500) d *= 1.5; 
+                    
+                    if (d < minTeammateDist) minTeammateDist = d;
                   }
                 }
+              });
+
+              if (minTeammateDist !== 999999) {
+                const distToEnemy = Math.max(500, calcDist3D(victimLoc, makerLoc));
+                let weaponWeight = 1.0;
+                const weapon = (e.damageCauserName || "").toLowerCase();
+                if (weapon.includes("kar98k") || weapon.includes("m24") || weapon.includes("awm") || weapon.includes("mosin")) weaponWeight = 1.5;
+                else if (weapon.includes("slr") || weapon.includes("sks") || weapon.includes("mk12") || weapon.includes("mini14")) weaponWeight = 1.3;
+
+                const crossfireWeight = totalCrossfireCount > 0 ? 1.4 : 1.0;
+                const isolationIdx = (minTeammateDist / distToEnemy) * weaponWeight * crossfireWeight;
+                dbnoIsolationSamples.push(Number(isolationIdx.toFixed(2)));
               }
             }
           }
         }
-        if (teamNames.has(victimName) && victimName !== lowerNickname) {
-          // [V5.20] 자기장 데미지 추적(bluezoneKnockTimes)을 통한 정확한 후반 자기장 기절 판정
-          const isLateBluezone = elapsed > 900 && (bluezoneKnockTimes.has(ts) || e.damageTypeCategory === "BlueZone" || e.damageReason === "BlueZone");
-          if (!isLateBluezone) {
-            if (!teammateKnockEvents.some(tk => tk.victim === victimName && ts - tk.ts < 15000)) {
-              teammateKnockEvents.push({ ts, victim: victimName, attacker: attackerName, victimLoc: e.victim?.loc, attackerLoc: e.attacker?.loc || e.killer?.loc || e.maker?.loc });
-            }
-          }
-        }
-        if (victimName === lowerNickname && (e._T === "LogPlayerMakeDBNO" || e._T === "LogPlayerMakeGroggy")) {
-          myDownedIntervals.push({ start: ts, end: null });
-        }
-        if (victimName === lowerNickname && (e._T === "LogPlayerKill" || e._T === "LogPlayerKillV2")) {
-          const last = myDownedIntervals[myDownedIntervals.length - 1];
-          if (last && last.end === null) last.end = ts;
-          myDeathTime = ts;
-          const dDist = calcDist3D(e.victim?.loc, e.attacker?.loc || e.killer?.loc);
-          if (dDist !== 999) deathDistance = Math.round(dDist);
-        }
+        if (victimName === lowerNickname && ["LogPlayerKill", "LogPlayerKillV2"].includes(e._T)) { const last = myDownedIntervals[myDownedIntervals.length - 1]; if (last && last.end === null) last.end = ts; myDeathTime = ts; const dDist = calcDist3D(e.victim?.loc, e.attacker?.loc || e.killer?.loc || e.maker?.loc || e.dBNOMaker?.loc || e.finisher?.loc); if (dDist !== 999) deathDistance = Math.round(dDist); playerAliveStatus.set(lowerNickname, false); }
+        if (victimName && ["LogPlayerKill", "LogPlayerKillV2"].includes(e._T)) playerAliveStatus.set(victimName, false);
+        else if (victimName && ["LogPlayerRevive", "LogPlayerCreate"].includes(e._T)) playerAliveStatus.set(victimName, true);
+        else if (victimName && ["LogPlayerMakeDBNO", "LogPlayerMakeGroggy"].includes(e._T)) playerAliveStatus.set(victimName, "groggy");
       }
-
-      if (e._T === "LogPlayerKill" && victimName === lowerNickname) {
-        if (bzAccum >= 30 && ts - bzLastTime < 30000) bzWaste++;
-      }
+      if (e._T === "LogPlayerTakeDamage" && victimName === lowerNickname && attackerName && attackerName !== lowerNickname && !isVehicleDamage) recentAttacksOnUser.push({ ts, attacker: attackerName });
     });
 
-    // 지표 산출
+    // [V8.1] 전술 대응력(Bait/Trade) 정밀 계산
     let tradeLatSum = 0, tradeCount = 0;
-    const isPlayerActionable = (ts: number) => {
-      if (myDeathTime && ts >= myDeathTime) return false;
-      const isDowned = myDownedIntervals.some(interval => ts >= interval.start && (interval.end === null || ts <= interval.end));
-      return !isDowned;
-    };
-
-    const tacticalTimeline = teammateKnockEvents.map(tk => {
-      const myDeath = myDeathTime !== null && tk.ts >= myDeathTime;
-      const myKnock = myDownedIntervals.some(iv => tk.ts >= iv.start && (iv.end === null || tk.ts <= iv.end));
-      
-      // [V5.19] 유저 자신이 위기인 상황 (자기장 피해 중이거나 아군 기절 후 15초 이내에 기절/사망)
-      const userInBluezone = bzLastTime > 0 && Math.abs(tk.ts - bzLastTime) < 5000 && bzAccum > 20;
-      const willBeKnockedSoon = myDownedIntervals.some(iv => iv.start > tk.ts && iv.start < tk.ts + 15000);
-      const willDieSoon = myDeathTime !== null && myDeathTime > tk.ts && myDeathTime < tk.ts + 15000;
-
-      const actionable = !myDeath && !myKnock && !userInBluezone && !willBeKnockedSoon && !willDieSoon;
-      const playerSmk = actionable && smokeUseEvents.some(s => s.ts >= tk.ts - 5000 && s.ts <= tk.ts + 40000);
-      const teamSmk = teamSmokeEvents.some(s => s.ts >= tk.ts - 5000 && s.ts <= tk.ts + 40000);
-      const hasSmk = playerSmk || teamSmk;
-      const didIRevive = myReviveEvents.some(r => r.victim === tk.victim && r.ts >= tk.ts && r.ts <= tk.ts + 120000);
-      const hasRev = didIRevive;
-      const isRevOpportunity = actionable || didIRevive;
-      
-      const hit = actionable && (
-        myDamageEvents.find(md => md.ts > tk.ts && md.ts < tk.ts + 30000) ||
-        myActionTimestamps.find(ats => ats > tk.ts && ats < tk.ts + 30000)
+    teammateKnockEvents.forEach(dTs => {
+      // 아군이 기절한 시점(dTs) 이후 10초 내에 내가 적을 기절/킬 시킨 이벤트 탐색
+      const myTradeAction = telData.find(e => 
+        (e._T === "LogPlayerMakeGroggy" || e._T === "LogPlayerKill" || e._T === "LogPlayerKillV2") &&
+        normalizeName(e.attacker?.name || e.killer?.name || e.maker?.name || e.dBNOMaker?.name || e.finisher?.name) === lowerNickname &&
+        new Date(e._D).getTime() > dTs && 
+        new Date(e._D).getTime() < dTs + 10000
       );
-      if (hit) { 
-        const hitTs = typeof hit === 'number' ? hit : hit.ts;
-        tradeLatSum += (hitTs - tk.ts); 
-        tradeCount++; 
+
+      if (myTradeAction) {
+        const latency = new Date(myTradeAction._D).getTime() - dTs;
+        tradeLatSum += latency;
+        tradeCount++;
       }
-      const myLoc = myAttackEvents.find(a => Math.abs(a.ts - tk.ts) < 5000)?.loc || myDamageEvents.find(d => Math.abs(d.ts - tk.ts) < 5000)?.loc;
-      const dToEnemy = calcDist3D(myLoc, tk.attackerLoc);
-      const dToTeammate = calcDist3D(myLoc, tk.victimLoc);
-      const isDangerous = dToEnemy <= 150 || dToEnemy > 900;
       
-      // [V5.21] 견제 사격 예외 조건: 거리가 400m 이상이거나 적이 5초 내에 이미 처단된 경우
-      const enemyKilledFast = telData.some(e => (e._T === "LogPlayerKill" || e._T === "LogPlayerKillV2") && normalizeName(e.victim?.name) === tk.attacker && new Date(e._D).getTime() <= tk.ts + 5000);
-      const isSuppNeeded = dToEnemy < 400 && !enemyKilledFast;
-      const hasSupp = isSuppNeeded ? !!hit : true; // 필요 없는 상황이면 수행한 것으로 간주하여 패널티 방지
-
-      return { victim: tk.victim, ts: tk.ts, isActionable: actionable, isRevOpportunity, distUserToTeammate: dToTeammate, distUserToEnemy: dToEnemy, heightDiff: myLoc && tk.victimLoc ? (myLoc.z - tk.victimLoc.z)/100 : 0, hasSuppression: hasSupp, hasSmoke: hasSmk, hasPlayerSmoke: playerSmk, hasTeamSmoke: teamSmk, isDangerous, hasRevive: hasRev };
+      // 단순히 데미지를 주거나 사격한 경우 (Bait)
+      if (myActionTimestamps.some(ts => ts > dTs && ts <= dTs + 10000)) totalBaitCount++;
     });
 
-    const actionableTimeline = tacticalTimeline.filter((t: any) => t.isActionable);
-    const teammateKnocks = tacticalTimeline.filter((t: any) => t.isRevOpportunity).length;
-    const dangerousKnocks = actionableTimeline.filter((t: any) => t.isDangerous).length;
-    const suppCount = actionableTimeline.filter((t: any) => t.hasSuppression).length;
-    const smokeOpps = dangerousKnocks;
-    const smokeCount = actionableTimeline.filter((t: any) => t.isDangerous && t.hasPlayerSmoke).length;
-    const teamSmokeCovered = actionableTimeline.filter((t: any) => t.isDangerous && t.hasTeamSmoke && !t.hasPlayerSmoke).length;
-    const revCount = myReviveEvents.length;
-    const totalEnemyTeamWipes = wipedTeamsByUserParticipation.size;
+    const myStats = myInfo.attributes.stats;
+    const totalTeamDamage = teamStats.reduce((acc: number, m: any) => acc + (m.damageDealt || 0), 0);
+    const totalTeamKills = teamStats.reduce((acc: number, m: any) => acc + (m.kills || 0), 0);
+    const damageImpact = totalTeamDamage > 0 ? Number(((myStats.damageDealt / totalTeamDamage) * 100).toFixed(1)) : 0;
+    const killImpact = totalTeamKills > 0 ? Number(((myStats.kills / totalTeamKills) * 100).toFixed(1)) : 0;
 
-    let baitCount = 0;
-    const teamDeaths = telData.filter(e => (e._T === "LogPlayerKill" || e._T === "LogPlayerKillV2") && teamNames.has(normalizeName(e.victim?.name)) && normalizeName(e.victim?.name) !== lowerNickname).map(e => new Date(e._D).getTime());
-    teamDeaths.forEach(dTs => { 
-      if (isPlayerActionable(dTs)) {
-        if (myActionTimestamps.filter(ts => ts > dTs && ts <= dTs + 10000).length >= 2) baitCount++; 
-      }
-    });
+    const badges = [];
+    if (itemUseSummary.smokes >= 3) badges.push({ id: "smoke_master", name: "인간 연막탄", desc: "한 매치에서 3회 이상 연막 전술 수행" });
+    const weaponStatsList = Array.from(weaponStats.entries()).sort((a,b) => b[1].hits - a[1].hits);
+    const mainWeapon = weaponStatsList[0];
+    if (mainWeapon && mainWeapon[1].hits >= 10 && (mainWeapon[1].headshots / mainWeapon[1].hits) >= 0.25) badges.push({ id: "sharpshooter", name: "정밀 사수", desc: "헤드샷 비중 25% 이상의 정교한 사격" });
+    if (zoneStrategy.edgePlayCount >= 2) badges.push({ id: "zone_wizard", name: "자기장의 마술사", desc: "자기장 끝선을 이용한 전략적 운영 2회 이상" });
+    if (teamStats.every((m: any) => m.name === myStats.name || m.timeSurvived <= myStats.timeSurvived)) badges.push({ id: "last_survivor", name: "최후의 보루", desc: "팀 내에서 가장 마지막까지 생존하여 교전" });
+    if (damageImpact >= 40) badges.push({ id: "damage_carry", name: "팀의 창", desc: "팀 전체 데미지의 40% 이상을 책임짐" });
 
-    const myCombatData = playerCombatData.get(lowerNickname) || { total: 0, success: 0 };
-    const myKillRank = [...allStats].sort((a: any, b: any) => b.kills - a.kills).findIndex((s: any) => normalizeName(s.name) === lowerNickname) + 1;
-    
     const finalResult = {
-      matchId, v: 5.30, processedAt: new Date().toISOString(), stats: myInfo.attributes.stats, team: teamStats,
-      totalTeamKills: teamStats.reduce((acc: number, m: any) => acc + m.kills, 0),
-      totalTeamDamage: teamStats.reduce((acc: number, m: any) => acc + (m.damageDealt || 0), 0),
-      myRank: {
-        damageRank: myDamageRank,
-        damagePercentile: Math.round((1 - (myDamageRank / participants.length)) * 100),
-        killRank: myKillRank,
-        totalTeams: rosters.length,
-        totalPlayers: participants.length
-      },
-      mapName: MAP_NAMES[matchAttr.mapName] || matchAttr.mapName,
-      gameMode: matchAttr.gameMode,
-      matchType: matchAttr.matchType,
+      matchId, v: 8.2, processedAt: new Date().toISOString(), 
       createdAt: matchAttr.createdAt,
-      survivalTimeSec: myInfo.attributes.stats.timeSurvived || 0,
-      tradeStats: {
-        teammateKnocks, dangerousKnocks, smokeOpps, suppCount, smokeCount, teamSmokeCovered, revCount, baitCount,
-        teamWipeOccurred: wipedTeamsByUserParticipation.size > 0, enemyTeamWipes: wipedTeamsByUserParticipation.size,
-        backupLatencyMs: tradeCount > 0 ? Math.round(tradeLatSum / tradeCount) : 0,
-        reactionLatencyMs: reactCount > 0 ? Math.round(reactLatSum / reactCount) : 0,
-        coverRate: teammateKnockEvents.length > 0 ? Math.round((tradeCount / teammateKnockEvents.length) * 100) : 0
+      stats: myStats, team: teamStats,
+      mapName: MAP_NAMES[matchAttr.mapName] || matchAttr.mapName, gameMode: matchAttr.gameMode,
+      teamImpact: { damageImpact, killImpact, totalTeamDamage, totalTeamKills },
+      badges, weaponStats: Object.fromEntries(weaponStats), zoneStrategy,
+      goldenTimeDamage, killContribution,
+      bluezoneWaste: Math.round(bluezoneWaste),
+      isolationData: {
+        isolationIndex: dbnoIsolationSamples.length > 0 
+          ? Number((dbnoIsolationSamples.reduce((a, b) => a + b, 0) / dbnoIsolationSamples.length).toFixed(2))
+          : (isolationSampleCount > 0 ? Number((totalIsolationSum / isolationSampleCount).toFixed(2)) : 0),
+        minDist: Math.round(totalMinDistSum / Math.max(1, isolationSampleCount)),
+        heightDiff: Math.round(totalHeightDiffSum / Math.max(1, isolationSampleCount)),
+        isCrossfire: totalCrossfireCount > 0,
+        teammateCount: teamStats.length
       },
-      killContribution,
-      deathDistance,
-      initiativeStats: { total: myCombatData.total, success: myCombatData.success, rate: myCombatData.total > 0 ? Math.round((myCombatData.success / myCombatData.total) * 100) : 0 },
-      goldenTimeDamage, bluezoneWasteCount: bzWaste,
-      combatPressure: {
-        totalHits: combatPressure.totalHits,
-        uniqueVictims: Array.from(combatPressure.uniqueVictims),
-        maxHitDistance: combatPressure.maxHitDistance,
-        utilityDamage: Math.round(combatPressure.utilityDamage),
-        utilityHits: combatPressure.utilityHits
+      tradeStats: { 
+          teammateKnocks: totalTeammateKnocks,
+          suppCount: totalSuppCount,
+          smokeCount: totalSmokeCount,
+          revCount: myReviveEvents.length, 
+          baitCount: totalBaitCount,
+          tradeLatencyMs: tradeCount > 0 ? Math.round(tradeLatSum / tradeCount) : 0,
+          counterLatencyMs: reactCount > 0 ? Math.round(reactLatSum / reactCount) : 0,
+          reactionLatencyMs: reactionLatencies.length > 0 ? Math.round(reactionLatencies.reduce((a,b)=>a+b,0) / reactionLatencies.length) : 0,
+          coverRate: totalTimesHit > 0 ? Math.round((reactCount / totalTimesHit) * 100) : 0,
+          enemyTeamWipes: wipedTeamsByUserParticipation.size 
       },
-      myEarlyBluezoneDamage: bluezoneDamage.myEarly,
-      myLateBluezoneDamage: bluezoneDamage.myLate,
-      teamEarlyBluezoneDamage: bluezoneDamage.teamEarly + bluezoneDamage.myEarly,
-      teamLateBluezoneDamage: bluezoneDamage.teamLate + bluezoneDamage.myLate,
-      itemUseDetails,
-      damageDetails,
-      eliteBenchmark: { 
-        avgDamage: eliteAvgDamage, 
-        avgKills: eliteAvgKills, 
-        realTradeLatency: eliteAvgLatency, 
-        realInitiativeSuccess: eliteAvgInitiative, 
-        realDeathDistance: eliteAvgDistance,
-        realReviveRate: eliteAvgReviveRate,
-        realSmokeRate: eliteAvgSmokeRate,
-        realSuppCount: eliteAvgSuppCount,
-        realTeamWipes: eliteAvgWipes,
-        realUtilityCount: eliteAvgUtility,
-        realSurvivalTime: eliteAvgSurvival,
-        realSoloKillRate: eliteAvgSoloKill,
-        realBurstDamage: eliteAvgBurst
-      }
+      initiative_rate: (playerCombatData.get(lowerNickname)?.total > 0) ? Math.round((playerCombatData.get(lowerNickname).success / playerCombatData.get(lowerNickname).total) * 100) : 0,
+      combatPressure: { ...combatPressure, pressureIndex: Number(((combatPressure.totalHits + combatPressure.utilityHits * 2) / Math.max(1, (myStats.timeSurvived / 60))).toFixed(2)) },
+      itemUseSummary, deathDistance
     };
 
-    const lowerGameMode = matchAttr.gameMode.toLowerCase();
-    const isNotTdmOrEvent = !lowerGameMode.includes('tdm') && !lowerGameMode.includes('event') && !lowerGameMode.includes('training') && !lowerGameMode.includes('zombie') && !lowerGameMode.includes('war') && !lowerGameMode.includes('lab');
-    const isNotBotMatch = matchAttr.matchType !== 'ai';
-    
-    const myStats = myInfo.attributes.stats;
-    const isHighPerformer = myStats.damageDealt >= minDamageThreshold || (myStats.winPlace <= 3 && myStats.damageDealt >= (minDamageParam ? minDamageThreshold : 250));
-
-    if ((isNotTdmOrEvent && isNotBotMatch || forceBenchmark) && isHighPerformer) {
-      supabase.from("global_benchmarks").upsert({
-        match_id: matchId,
-        player_id: lowerNickname,
-        damage: myStats.damageDealt,
-        kills: myStats.kills,
-        win_place: myStats.winPlace,
-        game_mode: matchAttr.gameMode,
-        map_name: matchAttr.mapName,
-        latency_ms: tradeCount > 0 ? Math.min(Math.round(tradeLatSum / tradeCount), 10000) : 0,
-        initiative_rate: myCombatData.total > 0 ? Math.round((myCombatData.success / myCombatData.total) * 100) : 0,
-        revive_rate: teammateKnocks > 0 ? Math.round((revCount / teammateKnocks) * 100) : 0,
-        smoke_rate: smokeOpps > 0 ? Math.round((smokeCount / smokeOpps) * 100) : 0,
-        supp_count: suppCount,
-        team_distance: deathDistance > 0 ? deathDistance : 30,
-        team_wipes: totalEnemyTeamWipes,
-        utility_count: combatPressure.utilityHits,
-        survival_time: Math.round(myStats.timeSurvived || 0),
-        solo_kill_rate: myStats.kills > 0 ? Math.round((killContribution.solo / myStats.kills) * 100) : 0,
-        burst_damage: Math.round(Math.min(myStats.damageDealt, goldenTimeDamage.early + goldenTimeDamage.mid1 + goldenTimeDamage.mid2 + goldenTimeDamage.late)),
-        created_at: new Date().toISOString()
-      }, { onConflict: "match_id, player_id" }).then();
+    // [V7.4] 벤치마크 데이터 저장 - DB 스키마 전체 필드 매핑
+    const isHighPerformer = myStats.damageDealt >= minDamageThreshold || (myStats.damageDealt >= 250 && myStats.winPlace <= 3);
+    if (isHighPerformer || forceBenchmark) {
+        const totalKills = finalResult.killContribution.solo + finalResult.killContribution.cleanup;
+        supabase.from("global_benchmarks").upsert({
+            match_id: matchId,
+            player_id: lowerNickname,
+            damage: Math.floor(myStats.damageDealt),
+            kills: myStats.kills,
+            win_place: myStats.winPlace,
+            game_mode: matchAttr.gameMode,
+            map_name: matchAttr.mapName,
+            counter_latency_ms: finalResult.tradeStats.counterLatencyMs,
+            initiative_rate: finalResult.initiative_rate,
+            revive_rate: totalTeammateKnocks > 0 ? Math.round((myReviveEvents.length / totalTeammateKnocks) * 100) : 0,
+            smoke_count: itemUseSummary.smokes,
+            frag_count: itemUseSummary.frags,
+            pressure_index: finalResult.combatPressure.pressureIndex,
+            enemy_death_distance: deathDistance,
+            // [V7.4] 고도화 지표 추가 저장
+            smoke_rate: totalTeammateKnocks > 0 ? Math.round((totalSmokeCount / totalTeammateKnocks) * 100) : 0,
+            supp_count: totalSuppCount,
+            team_wipes: wipedTeamsByUserParticipation.size,
+            utility_count: itemUseSummary.smokes + itemUseSummary.frags,
+            survival_time: Math.round(myStats.timeSurvived),
+            solo_kill_rate: totalKills > 0 ? Math.round((finalResult.killContribution.solo / totalKills) * 100) : 0,
+            burst_damage: finalResult.goldenTimeDamage.early,
+            isolation_index: finalResult.isolationData.isolationIndex,
+            min_dist: finalResult.isolationData.minDist,
+            height_diff: finalResult.isolationData.heightDiff,
+            is_crossfire: finalResult.isolationData.isCrossfire
+        }, { onConflict: 'match_id,player_id' }).then();
     }
 
     supabase.from("processed_match_telemetry").upsert({ match_id: matchId, player_id: lowerNickname, data: { fullResult: finalResult }, updated_at: new Date().toISOString() }, { onConflict: 'match_id,player_id' }).then();
