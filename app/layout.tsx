@@ -9,6 +9,8 @@ import { Suspense } from "react";
 import JsonLd from "@/components/seo/JsonLd";
 import { GoogleAnalytics } from '@next/third-parties/google';
 import SidebarFooterWrapper from "@/components/layout/SidebarFooterWrapper";
+import { Analytics } from "@vercel/analytics/react";
+import { SpeedInsights } from "@vercel/speed-insights/react";
 
 
 // Outfit 폰트 — 기하학적이고 현대적인 게이밍 타이포그래피
@@ -123,6 +125,8 @@ export default function RootLayout({
             </Suspense>
           </div>
           <Toaster theme="dark" position="top-center" richColors />
+          <Analytics />
+          <SpeedInsights />
         </AuthProvider>
       </body>
     </html>
