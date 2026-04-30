@@ -44,36 +44,31 @@ async function scrapeEliteData() {
     const seasonId = currentSeason.id;
     console.log(`✅ 현재 시즌: ${seasonId}`);
 
-    const gameModes = ["squad", "squad-fpp"]; 
-    let topPlayers: any[] = [];
-    let activeMode = "";
-
+    const gameModes = ["squad", "squad-fpp", "solo", "solo-fpp", "duo", "duo-fpp"]; 
+    const playerPool = new Map<string, string>(); // accountId -> nickname (중복 방지)
+    
     for (const mode of gameModes) {
       try {
         console.log(`   - [${mode}] 모드 시도 중...`);
         // 리더보드 조회는 지역 샤드(pc-as) 사용
         const leaderboardRes = await axios.get(`https://api.pubg.com/shards/${leaderboardShard}/leaderboards/${seasonId}/${mode}`, { headers: HEADERS });
-        topPlayers = leaderboardRes.data.included?.filter((i: any) => i.type === "player").slice(0, 100) || [];
-        if (topPlayers.length > 0) {
-          activeMode = mode;
-          break;
-        }
+        const modePlayers = leaderboardRes.data.included?.filter((i: any) => i.type === "player").slice(0, 20) || [];
+        modePlayers.forEach((p: any) => playerPool.set(p.id, p.attributes.name));
+        console.log(`     ✅ [${mode}]에서 ${modePlayers.length}명 확보 (현재 총 ${playerPool.size}명)`);
       } catch (err: any) {
         console.log(`   ⚠️ [${mode}] 조회 실패: ${err.response?.data?.errors?.[0]?.detail || err.message}`);
       }
     }
 
-    if (topPlayers.length === 0) {
+    if (playerPool.size === 0) {
       console.warn("⚠️ 모든 모드에서 리더보드 플레이어를 찾을 수 없습니다.");
       return;
     }
     
-    console.log(`✅ [${activeMode}] 모드에서 ${topPlayers.length}명의 플레이어 정보를 확보했습니다.`);
+    console.log(`\n🎯 총 ${playerPool.size}명의 유니크 플레이어 풀을 구성했습니다. 분석을 시작합니다.`);
 
     // 3. 각 플레이어별 매치 분석
-    for (const player of topPlayers) {
-      const nickname = player.attributes.name;
-      const accountId = player.id;
+    for (const [accountId, nickname] of playerPool.entries()) {
       console.log(`\n🔍 [${nickname}] 데이터 수집 시작...`);
 
       try {
@@ -87,18 +82,20 @@ async function scrapeEliteData() {
           // [핵 필터 및 정제] 우리 서버 API 호출 전 닉네임 정규화
           const cleanNickname = nickname.trim();
           
-          // 우리 서버의 매치 분석 API 호출
+          // 우리 서버의 매치 분석 API 호출 (V11.1 규격 적용)
           try {
-            const res = await axios.get(`${LOCAL_API_URL}?matchId=${matchId}&nickname=${encodeURIComponent(cleanNickname)}&platform=steam&minDamage=150`);
+            // [V11.1] 백엔드에서 isValidBenchmark 로직을 통해 상위 25%만 선별 저장함
+            const res = await axios.get(`${LOCAL_API_URL}?matchId=${matchId}&nickname=${encodeURIComponent(cleanNickname)}&platform=steam`);
             
             if (res.status === 200) {
               const data = res.data;
-              // 인간의 범주를 벗어난 수치 (핵 의심) 필터링
-              if (data.stats.damageDealt > 1500 || data.stats.kills > 20) {
-                console.log(`     🚫 핵 의심 데이터 감지 (딜량: ${Math.round(data.stats.damageDealt)}, 킬: ${data.stats.kills}). 벤치마크 신뢰도를 위해 무시.`);
+              // 인간의 범주를 벗어난 수치 (핵 의심) 필터링 - 벤치마크 오염 방지
+              if (data.stats.damageDealt > 1800 || data.stats.kills > 25) {
+                console.log(`     🚫 핵 의심 데이터 감지 (딜량: ${Math.round(data.stats.damageDealt)}, 킬: ${data.stats.kills}). 스킵.`);
                 continue;
               }
-              console.log(`     ✅ 분석 완료: V${data.v} (딜량: ${Math.round(data.stats.damageDealt)})`);
+              const dPhase = data.deathPhase !== undefined ? `${data.deathPhase}Ph` : "N/A";
+              console.log(`     ✅ 분석 완료: V${data.v} (딜량: ${Math.round(data.stats.damageDealt)}, 생존: ${dPhase})`);
             }
           } catch (apiErr: any) {
             if (apiErr.response?.status === 429) {

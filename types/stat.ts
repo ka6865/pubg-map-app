@@ -51,6 +51,8 @@ export interface MatchData {
   createdAt: string;
   gameMode: string;
   matchType?: string;
+  totalTeams?: number;
+  totalPlayers?: number;
   team: MatchTeamMember[];
   totalTeamKills: number;
   totalTeamDamage: number;
@@ -134,6 +136,7 @@ export interface MatchData {
     realSurvivalTime?: number;
     realSoloKillRate?: number;
     realBurstDamage?: number;
+    avgDeathPhase?: number;
   };
   /** [V3.0] 상세 전술 타임라인 */
   tacticalTimeline?: Array<{
@@ -154,5 +157,7 @@ export interface MatchData {
   };
   /** [V8.1] 선제 타격 성공률 (직접 필드) */
   initiative_rate?: number;
+  /** [V11.1] 사망 시 자기장 페이즈 */
+  deathPhase?: number;
   v: number;
 }

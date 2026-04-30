@@ -43,12 +43,16 @@ export async function GET(request: Request) {
       { headers, next: { revalidate: 60 } }
     );
     const seasonData = await seasonRes.json();
-    const pcSeasons = seasonData.data
-      .filter((s: any) => s.id.includes("pc-"))
+    // 🚀 [FIX] pc- 필터링을 완화하여 콘솔(Xbox, PSN) 시즌 데이터도 처리 가능하도록 수정
+    const availableSeasons = seasonData.data
+      .filter((s: any) => s.id.includes("pc-") || s.id.includes("console-"))
       .sort((a: any, b: any) => b.id.localeCompare(a.id));
-    const currentSeason = pcSeasons.find(
+    
+    if (availableSeasons.length === 0) throw new Error("사용 가능한 시즌 데이터가 없습니다.");
+
+    const currentSeason = availableSeasons.find(
       (s: any) => s.attributes.isCurrentSeason
-    );
+    ) || availableSeasons[0];
     const targetSeasonId = reqSeason || currentSeason.id;
 
     // 🚀 핵심: 경쟁전과 일반전 API를 '동시에' 찔러서 속도를 높입니다!
@@ -67,25 +71,28 @@ export async function GET(request: Request) {
     if (rankedRes.ok) {
       const rankedData = await rankedRes.json();
       const allStats = rankedData.data.attributes.rankedGameModeStats;
-      rankedStats.solo = allStats["solo"] || null;
-      rankedStats.duo = allStats["duo"] || null;
-      rankedStats.squad = allStats["squad"] || null;
+      // TPP와 FPP 중 데이터가 존재하는 것을 선택 (또는 합산 가능하지만 랭크는 보통 하나만 플레이함)
+      rankedStats.solo = allStats["solo-fpp"] || allStats["solo"] || null;
+      rankedStats.duo = allStats["duo-fpp"] || allStats["duo"] || null;
+      rankedStats.squad = allStats["squad-fpp"] || allStats["squad"] || null;
     }
 
     const normalStats = { solo: null, duo: null, squad: null };
     if (normalRes.ok) {
       const normalData = await normalRes.json();
       const allStats = normalData.data.attributes.gameModeStats;
-      normalStats.solo = allStats["solo"] || null;
-      normalStats.duo = allStats["duo"] || null;
-      normalStats.squad = allStats["squad"] || null;
+      // 일반전은 1인칭/3인칭 데이터가 공존할 수 있으므로, 더 많이 플레이한 쪽을 보여주거나 간단히 합산 로직 적용
+      // 여기서는 유효한 데이터가 있는 쪽을 우선시함
+      normalStats.solo = allStats["solo-fpp"] || allStats["solo"] || null;
+      normalStats.duo = allStats["duo-fpp"] || allStats["duo"] || null;
+      normalStats.squad = allStats["squad-fpp"] || allStats["squad"] || null;
     }
 
     return NextResponse.json({
       nickname: actualNickname,
       platform,
       seasonId: targetSeasonId,
-      seasons: pcSeasons.map((s: any) => ({
+      seasons: availableSeasons.map((s: any) => ({
         id: s.id,
         name: s.id.split("-").pop(),
       })),

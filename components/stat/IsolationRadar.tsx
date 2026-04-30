@@ -124,8 +124,21 @@ export const IsolationRadar = ({ data, loading }: IsolationRadarProps) => {
       </div>
 
       <div className="mt-8 pt-8 border-t border-white/10 flex flex-row items-center justify-between gap-6">
-        <div className="flex flex-col">
-          <div className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">공간 고립 지수</div>
+        <div className="flex flex-col relative group/iso">
+          <div className="flex items-center gap-1 text-[10px] text-gray-500 font-bold uppercase tracking-widest">
+            공간 고립 지수
+            <HelpCircle size={10} className="opacity-50 group-hover/iso:opacity-100 transition-opacity cursor-help" />
+          </div>
+          
+          {/* Tooltip Content */}
+          <div className="absolute bottom-full left-0 mb-2 p-3 bg-[#111] border border-white/10 rounded-xl shadow-2xl z-50 w-56 opacity-0 group-hover/iso:opacity-100 transition-opacity pointer-events-none">
+            <div className="text-[9px] font-black uppercase mb-1 text-emerald-400">계산 방식</div>
+            <div className="text-[10px] text-white/70 font-medium leading-relaxed">
+              교전 시 아군과의 거리 및 고도차를 분석한 고립도입니다. <span className="text-emerald-400">0.5 미만</span>이 우수하며, 수치가 낮을수록 백업 받기 유리한 포지셔닝을 의미합니다.
+            </div>
+            <div className="absolute -bottom-1 left-4 w-2 h-2 bg-[#111] border-r border-b border-white/10 rotate-45" />
+          </div>
+
           <div className="text-2xl sm:text-4xl font-black text-white flex items-baseline gap-1">
             {data.isolationIndex} 
             <span className="text-[10px] sm:text-xs text-gray-500 font-medium uppercase">점</span>

@@ -239,27 +239,15 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
 
   if (!matchData) return null;
 
-  const isRanked = matchData.matchType === 'competitive' || (matchData.gameMode || "").includes("competitive");
+  const isRanked = matchData.matchType === 'competitive' || 
+                   (matchData.gameMode || "").includes("competitive") ||
+                   (matchData.gameMode || "").includes("ranked") ||
+                   // [V11] 정원 기반 폴백 판별 (경쟁전은 통상 64인)
+                   (matchData.stats.winPlace <= 16 && (matchData.gameMode || "").includes("squad") && ! (matchData.gameMode || "").includes("ai-match"));
   const isWin = matchData.stats.winPlace === 1;
   const isTop10 = matchData.stats.winPlace <= 10;
   
-  // 게임 모드별 최대 팀 수/인원 계산 로직
-  const getTotalScale = () => {
-    if (matchData.myRank?.totalTeams) return matchData.myRank.totalTeams;
-    
-    const mode = (matchData.gameMode || "").toLowerCase();
-    const isRankedMode = (matchData.gameMode || "").includes("ranked") || isRanked;
-    
-    if (mode.includes("solo")) return 100;
-    if (mode.includes("duo")) return 50;
-    if (isRankedMode) return 16;
-    if (mode.includes("squad")) return 25;
-    
-    // 만약 순위가 폴백값보다 크면 순위에 맞춤
-    return Math.max(25, matchData.stats.winPlace);
-  };
-
-  const totalScale = getTotalScale();
+  const totalScale = matchData.totalTeams || 0;
   
   const themeColor = isRanked ? "amber-500" : "indigo-500";
   const borderColor = isRanked ? "border-amber-500/30 hover:border-amber-500/60" : "border-white/10 hover:border-white/20";
@@ -290,12 +278,17 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
               <span className="text-white font-black text-lg tracking-tight">{matchData.mapName}</span>
               <span className="text-[10px] text-white/30 font-bold">{getRelativeTime(matchData.createdAt)}</span>
               <div className="flex gap-1.5">
-                <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider flex items-center gap-1 ${isRanked ? 'bg-amber-500/20 text-amber-500 border border-amber-500/30' : 'bg-white/10 text-gray-400 border border-white/10'}`}>
+                <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider flex items-center gap-1 ${isRanked ? 'bg-amber-500/20 text-amber-500 border border-amber-500/30 shadow-[0_0_10px_rgba(245,158,11,0.1)]' : 'bg-white/10 text-gray-400 border border-white/10'}`}>
                   {isRanked && <Swords size={10} />}
                   {isRanked ? "경쟁전" : "일반전"}
                 </span>
-                <span className="px-2 py-0.5 bg-white/5 rounded text-[10px] text-gray-500 font-bold uppercase tracking-wider">
-                  {matchData.gameMode}
+                <span className="px-2 py-0.5 bg-white/5 rounded text-[10px] text-gray-400 font-bold uppercase tracking-wider border border-white/5">
+                  {(() => {
+                    const mode = (matchData.gameMode || "").toLowerCase();
+                    const isFpp = mode.includes("fpp");
+                    const type = mode.includes("solo") ? "솔로" : mode.includes("duo") ? "듀오" : "스쿼드";
+                    return `${isFpp ? "1인칭" : "3인칭"} ${type}`;
+                  })()}
                 </span>
               </div>
             </div>
@@ -432,28 +425,19 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                   tooltip="기절한 팀원을 직접 끝까지 부활시켜 전장에 복귀시킨 횟수입니다."
                 />
                 <TacticalBox 
-                  icon={<Target size={18} />} 
-                  label="피킹 정밀도" 
-                  value={`${matchData.combatPressure?.maxHitDistance || 0}m`} 
-                  subLabel="최대 교전 적중 거리"
-                  color="text-emerald-400"
-                  bgColor="bg-emerald-400/10"
-                  tooltip="이번 매치에서 적을 맞춘 가장 먼 거리입니다. 원거리 교전 능력을 나타냅니다."
-                />
-                <TacticalBox 
-                  icon={<Zap size={18} />} 
-                  label="투척물 효율" 
-                  value={matchData.combatPressure?.utilityHits || 0} 
-                  subLabel={`누적 딜량 ${matchData.combatPressure?.utilityDamage || 0}`}
-                  color="text-yellow-400"
-                  bgColor="bg-yellow-400/10"
+                  icon={<MousePointer2 size={18} />} 
+                  label="유틸리티 기여" 
+                  value={`${matchData.combatPressure?.utilityHits || 0} Hits`} 
+                  subLabel={`${matchData.combatPressure?.utilityDamage || 0} DMG`}
+                  color="text-amber-400"
+                  bgColor="bg-amber-400/10"
                   tooltip="수류탄, 화염병 등 투척물로 적에게 피해를 준 횟수와 총 데미지입니다."
                 />
                 <TacticalBox 
-                  icon={<TrendingUp size={18} />} 
+                  icon={<Target size={18} />} 
                   label="주도권 성공률" 
                   value={`${matchData.initiative_rate || matchData.initiativeStats?.rate || 0}%`} 
-                  subLabel={`먼저 쏴서 이긴 비율`}
+                  subLabel={`선제 공격 승리`}
                   color="text-cyan-400"
                   bgColor="bg-cyan-400/10"
                   tooltip="선제 공격(먼저 사격)을 시작한 교전 세션 중, 승리(적 기절/킬)한 비율입니다."
@@ -462,71 +446,21 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                   icon={<Clock size={18} />} 
                   label="트레이드 속도" 
                   value={`${(matchData.tradeStats.tradeLatencyMs ?? 0) > 0 ? (matchData.tradeStats.tradeLatencyMs! / 1000).toFixed(2) : 0}s`} 
-                  subLabel={`아군 손실 후 복구`}
+                  subLabel={`아군 손실 복구`}
                   color="text-indigo-400"
                   bgColor="bg-indigo-400/10"
-                  tooltip="아군이 기절한 직후, 해당 적을 눕히거나 킬하여 상황을 반전시킨 평균 시간입니다. 킬/기절이 없으면 0s로 표시됩니다."
+                  tooltip="아군이 기절한 직후, 해당 적을 눕히거나 킬하여 상황을 반전시킨 평균 시간입니다."
+                />
+                <TacticalBox 
+                  icon={<ShieldAlert size={18} />} 
+                  label="사망 페이즈" 
+                  value={`${matchData.deathPhase || 0} Ph`} 
+                  subLabel={`${matchData.deathPhase || 0}페이즈 생존`}
+                  color="text-emerald-400"
+                  bgColor="bg-emerald-400/10"
+                  tooltip="사망 시점의 자기장 페이즈 번호입니다. 숫자가 높을수록 후반까지 생존했다는 의미입니다."
                 />
               </div>
-
-              {/* [V8.1] Space Intelligence - Isolation Index */}
-              {matchData.isolationData && (
-                <div className="mt-6 p-6 bg-white/5 border border-white/10 rounded-[2.5rem] relative overflow-hidden group/space">
-                  <div className="absolute top-0 right-0 p-6 opacity-5 group-hover/space:scale-110 transition-transform">
-                    <Wind size={80} className="text-white" />
-                  </div>
-                  <div className="relative z-10">
-                    <div className="flex items-center gap-3 mb-6">
-                        <div className="w-10 h-10 bg-indigo-500/20 rounded-2xl flex items-center justify-center">
-                          <Zap size={20} className="text-indigo-400" />
-                        </div>
-                        <div className="flex flex-col">
-                          <span className="text-white font-black">공간 지능 분석</span>
-                          <span className="text-[10px] text-gray-500 font-bold tracking-widest">Spatial Tactical Intelligence</span>
-                        </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                      <div className="flex flex-col gap-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs text-gray-400 font-bold">최근접 아군 거리</span>
-                            <span className="text-sm font-black text-white">{matchData.isolationData.minDist}m</span>
-                          </div>
-                          <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
-                            <div 
-                              className="h-full bg-indigo-500 transition-all duration-1000" 
-                              style={{ width: `${Math.max(0, 100 - (matchData.isolationData.minDist / 2))}%` }}
-                            />
-                          </div>
-                      </div>
-                      <div className="flex flex-col gap-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs text-gray-400 font-bold">고도 일치성</span>
-                            <span className="text-sm font-black text-white">{matchData.isolationData.heightDiff}m 차이</span>
-                          </div>
-                          <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
-                            <div 
-                              className="h-full bg-emerald-500 transition-all duration-1000" 
-                              style={{ width: `${Math.max(0, 100 - (matchData.isolationData.heightDiff * 5))}%` }}
-                            />
-                          </div>
-                      </div>
-                      <div className="flex flex-col gap-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs text-gray-400 font-bold">교전 노출 위험</span>
-                            <span className="text-sm font-black text-white">{matchData.isolationData.isCrossfire ? "위험" : "안전"}</span>
-                          </div>
-                          <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden">
-                            <div 
-                              className={`h-full transition-all duration-1000 ${matchData.isolationData.isCrossfire ? 'bg-red-500' : 'bg-emerald-500'}`}
-                              style={{ width: matchData.isolationData.isCrossfire ? '100%' : '20%' }}
-                            />
-                          </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           )}
 

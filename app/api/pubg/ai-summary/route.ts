@@ -20,7 +20,8 @@ export async function POST(request: Request) {
     if (cachedMatches) {
       cachedMatches.forEach(m => {
         const fullResult = (m.data as any)?.fullResult;
-        if (fullResult && fullResult.v >= 8.2) cachedMap.set(m.match_id, fullResult);
+        // [V11] 8.5 버전 이상의 최신 정밀 데이터만 캐시로 인정 (랭크/일반 구분 보강 버전)
+        if (fullResult && fullResult.v >= 8.5) cachedMap.set(m.match_id, fullResult);
       });
     }
     
@@ -48,7 +49,7 @@ export async function POST(request: Request) {
 
     // console.log(`[AI-SUMMARY] Aggregating ${detailedMatches.length} matches for ${nickname}`);
 
-    let totalKills = 0, totalDamage = 0, totalDamageImpact = 0;
+    let totalKills = 0, totalDamage = 0, totalDamageImpact = 0, totalDeathPhase = 0;
     const allBadges: any[] = [];
     
     detailedMatches.forEach((m: any) => {
@@ -69,6 +70,7 @@ export async function POST(request: Request) {
 
     let totalTeammateKnocks = 0, totalSuppCount = 0, totalSmokeCount = 0, totalRevCount = 0, totalBaitCount = 0, totalCoverRateSum = 0;
     let totalCrossfireCount = 0;
+    let totalDuelWins = 0, totalDuelLosses = 0, totalReversalWins = 0;
     const backupLatencies: number[] = [], reactionLatencies: number[] = [];
     
     detailedMatches.forEach((m: any) => {
@@ -85,15 +87,29 @@ export async function POST(request: Request) {
       if (m.isolationData) { 
         if (m.isolationData.isCrossfire) totalCrossfireCount++; 
       }
+      if (m.duelStats) {
+        totalDuelWins += m.duelStats.wins || 0;
+        totalDuelLosses += m.duelStats.losses || 0;
+        totalReversalWins += m.duelStats.reversals || 0;
+      }
+      totalDeathPhase += (m.deathPhase || 0);
     });
 
     const userInitiativeRate = Math.round(detailedMatches.reduce((acc: number, m: any) => acc + (m.initiative_rate || 0), 0) / mLen);
     const avgBackupLatency = backupLatencies.length > 0 ? (backupLatencies.reduce((a, b) => a + b, 0) / backupLatencies.length / 1000).toFixed(2) + "s" : "측정 불가";
     const avgReactionLatency = reactionLatencies.length > 0 ? (reactionLatencies.reduce((a, b) => a + b, 0) / reactionLatencies.length / 1000).toFixed(2) + "s" : "N/A";
     const avgCoverRate = Math.round(totalCoverRateSum / mLen);
+    const totalDuels = totalDuelWins + totalDuelLosses;
+    const avgDuelWinRate = totalDuels > 0 ? Math.round((totalDuelWins / totalDuels) * 100) : 0;
 
-    const { data: globalStats } = await supabase.from("global_benchmarks").select("*").not("game_mode", "ilike", "%tdm%");
-    let avgRealInitiativeSuccessFinal = 55, avgRealPressureFinal = 1.5, avgBaselineDamageFinal = 450;
+    const avgDeathPhase = detailedMatches.length > 0 ? Number((totalDeathPhase / detailedMatches.length).toFixed(1)) : 0;
+
+    const { data: globalStats } = await supabase.from("global_benchmarks")
+      .select("*")
+      .eq("filter_version", 2) // [V11] V11 엔진으로 수집된 정밀 데이터만 사용 (데이터 오염 방지)
+      .not("game_mode", "ilike", "%tdm%");
+    
+    let avgRealInitiativeSuccessFinal = 55, avgRealPressureFinal = 1.5, avgBaselineDamageFinal = 450, avgDeathPhaseElite = 6;
     let b_isolationIndex = 1.0, b_minDist = 15, b_counterLatency = 0.5, b_soloKillRate = 50, b_reviveRate = 30;
     
     if (globalStats && globalStats.length >= 5) {
@@ -103,9 +119,10 @@ export async function POST(request: Request) {
       avgRealInitiativeSuccessFinal = Math.round(globalStats.reduce((acc, s) => acc + (s.initiative_rate || 0), 0) / len);
       b_isolationIndex = Number((globalStats.reduce((acc, s) => acc + (s.isolation_index || 0), 0) / len).toFixed(2));
       b_minDist = Math.round(globalStats.reduce((acc, s) => acc + (s.min_dist || 0), 0) / len);
-      b_counterLatency = Number((globalStats.reduce((acc, s) => acc + (s.counter_latency_ms || 0), 0) / len / 1000).toFixed(2));
+      b_counterLatency = Number((globalStats.reduce((acc, s) => acc + (s.counter_latency_ms || 500), 0) / len / 1000).toFixed(2));
       b_soloKillRate = Math.round(globalStats.reduce((acc, s) => acc + (s.solo_kill_rate || 0), 0) / len);
       b_reviveRate = Math.round(globalStats.reduce((acc, s) => acc + (s.revive_rate || 0), 0) / len);
+      avgDeathPhaseElite = Number((globalStats.reduce((acc, s) => acc + (s.death_phase || 0), 0) / len).toFixed(1));
     }
 
     const matchTimes = detailedMatches.map((m: any) => {
@@ -120,8 +137,13 @@ export async function POST(request: Request) {
     const killContribFinal = { solo: 0, cleanup: 0 };
     let totalIsolationIndexFinal = 0, isolationCountFinal = 0, totalMinDist = 0, totalHeightDiff = 0, totalTeammateCountFinal = 0;
     let totalBluezoneWaste = 0;
+    let rankedCount = 0, normalCount = 0;
 
     detailedMatches.forEach((m: any) => {
+      const isRanked = m.matchType === 'competitive' || (m.gameMode || "").includes("competitive");
+      if (isRanked) rankedCount++;
+      else normalCount++;
+
       if (m.goldenTimeDamage) {
         goldenTimeFinal.early += (m.goldenTimeDamage.early || 0);
         goldenTimeFinal.mid1 += (m.goldenTimeDamage.mid1 || 0);
@@ -187,11 +209,13 @@ export async function POST(request: Request) {
 - 분석 대상: 최근 10경기 (팀 내 딜량 기여: ${avgDamageImpact}%, 획득 배지: ${topBadges || "없음"})
 - 평균 화력: ${avgDamage} (엘리트 Benchmark: ${avgBaselineDamageFinal}), 평균 ${avgKills}킬
 - [선제 공격] 주도권 성공률: ${userInitiativeRate}% (Benchmark: ${avgRealInitiativeSuccessFinal}%)
+- [교전 결정력] 1:1 교전 승률: ${avgDuelWinRate}% (승리: ${totalDuelWins}회, 패배: ${totalDuelLosses}회, 역전승: ${totalReversalWins}회)
 - [교전 압박] 평균 압박 지수: ${avgPressureIndex} (Benchmark: ${avgRealPressureFinal})
 - [반응 속도] 대응 사격: ${avgBackupLatency} (Benchmark: ${b_counterLatency}s), 반격 성공률: ${avgCoverRate}%
 - [공간 분석] 고립 지수: ${avgIsolationStr} (Benchmark: ${b_isolationIndex}), 아군 평균 거리: ${avgMinDistStr} (Benchmark: ${b_minDist}m), 십자포화 노출: ${totalCrossfireCount}회
 - [팀플레이] 아군 기절 ${totalTeammateKnocks}회 → 부활: ${totalRevCount}회 (유저 부활률: ${totalTeammateKnocks>0?Math.round((totalRevCount/totalTeammateKnocks)*100):0}% vs Benchmark: ${b_reviveRate}%)
 - [킬 분류] 솔로 킬: ${killContribFinal.solo}회, 클린업 킬: ${killContribFinal.cleanup}회 (솔로 비중: ${soloKillRate}% vs Benchmark: ${b_soloKillRate}%)
+- [운영 패턴] 평균 사망 페이즈: ${avgDeathPhase} 페이즈 (Benchmark: ${avgDeathPhaseElite} 페이즈)
 - [골든타임 딜량] 0-5분: ${goldenTimeAvg.early}, 5-15분: ${goldenTimeAvg.mid1}, 15-25분: ${goldenTimeAvg.mid2}, 25분+: ${goldenTimeAvg.late}
 `;
 
@@ -217,10 +241,17 @@ export async function POST(request: Request) {
     const precomputedVisuals = {
       latestMatchTime, counterLatency: avgBackupLatency, reactionLatency: avgReactionLatency,
       initiativeSuccess: `${userInitiativeRate}%`, pressureIndex: avgPressureIndex, coverRate: `${avgCoverRate}%`,
+      duelStats: { winRate: `${avgDuelWinRate}%`, wins: totalDuelWins, losses: totalDuelLosses, reversals: totalReversalWins },
       teamImpact: { damageImpact: avgDamageImpact, topBadges },
       goldenTime: goldenTimeAvg,
       killContrib: killContribFinal,
+      deathPhase: avgDeathPhase,
       bluezoneWaste: Math.round(totalBluezoneWaste / mLen),
+      modeDistribution: {
+        ranked: rankedCount,
+        normal: normalCount,
+        main: rankedCount >= normalCount ? "경쟁전" : "일반전"
+      },
       tactical: { 
         suppRate: totalTeammateKnocks > 0 ? Math.round((totalSuppCount / totalTeammateKnocks) * 100) + "%" : "0%",
         smokeRate: totalTeammateKnocks > 0 ? Math.round((totalSmokeCount / totalTeammateKnocks) * 100) + "%" : "0%",

@@ -30,13 +30,14 @@ export async function POST(request: Request) {
 - 획득 배지: ${badges.length > 0 ? badges.map((b: any) => `[${b.name}: ${b.desc}]`).join(", ") : "없음"}
 - 생존: ${Math.floor(stats.timeSurvived / 60)}분 ${stats.timeSurvived % 60}초
 
-[전술 지표]
-- 선제 공격: 시도 ${initiativeStats.total || 0}회, 성공률 ${matchData.initiative_rate || initiativeStats.rate || 0}% (Elite: ${eliteBenchmark.realInitiativeSuccess}%)
-- 전술 지원: 견제사격 ${tradeStats.suppCount || 0}회, 연막세이브 ${tradeStats.smokeCount || 0}회, 직접부활 ${tradeStats.revCount || 0}회
-- 대응 사격: 내 대응 사격 속도 ${tradeStats.counterLatencyMs > 0 ? (tradeStats.counterLatencyMs/1000).toFixed(2) : "데이터 부족"}s (Elite: ${(eliteBenchmark.realTradeLatency/1000).toFixed(2)}s)
-- 교전 거리: 사망 시 적과의 거리 ${deathDistance}m (Elite: ${eliteBenchmark.realDeathDistance}m)
-- 공간 전술: 고립 지수 ${isolationData?.isolationIndex || "데이터 부족"} / 고도차 ${isolationData?.heightDiff || 0}m / 포위(교차사격) 노출 ${isolationData?.isCrossfire ? "있음" : "없음"}
-- 화력 압박: 총 ${combatPressure.totalHits || 0}회 적중 / 압박 지수 ${combatPressure.pressureIndex || 0} / 투척물 딜량 ${combatPressure.utilityDamage || 0}
+[전술 지표 (유저 vs 상위 25% 평균)]
+- 선제 공격 성공률: ${matchData.initiative_rate || 0}% (Elite: ${eliteBenchmark.avgInitiativeRate || 55}%)
+- 대응 사격 속도: ${tradeStats.counterLatencyMs > 0 ? (tradeStats.counterLatencyMs/1000).toFixed(2) : "데이터 부족"}s (Elite: ${(eliteBenchmark.avgCounterLatency || 500)/1000}s)
+- 전술 지원: 견제사격 ${tradeStats.suppCount || 0}회 (Elite Avg: ${eliteBenchmark.avgSuppCount || 3}회), 연막 ${tradeStats.smokeCount || 0}회, 부활 ${tradeStats.revCount || 0}회
+- 공간 전술: 고립 지수 ${isolationData?.isolationIndex || "데이터 부족"} (Elite: ${eliteBenchmark.avgIsolationIndex || 1.0}) / 고도차 ${isolationData?.heightDiff || 0}m
+- 운영 패턴: 사망 페이즈 ${matchData.deathPhase || 0} (Elite Avg: ${eliteBenchmark.avgDeathPhase || 6} 페이즈)
+- 교전 압박: 압박 지수 ${combatPressure.pressureIndex || 0} (Elite: ${eliteBenchmark.avgPressureIndex || 1.5}) / 투척물 딜량 ${combatPressure.utilityDamage || 0}
+- 교전 거리: 사망 시 적과의 거리 ${deathDistance}m (Elite: ${eliteBenchmark.avgDeathDistance || 45}m)
 `.trim();
 
     const personaPrompt = isMild 
