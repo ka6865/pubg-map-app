@@ -62,7 +62,7 @@ export async function GET(request: Request) {
     if (isSquad) eliteQuery = eliteQuery.ilike('game_mode', '%squad%');
     else eliteQuery = eliteQuery.not('game_mode', 'ilike', '%squad%');
 
-    let { data: elitePoolRaw } = await eliteQuery.order('created_at', { ascending: false }).limit(200);
+    const { data: elitePoolRaw } = await eliteQuery.order('created_at', { ascending: false }).limit(200);
     let elitePool = elitePoolRaw || [];
 
     // v2 샘플이 부족할 경우 v1 데이터를 하이브리드로 사용
@@ -453,7 +453,6 @@ export async function GET(request: Request) {
     });
 
     // [V8.1] 전술 대응력(Bait/Trade) 정밀 계산
-    let tradeLatSum = 0, tradeCount = 0;
     teammateKnockEvents.forEach(dTs => {
       // 아군이 기절한 시점(dTs) 이후 10초 내에 내가 적을 기절/킬 시킨 이벤트 탐색
       const myTradeAction = telData.find(e => 

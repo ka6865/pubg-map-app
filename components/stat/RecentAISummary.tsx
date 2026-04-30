@@ -95,10 +95,16 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
   const lineBufferRef = useRef("");
   const abortControllerRef = useRef<AbortController | null>(null);
 
-  const handleFetchSummary = async () => {
-    if (loading || debateData) return;
+  const handleFetchSummary = async (force = false) => {
+    if (loading || (!force && debateData)) return;
     setLoading(true);
     setError(null);
+    if (force) {
+      setDebateData(null);
+      setStreamingText("");
+      textBufferRef.current = "";
+      lineBufferRef.current = "";
+    }
 
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
@@ -212,7 +218,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
   if (!debateData && !loading) {
     return (
       <button
-        onClick={handleFetchSummary}
+        onClick={() => handleFetchSummary(true)}
         className="w-full p-8 bg-indigo-500/5 border-2 border-dashed border-indigo-500/30 rounded-3xl text-indigo-400 font-bold flex flex-col items-center gap-4 hover:bg-indigo-500/10 transition-all active:scale-[0.98]"
       >
         <span className="text-4xl">🔥</span>
@@ -240,7 +246,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
     <div className="@container flex flex-col gap-8 animate-in fade-in duration-700">
       <div className="flex justify-end">
         <button 
-          onClick={() => { setDebateData(null); textBufferRef.current = ""; handleFetchSummary(); }}
+          onClick={() => handleFetchSummary(true)}
           className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-[10px] text-gray-400 font-black uppercase tracking-widest transition-all"
         >
           🔄 분석 데이터 갱신

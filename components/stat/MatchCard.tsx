@@ -505,14 +505,29 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
               <div className="flex flex-col gap-6 animate-in fade-in zoom-in duration-500">
                 {(() => {
                   try {
-                    const isJson = analysis.trim().startsWith('{');
+                    const cleanAnalysis = analysis.trim();
+                    const isJson = cleanAnalysis.startsWith('{') || cleanAnalysis.startsWith('```json');
                     if (!isJson) return (
                       <div className="p-8 bg-black/40 rounded-[2.5rem] border border-white/10 prose prose-invert max-w-none">
                         {renderMarkdown(analysis)}
                       </div>
                     );
                     
-                    const data = JSON.parse(analysis);
+                    let data;
+                    try {
+                      const jsonString = cleanAnalysis.replace(/^```json\n?/, '').replace(/\n?```$/, '').trim();
+                      data = JSON.parse(jsonString);
+                    } catch (e) {
+                      if (isAnalyzing) {
+                        return (
+                          <div className="p-10 bg-black/40 rounded-[2.5rem] border border-white/10 flex flex-col items-center justify-center gap-4">
+                            <div className={`w-10 h-10 border-4 border-white/10 border-t-${coachingStyle === 'mild' ? 'emerald' : 'red'}-500 rounded-full animate-spin`} />
+                            <p className="text-gray-400 font-bold animate-pulse tracking-widest text-sm">AI 전술 데이터를 수신하고 있습니다...</p>
+                          </div>
+                        );
+                      }
+                      throw e;
+                    }
                     const isMildTheme = coachingStyle === "mild";
                     const accentColor = isMildTheme ? "emerald" : "red";
                     

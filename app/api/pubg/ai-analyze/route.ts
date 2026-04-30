@@ -13,7 +13,7 @@ export async function POST(request: Request) {
 
     const { 
       stats, mapName, gameMode, 
-      eliteBenchmark = {}, initiativeStats = {}, deathDistance = 30,
+      eliteBenchmark = {}, initiativeStats = {},
       killContribution = { solo: 0, cleanup: 0, other: 0 },
       tradeStats = {}, combatPressure = {},
       isolationData = null,
@@ -37,12 +37,12 @@ export async function POST(request: Request) {
 - 공간 전술: 고립 지수 ${isolationData?.isolationIndex || "데이터 부족"} (Elite: ${eliteBenchmark.avgIsolationIndex || 1.0}) / 고도차 ${isolationData?.heightDiff || 0}m
 - 운영 패턴: 사망 페이즈 ${matchData.deathPhase || 0} (Elite Avg: ${eliteBenchmark.avgDeathPhase || 6} 페이즈)
 - 교전 압박: 압박 지수 ${combatPressure.pressureIndex || 0} (Elite: ${eliteBenchmark.avgPressureIndex || 1.5}) / 투척물 딜량 ${combatPressure.utilityDamage || 0}
-- 교전 거리: 사망 시 적과의 거리 ${deathDistance}m (Elite: ${eliteBenchmark.avgDeathDistance || 45}m)
 `.trim();
 
     const personaPrompt = isMild 
-      ? `당신은 '다정한 코치'입니다. 유저의 플레이에서 숨겨진 '이타적 헌신'과 획득한 전술 배지의 가치를 찾아 칭찬하십시오. 
-         팀 내 영향력이 높다면 '팀을 승리로 이끈 일등공신'으로, 낮더라도 '팀워크를 위한 희생'으로 해석하여 격려하세요.`
+      ? `당신은 '다정한 코치'입니다. 유저의 플레이에서 전술적 가치를 찾아 따뜻하게 조언하십시오. 
+         단, 상위권 지표와 큰 격차가 나는 수치(예: 너무 짧은 교전 거리, 낮은 주도권)를 무리하게 칭찬(억지 미화)하지 마십시오. 
+         수치가 부족하다면 '이타적 희생'보다는 '성장 가능성이 필요한 부분'으로 정직하게 언급하되, 부드러운 말투로 격려하십시오.`
       : `당신은 '매운맛 분석가'입니다. 팩트 중심의 냉혹한 실전 분석가입니다. 
          획득한 배지가 있더라도 전술적 지표(고립, 대응 사격 속도 등)가 엉망이라면 '속 빈 강정'이라며 독설을 퍼붓고, 
          팀 기여도가 낮은데 배지만 챙겼다면 '팀에 기여 없는 훈장 사냥꾼'으로 규정하십시오.`;
@@ -57,7 +57,7 @@ export async function POST(request: Request) {
       "- [Apple-to-Apple] 반드시 유저의 수치와 상위권 벤치마크 수치를 직접 대조하십시오.",
       "- [배지 우선순위] 유저가 획득한 배지가 있다면 이를 signature(칭호) 결정의 핵심 근거로 사용하십시오.",
       "- [팀 영향력] 내 딜량 비중이 40% 이상이면 '캐리', 15% 미만이면 '버스' 키워드를 전술적으로 활용하십시오.",
-      "- **핵심 규칙**: 불필요한 카드나 항목 나열을 절대 금지합니다. 칭호와 그에 대한 전술적 이유를 설명한 뒤, 하단에 정확히 3개의 핵심 피드백 문장만 제공하십시오.",
+      "- **핵심 규칙**: 불필요한 미사여구와 항목 나열을 절대 금지합니다. 칭호와 그에 대한 전술적 이유를 설명한 뒤, 하단에 정확히 3개의 핵심 피드백 문장만 제공하십시오.",
       "",
       "반드시 아래 구조의 JSON 객체로만 응답하세요. 백틱(\`\`\`) 없이 순수 JSON만 출력하십시오.",
       "{",

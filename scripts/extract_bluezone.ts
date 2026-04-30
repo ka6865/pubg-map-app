@@ -1,0 +1,143 @@
+import { createClient } from "@supabase/supabase-js";
+import fs from "fs";
+import path from "path";
+import dotenv from "dotenv";
+
+dotenv.config({ path: path.resolve(process.cwd(), ".env.local") });
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
+
+async function extractSimulatorData() {
+  console.log("🚀 [Bluezone Extractor] 자기장 데이터 추출 시작...");
+
+  const allMatches: any[] = [];
+  
+  console.log("DB에서 매치 ID 목록을 가져오는 중...");
+  const { data: matches, error: matchError } = await supabase
+    .from("match_master_telemetry")
+    .select("match_id, map_name");
+
+  if (matchError || !matches) {
+    console.error("❌ 매치 ID 조회 에러:", matchError);
+    return;
+  }
+
+  console.log(`총 ${matches.length}개의 매치 발견. 텔레메트리 파싱 시작...`);
+
+  for (let i = 0; i < matches.length; i++) {
+    const match = matches[i];
+    if (i % 10 === 0) console.log(`진행 상황: ${i} / ${matches.length} (${Math.round(i/matches.length*100)}%)`);
+
+    const { data, error } = await supabase
+      .from("match_master_telemetry")
+      .select("telemetry_events")
+      .eq("match_id", match.match_id)
+      .single();
+
+    if (error || !data) {
+      continue;
+    }
+
+    const events = data.telemetry_events;
+    if (!events || !Array.isArray(events)) continue;
+
+    // 1. 비행기 경로 추론 (각 플레이어의 최초 발견 위치 기반 선형 회귀)
+    const firstLocs = new Map();
+    for (const e of events) {
+      if (e.character?.name && e.character?.loc && !firstLocs.has(e.character.name)) {
+        firstLocs.set(e.character.name, e.character.loc);
+      }
+      if (e.attacker?.name && e.attacker?.loc && !firstLocs.has(e.attacker.name)) {
+        firstLocs.set(e.attacker.name, e.attacker.loc);
+      }
+      if (e.victim?.name && e.victim?.loc && !firstLocs.has(e.victim.name)) {
+        firstLocs.set(e.victim.name, e.victim.loc);
+      }
+    }
+
+    let flightPath = null;
+    if (firstLocs.size > 10) {
+      const pts = Array.from(firstLocs.values());
+      const meanX = pts.reduce((sum, p) => sum + p.x, 0) / pts.length;
+      const meanY = pts.reduce((sum, p) => sum + p.y, 0) / pts.length;
+      
+      let num = 0, den = 0;
+      for (const p of pts) {
+        num += (p.x - meanX) * (p.y - meanY);
+        den += (p.x - meanX) * (p.x - meanX);
+      }
+      
+      if (den !== 0) {
+        const m = num / den;
+        const len = Math.sqrt(1 + m*m);
+        const dx = 1 / len;
+        const dy = m / len;
+        
+        let minT = Infinity, maxT = -Infinity;
+        for (const p of pts) {
+          const t = (p.x - meanX) * dx + (p.y - meanY) * dy;
+          if (t < minT) minT = t;
+          if (t > maxT) maxT = t;
+        }
+        
+        flightPath = [
+          { lat: Math.round(meanY + dy * minT), lng: Math.round(meanX + dx * minT) },
+          { lat: Math.round(meanY + dy * maxT), lng: Math.round(meanX + dx * maxT) }
+        ];
+      }
+    }
+
+    const matchData: any = {
+      matchId: match.match_id,
+      mapName: match.map_name,
+      flightPath: flightPath,
+      phases: []
+    };
+
+    let currentPhase = 0;
+    events.forEach((e: any) => {
+      if (e._T === "LogPhaseChange") {
+        currentPhase = e.phase;
+      }
+      if (e._T === "LogGameStatePeriodic" && e.gameState?.safetyZoneRadius > 0) {
+        const existingPhaseIndex = matchData.phases.findIndex((p: any) => p.phase === currentPhase);
+        const phaseData = {
+          phase: currentPhase,
+          x: e.gameState.safetyZonePosition.x,
+          y: e.gameState.safetyZonePosition.y,
+          radius: e.gameState.safetyZoneRadius
+        };
+
+        if (existingPhaseIndex === -1) {
+          matchData.phases.push(phaseData);
+        } else {
+          matchData.phases[existingPhaseIndex] = phaseData;
+        }
+      }
+    });
+
+    if (matchData.phases.length > 0) {
+      allMatches.push(matchData);
+    }
+  }
+
+  // 맵별 데이터 개수 통계
+  const mapStats = allMatches.reduce((acc: any, match: any) => {
+    acc[match.mapName] = (acc[match.mapName] || 0) + 1;
+    return acc;
+  }, {});
+
+  console.log("\n📊 [추출 결과 요약]");
+  console.log(`총 추출된 매치 수: ${allMatches.length} 건`);
+  console.table(mapStats);
+
+  // JSON 파일로 저장
+  const outputPath = path.resolve(process.cwd(), "public/bluezone_data.json");
+  fs.writeFileSync(outputPath, JSON.stringify(allMatches, null, 2));
+  console.log(`\n✅ 데이터 추출 완료! 저장 위치: ${outputPath}`);
+}
+
+extractSimulatorData();

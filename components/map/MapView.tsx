@@ -27,6 +27,7 @@ import { CombatRenderer } from "./telemetry/CombatRenderer";
 import { ShotRenderer } from "./telemetry/ShotRenderer";
 import { PlayerPathRenderer } from "./telemetry/PlayerPathRenderer";
 import { TelemetryCanvasLayer } from "./telemetry/TelemetryCanvasLayer";
+import { SimulatorLayer } from "./SimulatorLayer";
 
 const mortarStartIcon = L.divIcon({
   className: "custom-mortar",
@@ -115,12 +116,12 @@ const PUBGGrid = memo(({ activeMapId }: PUBGGridProps) => {
 PUBGGrid.displayName = "PUBGGrid";
 
 interface MapInteractionProps {
-  activeMode: "none" | "mortar" | "flight" | "report";
+  activeMode: "none" | "mortar" | "flight" | "report" | "simulate";
   setMortarPoints: React.Dispatch<React.SetStateAction<L.LatLng[]>>;
   setFlightPoints: React.Dispatch<React.SetStateAction<L.LatLng[]>>;
   setIsVehicleFilterOn: React.Dispatch<React.SetStateAction<boolean>>;
   setActiveMode: React.Dispatch<
-    React.SetStateAction<"none" | "mortar" | "flight" | "report">
+    React.SetStateAction<"none" | "mortar" | "flight" | "report" | "simulate">
   >;
   setReportLocation: React.Dispatch<React.SetStateAction<L.LatLng | null>>;
 }
@@ -191,7 +192,7 @@ interface MapViewProps {
   icons: Record<string, L.DivIcon>;
   imageHeight: number;
   imageWidth: number;
-  activeMode: "none" | "mortar" | "flight" | "report";
+  activeMode: "none" | "mortar" | "flight" | "report" | "simulate";
   mortarPoints: L.LatLng[];
   flightPoints: L.LatLng[];
   flightPolygonCoords: [number, number][];
@@ -202,7 +203,7 @@ interface MapViewProps {
   setFlightPoints: React.Dispatch<React.SetStateAction<L.LatLng[]>>;
   setIsVehicleFilterOn: React.Dispatch<React.SetStateAction<boolean>>;
   setActiveMode: React.Dispatch<
-    React.SetStateAction<"none" | "mortar" | "flight" | "report">
+    React.SetStateAction<"none" | "mortar" | "flight" | "report" | "simulate">
   >;
   setReportLocation: React.Dispatch<React.SetStateAction<L.LatLng | null>>;
   reportLocation: L.LatLng | null;
@@ -213,6 +214,10 @@ interface MapViewProps {
   telemetryData?: any;
   isHotDropOn?: boolean;
   isHighPrecision?: boolean;
+  simulatorStep?: number;
+  simulatorPhases?: L.LatLng[];
+  setSimulatorStep?: React.Dispatch<React.SetStateAction<number>>;
+  setSimulatorPhases?: React.Dispatch<React.SetStateAction<L.LatLng[]>>;
 }
 
 const MapView = memo(
@@ -243,6 +248,10 @@ const MapView = memo(
     telemetryData,
     isHotDropOn = false,
     isHighPrecision = false,
+    simulatorStep = 0,
+    simulatorPhases = [],
+    setSimulatorStep,
+    setSimulatorPhases,
   }: MapViewProps) => {
     const isActionRunningRef = useRef(false);
 
@@ -346,11 +355,11 @@ const MapView = memo(
         key={activeMapId}
         center={[imageHeight / 2, imageWidth / 2]}
         zoom={-3}
-        minZoom={-4}
+        minZoom={-5}
         maxZoom={2}
         crs={CRS.Simple}
-        maxBounds={bounds}
-        maxBoundsViscosity={1.0}
+        maxBounds={[[-2000, -2000], [imageHeight + 2000, imageWidth + 2000]]}
+        maxBoundsViscosity={0.5}
         style={{ height: "100%", width: "100%", background: "#0b0f19" }}
         zoomControl={false}
       >
@@ -384,7 +393,7 @@ const MapView = memo(
         {currentMap && (
           <TileLayer
             url={`/tiles/${activeMapId}/{z}/{x}/{y}.jpg`}
-            minZoom={-4}
+            minZoom={-5}
             maxZoom={2}
             maxNativeZoom={0}
             zoomOffset={5}
@@ -602,6 +611,19 @@ const MapView = memo(
 
         {/* 🔥 핫드랍 히트맵 레이어 */}
         <HotDropLayer mapName={activeMapId} visible={isHotDropOn} />
+
+        {/* 🎲 시뮬레이터 레이어 */}
+        <SimulatorLayer 
+          activeMode={activeMode} 
+          mapScale={mapScale} 
+          activeMapId={activeMapId}
+          currentStep={simulatorStep}
+          simulatorPhases={simulatorPhases}
+          setSimulatorPhases={setSimulatorPhases}
+          setSimulatorStep={setSimulatorStep}
+          flightPoints={flightPoints}
+          setFlightPoints={setFlightPoints}
+        />
 
       </MapContainer>
     );

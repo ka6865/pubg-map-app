@@ -4,7 +4,7 @@ import L from "leaflet";
 import Sidebar from "../Sidebar";
 import MobileBottomSheet from "./MobileBottomSheet";
 import MapView from "./MapView";
-import { X, Hammer, Map as MapIcon, Crosshair, Plane, AlertCircle, SlidersHorizontal, Menu, Flame, Grid, MapPin } from 'lucide-react';
+import { X, Hammer, Map as MapIcon, Crosshair, Plane, AlertCircle, SlidersHorizontal, Menu, Flame, Grid, MapPin, Target } from 'lucide-react';
 import type { MapTab, MapMarker, AuthUser, PendingVehicle } from "../../types/map";
 import { useTelemetry } from "../../hooks/useTelemetry";
 import TelemetryPlayer from "./TelemetryPlayer";
@@ -12,6 +12,8 @@ import KillFeed from "./KillFeed";
 import ZoneTimer from "./ZoneTimer";
 import HomeNotice from "./HomeNotice";
 import { TelemetrySidebar } from "./telemetry/TelemetrySidebar";
+import { SimulatorPanel } from "./SimulatorPanel";
+import { HeatmapLegend } from "./HeatmapLegend";
 
 interface MapShellProps {
   activeMapId: string;
@@ -68,10 +70,14 @@ const MapShell = memo(({
       isFullMode, fetchTelemetry
     } = useTelemetry(playbackId, playbackNickname, activeMapId);
 
-    const [activeMode, setActiveMode] = useState<"none" | "mortar" | "flight" | "report">("none");
+    const [activeMode, setActiveMode] = useState<"none" | "mortar" | "flight" | "report" | "simulate">("none");
     const [mortarPoints, setMortarPoints] = useState<L.LatLng[]>([]);
     const [flightPoints, setFlightPoints] = useState<L.LatLng[]>([]);
     const [reportLocation, setReportLocation] = useState<L.LatLng | null>(null);
+
+    // 시뮬레이터 전용 상태 추가
+    const [simulatorStep, setSimulatorStep] = useState(0);
+    const [simulatorPhases, setSimulatorPhases] = useState<L.LatLng[]>([]);
     const [isVehicleFilterOn, setIsVehicleFilterOn] = useState(false);
     const [isGridOn, setIsGridOn] = useState(true);
     const [isHotDropOn, setIsHotDropOn] = useState(false);
@@ -108,9 +114,16 @@ const MapShell = memo(({
     const mapScale = 8192 / imageWidth;
     const pxPerMeter = imageWidth / 8192;
 
-    const handleModeToggle = (mode: "mortar" | "flight" | "report") => {
+    const handleModeToggle = (mode: "mortar" | "flight" | "report" | "simulate") => {
       setActiveMode(activeMode === mode ? "none" : mode);
-      setMortarPoints([]); setFlightPoints([]); setIsVehicleFilterOn(false); setReportLocation(null);
+      setMortarPoints([]); 
+      setFlightPoints([]); 
+      setIsVehicleFilterOn(false); 
+      setReportLocation(null);
+      if (mode !== "simulate") {
+        setSimulatorStep(0);
+        setSimulatorPhases([]);
+      }
     };
 
     let flightPolygonCoords: [number, number][] = [];
@@ -130,10 +143,10 @@ const MapShell = memo(({
     }
 
     let displayedVehicles = visibleVehicles;
-    if (activeMode === "flight" && flightPoints.length === 2 && isVehicleFilterOn) {
+    if ((activeMode === "flight" || activeMode === "simulate") && flightPoints.length === 2 && isVehicleFilterOn) {
       displayedVehicles = visibleVehicles.filter((v) => {
         const distPx = getDistanceToLineSegment(v.x, v.y, flightPoints[0].lng, flightPoints[0].lat, flightPoints[1].lng, flightPoints[1].lat);
-        return distPx * mapScale <= 1000 && !(v.type === "Key" || v.type === "SecretRoom" || v.type === "SecurityCard");
+        return distPx <= 1000 && !(v.type === "Key" || v.type === "SecretRoom" || v.type === "SecurityCard");
       });
     }
 
@@ -170,10 +183,11 @@ const MapShell = memo(({
                     <button onClick={() => setIsMenuOpen(!isMenuOpen)} className={`pointer-events-auto flex items-center gap-2 px-6 shadow-[0_12px_40px_rgba(0,0,0,0.4)] active:scale-90 transition-all duration-300 border border-white/5 ${isMenuOpen ? "bg-red-600 text-white h-[52px] rounded-2xl text-sm" : "bg-black/80 backdrop-blur-xl text-[#F2A900] h-[52px] rounded-2xl text-base"}`}>
                       {isMenuOpen ? <><X size={18} strokeWidth={3} /><span className="font-black uppercase tracking-tight text-xs">닫기</span></> : <><Hammer size={18} strokeWidth={3} /><span className="font-black uppercase tracking-tight text-xs">{isMobile ? "도구" : "지도 도구"}</span></>}
                     </button>
-                    {isMenuOpen && !isMobile && (
+                    {isMenuOpen && (
                       <div className="flex flex-col gap-2.5 items-end animate-in fade-in slide-in-from-bottom-4 duration-300">
                         <button onClick={() => setIsHotDropOn(!isHotDropOn)} className={`pointer-events-auto flex items-center gap-2.5 px-5 py-3.5 border border-white/10 rounded-xl font-black text-xs shadow-2xl transition-all active:scale-95 ${isHotDropOn ? "bg-gradient-to-r from-orange-500 to-red-600 text-white border-orange-400" : "bg-[#1a1a1a] text-orange-500 hover:text-orange-400"}`}><Flame size={16} strokeWidth={3} /><span className="uppercase tracking-tighter">핫드랍 {isHotDropOn ? "ON" : "OFF"}</span></button>
                         <button onClick={() => setIsGridOn(!isGridOn)} className={`pointer-events-auto flex items-center gap-2.5 px-5 py-3.5 border border-white/10 rounded-xl font-black text-xs shadow-2xl transition-all active:scale-95 ${isGridOn ? "bg-[#F2A900] text-black" : "bg-[#1a1a1a] text-[#777]"}`}><MapIcon size={16} strokeWidth={3} /><span className="uppercase tracking-tighter">그리드 {isGridOn ? "ON" : "OFF"}</span></button>
+                        <button onClick={() => handleModeToggle("simulate")} className={`pointer-events-auto flex items-center gap-2.5 px-5 py-3.5 border border-blue-500/30 rounded-xl font-black text-xs shadow-2xl transition-all active:scale-95 ${activeMode === "simulate" ? "bg-blue-600 text-white" : "bg-[#1a1a1a] text-blue-400 hover:text-blue-300"}`}><Target size={16} strokeWidth={3} /><span className="uppercase tracking-tighter">시뮬레이터</span></button>
                         <button onClick={() => handleModeToggle("mortar")} className={`pointer-events-auto flex items-center gap-2.5 px-5 py-3.5 border border-white/10 rounded-xl font-black text-xs shadow-2xl transition-all active:scale-95 ${activeMode === "mortar" ? "bg-[#ea4335] text-white" : "bg-[#1a1a1a] text-[#777]"}`}><Crosshair size={16} strokeWidth={3} /><span className="uppercase tracking-tighter">박격포</span></button>
                       </div>
                     )}
@@ -181,6 +195,30 @@ const MapShell = memo(({
                 </div>
               </div>
             )}
+            
+            <SimulatorPanel 
+              activeMode={activeMode}
+              currentStep={simulatorStep}
+              flightPointsReady={flightPoints.length === 2}
+              onNextStep={() => setSimulatorStep(s => s + 1)}
+              onPrevStep={() => {
+                setSimulatorStep(s => {
+                  const nextStep = Math.max(0, s - 1);
+                  setSimulatorPhases(prev => prev.slice(0, Math.max(0, nextStep - 1)));
+                  return nextStep;
+                });
+              }}
+              onClose={() => handleModeToggle("simulate")}
+              onReset={() => {
+                setFlightPoints([]);
+                setSimulatorStep(0);
+                setSimulatorPhases([]);
+                setIsVehicleFilterOn(false);
+              }}
+              isVehicleFilterOn={isVehicleFilterOn}
+              setIsVehicleFilterOn={setIsVehicleFilterOn}
+              simulatorPhases={simulatorPhases}
+            />
 
             <MapView
               activeMapId={activeMapId} currentMap={currentMap} bounds={bounds} icons={icons} imageHeight={imageHeight} imageWidth={imageWidth}
@@ -194,6 +232,16 @@ const MapShell = memo(({
                 isActive: !!playbackId, mapName: activeMapId || "Erangel", events: telemetryEvents, currentTimeMs, currentStates,
                 teamNames, zoneEvents, showZone, showCombatDots, showShotDots, hiddenPlayers, showPlayerNames,
               }}
+              simulatorStep={simulatorStep}
+              simulatorPhases={simulatorPhases}
+              setSimulatorStep={setSimulatorStep}
+              setSimulatorPhases={setSimulatorPhases}
+            />
+
+            {/* 🏆 히트맵 범례 (핫드랍 또는 시뮬레이터 활성화 시) */}
+            <HeatmapLegend 
+              visible={isHotDropOn} 
+              type="hotdrop" 
             />
 
             {playbackId && (
