@@ -54,7 +54,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     },
   ];
 
-  // 🌟 [확장] 게시글들 가져오기 (최신 1,000개까지 수집 범위 확대)
+  // 🌟 [확장] 게시글들 가져오기 (빌드 타임아웃 방지를 위해 개수 제한)
   let postEntries: MetadataRoute.Sitemap = [];
   if (supabase) {
     try {
@@ -62,7 +62,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
         .from('posts')
         .select('id, created_at')
         .order('created_at', { ascending: false })
-        .limit(1000);
+        .limit(50);
 
       if (!error && posts) {
         postEntries = posts.map((post) => ({
