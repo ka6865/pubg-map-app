@@ -12,7 +12,8 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 const BASE_URL = "https://api.pubg.com/shards/steam";
-const LOCAL_API_URL = "http://localhost:3000/api/pubg/match";
+const APP_URL = process.env.APP_URL || "http://localhost:3000";
+const MATCH_API_URL = `${APP_URL}/api/pubg/match`;
 
 if (!PUBG_API_KEY || !SUPABASE_URL || !SUPABASE_KEY) {
   console.error("🚨 환경변수(PUBG_API_KEY, SUPABASE_URL, KEY)가 설정되어 있지 않습니다.");
@@ -82,7 +83,7 @@ async function scrapeEliteData() {
         
         try {
           // [최적화 2] 로컬 서버 API 호출 (동기적으로 대기)
-          const res = await axios.get(`${LOCAL_API_URL}?matchId=${matchId}&nickname=${encodeURIComponent(nickname.trim())}&platform=steam`);
+          const res = await axios.get(`${MATCH_API_URL}?matchId=${matchId}&nickname=${encodeURIComponent(nickname.trim())}&platform=steam`);
           
           if (res.status === 200) {
             const d = res.data;
