@@ -1,0 +1,36 @@
+name: Daily BGMS Maintenance
+
+on:
+  schedule:
+    # 매일 한국 시간 새벽 3시 (UTC 18:00) 실행
+    - cron: '0 18 * * *'
+  workflow_dispatch: # 수동 실행 버튼 추가
+
+jobs:
+  maintenance:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Run Storage Cleanup
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: npx tsx scripts/cleanup_telemetry.ts
+
+      - name: Run Smart Scraper (Optional)
+        env:
+          PUBG_API_KEY: ${{ secrets.PUBG_API_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: npx tsx scripts/scrape_elite.ts

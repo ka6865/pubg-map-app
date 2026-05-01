@@ -74,8 +74,44 @@ async function extractSimulatorData() {
       continue;
     }
 
-    const events = data.telemetry_events;
-    if (!events || !Array.isArray(events)) continue;
+    let events = data.telemetry_events;
+
+    // [V12] DB가 비어있으면 스토리지 또는 PUBG API에서 가져오기
+    if (!events || !Array.isArray(events) || events.length === 0) {
+      const mapCachePath = `${match.match_id}_map.json`;
+      const { data: fileData } = await supabase.storage
+        .from('telemetry')
+        .download(mapCachePath);
+
+      if (fileData) {
+        const text = await fileData.text();
+        const parsed = JSON.parse(text);
+        // _map.json은 이미 파싱된 형태이므로 원본 이벤트 구조가 아닐 수 있음
+        // 만약 원본이 필요하면 PUBG API로 가야함
+        if (parsed.events) events = parsed.events; 
+      }
+
+      // 그래도 없으면 PUBG API 호출 (속도는 느리지만 확실함)
+      if (!events || events.length === 0) {
+        try {
+          const apiKey = (process.env.PUBG_API_KEY || "").split(" ")[0];
+          const matchRes = await fetch(`https://api.pubg.com/shards/steam/matches/${match.match_id}`, {
+            headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/vnd.api+json" }
+          });
+          const matchDetail = await matchRes.json();
+          const asset = matchDetail.included.find((i: any) => i.type === "asset");
+          if (asset) {
+            const telRes = await fetch(asset.attributes.URL);
+            events = await telRes.json();
+            console.log(`☁️ Fetched ${match.match_id} directly from PUBG API.`);
+          }
+        } catch (e) {
+          console.error(`❌ Failed to fetch fallback for ${match.match_id}`);
+        }
+      }
+    }
+
+    if (!events || !Array.isArray(events) || events.length === 0) continue;
 
     // 1. 비행기 경로 추론 (각 플레이어의 최초 발견 위치 기반 선형 회귀)
     const firstLocs = new Map();

@@ -88,9 +88,20 @@ export async function GET(request: Request) {
     let telData: any[] = [];
     if (telemetryAsset) {
       const TELEMETRY_VERSION = 16; // 15->16: LogPlayerCreate 추가 및 고립 지수 필터링 강화
-      const { data: masterCache } = await supabase.from("match_master_telemetry").select("telemetry_events, telemetry_version").eq("match_id", matchId).single();
+      const { data: masterCache } = await supabase.from("match_master_telemetry").select("telemetry_events, telemetry_version, storage_path").eq("match_id", matchId).single();
       if (masterCache && (masterCache as any).telemetry_version >= TELEMETRY_VERSION) {
-        telData = (masterCache as any).telemetry_events;
+        const analyzePath = `${matchId}_analyze.json`;
+        // 스토리지에서 분석 전용 캐시 확인
+        const { data: fileData, error: downloadError } = await supabase.storage
+          .from('telemetry')
+          .download(analyzePath);
+        
+        if (!downloadError && fileData) {
+          const text = await fileData.text();
+          telData = JSON.parse(text);
+        } else {
+          telData = (masterCache as any).telemetry_events;
+        }
       } else {
         const telRes = await fetch(telemetryAsset.attributes.URL);
         const rawTel = await telRes.json();
@@ -139,8 +150,27 @@ export async function GET(request: Request) {
           if (wId) slim.weaponId = wId;
           return slim;
         });
-        // [V11] Master Cache 저장 시 await를 사용하여 Serverless 환경에서의 유실 방지
-        await supabase.from("match_master_telemetry").upsert({ match_id: matchId, map_name: matchAttr.mapName, game_mode: matchAttr.gameMode, telemetry_events: telData, telemetry_version: TELEMETRY_VERSION });
+        // [V11] Master Cache 저장 시 DB 용량 확보를 위해 Storage 활용
+        const fileName = `${matchId}_analyze.json`; // 분석용 접미사 추가
+        const { error: uploadError } = await supabase.storage
+          .from('telemetry')
+          .upload(fileName, JSON.stringify(telData), {
+            contentType: 'application/json',
+            upsert: true
+          });
+
+        if (uploadError) {
+          console.error("[MATCH-API] Storage Upload Error:", uploadError);
+        }
+
+        await supabase.from("match_master_telemetry").upsert({ 
+          match_id: matchId, 
+          map_name: matchAttr.mapName, 
+          game_mode: matchAttr.gameMode, 
+          telemetry_events: [], // DB 용량 확보를 위해 본문은 비움
+          storage_path: fileName,
+          telemetry_version: TELEMETRY_VERSION 
+        });
       }
     }
 

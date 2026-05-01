@@ -1,4 +1,10 @@
 import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -81,7 +87,21 @@ export async function GET(request: Request) {
       if (accId && name) accountIdToName.set(accId, name);
     });
 
-    // 2. 텔레메트리 JSON 다운로드 및 파싱 (캐시 무효화)
+    // 1-1. 캐시 확인 (DB/Storage)
+    const mapCachePath = `${matchId}_map.json`;
+    const { data: fileData, error: downloadError } = await supabase.storage
+      .from('telemetry')
+      .download(mapCachePath);
+
+    if (!downloadError && fileData) {
+      console.log(`[TELEMETRY-API] Loading cached map data for ${matchId}`);
+      const text = await fileData.text();
+      return NextResponse.json(JSON.parse(text), {
+        headers: { "Cache-Control": "no-store" }
+      });
+    }
+
+    // 2. 캐시가 없으면 PUBG API에서 직접 다운로드 및 파싱
     const telemetryRes = await fetch(telemetryUrl, { cache: "no-store" });
     if (!telemetryRes.ok) throw new Error("텔레메트리 JSON 파일 다운로드 실패");
     const events = await telemetryRes.json();
@@ -461,14 +481,33 @@ export async function GET(request: Request) {
 
     parsedEvents.sort((a, b) => a.relativeTimeMs - b.relativeTimeMs);
 
-    return NextResponse.json({
+    const finalData = {
       matchId,
       startTime: matchStartTimeRaw,
       teammates: teamAccountIds,
       teamNames: teamNames,
       events: parsedEvents,
       zoneEvents,
-    }, {
+    };
+
+    // [Cache for future] 파싱된 최종 결과물을 스토리지에 저장
+    const { error: uploadError } = await supabase.storage
+      .from('telemetry')
+      .upload(mapCachePath, JSON.stringify(finalData), {
+        contentType: 'application/json',
+        upsert: true
+      });
+
+    if (!uploadError) {
+      // DB에 이 매치가 관리되고 있음을 표시 (용량 확보를 위해 telemetry_events는 비움)
+      await supabase.from("match_master_telemetry").upsert({
+        match_id: matchId,
+        telemetry_events: [],
+        telemetry_version: 16
+      });
+    }
+
+    return NextResponse.json(finalData, {
       headers: { "Cache-Control": "no-store" }
     });
 
