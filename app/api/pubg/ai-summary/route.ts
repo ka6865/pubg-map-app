@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
-import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
-import { supabase } from "../../../../lib/supabase";
+import { GoogleGenerativeAI } from "@google/generative-ai";
+import { createClient } from "@supabase/supabase-js";
+
+// ✅ Server Route에서는 SERVICE_ROLE_KEY 기반 서버 클라이언트 사용 (RLS 우회)
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 export const maxDuration = 60; 
 

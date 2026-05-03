@@ -113,11 +113,14 @@ export function useTelemetry(matchId: string | null, nickname: string | null, ma
     }
   };
 
-  const initialMode = typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("mode") : null;
+  // ✅ 시작 시점의 mode 파람리터를 ref로 고정하여 리렌더 시 불필요한 re-fetch 방지
+  const initialModeRef = useRef<string | null>(
+    typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("mode") : null
+  );
 
   useEffect(() => {
-    fetchTelemetry(initialMode === "full");
-  }, [matchId, nickname, mapName, initialMode]);
+    fetchTelemetry(initialModeRef.current === "full");
+  }, [matchId, nickname, mapName]);
 
   const lastUpdateRef = useRef<number>(Date.now());
   const timerRef = useRef<number | null>(null);

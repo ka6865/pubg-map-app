@@ -26,10 +26,10 @@ interface SimulatorLayerProps {
   activeMapId: string;
   currentStep: number;
   simulatorPhases?: any[];
-  setSimulatorPhases?: any;
-  setSimulatorStep?: any;
+  setSimulatorPhases?: (fn: (prev: any[]) => any[]) => void;
+  setSimulatorStep?: (fn: (s: number) => number) => void;
   flightPoints: L.LatLng[];
-  setFlightPoints: any;
+  setFlightPoints: (pts: L.LatLng[]) => void;
 }
 
 export function SimulatorLayer({ 
@@ -41,16 +41,34 @@ export function SimulatorLayer({
   const heatLayerRef = useRef<any>(null);
   const [bluezoneData, setBluezoneData] = useState<any[]>([]);
   const [hoverPoint, setHoverPoint] = useState<L.LatLng | null>(null);
+  const [fetchError, setFetchError] = useState<boolean>(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // 1. 데이터 로드
+  // ✅ 에러 메시지 자동 소멸 (3초)
+  React.useEffect(() => {
+    if (!errorMsg) return;
+    const t = setTimeout(() => setErrorMsg(null), 3000);
+    return () => clearTimeout(t);
+  }, [errorMsg]);
+
+  // 1. 데이터 로드 (에러 시 fetchError 상태로 추적하여 재시도 가능)
   useEffect(() => {
-    if (activeMode === "simulate" && bluezoneData.length === 0) {
+    if (activeMode === "simulate" && bluezoneData.length === 0 && !fetchError) {
       fetch("/api/bluezone")
-        .then(res => res.json())
-        .then(data => setBluezoneData(data))
-        .catch(err => console.error("Bluezone data load failed:", err));
+        .then(res => {
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.json();
+        })
+        .then(data => {
+          // ✅ 배열 여부 검증 (API 응답 구조 안전 처리)
+          setBluezoneData(Array.isArray(data) ? data : []);
+        })
+        .catch(err => {
+          console.error("Bluezone data load failed:", err);
+          setFetchError(true);
+        });
     }
-  }, [activeMode, bluezoneData.length]);
+  }, [activeMode, bluezoneData.length, fetchError]);
   // 2. KNN 기반 매칭 로직 (useMemo로 최적화 및 상태 독립)
   const { matchesToRender, currentPhaseRadius, matchedFlightPaths } = React.useMemo(() => {
     let toRender: any[] = [];
@@ -262,7 +280,7 @@ export function SimulatorLayer({
             );
             
             if (dist > prevPhase.radius) {
-              alert("다음 자기장은 반드시 이전 자기장 안에 위치해야 합니다.");
+              setErrorMsg("다음 자기장은 반드시 이전 자기장 안에 위치해야 합니다.");
               return;
             }
           }
@@ -297,6 +315,18 @@ export function SimulatorLayer({
 
   return (
     <>
+      {/* ✅ 인라인 토스트: alert() 대신 비차단 방식으로 경고 표시 */}
+      {errorMsg && (
+        <div style={{
+          position: "fixed", bottom: "80px", left: "50%", transform: "translateX(-50%)",
+          background: "rgba(239,68,68,0.92)", color: "white", padding: "10px 20px",
+          borderRadius: "12px", fontSize: "13px", fontWeight: 700, zIndex: 9999,
+          backdropFilter: "blur(8px)", boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
+          pointerEvents: "none"
+        }}>
+          ⚠️ {errorMsg}
+        </div>
+      )}
       {flightPoints.map((p, i) => (
         <Marker key={`flight-${i}`} position={p} icon={flightPointIcon} />
       ))}
