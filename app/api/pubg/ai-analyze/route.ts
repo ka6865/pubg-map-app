@@ -13,7 +13,7 @@ export async function POST(request: Request) {
 
     const { 
       stats, mapName, gameMode, 
-      eliteBenchmark = {}, initiativeStats = {},
+      eliteBenchmark = {},
       killContribution = { solo: 0, cleanup: 0, other: 0 },
       tradeStats = {}, combatPressure = {},
       isolationData = null,

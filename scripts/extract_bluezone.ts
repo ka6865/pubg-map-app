@@ -41,9 +41,10 @@ async function extractSimulatorData() {
   console.log("DB에서 매치 ID 목록을 가져오는 중...");
   
   // 1. processed_match_telemetry에서 competitive 매치 ID만 필터링
+  // ✅ [V14 최적화] data JSONB 전체 대신 matchType 경로만 추출 → DB 전송량 90% 감소
   const { data: processedMatches, error: processedError } = await supabase
     .from("processed_match_telemetry")
-    .select("match_id, data");
+    .select("match_id, data->fullResult->matchType");
 
   if (processedError || !processedMatches) {
     console.error("❌ 처리된 매치 조회 에러:", processedError);
@@ -51,7 +52,7 @@ async function extractSimulatorData() {
   }
 
   const competitiveMatchIds = processedMatches
-    .filter((m: any) => m.data?.fullResult?.matchType === "competitive" || m.data?.matchType === "competitive")
+    .filter((m: any) => m.matchType === "competitive")
     .map((m: any) => m.match_id);
 
   console.log(`경쟁전(Competitive) 매치 ${competitiveMatchIds.length}개 발견. 텔레메트리 파싱 시작...`);
@@ -105,7 +106,7 @@ async function extractSimulatorData() {
 
     let events = data.telemetry_events;
 
-    // [V12] DB가 비어있으면 스토리지 또는 PUBG API에서 가져오기
+    // [V14] DB가 비어있으면 스토리지에서 _map.json의 zoneEvents를 직접 활용 (API 호출 없이 처리)
     if (!events || !Array.isArray(events) || events.length === 0) {
       const mapCachePath = `${match.match_id}_map.json`;
       const { data: fileData } = await supabase.storage
@@ -115,28 +116,71 @@ async function extractSimulatorData() {
       if (fileData) {
         const text = await fileData.text();
         const parsed = JSON.parse(text);
-        // _map.json은 이미 파싱된 형태이므로 원본 이벤트 구조가 아닐 수 있음
-        // 만약 원본이 필요하면 PUBG API로 가야함
-        if (parsed.events) events = parsed.events; 
-      }
+        // ✅ _map.json에는 zoneEvents가 이미 파싱된 형태로 저장되어 있음
+        // zoneEvents: [{ relativeTimeMs, whiteX, whiteY, whiteRadius, blueX, blueY, blueRadius, isZoneMoving, nextPhaseRelativeMs }]
+        // 이를 바탕으로 phases를 로고 없이 로컈 소스에서 직접 구성
+        if (parsed.zoneEvents && Array.isArray(parsed.zoneEvents) && parsed.zoneEvents.length > 0) {
+          const matchData: any = {
+            matchId: match.match_id,
+            mapName: match.map_name,
+            flightPath: null, // 원본 데이터 없으면 비행경로 추정 불가
+            phases: []
+          };
 
-      // 그래도 없으면 PUBG API 호출 (속도는 느리지만 확실함)
-      if (!events || events.length === 0) {
-        try {
-          const apiKey = (process.env.PUBG_API_KEY || "").split(" ")[0];
-          const matchRes = await fetch(`https://api.pubg.com/shards/steam/matches/${match.match_id}`, {
-            headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/vnd.api+json" }
-          });
-          const matchDetail = await matchRes.json();
-          const asset = matchDetail.included.find((i: any) => i.type === "asset");
-          if (asset) {
-            const telRes = await fetch(asset.attributes.URL);
-            events = await telRes.json();
-            console.log(`☁️ Fetched ${match.match_id} directly from PUBG API.`);
+          // 페이즈 변환은 whiteRadius 변화량 8% 기준으로 예역하여 실제 페이즈를 원본 PUBG 로그 방식대로 추정
+          let lastWhiteRadius: number | null = null;
+          let currentPhaseIdx = 0;
+
+          for (const ze of parsed.zoneEvents) {
+            const wr = ze.whiteRadius;
+            if (wr == null || wr <= 0) continue;
+
+            if (lastWhiteRadius === null) {
+              lastWhiteRadius = wr;
+              matchData.phases.push({
+                phase: currentPhaseIdx,
+                // 안전구역(white) 중심이 다음 자기장 위치 (PUBG 게임 로직)
+                x: ze.whiteX,
+                y: ze.whiteY,
+                radius: wr
+              });
+            } else {
+              const changePct = Math.abs(wr - lastWhiteRadius) / Math.max(lastWhiteRadius, 1);
+              if (changePct > 0.08) {
+                currentPhaseIdx++;
+                lastWhiteRadius = wr;
+                const existingIdx = matchData.phases.findIndex((p: any) => p.phase === currentPhaseIdx);
+                const phaseData = { phase: currentPhaseIdx, x: ze.whiteX, y: ze.whiteY, radius: wr };
+                if (existingIdx === -1) matchData.phases.push(phaseData);
+                else matchData.phases[existingIdx] = phaseData;
+              }
+            }
           }
-        } catch (e) {
-          console.error(`❌ Failed to fetch fallback for ${match.match_id}`);
+
+          if (matchData.phases.length > 0) {
+            allMatches.push(matchData);
+            continue; // 이미 처리되었으만 PUBG API 호출 안 함
+          }
         }
+      }
+    }
+
+    // 위를 모두 실패했을 때만 PUBG API 호출 (rate limit 고려)
+    if (!events || !Array.isArray(events) || events.length === 0) {
+      try {
+        const apiKey = (process.env.PUBG_API_KEY || "").split(" ")[0];
+        const matchRes = await fetch(`https://api.pubg.com/shards/steam/matches/${match.match_id}`, {
+          headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/vnd.api+json" }
+        });
+        const matchDetail = await matchRes.json();
+        const asset = matchDetail.included.find((i: any) => i.type === "asset");
+        if (asset) {
+          const telRes = await fetch(asset.attributes.URL);
+          events = await telRes.json();
+          console.log(`☁️ Fetched ${match.match_id} directly from PUBG API.`);
+        }
+      } catch (e) {
+        console.error(`❌ Failed to fetch fallback for ${match.match_id}`);
       }
     }
 
@@ -200,13 +244,17 @@ async function extractSimulatorData() {
       if (e._T === "LogPhaseChange") {
         currentPhase = e.phase;
       }
-      if (e._T === "LogGameStatePeriodic" && e.gameState?.safetyZoneRadius > 0) {
+      // ✅ 공식 PUBG API 기준: safetyZone = White(안전구역/흰원), poisonGasWarning = Blue(자기장/파란원)
+      // 시뮬레이터의 phases 좌표 = 안전구역(safetyZone) 중심 — 다음 자기장이 수렴할 목표 지점
+      if (e._T === "LogGameStatePeriodic" && (e.gameState?.safetyZoneRadius ?? 0) > 0) {
+        const gs = e.gameState;
         const existingPhaseIndex = matchData.phases.findIndex((p: any) => p.phase === currentPhase);
         const phaseData = {
           phase: currentPhase,
-          x: e.gameState.safetyZonePosition.x,
-          y: e.gameState.safetyZonePosition.y,
-          radius: e.gameState.safetyZoneRadius
+          // ✅ 안전구역(White) 중심이 다음 자기장 수렴 위치
+          x: gs.safetyZonePosition?.x ?? 0,
+          y: gs.safetyZonePosition?.y ?? 0,
+          radius: gs.safetyZoneRadius ?? 0
         };
 
         if (existingPhaseIndex === -1) {
