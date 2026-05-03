@@ -67,25 +67,36 @@ export async function GET(request: Request) {
       ),
     ]);
 
-    const rankedStats = { solo: null, duo: null, squad: null };
+    const rankedStats = { solo: null as any, duo: null as any, squad: null as any };
     if (rankedRes.ok) {
       const rankedData = await rankedRes.json();
       const allStats = rankedData.data.attributes.rankedGameModeStats;
-      // TPP와 FPP 중 데이터가 존재하는 것을 선택 (또는 합산 가능하지만 랭크는 보통 하나만 플레이함)
-      rankedStats.solo = allStats["solo-fpp"] || allStats["solo"] || null;
-      rankedStats.duo = allStats["duo-fpp"] || allStats["duo"] || null;
-      rankedStats.squad = allStats["squad-fpp"] || allStats["squad"] || null;
+      // ✅ roundsPlayed 기준으로 더 많이 플레이한 모드 선택 (FPP/TPP 혼용 유저 대응)
+      const pickMode = (fpp: any, tpp: any) => {
+        if (!fpp && !tpp) return null;
+        if (!fpp) return tpp;
+        if (!tpp) return fpp;
+        return (fpp.roundsPlayed ?? 0) >= (tpp.roundsPlayed ?? 0) ? fpp : tpp;
+      };
+      rankedStats.solo = pickMode(allStats["solo-fpp"], allStats["solo"]);
+      rankedStats.duo  = pickMode(allStats["duo-fpp"],  allStats["duo"]);
+      rankedStats.squad = pickMode(allStats["squad-fpp"], allStats["squad"]);
     }
 
-    const normalStats = { solo: null, duo: null, squad: null };
+    const normalStats = { solo: null as any, duo: null as any, squad: null as any };
     if (normalRes.ok) {
       const normalData = await normalRes.json();
       const allStats = normalData.data.attributes.gameModeStats;
-      // 일반전은 1인칭/3인칭 데이터가 공존할 수 있으므로, 더 많이 플레이한 쪽을 보여주거나 간단히 합산 로직 적용
-      // 여기서는 유효한 데이터가 있는 쪽을 우선시함
-      normalStats.solo = allStats["solo-fpp"] || allStats["solo"] || null;
-      normalStats.duo = allStats["duo-fpp"] || allStats["duo"] || null;
-      normalStats.squad = allStats["squad-fpp"] || allStats["squad"] || null;
+      // ✅ roundsPlayed 기준으로 더 많이 플레이한 모드 선택 (일반전도 동일 기준 적용)
+      const pickMode = (fpp: any, tpp: any) => {
+        if (!fpp && !tpp) return null;
+        if (!fpp) return tpp;
+        if (!tpp) return fpp;
+        return (fpp.roundsPlayed ?? 0) >= (tpp.roundsPlayed ?? 0) ? fpp : tpp;
+      };
+      normalStats.solo  = pickMode(allStats["solo-fpp"],  allStats["solo"]);
+      normalStats.duo   = pickMode(allStats["duo-fpp"],   allStats["duo"]);
+      normalStats.squad = pickMode(allStats["squad-fpp"], allStats["squad"]);
     }
 
     return NextResponse.json({

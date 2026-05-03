@@ -448,25 +448,27 @@ export async function GET(request: Request) {
         zoneEvents.push({
           time: ev._D,
           relativeTimeMs: eTime - matchStartTime,
-          // 🎯 팩트: safetyZone은 현재 자기장(Blue Zone), poisonGasWarning은 다음 안전구역(White Zone)
-          blueX: gs.safetyZonePosition?.x != null ? scaleX(gs.safetyZonePosition.x) : null,
-          blueY: gs.safetyZonePosition?.y != null ? scaleY(gs.safetyZonePosition.y) : null,
-          blueRadius: gs.safetyZoneRadius != null ? scaleX(gs.safetyZoneRadius) : null, 
-          whiteX: gs.poisonGasWarningPosition?.x != null ? scaleX(gs.poisonGasWarningPosition.x) : null,
-          whiteY: gs.poisonGasWarningPosition?.y != null ? scaleY(gs.poisonGasWarningPosition.y) : null,
-          whiteRadius: gs.poisonGasWarningRadius != null ? scaleX(gs.poisonGasWarningRadius) : null,
+          // ✅ 공식 PUBG API 기준: safetyZone = White(안전구역/흰원), poisonGasWarning = Blue(자기장/파란원)
+          whiteX: gs.safetyZonePosition?.x != null ? scaleX(gs.safetyZonePosition.x) : null,
+          whiteY: gs.safetyZonePosition?.y != null ? scaleY(gs.safetyZonePosition.y) : null,
+          whiteRadius: gs.safetyZoneRadius != null ? scaleX(gs.safetyZoneRadius) : null,
+          blueX: gs.poisonGasWarningPosition?.x != null ? scaleX(gs.poisonGasWarningPosition.x) : null,
+          blueY: gs.poisonGasWarningPosition?.y != null ? scaleY(gs.poisonGasWarningPosition.y) : null,
+          blueRadius: gs.poisonGasWarningRadius != null ? scaleX(gs.poisonGasWarningRadius) : null,
         });
       }
     }
 
     for (let i = 0; i < zoneEvents.length; i++) {
       const cur = zoneEvents[i];
-      const curBlue = cur.blueRadius ?? 0;
-      const curWhite = cur.whiteRadius ?? 0;
+      const curBlue = cur.blueRadius ?? 0;   // 자기장(파란원) 반지름
+      const curWhite = cur.whiteRadius ?? 0; // 안전구역(흰원) 반지름
 
+      // ✅ 자기장(Blue)이 안전구역(White)보다 클 때 = 자기장이 아직 수축 중
       cur.isZoneMoving = curBlue > curWhite * 1.05;
 
       let nextPhaseMs: null | number = null;
+      // 안전구역(whiteRadius) 크기 변화로 페이즈 전환 감지
       for (let j = i + 1; j < zoneEvents.length; j++) {
         const nxt = zoneEvents[j];
         if (nxt.whiteRadius == null || cur.whiteRadius == null) continue;

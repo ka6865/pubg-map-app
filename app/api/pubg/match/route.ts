@@ -131,7 +131,24 @@ export async function GET(request: Request) {
               loc: e.character?.location ? { x: Math.round(e.character.location.x/100), y: Math.round(e.character.location.y/100), z: Math.round((e.character.location.z||0)/100) } : null
             }
           };
-          if (e._T === "LogGameStatePeriodic") return { _T: e._T, _D: e._D, gameState: { safetyZonePosition: { x: Math.round(e.gameState.safetyZonePosition.x / 100), y: Math.round(e.gameState.safetyZonePosition.y / 100) }, safetyZoneRadius: Math.round(e.gameState.safetyZoneRadius / 100) } };
+          // ✅ 공식 PUBG API 기준: safetyZone = White(안전구역), poisonGasWarning = Blue(자기장)
+          // ✅ null 안전성: 게임 초반 poisonGasWarning 필드가 없을 수 있으므로 옵셔널 처리
+          if (e._T === "LogGameStatePeriodic") {
+            const gs = e.gameState;
+            return { 
+              _T: e._T, _D: e._D, 
+              gameState: { 
+                safetyZonePosition: gs.safetyZonePosition 
+                  ? { x: Math.round(gs.safetyZonePosition.x / 100), y: Math.round(gs.safetyZonePosition.y / 100) } 
+                  : null,
+                safetyZoneRadius: gs.safetyZoneRadius != null ? Math.round(gs.safetyZoneRadius / 100) : null,
+                poisonGasWarningPosition: gs.poisonGasWarningPosition 
+                  ? { x: Math.round(gs.poisonGasWarningPosition.x / 100), y: Math.round(gs.poisonGasWarningPosition.y / 100) } 
+                  : null,
+                poisonGasWarningRadius: gs.poisonGasWarningRadius != null ? Math.round(gs.poisonGasWarningRadius / 100) : null
+              } 
+            };
+          }
           
           const slim: any = { _T: e._T, _D: e._D };
           const actors = ["attacker", "victim", "killer", "maker", "dBNOMaker", "finisher", "character", "downed"];
@@ -222,7 +239,19 @@ export async function GET(request: Request) {
 
     telData.forEach((e: any) => {
       const ts = new Date(e._D).getTime(), elapsed = (ts - matchStartTime) / 1000;
-      if (e._T === "LogGameStatePeriodic") { lastZoneInfo = { x: e.gameState.safetyZonePosition.x, y: e.gameState.safetyZonePosition.y, radius: e.gameState.safetyZoneRadius }; return; }
+      if (e._T === "LogGameStatePeriodic") { 
+        const gs = e.gameState;
+        // ✅ null 가드: 필드가 없을 경우 이전 lastZoneInfo 유지
+        if (gs.safetyZonePosition) {
+          lastZoneInfo = { 
+            x: gs.safetyZonePosition.x, 
+            y: gs.safetyZonePosition.y, 
+            // ✅ 자기장 반경 = poisonGasWarningRadius (Blue Zone), 없으면 safetyZoneRadius로 폴백
+            radius: gs.poisonGasWarningRadius ?? gs.safetyZoneRadius ?? lastZoneInfo.radius
+          };
+        }
+        return; 
+      }
       const attackerName = normalizeName(e.attacker?.name || e.killer?.name || e.maker?.name || e.dBNOMaker?.name || e.finisher?.name || e.character?.name || "");
       const victimName = normalizeName(e.victim?.name || "");
       const updateLoc = (name: string, loc: any) => { if (name && loc) playerLocations.set(name, { x: loc.x, y: loc.y, z: loc.z || 0 }); };
@@ -369,9 +398,13 @@ export async function GET(request: Request) {
           const lastHit = myRecentDamageTaken.get(victimName); if (lastHit && ts - lastHit < 5000) { const lat = ts - lastHit; reactLatSum += lat; reactCount++; reactionLatencies.push(lat); myRecentDamageTaken.delete(victimName); }
         } else if (victimName === lowerNickname && attackerName && attackerName !== lowerNickname) {
           if (!myRecentDamageTaken.has(attackerName) || ts - myRecentDamageTaken.get(attackerName)! > 5000) { 
-            totalTimesHit++; 
-            const recentAttackers = recentAttacksOnUser.filter(a => ts - a.ts < 5000).map(a => a.attacker);
-            const uniqueAttackers = new Set(recentAttackers);
+            totalTimesHit++;
+            // ✅ 메모리 사용 최적화: 호출 전 5초 초과 항목 제거
+            const cutoffTs = ts - 5000;
+            while (recentAttacksOnUser.length > 0 && recentAttacksOnUser[0].ts < cutoffTs) {
+              recentAttacksOnUser.shift();
+            }
+            const uniqueAttackers = new Set(recentAttacksOnUser.map(a => a.attacker));
             if (uniqueAttackers.size >= 2) totalCrossfireCount++;
           }
           myRecentDamageTaken.set(attackerName, ts);
@@ -562,7 +595,7 @@ export async function GET(request: Request) {
           tradeLatencyMs: tradeLatencies.length > 0 ? Math.round(tradeLatencies.reduce((a,b)=>a+b,0)/tradeLatencies.length) : 0,
           counterLatencyMs: reactCount > 0 ? Math.round(reactLatSum / reactCount) : 0,
           reactionLatencyMs: reactionLatencies.length > 0 ? Math.round(reactionLatencies.reduce((a,b)=>a+b,0) / reactionLatencies.length) : 0,
-          coverRate: totalTimesHit > 0 ? Math.round((reactCount / totalTimesHit) * 100) : 0,
+          coverRate: totalTimesHit > 0 ? Math.min(100, Math.round((reactCount / totalTimesHit) * 100)) : 0,
           enemyTeamWipes: wipedTeamsByUserParticipation.size 
       },
       initiative_rate: (playerCombatData.get(lowerNickname)?.total > 0) ? Math.round((playerCombatData.get(lowerNickname).success / playerCombatData.get(lowerNickname).total) * 100) : 0,
@@ -590,7 +623,9 @@ export async function GET(request: Request) {
         avgSuppCount: Number(calcAvg(elitePool, 'supp_count', 3).toFixed(1)),
         avgDeathDistance: Math.round(calcAvg(elitePool, 'enemy_death_distance', 30)),
         avgIsolationIndex: Number(calcAvg(elitePool, 'isolation_index', 1.0).toFixed(2)),
-        avgPressureIndex: Number(calcAvg(elitePool, 'pressure_index', 3.0).toFixed(2))
+        avgPressureIndex: Number(calcAvg(elitePool, 'pressure_index', 3.0).toFixed(2)),
+        // ✅ 사망 페이즈 기준을 실제 엘리트 데이터로 제공 (ai-analyze 프론프트 연동)
+        avgDeathPhase: Number(calcAvg(elitePool, 'death_phase', 6).toFixed(1))
       },
       itemUseSummary, deathDistance
     };
