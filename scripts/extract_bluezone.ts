@@ -13,7 +13,30 @@ const supabase = createClient(
 async function extractSimulatorData() {
   console.log("🚀 [Bluezone Extractor] 자기장 데이터 추출 시작...");
 
-  const allMatches: any[] = [];
+  // [V13] 기존 데이터 로드 (누적 방식: 스토리지 우선)
+  let allMatches: any[] = [];
+  const outputPath = path.resolve(process.cwd(), "public/bluezone_data.json");
+  
+  try {
+    console.log("☁️ 스토리지에서 기존 데이터 확인 중...");
+    const { data: storageData } = await supabase.storage
+      .from("app-data")
+      .download("bluezone_data.json");
+
+    if (storageData) {
+      const text = await storageData.text();
+      allMatches = JSON.parse(text);
+      console.log(`📦 스토리지에서 기존 데이터 ${allMatches.length}건 로드 완료.`);
+    } else if (fs.existsSync(outputPath)) {
+      const existingData = fs.readFileSync(outputPath, "utf8");
+      allMatches = JSON.parse(existingData);
+      console.log(`📦 로컬에서 기존 데이터 ${allMatches.length}건 로드 완료.`);
+    }
+  } catch (e) {
+    console.log("ℹ️ 기존 데이터가 없거나 형식이 잘못되어 새로 시작합니다.");
+  }
+
+  const existingMatchIds = new Set(allMatches.map((m: any) => m.matchId));
   
   console.log("DB에서 매치 ID 목록을 가져오는 중...");
   
@@ -62,6 +85,12 @@ async function extractSimulatorData() {
 
   for (let i = 0; i < matches.length; i++) {
     const match = matches[i];
+    
+    // [V13] 이미 처리된 매치는 스킵
+    if (existingMatchIds.has(match.match_id)) {
+      continue;
+    }
+
     if (i % 10 === 0) console.log(`진행 상황: ${i} / ${matches.length} (${Math.round(i/matches.length*100)}%)`);
 
     const { data, error } = await supabase
@@ -204,7 +233,6 @@ async function extractSimulatorData() {
   console.table(mapStats);
 
   // JSON 파일로 저장 (로컬)
-  const outputPath = path.resolve(process.cwd(), "public/bluezone_data.json");
   fs.writeFileSync(outputPath, JSON.stringify(allMatches, null, 2));
   console.log(`\n✅ 로컬 데이터 추출 완료! 저장 위치: ${outputPath}`);
 

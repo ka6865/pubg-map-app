@@ -15,7 +15,7 @@ async function generateAISummary(rawText: string): Promise<string> {
   if (geminiKey) {
     const genAI = new GoogleGenerativeAI(geminiKey);
     // 2026년 현재 v1beta에서 활성화된 최신 모델 리스트
-    const geminiModels = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-flash-latest"];
+    const geminiModels = ["gemini-3.1-flash-lite-preview", "gemini-3-flash-preview", "gemini-2.5-flash"];
     
     for (const modelId of geminiModels) {
       try {

@@ -28,10 +28,17 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: npx tsx scripts/cleanup_telemetry.ts
 
-      - name: Run Smart Scraper (Optional)
+      - name: Run Smart Scraper
         env:
           PUBG_API_KEY: ${{ secrets.PUBG_API_KEY }}
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           APP_URL: ${{ secrets.APP_URL }}
         run: npx tsx scripts/scrape_elite.ts
+
+      - name: Extract Bluezone Statistics
+        env:
+          PUBG_API_KEY: ${{ secrets.PUBG_API_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: npx tsx scripts/extract_bluezone.ts

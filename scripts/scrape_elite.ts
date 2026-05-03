@@ -42,7 +42,7 @@ async function scrapeEliteData() {
     const seasonId = currentSeason.id;
     console.log(`✅ 현재 시즌: ${seasonId}`);
 
-    const gameModes = ["squad", "squad-fpp", "solo", "solo-fpp"]; 
+    const gameModes = ["squad", "squad-fpp", "solo", "solo-fpp", "duo", "duo-fpp"]; 
     const playerPool = new Map<string, string>();
     
     for (const mode of gameModes) {
@@ -62,7 +62,7 @@ async function scrapeEliteData() {
       let matchIds: string[] = [];
       try {
         const pDetails = await axios.get(`${BASE_URL}/players/${accountId}`, { headers: HEADERS });
-        matchIds = pDetails.data.data.relationships.matches.data.slice(0, 5).map((m: any) => m.id);
+        matchIds = pDetails.data.data.relationships.matches.data.slice(0, 10).map((m: any) => m.id);
       } catch (err) { continue; }
 
       for (const matchId of matchIds) {

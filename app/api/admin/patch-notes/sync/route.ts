@@ -34,12 +34,7 @@ async function summarizeText(rawText: string) {
   const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY);
   
   // 2026년 기준 가장 안정적인 별칭 우선 순위 설정
-  const modelsToTry = [
-    "gemini-flash-latest", 
-    "gemini-2.5-flash", 
-    "gemini-3.1-flash-lite-preview",
-    "gemini-pro-latest"
-  ];
+  const modelsToTry = ["gemini-3.1-flash-lite-preview", "gemini-3-flash-preview", "gemini-2.5-flash"];
 
   for (const modelName of modelsToTry) {
     try {
