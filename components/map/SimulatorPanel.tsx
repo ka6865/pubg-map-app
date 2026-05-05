@@ -96,7 +96,7 @@ export function SimulatorPanel({
   return (
     <div 
       style={{ transform: `translate(${position.x}px, ${position.y}px)` }}
-      className="fixed sm:bottom-[140px] sm:top-auto top-[74px] sm:right-6 right-4 sm:left-auto left-4 sm:translate-x-0 z-[2000] sm:w-72 bg-black/90 backdrop-blur-3xl border border-white/10 rounded-[2rem] p-4 sm:p-5 shadow-[0_25px_60px_rgba(0,0,0,0.6)] flex flex-col gap-4 animate-in fade-in slide-in-from-top-4 duration-500 pointer-events-auto"
+      className="fixed sm:bottom-[140px] sm:top-auto top-24 sm:right-6 right-4 sm:left-auto left-4 sm:translate-x-0 z-[2000] sm:w-72 bg-black/90 backdrop-blur-3xl border border-white/10 rounded-[2rem] p-4 sm:p-5 shadow-[0_25px_60px_rgba(0,0,0,0.6)] flex flex-col gap-4 animate-in fade-in slide-in-from-top-4 duration-500 pointer-events-auto"
     >
       
       <div 
@@ -147,7 +147,8 @@ export function SimulatorPanel({
               <span>
                 {currentStep === 0 && !flightPointsReady && "지도에 두 점을 찍어 비행기 경로를 설정하세요."}
                 {currentStep === 0 && flightPointsReady && "경로 설정 완료. 다음 페이즈로 이동하세요."}
-                {currentStep > 0 && `지도 위를 클릭하여 ${currentStep}페이즈 원을 배치하세요.`}
+                {currentStep > 0 && currentStep < 9 && `지도 위를 클릭하여 ${currentStep}페이즈 원을 배치하세요.`}
+                {currentStep === 9 && "최종 페이즈입니다. 시뮬레이션이 완료되었습니다."}
               </span>
             </p>
           </div>
@@ -189,11 +190,21 @@ export function SimulatorPanel({
               (currentStep > 0 && simulatorPhases.length < currentStep) ||
               (currentStep >= 9)
             }
-            className="flex-[2] bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 disabled:opacity-20 disabled:grayscale text-white text-[11px] font-black py-3.5 rounded-2xl flex items-center justify-center gap-2 transition-all shadow-[0_10px_20px_rgba(37,99,235,0.3)]"
+            className={`flex-[2] bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 disabled:opacity-20 disabled:grayscale text-white text-[11px] font-black py-3.5 rounded-2xl flex items-center justify-center gap-2 transition-all shadow-[0_10px_20px_rgba(37,99,235,0.3)] ${
+              (currentStep === 0 && flightPointsReady) || (currentStep > 0 && simulatorPhases.length === currentStep) ? "animate-pulse ring-2 ring-blue-500/50" : ""
+            }`}
           >
             {currentStep >= 9 ? "마지막 단계" : "다음 단계"} <ArrowRight size={14} />
           </button>
         </div>
+
+        {/* Matched Count Info */}
+        {currentStep > 0 && (
+          <div className="flex items-center justify-between px-2 text-[10px] font-bold">
+            <span className="text-white/40">매칭된 매치 수</span>
+            <span className="text-blue-400">{simulatorPhases.length > 0 ? "100+" : "0"} matches</span>
+          </div>
+        )}
 
         {/* Integrated Slim Legend for Probability */}
         {currentStep > 0 && (

@@ -115,7 +115,8 @@ export const TelemetryCanvasLayer = ({
       const zoomScale = Math.pow(1.5, currentZoom - 1); 
 
       // [A] 인게임 스타일 자기장 (반전 채우기 & 보간 적용)
-      if (showZone && zoneEvents && Array.isArray(zoneEvents) && zoneEvents.length > 0) {
+      const isZoneVisible = showZones && showZone !== false;
+      if (isZoneVisible && zoneEvents && Array.isArray(zoneEvents) && zoneEvents.length > 0) {
         // 현재 시간 기준 이전(prev)과 다음(next) 상태 찾기
         let prevZone = zoneEvents[0];
         let nextZone = zoneEvents[zoneEvents.length - 1];
@@ -132,12 +133,30 @@ export const TelemetryCanvasLayer = ({
         if (prevZone && nextZone) {
           // 보간 비율 계산
           const timeDiff = nextZone.relativeTimeMs - prevZone.relativeTimeMs;
-          const ratio = timeDiff > 0 ? (currentTimeMs - prevZone.relativeTimeMs) / timeDiff : 1;
+          const rawRatio = timeDiff > 0 ? (currentTimeMs - prevZone.relativeTimeMs) / timeDiff : 1;
+          const ratio = Math.max(0, Math.min(1, rawRatio));
           
-          // 위치 및 반지름 보간
-          const interpX = (prevZone.blueX ?? 0) + ((nextZone.blueX ?? 0) - (prevZone.blueX ?? 0)) * ratio;
-          const interpY = (prevZone.blueY ?? 0) + ((nextZone.blueY ?? 0) - (prevZone.blueY ?? 0)) * ratio;
-          const interpRadius = (prevZone.blueRadius ?? 0) + ((nextZone.blueRadius ?? 0) - (prevZone.blueRadius ?? 0)) * ratio;
+          // 위치 및 반지름 보간 (null 값은 상대 구간의 유효값으로 보정)
+          const startX = prevZone.blueX ?? nextZone.blueX;
+          const endX = nextZone.blueX ?? prevZone.blueX;
+          const startY = prevZone.blueY ?? nextZone.blueY;
+          const endY = nextZone.blueY ?? prevZone.blueY;
+          const startRadius = prevZone.blueRadius ?? nextZone.blueRadius;
+          const endRadius = nextZone.blueRadius ?? prevZone.blueRadius;
+
+          if (
+            typeof startX !== "number" || typeof endX !== "number" ||
+            typeof startY !== "number" || typeof endY !== "number" ||
+            typeof startRadius !== "number" || typeof endRadius !== "number"
+          ) {
+            ctx.restore();
+            animationRef.current = requestAnimationFrame(draw);
+            return;
+          }
+
+          const interpX = startX + (endX - startX) * ratio;
+          const interpY = startY + (endY - startY) * ratio;
+          const interpRadius = startRadius + (endRadius - startRadius) * ratio;
 
           if (typeof interpRadius === "number" && interpRadius > 0) {
             const center = getPoint(interpY, interpX);

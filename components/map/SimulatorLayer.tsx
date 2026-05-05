@@ -54,17 +54,18 @@ export function SimulatorLayer({
   // 1. 데이터 로드 (에러 시 fetchError 상태로 추적하여 재시도 가능)
   useEffect(() => {
     if (activeMode === "simulate" && bluezoneData.length === 0 && !fetchError) {
-      fetch("/api/bluezone")
+      console.log(`[SimulatorLayer] Fetching bluezone data (Mode: ${activeMode})...`);
+      fetch(`/api/bluezone?t=${Date.now()}`)
         .then(res => {
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           return res.json();
         })
         .then(data => {
-          // ✅ 배열 여부 검증 (API 응답 구조 안전 처리)
+          console.log(`[SimulatorLayer] Data loaded: ${Array.isArray(data) ? data.length : 0} matches`);
           setBluezoneData(Array.isArray(data) ? data : []);
         })
         .catch(err => {
-          console.error("Bluezone data load failed:", err);
+          console.error("[SimulatorLayer] Bluezone data load failed:", err);
           setFetchError(true);
         });
     }
@@ -92,8 +93,10 @@ export function SimulatorLayer({
 
       const scoredMatches = currentMapMatches.map(match => {
         if (!match.flightPath || match.flightPath.length !== 2) return { match, dist: Infinity };
-        const mA = { lat: 8192 - match.flightPath[0].lat, lng: match.flightPath[0].lng };
-        const mB = { lat: 8192 - match.flightPath[1].lat, lng: match.flightPath[1].lng };
+        const fp0 = match.flightPath[0];
+        const fp1 = match.flightPath[1];
+        const mA = { lat: 8192 - (fp0.lat ?? fp0.y), lng: fp0.lng ?? fp0.x };
+        const mB = { lat: 8192 - (fp1.lat ?? fp1.y), lng: fp1.lng ?? fp1.x };
 
         const dist1 = Math.sqrt(Math.pow(uA.lat - mA.lat, 2) + Math.pow(uA.lng - mA.lng, 2)) + 
                       Math.sqrt(Math.pow(uB.lat - mB.lat, 2) + Math.pow(uB.lng - mB.lng, 2));
@@ -103,20 +106,28 @@ export function SimulatorLayer({
         return { match, dist: Math.min(dist1, dist2) };
       }).filter(m => m.dist !== Infinity);
 
-      // 비행기 경로가 너무 동떨어진 매치는 철저히 배제 (출발/도착점 오차 합이 3.5km 이상이면 버림)
+      // 비행기 경로가 너무 동떨어진 매치는 기본적으로 배제
       const validMatches = scoredMatches.filter(m => m.dist < 3500);
       validMatches.sort((a, b) => a.dist - b.dist);
       
-      // [최적화] 필터링을 통과한 매치는 모두 사용 (최대 200개) - 데이터가 많아질수록 더 정밀한 핫스팟 형성
-      const takeCount = Math.max(5, Math.min(200, validMatches.length)); 
-      toRender = validMatches.slice(0, takeCount).map(m => m.match);
+      // 엄격 필터 결과가 너무 적으면 상위 스코어로 완화 폴백
+      const sourceMatches = validMatches.length >= 5
+        ? validMatches
+        : scoredMatches.sort((a, b) => a.dist - b.dist).slice(0, Math.min(40, scoredMatches.length));
+
+      const takeCount = Math.max(5, Math.min(200, sourceMatches.length)); 
+      toRender = sourceMatches.slice(0, takeCount).map(m => m.match);
 
       // 경로 완성 시 또는 1페이즈일 때 매칭된 비행기 경로 표시
       if (currentStep <= 1) {
-        flightPaths = toRender.map(m => [
-          L.latLng(8192 - m.flightPath[0].lat, m.flightPath[0].lng),
-          L.latLng(8192 - m.flightPath[1].lat, m.flightPath[1].lng)
-        ]);
+        flightPaths = toRender.map(m => {
+          const f0 = m.flightPath[0];
+          const f1 = m.flightPath[1];
+          return [
+            L.latLng(8192 - (f0.lat ?? f0.y), f0.lng ?? f0.x),
+            L.latLng(8192 - (f1.lat ?? f1.y), f1.lng ?? f1.x)
+          ];
+        });
       }
     } else if (currentStep === 0) {
       if (flightPoints.length === 1) {
@@ -124,29 +135,36 @@ export function SimulatorLayer({
         const uA = flightPoints[0];
         flightPaths = currentMapMatches.map(m => {
           if (!m.flightPath || m.flightPath.length !== 2) return null;
-          const mA = { lat: 8192 - m.flightPath[0].lat, lng: m.flightPath[0].lng };
-          const mB = { lat: 8192 - m.flightPath[1].lat, lng: m.flightPath[1].lng };
+          const fp0 = m.flightPath[0];
+          const fp1 = m.flightPath[1];
+          const mA = { lat: 8192 - (fp0.lat ?? fp0.y), lng: fp0.lng ?? fp0.x };
+          const mB = { lat: 8192 - (fp1.lat ?? fp1.y), lng: fp1.lng ?? fp1.x };
 
           const dStart = Math.sqrt(Math.pow(uA.lat - mA.lat, 2) + Math.pow(uA.lng - mA.lng, 2));
           const dEnd = Math.sqrt(Math.pow(uA.lat - mB.lat, 2) + Math.pow(uA.lng - mB.lng, 2));
 
           if (Math.min(dStart, dEnd) < 800) {
             return [
-              L.latLng(8192 - m.flightPath[0].lat, m.flightPath[0].lng),
-              L.latLng(8192 - m.flightPath[1].lat, m.flightPath[1].lng)
+              L.latLng(mA.lat, mA.lng),
+              L.latLng(mB.lat, mB.lng)
             ];
           }
           return null;
         }).filter(Boolean) as L.LatLng[][];
       } else if (flightPoints.length === 0) {
         // 사용자가 경로를 그리기 전(전체 가이드라인)
-        flightPaths = currentMapMatches.slice(0, 100).map(m => {
-          if (!m.flightPath || m.flightPath.length !== 2) return null;
-          return [
-            L.latLng(8192 - m.flightPath[0].lat, m.flightPath[0].lng),
-            L.latLng(8192 - m.flightPath[1].lat, m.flightPath[1].lng)
-          ];
-        }).filter(Boolean) as L.LatLng[][];
+        flightPaths = currentMapMatches
+          .filter(m => m.flightPath && m.flightPath.length === 2)
+          .slice(0, 100) // 가이드라인 개수 상향
+          .map(m => {
+            const f0 = m.flightPath[0];
+            const f1 = m.flightPath[1];
+            return [
+              L.latLng(8192 - (f0.lat ?? f0.y), f0.lng ?? f0.x),
+              L.latLng(8192 - (f1.lat ?? f1.y), f1.lng ?? f1.x)
+            ];
+          });
+        console.log(`[SimulatorLayer] Rendering ${flightPaths.length} guidelines for ${activeMapId} (out of ${currentMapMatches.length} matches)`);
       }
     }
 
@@ -157,12 +175,14 @@ export function SimulatorLayer({
       const phasedMatches = toRender.map(match => {
         const pData = match.phases.find((p: any) => p.phase === s);
         if (!pData) return { match, dist: Infinity };
-        const dist = Math.sqrt(Math.pow(userPhase.center.lat - (8192 - pData.y), 2) + Math.pow(userPhase.center.lng - pData.x, 2));
+        const normX = pData.x > 8192 ? pData.x / 100 : pData.x;
+        const normY = pData.y > 8192 ? pData.y / 100 : pData.y;
+        const dist = Math.sqrt(Math.pow(userPhase.center.lat - (8192 - normY), 2) + Math.pow(userPhase.center.lng - normX, 2));
         return { match, dist };
       }).filter(m => m.dist !== Infinity);
 
       phasedMatches.sort((a, b) => a.dist - b.dist);
-      toRender = phasedMatches.slice(0, 50).map(m => m.match);
+      toRender = phasedMatches.slice(0, 100).map(m => m.match);
     }
 
     let totalRadius = 0, count = 0;
@@ -170,7 +190,15 @@ export function SimulatorLayer({
       const pCurrent = match.phases.find((p: any) => p.phase === Math.max(1, currentStep));
       if (pCurrent && pCurrent.radius) { totalRadius += pCurrent.radius; count++; }
     });
-    if (count > 0) phaseRadius = totalRadius / count;
+    if (count > 0) {
+      phaseRadius = totalRadius / count;
+    } else if (currentStep > 1 && simulatorPhases.length >= currentStep - 1) {
+      // 매칭이 비어도 이전 페이즈 대비 자연스럽게 축소되도록 폴백
+      const prev = simulatorPhases[currentStep - 2];
+      if (prev?.radius) {
+        phaseRadius = Math.max(250, prev.radius * 0.72);
+      }
+    }
 
     return { matchesToRender: toRender, currentPhaseRadius: phaseRadius, matchedFlightPaths: flightPaths };
   }, [activeMapId, bluezoneData, flightPoints, simulatorPhases, currentStep]);
@@ -198,12 +226,15 @@ export function SimulatorLayer({
         const pCurrent = match.phases.find((p: any) => p.phase === currentStep);
         if (!pCurrent) return null;
 
+        const normX = pCurrent.x > 8192 ? pCurrent.x / 100 : pCurrent.x;
+        const normY = pCurrent.y > 8192 ? pCurrent.y / 100 : pCurrent.y;
+
         // [핵심] 만약 2페이즈 이상이라면, 현재 히트맵 포인트가 이전 페이즈 원 내부에 있는지 검증
         if (currentStep > 1 && simulatorPhases.length >= currentStep - 1) {
           const prevUserPhase = simulatorPhases[currentStep - 2];
           const dist = Math.sqrt(
-            Math.pow((8192 - pCurrent.y) - prevUserPhase.center.lat, 2) + 
-            Math.pow(pCurrent.x - prevUserPhase.center.lng, 2)
+            Math.pow((8192 - normY) - prevUserPhase.center.lat, 2) + 
+            Math.pow(normX - prevUserPhase.center.lng, 2)
           );
           
           // 이전 사용자 원의 반경 밖이라면 확률 계산에서 제외 (원 밖 히트맵 제거)
@@ -211,23 +242,23 @@ export function SimulatorLayer({
             return null;
           }
         }
-
-        return [8192 - pCurrent.y, pCurrent.x, 1.0]; // Y축 반전
+        
+        return [8192 - normY, normX, 1.0]; // Y축 반전
       }).filter(Boolean) as any[];
 
       // 3. 레이어 업데이트 또는 생성 (중복 생성 방지 핵심 로직)
       if (heatLayerRef.current) {
-        // 데이터가 적을수록 max값을 낮춰서 색상을 진하게 만듦
-        const dynamicMax = Math.max(1.0, Math.min(2.5, heatData.length / 4));
+        // [개선] 빈도수가 적어도 색이 잘 나오도록 max값 대폭 하향 조정
+        const dynamicMax = Math.max(0.5, Math.min(1.5, heatData.length / 15));
         heatLayerRef.current.setOptions({ max: dynamicMax });
         heatLayerRef.current.setLatLngs(heatData);
       } else {
-        // 데이터가 적을수록 max값을 낮춰서 색상을 진하게 만듦
-        const dynamicMax = Math.max(1.0, Math.min(2.5, heatData.length / 4));
+        const dynamicMax = Math.max(0.5, Math.min(1.5, heatData.length / 15));
         // 처음 생성할 때만 설정 적용
         heatLayerRef.current = (L as any).heatLayer(heatData, {
-          radius: 45, // 35 -> 45로 키워서 시인성 확보
-          blur: 25,
+          radius: 50, // 45 -> 50으로 살짝 키움
+          blur: 20, // 번짐 정도 최적화
+          minOpacity: 0.4, // 최소 불투명도 상향하여 잘 보이게 함
           maxZoom: 1, 
           max: dynamicMax,
           gradient: {
@@ -270,6 +301,7 @@ export function SimulatorLayer({
         }
         // 이미 2개가 찍혀있으면 무시 (고정)
       } else if (currentStep >= 1) {
+        if (currentStep >= 9) return; // 9페이즈가 최대
         // [중요] 이전 페이즈 원 안쪽인지 검증 (PUBG 규칙)
         if (currentStep > 1 && simulatorPhases.length >= currentStep - 1) {
           const prevPhase = simulatorPhases[currentStep - 2];
@@ -327,6 +359,16 @@ export function SimulatorLayer({
           ⚠️ {errorMsg}
         </div>
       )}
+      {bluezoneData.length === 0 && (
+        <div style={{
+          position: "fixed", bottom: "128px", left: "50%", transform: "translateX(-50%)",
+          background: "rgba(30,41,59,0.9)", color: "#e2e8f0", padding: "8px 14px",
+          borderRadius: "10px", fontSize: "12px", fontWeight: 600, zIndex: 9998,
+          border: "1px solid rgba(148,163,184,0.35)", pointerEvents: "none"
+        }}>
+          시뮬레이터 데이터 로딩 중이거나 사용 가능한 매치 데이터가 없습니다.
+        </div>
+      )}
       {flightPoints.map((p, i) => (
         <Marker key={`flight-${i}`} position={p} icon={flightPointIcon} />
       ))}
@@ -347,7 +389,7 @@ export function SimulatorLayer({
           positions={path}
           color="white"
           weight={flightPoints.length === 1 ? 4 : 2}
-          opacity={flightPoints.length === 1 ? 0.6 : 0.15}
+          opacity={flightPoints.length === 1 ? 0.8 : 0.35} // 시인성 대폭 강화
           dashArray="4, 8"
           interactive={false}
         />
@@ -369,8 +411,8 @@ export function SimulatorLayer({
         />
       ))}
 
-      {/* 현재 페이즈 도장 찍기 미리보기 (마우스 호버) */}
-      {currentStep >= 1 && hoverPoint && flightPoints.length === 2 && (
+      {/* 현재 페이즈 도장 찍기 미리보기 (마우스 호버) - 9페이즈 도달 시 숨김 */}
+      {currentStep >= 1 && currentStep < 9 && hoverPoint && flightPoints.length === 2 && (
         <Circle
           center={hoverPoint}
           radius={currentPhaseRadius}
