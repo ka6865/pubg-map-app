@@ -2,6 +2,7 @@
 import axios from 'axios';
 import dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
+import { RESULT_VERSION } from '../lib/pubg-analysis/constants';
 
 // .env 및 .env.local 파일의 환경변수 로드
 dotenv.config({ path: '.env.local' });
@@ -66,20 +67,24 @@ async function scrapeEliteData() {
       } catch (err) { continue; }
 
       for (const matchId of matchIds) {
-        // 🌟 [최적화 1] DB 중복 체크 (이미 있으면 스킵)
+        // [최적화 1] DB 중복 체크 (V11.6 미만이면 재분석 수행)
         const { data: existing } = await supabase
           .from("processed_match_telemetry")
-          .select("match_id")
+          .select("data")
           .eq("match_id", matchId)
           .eq("player_id", nickname.toLowerCase().trim())
           .single();
 
-        if (existing) {
-          console.log(`   - MatchID(${matchId}): 이미 존재함 (Skip)`);
+        if (existing && (existing.data?.fullResult?.v || 0) >= RESULT_VERSION) {
+          console.log(`   - MatchID(${matchId}): 최신 데이터 존재 (Skip)`);
           continue;
         }
 
-        console.log(`   - MatchID(${matchId}): 신규 수집 시작...`);
+        if (existing) {
+          console.log(`   - MatchID(${matchId}): 구버전 발견(${existing.data?.fullResult?.v || "unknown"}) -> V${RESULT_VERSION} 재분석 시작...`);
+        } else {
+          console.log(`   - MatchID(${matchId}): 신규 수집 시작...`);
+        }
         
         try {
           // [최적화 2] 로컬 서버 API 호출 (동기적으로 대기)
@@ -100,6 +105,8 @@ async function scrapeEliteData() {
   } catch (error: any) {
     console.error("🚨 중단:", error.message);
   }
+
+  console.log("\n✨ 모든 작업이 완료되었습니다.");
 }
 
 scrapeEliteData();

@@ -9,8 +9,8 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-const RETENTION_MAP_DAYS = 7;     // 지도 데이터: 7일 보관
-const RETENTION_ANALYZE_DAYS = 14; // 분석 데이터: 14일 보관
+const RETENTION_MAP_DAYS = 3;     // 지도 데이터: 3일 보관 (기존 7일)
+const RETENTION_ANALYZE_DAYS = 3; // 분석 데이터: 3일 보관 (기존 14일)
 const PAGE_SIZE = 1000; // Storage API 최대 한도
 
 async function cleanup() {

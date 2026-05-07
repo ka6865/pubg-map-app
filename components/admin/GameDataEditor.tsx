@@ -15,6 +15,8 @@ export default function GameDataEditor() {
   const [selectedItem, setSelectedItem] = useState<GameItem | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [flushNickname, setFlushNickname] = useState("");
+  const [flushMatchId, setFlushMatchId] = useState("");
 
   useEffect(() => {
     const checkAdmin = async () => {
@@ -42,6 +44,10 @@ export default function GameDataEditor() {
   }, [router]);
 
   const fetchItems = useCallback(async () => {
+    if (activeCategory === "system") {
+      setItems([]);
+      return;
+    }
     const { data, error } = await supabase
       .from(activeCategory)
       .select("*")
@@ -177,7 +183,8 @@ export default function GameDataEditor() {
               { id: "throwables", label: "투척무기" },
               { id: "attachments", label: "파츠" },
               { id: "ammo", label: "탄약" },
-              { id: "vehicles", label: "차량" }
+              { id: "vehicles", label: "차량" },
+              { id: "system", label: "⚙️ 시스템/캐시" }
             ].map(cat => (
               <button
                 key={cat.id}
@@ -294,7 +301,160 @@ export default function GameDataEditor() {
         </aside>
 
         <main className="flex-1 bg-[#0d0d0d] p-8 overflow-y-auto">
-          {selectedItem ? (
+          {activeCategory === "system" ? (
+            <div className="max-w-[700px] mx-auto">
+              <h2 className="text-2xl font-black text-white mb-8">⚙️ 시스템 및 데이터 캐시 관리</h2>
+              
+              <div className="grid grid-cols-1 gap-6">
+                <div className="bg-[#1a1a1a] p-6 rounded-xl border border-[#333]">
+                  <h3 className="text-lg font-bold text-[#F2A900] mb-2">텔레메트리 캐시 초기화</h3>
+                  <p className="text-sm text-gray-400 mb-4">
+                    현재 엔진 버전(V11.6)보다 낮은 모든 분석 데이터를 DB에서 삭제합니다.<br/>
+                    삭제된 데이터는 사용자가 다시 조회할 때 최신 엔진으로 자동 재분석됩니다.
+                  </p>
+                  <button
+                    onClick={async () => {
+                      if (!confirm("정말 구버전 캐시를 삭제하시겠습니까? (V11.6 미만 대상)")) return;
+                      setIsSaving(true);
+                      try {
+                        const res = await fetch("/api/admin/system", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ action: "flush_old_cache" })
+                        });
+                        const data = await res.json();
+                        if (data.success) toast.success(data.message);
+                        else throw new Error(data.error);
+                      } catch (err: any) {
+                        toast.error("처리 중 오류: " + err.message);
+                      } finally {
+                        setIsSaving(false);
+                      }
+                    }}
+                    disabled={isSaving}
+                    className="px-6 py-3 bg-red-600/20 text-red-500 border border-red-600/30 rounded-lg font-bold hover:bg-red-600/30 transition-all"
+                  >
+                    🗑️ 구버전 캐시 삭제 (v11.6 미만)
+                  </button>
+                </div>
+
+                <div className="bg-[#1a1a1a] p-6 rounded-xl border border-[#333]">
+                  <h3 className="text-lg font-bold text-[#F2A900] mb-2">글로벌 벤치마크 초기화</h3>
+                  <p className="text-sm text-gray-400 mb-4">
+                    엘리트 선수들의 통계 데이터(global_benchmarks)를 모두 비웁니다.<br/>
+                    수행 후 '벤치마커 스크립트'를 다시 돌려야 최신 데이터로 채워집니다.
+                  </p>
+                  <button
+                    onClick={async () => {
+                      if (!confirm("벤치마크 데이터를 초기화하시겠습니까? (복구 불가능)")) return;
+                      setIsSaving(true);
+                      try {
+                        const res = await fetch("/api/admin/system", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ action: "reset_benchmarks" })
+                        });
+                        const data = await res.json();
+                        if (data.success) toast.success(data.message);
+                        else throw new Error(data.error);
+                      } catch (err: any) {
+                        toast.error("처리 중 오류: " + err.message);
+                      } finally {
+                        setIsSaving(false);
+                      }
+                    }}
+                    disabled={isSaving}
+                    className="px-6 py-3 bg-orange-600/20 text-orange-500 border border-orange-600/30 rounded-lg font-bold hover:bg-orange-600/30 transition-all"
+                  >
+                    🔄 벤치마크 데이터 전체 초기화
+                  </button>
+                </div>
+
+                <div className="bg-[#1a1a1a] p-6 rounded-xl border border-[#333]">
+                  <h3 className="text-lg font-bold text-[#F2A900] mb-2">플레이어/매치 정밀 초기화</h3>
+                  <p className="text-sm text-gray-400 mb-6">
+                    특정 플레이어나 매치의 데이터만 골라서 삭제합니다. 버그 수정 후 테스트 시 유용합니다.
+                  </p>
+                  
+                  <div className="space-y-4">
+                    <div className="flex gap-2">
+                      <input 
+                        type="text"
+                        placeholder="플레이어 닉네임 (예: KangHeeSung_)"
+                        className="flex-1 bg-[#222] border border-[#333] rounded px-3 py-2 text-sm focus:border-[#F2A900] focus:outline-none"
+                        value={flushNickname}
+                        onChange={(e) => setFlushNickname(e.target.value)}
+                      />
+                      <button
+                        onClick={async () => {
+                          if (!flushNickname) return toast.error("닉네임을 입력하세요.");
+                          if (!confirm(`${flushNickname}님의 모든 분석 데이터를 삭제하시겠습니까?`)) return;
+                          setIsSaving(true);
+                          try {
+                            const res = await fetch("/api/admin/system", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ action: "flush_player_cache", nickname: flushNickname })
+                            });
+                            const data = await res.json();
+                            if (data.success) {
+                              toast.success(data.message);
+                              setFlushNickname("");
+                            } else throw new Error(data.error);
+                          } catch (err: any) {
+                            toast.error(err.message);
+                          } finally {
+                            setIsSaving(false);
+                          }
+                        }}
+                        disabled={isSaving}
+                        className="px-4 py-2 bg-blue-600/20 text-blue-400 border border-blue-600/30 rounded font-bold hover:bg-blue-600/30 transition-all text-sm"
+                      >
+                        유저 데이터 삭제
+                      </button>
+                    </div>
+
+                    <div className="flex gap-2">
+                      <input 
+                        type="text"
+                        placeholder="매치 ID (Match ID)"
+                        className="flex-1 bg-[#222] border border-[#333] rounded px-3 py-2 text-sm focus:border-[#F2A900] focus:outline-none"
+                        value={flushMatchId}
+                        onChange={(e) => setFlushMatchId(e.target.value)}
+                      />
+                      <button
+                        onClick={async () => {
+                          if (!flushMatchId) return toast.error("매치 ID를 입력하세요.");
+                          if (!confirm(`해당 매치(${flushMatchId})의 모든 분석 데이터를 삭제하시겠습니까?`)) return;
+                          setIsSaving(true);
+                          try {
+                            const res = await fetch("/api/admin/system", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ action: "flush_match_cache", matchId: flushMatchId })
+                            });
+                            const data = await res.json();
+                            if (data.success) {
+                              toast.success(data.message);
+                              setFlushMatchId("");
+                            } else throw new Error(data.error);
+                          } catch (err: any) {
+                            toast.error(err.message);
+                          } finally {
+                            setIsSaving(false);
+                          }
+                        }}
+                        disabled={isSaving}
+                        className="px-4 py-2 bg-purple-600/20 text-purple-400 border border-purple-600/30 rounded font-bold hover:bg-purple-600/30 transition-all text-sm"
+                      >
+                        매치 데이터 삭제
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : selectedItem ? (
             <div className="max-w-[700px] mx-auto">
               <div className="flex justify-between items-center mb-8">
                 <h2 className="text-2xl font-black text-white">{selectedItem.name || "항목 편집"}</h2>

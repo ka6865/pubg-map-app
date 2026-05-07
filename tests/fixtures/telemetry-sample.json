@@ -1,0 +1,28 @@
+[
+  { "_T": "LogMatchStart", "_D": "2024-05-07T10:00:00.000Z" },
+  { "_T": "LogPlayerCreate", "character": { "name": "my_user", "location": { "x": 100000, "y": 100000, "z": 0 } } },
+  { "_T": "LogPlayerCreate", "character": { "name": "enemy_1", "location": { "x": 120000, "y": 100000, "z": 0 } } },
+  { "_T": "LogPlayerCreate", "character": { "name": "enemy_2", "location": { "x": 130000, "y": 100000, "z": 0 } } },
+  { "_T": "LogParachuteLanding", "character": { "name": "my_user" } },
+  { 
+    "_T": "LogPlayerTakeDamage", "_D": "2024-05-07T10:05:00.000Z",
+    "attacker": { "name": "my_user" }, "victim": { "name": "enemy_1" }, "damage": 50, "damageTypeCategory": "Damage_Gun"
+  },
+  { 
+    "_T": "LogPlayerKill", "_D": "2024-05-07T10:05:01.000Z",
+    "killer": { "name": "my_user" }, "victim": { "name": "enemy_1" }
+  },
+  { 
+    "_T": "LogPlayerTakeDamage", "_D": "2024-05-07T10:06:00.000Z",
+    "attacker": { "name": "enemy_2" }, "victim": { "name": "my_user" }, "damage": 20, "damageTypeCategory": "Damage_Gun"
+  },
+  { 
+    "_T": "LogPlayerTakeDamage", "_D": "2024-05-07T10:06:01.000Z",
+    "attacker": { "name": "my_user" }, "victim": { "name": "enemy_2" }, "damage": 100, "damageTypeCategory": "Damage_Gun"
+  },
+  { 
+    "_T": "LogPlayerKill", "_D": "2024-05-07T10:06:02.000Z",
+    "killer": { "name": "my_user" }, "victim": { "name": "enemy_2" }
+  },
+  { "_T": "LogMatchEnd", "_D": "2024-05-07T10:10:00.000Z" }
+]
