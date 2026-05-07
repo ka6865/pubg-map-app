@@ -23,11 +23,14 @@ export const IsolationRadar = ({ data, loading }: IsolationRadarProps) => {
 
   if (!data) return null;
 
-  // 정규화 (0-100)
-  const normIsolation = Math.max(0, 100 - (data.isolationIndex * 30));
-  const normDist = Math.max(0, 100 - (data.minDist / 2));
-  const normHeight = Math.max(0, 100 - (data.heightDiff * 5));
-  const normPressure = data.isCrossfire ? 20 : 90;
+  // [V11.8] 서버에서 이미 미터(m) 단위로 정규화되어 넘어옴
+  const distInMeters = data.minDist;
+  const heightInMeters = data.heightDiff;
+
+  const normIsolation = Math.max(0, Math.min(100, 100 - (data.isolationIndex * 20)));
+  const normDist = Math.max(0, Math.min(100, 100 - (distInMeters / 1.5))); // 150m 초과 시 0점
+  const normHeight = Math.max(0, Math.min(100, 100 - (heightInMeters * 10))); // 10m 차이 시 0점
+  const normPressure = data.isCrossfire ? 30 : 95;
 
   const stats = [
     { 
@@ -36,7 +39,7 @@ export const IsolationRadar = ({ data, loading }: IsolationRadarProps) => {
       icon: <Users size={14} />, 
       color: "text-emerald-400", 
       desc: "점유 중인 위치의 전술적 안전도",
-      formula: "100 - (고립 지수 * 30)",
+      formula: "100 - (고립 지수 * 20)",
       detail: "고립 지수 = (아군 거리 / 적군 거리). 1.0 이하면 매우 안전한 포지셔닝입니다."
     },
     { 
@@ -45,8 +48,8 @@ export const IsolationRadar = ({ data, loading }: IsolationRadarProps) => {
       icon: <Zap size={14} />, 
       color: "text-blue-400", 
       desc: "팀원과의 즉각적인 교전 지원 거리 유지",
-      formula: "100 - (평균 아군 거리 / 2)",
-      detail: "아군과 200m 이상 떨어지면 0점 처리됩니다. 백업 가능한 거리를 유지하세요."
+      formula: "100 - (평균 아군 거리 / 1.5)",
+      detail: "아군과 150m 이상 떨어지면 0점 처리됩니다. 백업 가능한 거리를 유지하세요."
     },
     { 
       label: "고도 일치성", 
@@ -54,17 +57,17 @@ export const IsolationRadar = ({ data, loading }: IsolationRadarProps) => {
       icon: <ArrowUpCircle size={14} />, 
       color: "text-purple-400", 
       desc: "팀원과 동일한 수직 높이 유지",
-      formula: "100 - (평균 고도차 * 5)",
-      detail: "수직 높이차가 20m를 넘으면 0점 처리됩니다. 복층/지형 고저차를 관리하세요."
+      formula: "100 - (평균 고도차 * 10)",
+      detail: "수직 높이차가 10m를 넘으면 0점 처리됩니다. 복층/지형 고저차를 관리하세요."
     },
     { 
-      label: "교전 분산도", 
+      label: "양각 방어력", 
       value: normPressure, 
       icon: <ShieldAlert size={14} />, 
       color: "text-orange-400", 
-      desc: "양각(포위) 노출 위험 방어",
+      desc: "여러 방향(양각)에서의 공격 방어",
       formula: "양각 피격 판정",
-      detail: "5초 이내에 서로 다른 적 2명 이상에게 피격된 경우 위험(20점)으로 간주합니다."
+      detail: "5초 이내에 서로 다른 적 2명 이상에게 피격된 '다굴' 상황을 체크합니다."
     },
   ];
 
@@ -150,15 +153,17 @@ export const IsolationRadar = ({ data, loading }: IsolationRadarProps) => {
             {data.minDist}<span className="text-sm font-medium">m</span> 
             <span className="ml-2 text-[10px] sm:text-xs text-emerald-500/60 font-medium">({data.heightDiff}m 고도차)</span>
           </div>
+          <div className="mt-1 text-[9px] text-gray-600 font-bold uppercase tracking-tighter">
+            평균 주변 아군: <span className="text-emerald-500/80">{data.teammateCount}명</span>
+          </div>
         </div>
       </div>
-
       {data.isCrossfire && (
         <div className="mt-6 p-4 bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center gap-4 animate-in slide-in-from-bottom-2 duration-500">
           <ShieldAlert className="text-red-400 shrink-0" size={20} />
           <div className="flex flex-col">
-            <span className="text-[10px] text-red-400 font-black uppercase tracking-wider">포위(교차 사격) 노출 경고</span>
-            <span className="text-[11px] text-red-200/60 font-medium leading-tight">복수 방향에서의 교전 발생. 신속한 공간 확보가 최우선입니다.</span>
+            <span className="text-[10px] text-red-400 font-black uppercase tracking-wider">양각(다굴) 노출 위험 경고</span>
+            <span className="text-[11px] text-red-200/60 font-medium leading-tight">두 방향 이상에서 동시에 공격받고 있습니다. 엄폐물 확보가 시급합니다.</span>
           </div>
         </div>
       )}

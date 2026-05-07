@@ -374,14 +374,14 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
             </div>
               <div className="group relative px-4 py-2 bg-red-500/20 border border-red-500/30 rounded-2xl text-[12px] text-red-400 font-black flex items-center gap-3 shadow-lg shadow-red-500/10 cursor-help">
                 <div className="w-2 h-2 bg-red-500 rounded-full animate-ping" />
-                자기장 손실: {debateData?.visuals?.bluezoneWaste || 0}회
+                자기장 누적 피해: {Math.floor(debateData?.visuals?.bluezoneWaste || 0)} HP
                 <div className="w-3 h-3 rounded-full bg-red-500/30 flex items-center justify-center text-[8px] text-red-400 border border-red-500/40">?</div>
                 
                 {/* Tooltip Content */}
                 <div className="absolute top-full right-0 mt-2 p-3 bg-[#111] border border-red-500/20 rounded-xl shadow-2xl z-50 w-64 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
                   <div className="text-[10px] font-black uppercase mb-1 text-red-400">데이터 정의</div>
                   <div className="text-[11px] text-red-200/70 font-medium leading-relaxed">
-                    자기장 대미지로 인해 본인 또는 팀원이 <span className="text-red-400 font-bold">기절 혹은 사망</span>한 횟수입니다. 높은 수치는 서클 진입 타이밍(Rotation) 판단에 치명적인 결함이 있음을 시사합니다.
+                    자기장 밖에서 입은 <span className="text-red-400 font-bold">총 누적 피해량(HP)</span>입니다. 높은 수치는 서클 진입 타이밍(Rotation)이나 외곽 교전 시 유지력 관리에 결함이 있음을 시사합니다.
                   </div>
                   <div className="absolute -top-1 right-6 w-2 h-2 bg-[#111] border-l border-t border-red-500/20 rotate-45" />
                 </div>

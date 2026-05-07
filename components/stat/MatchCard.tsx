@@ -242,8 +242,14 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
   const isRanked = matchData.matchType === 'competitive' || 
                    (matchData.gameMode || "").includes("competitive") ||
                    (matchData.gameMode || "").includes("ranked") ||
-                   // [V11] 정원 기반 폴백 판별 (경쟁전은 통상 64인)
-                   (matchData.stats.winPlace <= 16 && (matchData.gameMode || "").includes("squad") && ! (matchData.gameMode || "").includes("ai-match"));
+                   // [V11.9] 경쟁전 판정 정밀화: 16위 이내 + 전체 16팀 규격 + 경쟁전 가능 맵인 경우만 인정
+                   (
+                     matchData.stats.winPlace <= 16 && 
+                     matchData.totalTeams === 16 && 
+                     !["사녹", "카라킨", "파라모", "헤이븐"].includes(matchData.mapName || "") &&
+                     (matchData.gameMode || "").includes("squad") && 
+                     !(matchData.gameMode || "").includes("ai-match")
+                   );
   const isWin = matchData.stats.winPlace === 1;
   const isTop10 = matchData.stats.winPlace <= 10;
   
@@ -302,12 +308,12 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                 <span className="text-indigo-400 font-black text-sm">{Math.floor(matchData.stats.damageDealt)}</span>
                 <span className="text-[10px] text-indigo-400/60 font-bold uppercase">Dmg</span>
               </div>
-              {(matchData.teamImpact?.damageImpact ?? 0) > 0 && (
+              {(matchData.teamImpact?.teamDamageShare ?? 0) > 0 && (
                 <>
                   <div className="w-1 h-1 bg-white/10 rounded-full" />
                   <div className="flex items-center gap-1 bg-orange-500/10 px-1.5 py-0.5 rounded border border-orange-500/20" title="팀 내 딜량 비중">
                     <Flame size={10} className="text-orange-500" />
-                    <span className="text-[10px] text-orange-500 font-black">팀 딜량 {matchData.teamImpact?.damageImpact}%</span>
+                    <span className="text-[10px] text-orange-500 font-black">팀 딜량 {matchData.teamImpact?.teamDamageShare}%</span>
                   </div>
                 </>
               )}
@@ -405,7 +411,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                 </div>
               </div>
               
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8 gap-4">
                 <TacticalBox 
                   icon={<Flame size={18} />} 
                   label="견제 사격" 
@@ -425,13 +431,22 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                   tooltip="기절한 팀원을 직접 끝까지 부활시켜 전장에 복귀시킨 횟수입니다."
                 />
                 <TacticalBox 
+                  icon={<TrendingUp size={18} />} 
+                  label="복수 성공률" 
+                  value={`${matchData.tradeStats?.tradeRate || 0}%`} 
+                  subLabel="아군 손실 즉시 복구"
+                  color="text-emerald-400"
+                  bgColor="bg-emerald-400/10"
+                  tooltip="아군이 기절한 뒤 30초 이내에 해당 적을 제압(기절/킬)한 비율입니다."
+                />
+                <TacticalBox 
                   icon={<MousePointer2 size={18} />} 
-                  label="유틸리티 기여" 
-                  value={`${matchData.combatPressure?.utilityHits || 0} Hits`} 
-                  subLabel={`${matchData.combatPressure?.utilityDamage || 0} DMG`}
+                  label="섬광 적중" 
+                  value={`${matchData.combatPressure?.stunHits || 0}회`} 
+                  subLabel={`총 ${matchData.combatPressure?.utilityHits || 0}회 적중`}
                   color="text-amber-400"
                   bgColor="bg-amber-400/10"
-                  tooltip="수류탄, 화염병 등 투척물로 적에게 피해를 준 횟수와 총 데미지입니다."
+                  tooltip="섬광탄으로 적을 무력화시킨 횟수입니다."
                 />
                 <TacticalBox 
                   icon={<Target size={18} />} 
@@ -446,19 +461,28 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                   icon={<Clock size={18} />} 
                   label="트레이드 속도" 
                   value={`${(matchData.tradeStats.tradeLatencyMs ?? 0) > 0 ? (matchData.tradeStats.tradeLatencyMs! / 1000).toFixed(2) : 0}s`} 
-                  subLabel={`아군 손실 복구`}
+                  subLabel={`평균 백업 시간`}
                   color="text-indigo-400"
                   bgColor="bg-indigo-400/10"
                   tooltip="아군이 기절한 직후, 해당 적을 눕히거나 킬하여 상황을 반전시킨 평균 시간입니다."
                 />
                 <TacticalBox 
+                  icon={<Wind size={18} />} 
+                  label="끝선 플레이" 
+                  value={`${matchData.edgePlay || 0}회`} 
+                  subLabel={`자기장 Edge 활용`}
+                  color="text-blue-400"
+                  bgColor="bg-blue-400/10"
+                  tooltip="자기장 경계선(50m 이내)에서 전략적으로 플레이한 횟수입니다."
+                />
+                <TacticalBox 
                   icon={<ShieldAlert size={18} />} 
-                  label="사망 페이즈" 
-                  value={`${matchData.deathPhase || 0} Ph`} 
-                  subLabel={`${matchData.deathPhase || 0}페이즈 생존`}
-                  color="text-emerald-400"
-                  bgColor="bg-emerald-400/10"
-                  tooltip="사망 시점의 자기장 페이즈 번호입니다. 숫자가 높을수록 후반까지 생존했다는 의미입니다."
+                  label="자기장 피해" 
+                  value={`${Math.floor(matchData.bluezoneWaste || 0)} HP`} 
+                  subLabel={`누적 데미지량`}
+                  color="text-red-400"
+                  bgColor="bg-red-400/10"
+                  tooltip="자기장 밖에서 입은 총 누적 피해량입니다. (V11.9.2 정규화)"
                 />
               </div>
             </div>
