@@ -4,7 +4,7 @@
  */
 
 /** 게임 내 아이템의 대분류 카테고리 */
-export type ItemCategory = "weapons" | "consumables" | "throwables" | "attachments" | "ammo" | "vehicles";
+export type ItemCategory = "weapons" | "consumables" | "throwables" | "attachments" | "ammo" | "vehicles" | "system";
 
 export interface BaseGameItem {
   id: string;

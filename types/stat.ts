@@ -64,6 +64,8 @@ export interface MatchData {
   teamImpact?: {
     damageImpact: number;
     killImpact: number;
+    teamDamageShare: number;
+    teamKillShare: number;
     totalTeamDamage: number;
     totalTeamKills: number;
   };
@@ -90,6 +92,7 @@ export interface MatchData {
     maxHitDistance: number;
     utilityDamage: number;
     utilityHits: number;
+    stunHits?: number;
   };
   /** [V3.0] 전술 지표 (견제, 세이브, 복수 등) */
   tradeStats?: {
@@ -106,6 +109,7 @@ export interface MatchData {
     reactionLatencyMs: number;
     coverRate: number;
     enemyTeamWipes?: number;
+    tradeRate?: number;
   };
   /** [V8.1] 공간 지능 지표 (고립 지수, 아군 거리 등) */
   isolationData?: {
@@ -159,5 +163,7 @@ export interface MatchData {
   initiative_rate?: number;
   /** [V11.1] 사망 시 자기장 페이즈 */
   deathPhase?: number;
+  edgePlay?: number;
+  bluezoneWaste?: number;
   v: number;
 }

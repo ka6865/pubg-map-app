@@ -88,13 +88,14 @@ export async function GET(request: Request) {
     });
 
     // 1-1. 캐시 확인 (DB/Storage)
-    const mapCachePath = `${matchId}_map.json`;
+    const myAccountId = myInfo.attributes.stats.playerId;
+    const mapCachePath = `${matchId}_${myAccountId}_${mode}_map.json`;
     const { data: fileData, error: downloadError } = await supabase.storage
       .from('telemetry')
       .download(mapCachePath);
 
     if (!downloadError && fileData) {
-      console.log(`[TELEMETRY-API] Loading cached map data for ${matchId}`);
+      console.log(`[TELEMETRY-API] Loading cached map data for ${matchId} (User: ${nickname}, Mode: ${mode})`);
       const text = await fileData.text();
       return NextResponse.json(JSON.parse(text), {
         headers: { "Cache-Control": "no-store" }
@@ -165,6 +166,7 @@ export async function GET(request: Request) {
     // 🎯 팩트: 매치에 실제 폭발 로그가 있는지 확인 (중복 방지용)
     const hasRealExplosions = events.some((ev: any) => (ev._T || ev.Type || "").toLowerCase() === "logexplosiveexplode");
 
+    let positionEventCount = 0;
     for (const ev of events) {
       try {
         const typeStr = (ev._T || ev.Type || ev.event || "UNKNOWN").toString();
@@ -186,6 +188,14 @@ export async function GET(request: Request) {
         if (lowerType === "logplayerposition") {
           const char = ev.character || ev.attacker || ev.victim;
           if (char && char.name) {
+            const isTeam = teamAccountIds.includes(char.accountId);
+            
+            // [V11.2] Lite 모드일 경우 적군 위치 데이터 샘플링 (성능 최적화)
+            if (mode === "lite" && !isTeam) {
+              positionEventCount++;
+              if (positionEventCount % 10 !== 0) continue;
+            }
+
             lastPosByPlayer[char.name] = { x: char.location?.x ?? 0, y: char.location?.y ?? 0 };
             lastRotByPlayer[char.name] = char.rotation || 0;
 
@@ -195,7 +205,7 @@ export async function GET(request: Request) {
               relativeTimeMs,
               name: char.name,
               teamId: char.teamId,
-              isTeam: teamAccountIds.includes(char.accountId),
+              isTeam: isTeam,
               x: scaleX(char.location?.x ?? 0),
               y: scaleY(char.location?.y ?? 0),
               z: (char.location?.z ?? 0) / 100,
@@ -501,12 +511,12 @@ export async function GET(request: Request) {
       });
 
     if (!uploadError) {
-      // DB에 이 매치가 관리되고 있음을 표시 (용량 확보를 위해 telemetry_events는 비움)
+      // [V11.2] 지도 데이터가 스토리지에 저장되었음을 DB에 기록 (Master Version은 건드리지 않음)
       await supabase.from("match_master_telemetry").upsert({
         match_id: matchId,
-        telemetry_events: [],
-        telemetry_version: 16
-      });
+        map_name: mapName,
+        game_mode: matchData.data.attributes.gameMode
+      }, { onConflict: 'match_id' });
     }
 
     return NextResponse.json(finalData, {
