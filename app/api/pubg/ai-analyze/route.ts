@@ -17,7 +17,7 @@ export async function POST(request: Request) {
       killContribution = { solo: 0, cleanup: 0, other: 0 },
       tradeStats = {}, combatPressure = {},
       isolationData = null,
-      teamImpact = { damageImpact: 0, killImpact: 0 },
+      teamImpact = { damageImpact: 0, killImpact: 0, teamDamageShare: 0, teamKillShare: 0 } as any,
       badges = []
     } = matchData;
 
@@ -26,7 +26,8 @@ export async function POST(request: Request) {
 - 매치: ${mapName} (${gameMode}), 순위: #${stats.winPlace}
 - 전투: ${stats.kills}킬 / ${stats.assists}어시 / ${stats.DBNOs}기절 / 딜량 ${Math.floor(stats.damageDealt)}
 - 킬 기여도: 직접 사살(Solo Kill) ${killContribution.solo}회 / 마무리 사살(Cleanup) ${killContribution.cleanup}회
-- 팀 기여: 내 딜량 비중 ${teamImpact.damageImpact}% / 내 킬 비중 ${teamImpact.killImpact}%
+- 실력 등급: 엘리트 대비 딜량 ${teamImpact.damageImpact}% / 킬 ${teamImpact.killImpact}% 
+- 팀 기여도: 팀 내 딜량 비중 ${teamImpact.teamDamageShare}% / 팀 내 킬 비중 ${teamImpact.teamKillShare}%
 - 획득 배지: ${badges.length > 0 ? badges.map((b: any) => `[${b.name}: ${b.desc}]`).join(", ") : "없음"}
 - 생존: ${Math.floor(stats.timeSurvived / 60)}분 ${stats.timeSurvived % 60}초
 
@@ -34,9 +35,15 @@ export async function POST(request: Request) {
 - 선제 공격 성공률: ${matchData.initiative_rate || 0}% (Elite: ${eliteBenchmark.avgInitiativeRate || 55}%)
 - 대응 사격 속도: ${tradeStats.counterLatencyMs > 0 ? (tradeStats.counterLatencyMs/1000).toFixed(2) : "데이터 부족"}s (Elite: ${(eliteBenchmark.avgCounterLatency || 500)/1000}s)
 - 전술 지원: 견제사격 ${tradeStats.suppCount || 0}회 (Elite Avg: ${eliteBenchmark.avgSuppCount || 3}회), 연막 ${tradeStats.smokeCount || 0}회, 부활 ${tradeStats.revCount || 0}회
-- 공간 전술: 고립 지수 ${isolationData?.isolationIndex || "데이터 부족"} (Elite: ${eliteBenchmark.avgIsolationIndex || 1.0}) / 고도차 ${isolationData?.heightDiff || 0}m
+- 공간 전술: 고립 지수 ${isolationData?.isolationIndex || "데이터 부족"} (Elite: ${eliteBenchmark.avgIsolationIndex || 1.0}) / 아군 평균 거리: ${isolationData?.minDist || 0}m / 고도차 ${isolationData?.heightDiff || 0}m
 - 운영 패턴: 사망 페이즈 ${matchData.deathPhase || 0} (Elite Avg: ${eliteBenchmark.avgDeathPhase || 6} 페이즈)
-- 교전 압박: 압박 지수 ${combatPressure.pressureIndex || 0} (Elite: ${eliteBenchmark.avgPressureIndex || 1.5}) / 투척물 딜량 ${combatPressure.utilityDamage || 0} / 투척물 적중 ${combatPressure.utilityHits || 0}회 (이 중 섬광탄 눈뽕 적중: ${combatPressure.stunHits || 0}회)
+- [V11.3] 유틸리티 정밀 분석:
+  * 총 투척: ${combatPressure.utilityStats?.throwCount || 0}회, 정확도(Accuracy): ${combatPressure.utilityStats?.accuracy || 0}%
+  * 투척물 킬: ${combatPressure.utilityStats?.killCount || 0}회, 개당 평균 데미지: ${combatPressure.utilityStats?.avgDamagePerThrow || 0}
+  * 섬광탄(Stun) 유효 적중: ${combatPressure.stunHits || 0}회
+- 교전 압박: 압박 지수 ${combatPressure.pressureIndex || 0} (Elite: ${eliteBenchmark.avgPressureIndex || 1.5}) / 전체 유틸리티 딜량 ${combatPressure.utilityDamage || 0}
+- 공간 전술: 고립 지수 ${isolationData?.isolationIndex || "데이터 부족"} (Elite: ${eliteBenchmark.avgIsolationIndex || 1.0}) / 십자포화(Crossfire) 노출: ${isolationData?.isCrossfire ? "있음" : "없음"}
+- 팀 전멸 기여: ${tradeStats.enemyTeamWipes || 0}회
 `.trim();
 
     const personaPrompt = isMild 
@@ -57,7 +64,11 @@ export async function POST(request: Request) {
       "- [Apple-to-Apple] 반드시 유저의 수치와 상위권 벤치마크 수치를 직접 대조하십시오.",
       "- [배지 우선순위] 유저가 획득한 배지가 있다면 이를 signature(칭호) 결정의 핵심 근거로 사용하십시오.",
       "- [팀 영향력] 내 딜량 비중이 40% 이상이면 '캐리', 15% 미만이면 '버스' 키워드를 전술적으로 활용하십시오.",
-      "- [투척물 분석 규칙] 투척물 딜량이 0이더라도 '투척물 적중' 횟수가 존재한다면, 이는 적을 향해 섬광탄을 명중시켰거나 기절한 적을 정밀하게 타격했다는 뜻입니다. 이 경우 절대 비난하지 말고 '교전 보조 능력이 탁월하다'고 강력하게 칭찬하십시오.",
+      "- [투척물 분석 규칙 (V11.3)] ",
+      "  * '정확도(Accuracy)'가 30% 이상이면 '폭파 전문가', 킬까지 있다면 '투척물 마스터' 칭호를 고려하십시오.",
+      "  * '개당 평균 데미지'가 50 이상이면 적의 위치를 정확히 파악하고 던지는 '정밀 폭격기'로 칭송하십시오.",
+      "  * 딜량이 낮더라도 섬광탄 적중이 있다면 '교전 보조의 신'으로 극찬하십시오.",
+      "  * 투척물 딜량이 0이더라도 '정확도'가 존재한다면 절대 비난하지 말고 '교전 보조 능력이 탁월하다'고 강력하게 칭찬하십시오.",
       "- **핵심 규칙**: 불필요한 미사여구와 항목 나열을 절대 금지합니다. 칭호와 그에 대한 전술적 이유를 설명한 뒤, 하단에 정확히 3개의 핵심 피드백 문장만 제공하십시오.",
       "",
       "반드시 아래 구조의 JSON 객체로만 응답하세요. 백틱(\`\`\`) 없이 순수 JSON만 출력하십시오.",
