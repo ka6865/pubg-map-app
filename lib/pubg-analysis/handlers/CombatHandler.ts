@@ -230,7 +230,7 @@ export class CombatHandler extends BaseHandler {
       if (name === this.state.lowerNickname || this.state.eliteNames.has(name)) {
         let pData = this.state.playerCombatData.get(name);
         if (!pData) {
-          pData = { total: 0, success: 0, duelWins: 0, duelLosses: 0, reversalWins: 0, sessions: new Map() };
+          pData = { total: 0, success: 0, duelWins: 0, duelLosses: 0, reversalWins: 0, reversalAttempts: 0, sessions: new Map() };
           this.state.playerCombatData.set(name, pData);
         }
         const opponent = name === attackerName ? victimName : attackerName;
@@ -250,6 +250,9 @@ export class CombatHandler extends BaseHandler {
           // "내가 먼저 쐈을 때만" 선제 타격 시도(total)로 카운트
           if (name === attackerName) {
             pData.total++;
+          } else {
+            // "적에게 먼저 맞았을 때" 반격 시도(reversalAttempts)로 카운트
+            pData.reversalAttempts++;
           }
         } else {
           // 기존 세션 업데이트

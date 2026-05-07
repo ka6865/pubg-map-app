@@ -313,7 +313,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                   <div className="w-1 h-1 bg-white/10 rounded-full" />
                   <div className="flex items-center gap-1 bg-orange-500/10 px-1.5 py-0.5 rounded border border-orange-500/20" title="팀 내 딜량 비중">
                     <Flame size={10} className="text-orange-500" />
-                    <span className="text-[10px] text-orange-500 font-black">팀 딜량 {matchData.teamImpact?.teamDamageShare}%</span>
+                    <span className="text-[10px] text-orange-500 font-black">팀 딜량 {Number(matchData.teamImpact?.teamDamageShare || 0).toFixed(1)}%</span>
                   </div>
                 </>
               )}
@@ -433,7 +433,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                 <TacticalBox 
                   icon={<TrendingUp size={18} />} 
                   label="복수 성공률" 
-                  value={`${matchData.tradeStats?.tradeRate || 0}%`} 
+                  value={`${Number(matchData.tradeStats?.tradeRate || 0).toFixed(1)}%`} 
                   subLabel="아군 손실 즉시 복구"
                   color="text-emerald-400"
                   bgColor="bg-emerald-400/10"
@@ -451,7 +451,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                 <TacticalBox 
                   icon={<Target size={18} />} 
                   label="주도권 성공률" 
-                  value={`${matchData.initiative_rate || matchData.initiativeStats?.rate || 0}%`} 
+                  value={`${Number(matchData.initiative_rate || matchData.initiativeStats?.rate || 0).toFixed(1)}%`} 
                   subLabel={`선제 공격 승리`}
                   color="text-cyan-400"
                   bgColor="bg-cyan-400/10"
@@ -460,7 +460,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                 <TacticalBox 
                   icon={<Clock size={18} />} 
                   label="트레이드 속도" 
-                  value={`${(matchData.tradeStats.tradeLatencyMs ?? 0) > 0 ? (matchData.tradeStats.tradeLatencyMs! / 1000).toFixed(2) : 0}s`} 
+                  value={`${(matchData.tradeStats.tradeLatencyMs ?? 0) > 0 ? (matchData.tradeStats.tradeLatencyMs! / 1000).toFixed(1) : 0}s`} 
                   subLabel={`평균 백업 시간`}
                   color="text-indigo-400"
                   bgColor="bg-indigo-400/10"

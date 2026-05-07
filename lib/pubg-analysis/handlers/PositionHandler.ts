@@ -33,8 +33,11 @@ export class PositionHandler extends BaseHandler {
     const isLanded = this.state.hasLanded;
     const isAfterStart = elapsed > 120 * 1000;
 
+    const isInVehicle = !!(e.character.vehicle || e.vehicle);
+
     if (pName === this.state.lowerNickname && (isLanded || isAfterStart) && 
         this.state.playerAliveStatus.get(this.state.lowerNickname) !== false &&
+        !isInVehicle &&
         ts - this.state.lastIsolationSampleTime >= 5000) {
       
       this.state.lastIsolationSampleTime = ts;
@@ -84,6 +87,8 @@ export class PositionHandler extends BaseHandler {
     if (!charLoc || this.state.playerAliveStatus.get(this.state.lowerNickname) === false) return null;
 
     let minDist = 999999, minEnemyDist = 999999, hDiff = 0, nearbyTeammates = 0;
+    let totalDistToTeammates = 0;
+    let aliveTeammateCount = 0;
 
     this.state.teamNames.forEach(tName => {
       const status = this.state.playerAliveStatus.get(tName);
@@ -92,6 +97,8 @@ export class PositionHandler extends BaseHandler {
         if (tLoc) {
           const d = calcDist3D(charLoc, tLoc);
           if (d > 1) {
+            totalDistToTeammates += d;
+            aliveTeammateCount++;
             if (d < minDist) { minDist = d; hDiff = Math.abs(charLoc.z - tLoc.z); }
             if (d < 10000) nearbyTeammates++; 
           }
@@ -107,13 +114,14 @@ export class PositionHandler extends BaseHandler {
       }
     });
 
-    if (minDist === 999999) return null;
-    const distRatio = minDist / Math.max(100, minEnemyDist);
+    // 스쿼드인 경우 모든 팀원과의 평균 거리를 우선 고려 (듀오는 어차피 1명이라 동일)
+    const effectiveDist = aliveTeammateCount > 0 ? (totalDistToTeammates / aliveTeammateCount) : minDist;
+    const distRatio = effectiveDist / Math.max(100, minEnemyDist);
     
     return {
       isolationIndex: Math.min(5, distRatio),
-      minDist: minDist / 100, // m 단위 정규화
-      heightDiff: hDiff / 100, // m 단위 정규화
+      minDist: effectiveDist / 100, // m 단위 정규화 (스쿼드 가중치 반영)
+      heightDiff: hDiff / 100,
       teammateCount: nearbyTeammates
     };
   }

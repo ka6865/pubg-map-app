@@ -143,15 +143,15 @@ export const IsolationRadar = ({ data, loading }: IsolationRadarProps) => {
           </div>
 
           <div className="text-2xl sm:text-4xl font-black text-white flex items-baseline gap-1">
-            {data.isolationIndex} 
+            {Number(data.isolationIndex).toFixed(1)} 
             <span className="text-[10px] sm:text-xs text-gray-500 font-medium uppercase">점</span>
           </div>
         </div>
         <div className="text-right flex flex-col items-end">
           <div className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">최근접 아군 거리</div>
           <div className="text-xl sm:text-2xl font-black text-white/90">
-            {data.minDist}<span className="text-sm font-medium">m</span> 
-            <span className="ml-2 text-[10px] sm:text-xs text-emerald-500/60 font-medium">({data.heightDiff}m 고도차)</span>
+            {Number(data.minDist).toFixed(1)}<span className="text-sm font-medium">m</span> 
+            <span className="ml-2 text-[10px] sm:text-xs text-emerald-500/60 font-medium">({Number(data.heightDiff).toFixed(1)}m 고도차)</span>
           </div>
           <div className="mt-1 text-[9px] text-gray-600 font-bold uppercase tracking-tighter">
             평균 주변 아군: <span className="text-emerald-500/80">{data.teammateCount}명</span>

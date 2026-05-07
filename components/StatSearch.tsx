@@ -353,7 +353,7 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
             >
               {result.seasons.map((s: any) => (
                 <option key={s.id} value={s.id}>
-                  시즌 {s.name}
+                  {s.name}
                 </option>
               ))}
             </select>

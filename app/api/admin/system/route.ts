@@ -7,31 +7,31 @@ const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 export async function POST(req: Request) {
   try {
-    const { action } = await req.json();
+    const body = await req.json();
+    const { action, nickname, matchId } = body;
     const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     if (action === "flush_old_cache") {
-      // 현재 시스템의 최신 버전(RESULT_VERSION)보다 낮은 모든 데이터 삭제
+      // 🚀 모든 분석 완료 데이터(가공된 데이터)만 삭제
       const { count, error } = await supabaseAdmin
         .from("processed_match_telemetry")
-        .delete()
-        .or(`data->fullResult->v.lt.${RESULT_VERSION},data->fullResult->v.is.null`);
+        .delete({ count: "exact" })
+        .neq("match_id", "_dummy_");
 
       if (error) throw error;
       return NextResponse.json({
         success: true,
-        message: `현재 버전(${RESULT_VERSION}) 미만의 구버전 캐시 ${count || 0}개가 삭제되었습니다.`
+        message: `모든 분석 캐시 ${count || 0}개가 삭제되었습니다.`
       });
     }
 
     if (action === "flush_player_cache") {
-      const { nickname } = await req.json();
       if (!nickname) throw new Error("플레이어 닉네임이 필요합니다.");
       const lowerNickname = nickname.toLowerCase().trim();
       
       const { count, error } = await supabaseAdmin
         .from("processed_match_telemetry")
-        .delete()
+        .delete({ count: "exact" })
         .eq("player_id", lowerNickname);
 
       if (error) throw error;
@@ -39,10 +39,9 @@ export async function POST(req: Request) {
     }
 
     if (action === "flush_match_cache") {
-      const { matchId, nickname } = await req.json();
       if (!matchId) throw new Error("매치 ID가 필요합니다.");
       
-      let query = supabaseAdmin.from("processed_match_telemetry").delete().eq("match_id", matchId);
+      let query = supabaseAdmin.from("processed_match_telemetry").delete({ count: "exact" }).eq("match_id", matchId);
       if (nickname) query = query.eq("player_id", nickname.toLowerCase().trim());
       
       const { count, error } = await query;
@@ -52,13 +51,16 @@ export async function POST(req: Request) {
 
     if (action === "reset_benchmarks") {
       // 벤치마크 테이블 전체 삭제
-      const { error } = await supabaseAdmin
+      const { count, error } = await supabaseAdmin
         .from("global_benchmarks")
-        .delete()
-        .neq("id", "placeholder"); // 전체 삭제를 위한 트릭
+        .delete({ count: "exact" })
+        .neq("id", -1); // 전체 삭제를 위한 트릭 (bigint 타입 호환)
 
       if (error) throw error;
-      return NextResponse.json({ success: true, message: "벤치마크 데이터가 성공적으로 초기화되었습니다." });
+      return NextResponse.json({ 
+        success: true, 
+        message: `벤치마크 데이터 ${count || 0}개가 성공적으로 초기화되었습니다.` 
+      });
     }
 
     return NextResponse.json({ error: "Invalid action" }, { status: 400 });

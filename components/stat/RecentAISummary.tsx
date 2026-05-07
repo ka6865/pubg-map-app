@@ -39,7 +39,8 @@ interface DebateData {
     latestMatchTime?: string;
     reactionLatency: string;
     initiativeSuccess: string;
-    duelStats?: { winRate: string; wins: number; losses: number; reversals: number };
+    duelStats?: { winRate: string; wins: number; losses: number; reversals: number; reversalAttempts: number };
+    reversalRate: string;
     coverRate: string;
     goldenTime?: { early: number; mid1: number; mid2: number; late: number };
     killContrib?: { solo: number; cleanup: number };
@@ -502,12 +503,12 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
         <div className="relative group p-6 bg-pink-500/10 border border-pink-500/20 rounded-[28px] text-center transition-all hover:bg-pink-500/15">
           <div className="text-[10px] text-pink-400 font-black uppercase mb-1 tracking-widest">역전의 명수</div>
           <div className="text-3xl font-black text-white mb-1">{debateData?.visuals?.duelStats?.reversals || 0}회</div>
-          <div className="text-[9px] text-gray-500 font-medium">먼저 맞고 이겨낸 횟수</div>
+          <div className="text-[9px] text-gray-500 font-medium">총 {debateData?.visuals?.duelStats?.reversalAttempts || 0}회 기습 중 승리</div>
         </div>
 
         <div className="relative group p-6 bg-orange-500/10 border border-orange-500/20 rounded-[28px] text-center transition-all hover:bg-orange-500/15">
           <div className="text-[10px] text-orange-400 font-black uppercase mb-1 tracking-widest">반격 성공률</div>
-          <div className="text-3xl font-black text-white mb-1">{debateData?.visuals?.coverRate || "0%"}</div>
+          <div className="text-3xl font-black text-white mb-1">{debateData?.visuals?.reversalRate || "0%"}</div>
           <div className="text-[9px] text-gray-500 font-medium">피격 시 교전 대응 성공률</div>
         </div>
 

@@ -87,7 +87,7 @@ export class AnalysisEngine {
       myRecentDamageTaken: new Map(),
       recentAttacksOnUser: [],
       itemUseSummary: { smokes: 0, frags: 0, molotovs: 0, stuns: 0, others: 0 },
-      itemUseStats: { heals: 0, boosts: 0, throwCount: 0 },
+      itemUseStats: { heals: 0, boosts: 0, throwCount: 0, lethalThrowCount: 0 },
       phaseTimeline: [],
       myDeathTime: null,
       deathDistance: 0,
@@ -170,8 +170,9 @@ export class AnalysisEngine {
     const avgTradeLat = this.state.tradeLatencies.length > 0 ? this.state.tradeLatencies.reduce((a, b) => a + b, 0) / this.state.tradeLatencies.length : 0;
 
     // 교전 및 선제 타격 지표 집계
-    const pData = this.state.playerCombatData.get(this.state.lowerNickname) || { total: 0, success: 0, duelWins: 0, duelLosses: 0, reversalWins: 0 };
+    const pData = this.state.playerCombatData.get(this.state.lowerNickname) || { total: 0, success: 0, duelWins: 0, duelLosses: 0, reversalWins: 0, reversalAttempts: 0 };
     const duelWinRate = (pData.duelWins + pData.duelLosses) > 0 ? (pData.duelWins / (pData.duelWins + pData.duelLosses)) * 100 : 0;
+    const reversalRate = pData.reversalAttempts > 0 ? (pData.reversalWins / pData.reversalAttempts) * 100 : 0;
     const initiativeRate = pData.total > 0 ? (pData.success / pData.total) * 100 : 0;
 
     return {
@@ -226,6 +227,8 @@ export class AnalysisEngine {
         wins: pData.duelWins, 
         losses: pData.duelLosses, 
         reversals: pData.reversalWins, 
+        reversalAttempts: pData.reversalAttempts,
+        reversalRate,
         duelWinRate 
       },
       combatPressure: {
@@ -236,8 +239,8 @@ export class AnalysisEngine {
           hitCount: this.state.combatPressure.utilityHits,
           totalDamage: this.state.combatPressure.utilityDamage,
           killCount: 0, // [V11.9.4] 유틸리티 킬 추적은 향후 고도화 예정
-          accuracy: this.state.itemUseStats.throwCount > 0 ? Number(((this.state.combatPressure.utilityHits / this.state.itemUseStats.throwCount) * 100).toFixed(1)) : 0,
-          avgDamagePerThrow: this.state.itemUseStats.throwCount > 0 ? Number((this.state.combatPressure.utilityDamage / this.state.itemUseStats.throwCount).toFixed(1)) : 0
+          accuracy: this.state.itemUseStats.lethalThrowCount > 0 ? Number(((this.state.combatPressure.utilityHits / this.state.itemUseStats.lethalThrowCount) * 100).toFixed(1)) : 0,
+          avgDamagePerThrow: this.state.itemUseStats.lethalThrowCount > 0 ? Number((this.state.combatPressure.utilityDamage / this.state.itemUseStats.lethalThrowCount).toFixed(1)) : 0
         },
         isClutched: false,
         utilityDamage: this.state.combatPressure.utilityDamage,

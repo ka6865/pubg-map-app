@@ -63,7 +63,7 @@ export async function POST(request: Request) {
     let totalCoverSuccess = 0, totalCoverAttempts = 0;
     let totalInitiativeSuccess = 0, totalInitiativeAttempts = 0;
     let totalCrossfireCount = 0, totalTeamWipes = 0, totalMaxHitDist = 0;
-    let totalDuelWins = 0, totalDuelLosses = 0, totalReversalWins = 0;
+    let totalDuelWins = 0, totalDuelLosses = 0, totalReversalWins = 0, totalReversalAttempts = 0;
     let totalUtilityThrows = 0, totalUtilityHits = 0, totalUtilityDamage = 0, totalUtilityKills = 0;
     let totalDeathPhase = 0, totalBluezoneWaste = 0;
     let totalEdgePlay = 0, totalFatalDelay = 0, totalStunHits = 0;
@@ -126,6 +126,7 @@ export async function POST(request: Request) {
         totalDuelWins += m.duelStats.wins || 0;
         totalDuelLosses += m.duelStats.losses || 0;
         totalReversalWins += m.duelStats.reversals || 0;
+        totalReversalAttempts += m.duelStats.reversalAttempts || 0;
       }
       if (m.combatPressure?.utilityStats) {
         const u = m.combatPressure.utilityStats;
@@ -268,10 +269,10 @@ export async function POST(request: Request) {
 - 실력 등급(엘리트 대비): 딜량 ${avgDamageImpact}% 
 - 평균 화력: ${avgDamage} (엘리트 Benchmark: ${avgBaselineDamageFinal}), 평균 ${avgKills}킬
 - [선제 공격] 주도권 성공률: ${userInitiativeRate}% (Benchmark: ${avgRealInitiativeSuccessFinal}%)
-- [교전 결정력] 1:1 교전 승률: ${avgDuelWinRate}% (승리: ${totalDuelWins}회, 패배: ${totalDuelLosses}회, 역전승: ${totalReversalWins}회)
+- [교전 결정력] 1:1 교전 승률: ${avgDuelWinRate}% (승리: ${totalDuelWins}회, 패배: ${totalDuelLosses}회, 역전승: ${totalReversalWins}회, 역전시도: ${totalReversalAttempts}회)
 - [교전 압박] 평균 압박 지수: ${avgPressureIndex} (Benchmark: ${avgRealPressureFinal}), 최대 교전 거리: ${totalMaxHitDist}m
 - [팀 기여도] 적 팀 전멸 기여: ${totalTeamWipes}회
-- [반응 속도] 대응 사격: ${avgBackupLatency} (Benchmark: ${b_counterLatency}s), 반격 성공률: ${avgCoverRate}%
+- [반응 속도] 대응 사격: ${avgBackupLatency} (Benchmark: ${b_counterLatency}s), 반격 성공률: ${totalReversalAttempts > 0 ? Math.round((totalReversalWins / totalReversalAttempts) * 100) : 0}%
 - [생존 환경] 고립 지수(운영/교전/사망): ${avgIsolationStr}/${isolationCountFinal>0?(totalCombatIso/isolationCountFinal).toFixed(2):"0"}/${isolationCountFinal>0?(totalDeathIso/isolationCountFinal).toFixed(2):"0"}
 - [생존 세부] 아군 평균 거리: ${avgMinDistStr} (Benchmark: ${b_minDist}m), 양각(다각도) 노출: ${totalCrossfireCount}회
 - [팀플레이] 아군 기절 ${totalTeammateKnocks}회 → 부활: ${totalRevCount}회, 복수(Trade): ${totalTradeKills}회 (복수 성공률: ${totalTeammateKnocks>0?Math.round((totalTradeKills/totalTeammateKnocks)*100):0}% vs Benchmark: ${b_tradeRate}%)
@@ -303,8 +304,9 @@ export async function POST(request: Request) {
     // [V7.4] ⑤ precomputedVisuals 구성 (UI 렌더링용)
     const precomputedVisuals = {
       latestMatchTime, counterLatency: avgBackupLatency, reactionLatency: avgReactionLatency,
-      initiativeSuccess: `${userInitiativeRate}%`, pressureIndex: avgPressureIndex, coverRate: `${avgCoverRate}%`,
-      duelStats: { winRate: `${avgDuelWinRate}%`, wins: totalDuelWins, losses: totalDuelLosses, reversals: totalReversalWins },
+      initiativeSuccess: `${userInitiativeRate}%`, pressureIndex: avgPressureIndex, 
+      reversalRate: `${totalReversalAttempts > 0 ? Math.round((totalReversalWins / totalReversalAttempts) * 100) : 0}%`,
+      duelStats: { winRate: `${avgDuelWinRate}%`, wins: totalDuelWins, losses: totalDuelLosses, reversals: totalReversalWins, reversalAttempts: totalReversalAttempts },
       teamImpact: { damageImpact: avgDamageImpact, topBadges },
       goldenTime: goldenTimeAvg,
       killContrib: killContribFinal,

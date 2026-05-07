@@ -53,9 +53,43 @@ export async function GET(request: Request) {
     const currentSeason = availableSeasons.find(
       (s: any) => s.attributes.isCurrentSeason
     ) || availableSeasons[0];
-    const targetSeasonId = reqSeason || currentSeason.id;
+    
+    let targetSeasonId = reqSeason || currentSeason.id;
 
-    // 🚀 핵심: 경쟁전과 일반전 API를 '동시에' 찔러서 속도를 높입니다!
+    // 현재 시즌 요청 시 데이터가 없으면 데이터가 있는 최근 시즌 탐색 (최대 3개 시즌)
+    if (!reqSeason) {
+      try {
+        const checkRes = await fetch(
+          `https://api.pubg.com/shards/${platform}/players/${accountId}/seasons/${targetSeasonId}`,
+          { headers, next: { revalidate: 60 } }
+        );
+        if (checkRes.ok) {
+          const checkData = await checkRes.json();
+          const stats = checkData.data.attributes.gameModeStats;
+          const hasData = Object.values(stats).some((m: any) => m.roundsPlayed > 0);
+          
+          if (!hasData) {
+            for (let i = 1; i < Math.min(availableSeasons.length, 4); i++) {
+              const prevId = availableSeasons[i].id;
+              const prevRes = await fetch(
+                `https://api.pubg.com/shards/${platform}/players/${accountId}/seasons/${prevId}`,
+                { headers, next: { revalidate: 60 } }
+              );
+              if (prevRes.ok) {
+                const prevData = await prevRes.json();
+                if (Object.values(prevData.data.attributes.gameModeStats).some((m: any) => m.roundsPlayed > 0)) {
+                  targetSeasonId = prevId;
+                  break;
+                }
+              }
+            }
+          }
+        }
+      } catch (e) {
+        console.error("Season fallback error:", e);
+      }
+    }
+
     const [rankedRes, normalRes] = await Promise.all([
       fetch(
         `https://api.pubg.com/shards/${platform}/players/${accountId}/seasons/${targetSeasonId}/ranked`,
@@ -105,7 +139,7 @@ export async function GET(request: Request) {
       seasonId: targetSeasonId,
       seasons: availableSeasons.map((s: any) => ({
         id: s.id,
-        name: s.id.split("-").pop(),
+        name: `Season ${s.id.split("-").pop()}`,
       })),
       stats: { ranked: rankedStats, normal: normalStats },
       recentMatches,

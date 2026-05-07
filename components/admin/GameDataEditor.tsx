@@ -307,14 +307,14 @@ export default function GameDataEditor() {
               
               <div className="grid grid-cols-1 gap-6">
                 <div className="bg-[#1a1a1a] p-6 rounded-xl border border-[#333]">
-                  <h3 className="text-lg font-bold text-[#F2A900] mb-2">텔레메트리 캐시 초기화</h3>
+                  <h3 className="text-lg font-bold text-[#F2A900] mb-2">전체 분석 캐시 초기화</h3>
                   <p className="text-sm text-gray-400 mb-4">
-                    현재 엔진 버전(V11.6)보다 낮은 모든 분석 데이터를 DB에서 삭제합니다.<br/>
-                    삭제된 데이터는 사용자가 다시 조회할 때 최신 엔진으로 자동 재분석됩니다.
+                    데이터베이스에 저장된 모든 분석 결과값(processed_match_telemetry)을 삭제합니다.<br/>
+                    원본 데이터는 보존되며, 사용자가 전적을 조회할 때 최신 엔진으로 다시 계산됩니다.
                   </p>
                   <button
                     onClick={async () => {
-                      if (!confirm("정말 구버전 캐시를 삭제하시겠습니까? (V11.6 미만 대상)")) return;
+                      if (!confirm("정말 모든 분석 캐시를 삭제하시겠습니까? (복구 불가능)")) return;
                       setIsSaving(true);
                       try {
                         const res = await fetch("/api/admin/system", {
@@ -334,7 +334,7 @@ export default function GameDataEditor() {
                     disabled={isSaving}
                     className="px-6 py-3 bg-red-600/20 text-red-500 border border-red-600/30 rounded-lg font-bold hover:bg-red-600/30 transition-all"
                   >
-                    🗑️ 구버전 캐시 삭제 (v11.6 미만)
+                    🗑️ 전체 분석 데이터 삭제 (초기화)
                   </button>
                 </div>
 

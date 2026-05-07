@@ -42,8 +42,9 @@ export class UtilityHandler extends BaseHandler {
       if (itemId.includes("smoke")) {
         this.state.totalSmokeCount++;
         this.state.itemUseSummary.smokes = (this.state.itemUseSummary.smokes || 0) + 1;
-      } else if (itemId.includes("grenade")) {
+      } else if (itemId.includes("grenade") || itemId.includes("molotov") || itemId.includes("c4")) {
         this.state.itemUseSummary.frags = (this.state.itemUseSummary.frags || 0) + 1;
+        this.state.itemUseStats.lethalThrowCount++;
       }
     }
   }
@@ -129,10 +130,19 @@ export class UtilityHandler extends BaseHandler {
       this.state.itemUseStats.throwCount++;
       
       if (wId.includes("smoke")) this.state.itemUseSummary.smokes++;
-      else if (wId.includes("grenade")) this.state.itemUseSummary.frags++;
-      else if (wId.includes("molotov")) this.state.itemUseSummary.molotovs++;
+      else if (wId.includes("grenade")) {
+        this.state.itemUseSummary.frags++;
+        this.state.itemUseStats.lethalThrowCount++;
+      }
+      else if (wId.includes("molotov")) {
+        this.state.itemUseSummary.molotovs++;
+        this.state.itemUseStats.lethalThrowCount++;
+      }
       else if (wId.includes("flashbang") || wId.includes("stun")) this.state.itemUseSummary.stuns++;
-      else this.state.itemUseSummary.others++;
+      else {
+        this.state.itemUseSummary.others++;
+        // C4나 점착폭탄 등은 others로 분류될 수 있으므로 여기서도 살상용으로 판단될 경우 추가 (현재는 주요 2종 우선)
+      }
     }
   }
 

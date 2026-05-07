@@ -74,6 +74,8 @@ export interface DuelStats {
   wins: number;
   losses: number;
   reversals: number;
+  reversalAttempts: number;
+  reversalRate: number;
   duelWinRate: number;
 }
 
@@ -114,7 +116,7 @@ export interface AnalysisResult {
     solo: number;
     cleanup: number;
   };
-  itemUseStats: { heals: number, boosts: number, throwCount: number }; // [V11.8] 회복/부스트 상세 통계
+  itemUseStats: { heals: number, boosts: number, throwCount: number, lethalThrowCount: number }; // [V11.8] 회복/부스트 상세 통계
   wasZoneMovingAtDeath: boolean; // [V11.8] 사망 시점 자기장 상태
   isolationData: IsolationData;
   tradeStats: TradeStats;
@@ -215,7 +217,7 @@ export interface InternalAnalysisState {
   myRecentDamageTaken: Map<string, number>;
   recentAttacksOnUser: any[];
   itemUseSummary: any;
-  itemUseStats: { heals: number, boosts: number, throwCount: number }; // [V11.8] 회복/부스트 상세 통계
+  itemUseStats: { heals: number, boosts: number, throwCount: number, lethalThrowCount: number }; // [V11.8] 회복/부스트 상세 통계
   phaseTimeline: any[];
   myDeathTime: number | null;
   deathDistance: number;
