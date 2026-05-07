@@ -108,7 +108,7 @@ export class PositionHandler extends BaseHandler {
     });
 
     if (minDist === 999999) return null;
-    const distRatio = minDist / Math.max(10000, minEnemyDist);
+    const distRatio = minDist / Math.max(100, minEnemyDist);
     
     return {
       isolationIndex: Math.min(5, distRatio),
