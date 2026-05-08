@@ -31,18 +31,17 @@ export async function POST(request: Request) {
 - 획득 배지: ${badges.length > 0 ? badges.map((b: any) => `[${b.name}: ${b.desc}]`).join(", ") : "없음"}
 - 생존: ${Math.floor(stats.timeSurvived / 60)}분 ${stats.timeSurvived % 60}초
 
-[전술 지표 (유저 vs 상위 25% 평균)]
-- 선제 공격 성공률: ${matchData.initiative_rate || 0}% (Elite: ${eliteBenchmark.avgInitiativeRate || 55}%)
-- 대응 사격 속도: ${tradeStats.counterLatencyMs > 0 ? (tradeStats.counterLatencyMs/1000).toFixed(2) : "데이터 부족"}s (Elite: ${(eliteBenchmark.avgCounterLatency || 500)/1000}s)
-- 전술 지원: 견제사격 ${tradeStats.suppCount || 0}회 (Elite Avg: ${eliteBenchmark.avgSuppCount || 3}회), 연막 ${tradeStats.smokeCount || 0}회, 부활 ${tradeStats.revCount || 0}회
-- 공간 전술: 고립 지수 ${isolationData?.isolationIndex || "데이터 부족"} (Elite: ${eliteBenchmark.avgIsolationIndex || 1.0}) / 아군 평균 거리: ${isolationData?.minDist || 0}m / 고도차 ${isolationData?.heightDiff || 0}m
+[전술 지표 (유저 vs DB 티어 평균)]
+- 1:1 교전 승률: ${matchData.duelStats?.duelWinRate || 0}% (Elite Avg: ${eliteBenchmark.avgDuelWinRate || 55}%)
+- 복수(Trade) 성공률: ${tradeStats.tradeRate || 0}% (Elite Avg: ${eliteBenchmark.avgTradeRate || 50}%)
+- 선제 공격 성공률: ${matchData.initiative_rate || 0}% (Elite Avg: ${eliteBenchmark.avgInitiativeRate || 55}%)
+- 대응 사격 속도: ${tradeStats.counterLatencyMs > 0 ? (tradeStats.counterLatencyMs/1000).toFixed(2) : "데이터 부족"}s (Elite Avg: ${(eliteBenchmark.avgCounterLatency || 1500)/1000}s)
+- 전술 지원: 견제사격 ${tradeStats.suppCount || 0}회 (Elite Avg: ${eliteBenchmark.avgSuppCount || 3.0}회)
+- 위기 관리: 소생률 ${tradeStats.teammateKnocks > 0 ? Math.round((tradeStats.revCount / tradeStats.teammateKnocks) * 100) : 0}% (Elite Avg: ${eliteBenchmark.avgReviveRate || 80}%) / 연막 엄호율 ${tradeStats.teammateKnocks > 0 ? Math.round((tradeStats.smokeCount / tradeStats.teammateKnocks) * 100) : 0}% (Elite Avg: ${eliteBenchmark.avgSmokeRate || 60}%)
+- 공간 전술: 고립 지수 ${isolationData?.isolationIndex || "데이터 부족"} (Elite Avg: ${eliteBenchmark.avgIsolationIndex || 1.0}) / 아군 평균 거리: ${isolationData?.minDist || 0}m / 고도차 ${isolationData?.heightDiff || 0}m / 십자포화 노출: ${isolationData?.isCrossfire ? "있음" : "없음"}
+- 유틸리티 정밀: 총 투척 ${combatPressure.utilityStats?.throwCount || 0}회 / 정확도 ${combatPressure.utilityStats?.accuracy || 0}% / 섬광 적중 ${combatPressure.stunHits || 0}회
+- 교전 압박: 압박 지수 ${combatPressure.pressureIndex || 0} (Elite Avg: ${eliteBenchmark.avgPressureIndex || 3.0}) / 투척물 딜량 ${combatPressure.utilityDamage || 0}
 - 운영 패턴: 사망 페이즈 ${matchData.deathPhase || 0} (Elite Avg: ${eliteBenchmark.avgDeathPhase || 6} 페이즈)
-- [V11.3] 유틸리티 정밀 분석:
-  * 총 투척: ${combatPressure.utilityStats?.throwCount || 0}회, 정확도(Accuracy): ${combatPressure.utilityStats?.accuracy || 0}%
-  * 투척물 킬: ${combatPressure.utilityStats?.killCount || 0}회, 개당 평균 데미지: ${combatPressure.utilityStats?.avgDamagePerThrow || 0}
-  * 섬광탄(Stun) 유효 적중: ${combatPressure.stunHits || 0}회
-- 교전 압박: 압박 지수 ${combatPressure.pressureIndex || 0} (Elite: ${eliteBenchmark.avgPressureIndex || 1.5}) / 전체 유틸리티 딜량 ${combatPressure.utilityDamage || 0}
-- 공간 전술: 고립 지수 ${isolationData?.isolationIndex || "데이터 부족"} (Elite: ${eliteBenchmark.avgIsolationIndex || 1.0}) / 십자포화(Crossfire) 노출: ${isolationData?.isCrossfire ? "있음" : "없음"}
 - 팀 전멸 기여: ${tradeStats.enemyTeamWipes || 0}회
 `.trim();
 

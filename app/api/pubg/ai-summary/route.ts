@@ -75,7 +75,7 @@ function aggregateMatches(matches: any[]) {
       totalDuelWins += m.duelStats.wins || 0;
       totalDuelLosses += m.duelStats.losses || 0;
       totalReversalWins += m.duelStats.reversals || 0;
-      totalReversalAttempts += m.duelStats.reversalAttempts || 0;
+      totalReversalAttempts += Math.max(m.duelStats.reversalAttempts || 0, m.duelStats.reversals || 0);
     }
     if (m.combatPressure?.utilityStats) {
       const u = m.combatPressure.utilityStats;
@@ -273,6 +273,10 @@ export async function POST(request: Request) {
     let userPrompt = `- 분석 대상: 총 ${mLen}경기 (랭크 매치: ${rankedCount}판 포함)\n`;
     userPrompt += `- 주력 모드: ${mainModeName.toUpperCase()} (신뢰도: ${tierConfidence}, 기반: ${mainModeCount}판)\n\n`;
 
+    let maxMatches = 0;
+    let mainUserTier = "C";
+    let mainBench: any = null;
+
     for (const [mode, gMatches] of Object.entries(groups)) {
       if (gMatches.length === 0) continue;
       const gStats = aggregateMatches(gMatches);
@@ -289,10 +293,11 @@ export async function POST(request: Request) {
         .ilike("game_mode", `%${mode}%`)
         .limit(200);
 
-      let bench = {
+      let bench: any = {
          avgRealPressureFinal: 1.5, avgBaselineDamageFinal: 450, avgRealInitiativeSuccessFinal: 55,
          b_isolationIndex: 1.0, b_minDist: 15, b_counterLatency: 0.5, b_soloKillRate: 50,
-         b_reviveRate: 30, b_tradeRate: 35, b_reversalRate: 25, avgDeathPhaseElite: 6
+         b_reviveRate: 30, b_tradeRate: 35, b_reversalRate: 25, avgDeathPhaseElite: 6,
+         b_duelWinRate: userTier === 'S' ? 65 : userTier === 'A' ? 55 : userTier === 'B' ? 45 : 35
       };
       if (globalStats && globalStats.length >= 5) {
          const gLen = globalStats.length;
@@ -307,8 +312,15 @@ export async function POST(request: Request) {
            b_reviveRate: Math.round(globalStats.reduce((acc: any, s: any) => acc + (s.revive_rate || 0), 0) / gLen),
            b_tradeRate: Math.round(globalStats.reduce((acc: any, s: any) => acc + (s.trade_rate || 0), 0) / gLen),
            b_reversalRate: Math.round(globalStats.reduce((acc: any, s: any) => acc + (s.reversal_rate || 0), 0) / gLen),
+           b_duelWinRate: Math.round(globalStats.reduce((acc: any, s: any) => acc + (s.duel_win_rate || (userTier === 'S' ? 65 : userTier === 'A' ? 55 : userTier === 'B' ? 45 : 35)), 0) / gLen),
            avgDeathPhaseElite: Number((globalStats.reduce((acc: any, s: any) => acc + (s.death_phase || 0), 0) / gLen).toFixed(1))
          };
+      }
+
+      if (gMatches.length > maxMatches) {
+        maxMatches = gMatches.length;
+        mainUserTier = userTier;
+        mainBench = bench;
       }
 
       const isLow = gMatches.length <= 2;
@@ -316,7 +328,8 @@ export async function POST(request: Request) {
       userPrompt += `- 유저 티어: ${userTier}\n`;
       userPrompt += `- 평균 화력: ${gStats.avgDamage} (동일 티어 Benchmark: ${bench.avgBaselineDamageFinal}), 평균 ${gStats.avgKills}킬\n`;
       userPrompt += `- [선제 공격] 주도권 성공률: ${gStats.userInitiativeRate}% (Benchmark: ${bench.avgRealInitiativeSuccessFinal}%)\n`;
-      userPrompt += `- [교전 결정력] 1:1 교전 승률: ${gStats.avgDuelWinRate}% (승리: ${gStats.totalDuelWins}회, 패배: ${gStats.totalDuelLosses}회, 역전승: ${gStats.totalReversalWins}회)\n`;
+      const benchDuelWinRate = bench.b_duelWinRate || (userTier === 'S' ? 65 : userTier === 'A' ? 55 : userTier === 'B' ? 45 : 35);
+      userPrompt += `- [교전 결정력] 1:1 교전 승률: ${gStats.avgDuelWinRate}% (Benchmark: ${benchDuelWinRate}%, 승리: ${gStats.totalDuelWins}회, 패배: ${gStats.totalDuelLosses}회, 역전승: ${gStats.totalReversalWins}회)\n`;
       userPrompt += `- [교전 압박] 평균 압박 지수: ${gStats.avgPressureIndex} (Benchmark: ${bench.avgRealPressureFinal}), 최대 교전 거리: ${gStats.totalMaxHitDist}m\n`;
       if (mode !== 'solo') {
         userPrompt += `- [팀 기여도] 적 팀 전멸 기여: ${gStats.totalTeamWipes}회\n`;
@@ -380,7 +393,10 @@ export async function POST(request: Request) {
           minDist: Math.round(totalMinDist / isolationCountFinal),
           heightDiff: Math.round(totalHeightDiff / isolationCountFinal),
           isCrossfire: totalCrossfireCount > 0,
-          teammateCount: Math.round(totalTeammateCountFinal / isolationCountFinal) 
+          teammateCount: Math.round(totalTeammateCountFinal / isolationCountFinal),
+          userTier: mainUserTier,
+          benchmarkIsolationIndex: mainBench?.b_isolationIndex || 1.0,
+          benchmarkMinDist: mainBench?.b_minDist || 15
         } : null,
         utility: {
           throwCount: totalUtilityThrows,
