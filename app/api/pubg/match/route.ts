@@ -62,10 +62,10 @@ export async function GET(request: Request) {
     const { data: tierStatsRaw } = await supabase.from('benchmark_stats_by_tier').select('*').eq('game_mode', matchAttr.gameMode);
     const tierStats = tierStatsRaw || [];
 
-    const fallbackS = { avg_damage: 620, avg_kills: 4.5, avg_latency: 1200, avg_initiative_rate: 65, avg_death_phase: 7.5 };
-    const fallbackA = { avg_damage: 450, avg_kills: 3.0, avg_latency: 1650, avg_initiative_rate: 55, avg_death_phase: 6.0 };
-    const fallbackB = { avg_damage: 290, avg_kills: 1.8, avg_latency: 2100, avg_initiative_rate: 42, avg_death_phase: 4.5 };
-    const fallbackC = { avg_damage: 150, avg_kills: 0.7, avg_latency: 2800, avg_initiative_rate: 28, avg_death_phase: 3.0 };
+    const fallbackS = { avg_damage: 620, avg_kills: 4.5, avg_latency: 1200, avg_initiative_rate: 65, avg_death_phase: 7.5, avg_revive_rate: 80, avg_smoke_rate: 60, avg_supp_count: 3.0, avg_death_distance: 30, avg_isolation_index: 0.8, avg_pressure_index: 2.0, avg_duel_win_rate: 65, avg_trade_rate: 60, avg_solo_kill_rate: 50 };
+    const fallbackA = { avg_damage: 450, avg_kills: 3.0, avg_latency: 1650, avg_initiative_rate: 55, avg_death_phase: 6.0, avg_revive_rate: 70, avg_smoke_rate: 50, avg_supp_count: 2.5, avg_death_distance: 25, avg_isolation_index: 1.0, avg_pressure_index: 3.0, avg_duel_win_rate: 55, avg_trade_rate: 50, avg_solo_kill_rate: 45 };
+    const fallbackB = { avg_damage: 290, avg_kills: 1.8, avg_latency: 2100, avg_initiative_rate: 42, avg_death_phase: 4.5, avg_revive_rate: 55, avg_smoke_rate: 40, avg_supp_count: 2.0, avg_death_distance: 20, avg_isolation_index: 1.3, avg_pressure_index: 4.0, avg_duel_win_rate: 45, avg_trade_rate: 40, avg_solo_kill_rate: 40 };
+    const fallbackC = { avg_damage: 150, avg_kills: 0.7, avg_latency: 2800, avg_initiative_rate: 28, avg_death_phase: 3.0, avg_revive_rate: 40, avg_smoke_rate: 30, avg_supp_count: 1.5, avg_death_distance: 15, avg_isolation_index: 1.8, avg_pressure_index: 5.0, avg_duel_win_rate: 35, avg_trade_rate: 30, avg_solo_kill_rate: 35 };
 
     const tiers = {
       S: tierStats.find(t => t.tier === 'S') || fallbackS,
@@ -193,13 +193,16 @@ export async function GET(request: Request) {
       avgKills: tiers.A.avg_kills,
       avgCounterLatency: tiers.A.avg_latency,
       avgInitiativeRate: tiers.A.avg_initiative_rate,
-      avgReviveRate: 80,
-      avgSmokeRate: 60,
-      avgSuppCount: 3.0,
-      avgDeathDistance: 30,
-      avgIsolationIndex: 1.0,
-      avgPressureIndex: 3.0,
-      avgDeathPhase: tiers.A.avg_death_phase
+      avgReviveRate: tiers.A.avg_revive_rate,
+      avgSmokeRate: tiers.A.avg_smoke_rate,
+      avgSuppCount: tiers.A.avg_supp_count,
+      avgDeathDistance: tiers.A.avg_death_distance,
+      avgIsolationIndex: tiers.A.avg_isolation_index,
+      avgPressureIndex: tiers.A.avg_pressure_index,
+      avgDeathPhase: tiers.A.avg_death_phase,
+      avgDuelWinRate: tiers.A.avg_duel_win_rate,
+      avgTradeRate: tiers.A.avg_trade_rate,
+      avgSoloKillRate: tiers.A.avg_solo_kill_rate
     };
 
     const finalResult = engine.run(telData, matchAttr, rosters, participants, myStats, teamStats, eliteBenchmarks);
@@ -257,7 +260,8 @@ export async function GET(request: Request) {
         min_dist: finalResult.isolationData.minDist, height_diff: finalResult.isolationData.heightDiff,
         is_crossfire: finalResult.isolationData.isCrossfire, death_phase: finalResult.deathPhase,
         trade_rate: tierInput.tradeRate, reversal_rate: finalResult.duelStats.reversalRate,
-        lethal_throw_count: finalResult.itemUseStats.lethalThrowCount
+        lethal_throw_count: finalResult.itemUseStats.lethalThrowCount,
+        duel_win_rate: finalResult.duelStats.duelWinRate
       }, { onConflict: 'match_id,player_id' }));
     }
 

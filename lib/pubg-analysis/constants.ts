@@ -2,7 +2,7 @@
  * PUBG 전술 분석 엔진 상수 정의
  */
 
-export const RESULT_VERSION = 11.96; // [V11.9.6] 거리 계산 중복 보정 제거 및 반격 지표 최종 안정화
+export const RESULT_VERSION = 11.97; // [V11.9.7] duel_win_rate DB 연동을 위한 전체 재분석 트리거
 export const TELEMETRY_VERSION = 16;
 
 export const MAP_NAMES: Record<string, string> = {
