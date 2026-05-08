@@ -14,6 +14,8 @@
   },
   "dependencies": {
     "@ai-sdk/google": "^3.0.64",
+    "@emnapi/core": "1.10.0",
+    "@emnapi/runtime": "1.10.0",
     "@google/generative-ai": "^0.24.1",
     "@next/third-parties": "^16.2.4",
     "@supabase/ssr": "^0.10.0",
