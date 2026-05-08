@@ -513,11 +513,11 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
         </div>
 
         <div className="relative group p-6 bg-cyan-500/10 border border-cyan-500/20 rounded-[28px] text-center transition-all hover:bg-cyan-500/15">
-          <div className="text-[10px] text-cyan-400 font-black uppercase mb-1 tracking-widest">대응 사격 속도</div>
+          <div className="text-[10px] text-cyan-400 font-black uppercase mb-1 tracking-widest">아군 백업 속도</div>
           <div className="text-3xl font-black text-white mb-1">
             {debateData?.visuals?.counterLatency || "0.00s"}
           </div>
-          <div className="text-[9px] text-gray-500 font-medium">피격 후 반격까지 소요 시간</div>
+          <div className="text-[9px] text-gray-500 font-medium">아군 피격 시 커버 소요 시간</div>
         </div>
 
         <div className="relative group p-6 bg-emerald-500/10 border border-emerald-500/20 rounded-[28px] text-center transition-all hover:bg-emerald-500/15">

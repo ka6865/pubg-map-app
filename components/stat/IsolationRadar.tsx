@@ -9,6 +9,9 @@ interface IsolationData {
   heightDiff: number;
   isCrossfire: boolean;
   teammateCount: number;
+  userTier?: string;
+  benchmarkIsolationIndex?: number;
+  benchmarkMinDist?: number;
 }
 
 interface IsolationRadarProps {
@@ -38,7 +41,7 @@ export const IsolationRadar = ({ data, loading }: IsolationRadarProps) => {
       value: normIsolation, 
       icon: <Users size={14} />, 
       color: "text-emerald-400", 
-      desc: "점유 중인 위치의 전술적 안전도",
+      desc: data.benchmarkIsolationIndex ? `동일 티어(${data.userTier}) 평균 고립지수: ${data.benchmarkIsolationIndex}` : "점유 중인 위치의 전술적 안전도",
       formula: "100 - (고립 지수 * 20)",
       detail: "고립 지수 = (아군 거리 / 적군 거리). 1.0 이하면 매우 안전한 포지셔닝입니다."
     },
@@ -47,7 +50,7 @@ export const IsolationRadar = ({ data, loading }: IsolationRadarProps) => {
       value: normDist, 
       icon: <Zap size={14} />, 
       color: "text-blue-400", 
-      desc: "팀원과의 즉각적인 교전 지원 거리 유지",
+      desc: data.benchmarkMinDist ? `동일 티어(${data.userTier}) 평균 아군 거리: ${data.benchmarkMinDist}m` : "팀원과의 즉각적인 교전 지원 거리 유지",
       formula: "100 - (평균 아군 거리 / 1.5)",
       detail: "아군과 150m 이상 떨어지면 0점 처리됩니다. 백업 가능한 거리를 유지하세요."
     },
@@ -77,7 +80,14 @@ export const IsolationRadar = ({ data, loading }: IsolationRadarProps) => {
       
       <div className="flex flex-col @md:flex-row @md:items-center justify-between gap-4 mb-8">
         <div className="flex flex-col gap-1">
-          <div className="text-[10px] text-emerald-400 font-black uppercase tracking-[0.3em]">공간 지각 지능 분석</div>
+          <div className="flex items-center gap-2 text-[10px] text-emerald-400 font-black uppercase tracking-[0.3em]">
+            공간 지각 지능 분석 
+            {data.userTier && (
+              <span className="px-1.5 py-0.5 bg-emerald-500/20 text-emerald-300 rounded-[4px] tracking-normal border border-emerald-500/30">
+                {data.userTier} TIER
+              </span>
+            )}
+          </div>
           <div className="text-xl sm:text-2xl font-black text-white tracking-tighter">전술적 공간 데이터</div>
         </div>
         <div className={`w-fit px-4 py-1.5 rounded-xl border text-[10px] sm:text-xs font-black transition-all ${
