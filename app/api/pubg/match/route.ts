@@ -217,19 +217,25 @@ export async function GET(request: Request) {
     const tierInput: MatchTierInput = {
       rankPct,
       survivalTime: Math.round(myStats.timeSurvived),
-      initiativeRate: finalResult.initiative_rate,
-      counterLatencyMs: finalResult.tradeStats.counterLatencyMs,
+      initiativeRate: finalResult.initiativeSampleCount > 0 ? finalResult.initiative_rate : -1,
+      counterLatencyMs: finalResult.tradeStats.reactionLatencyMs > 0 ? finalResult.tradeStats.reactionLatencyMs : -1,
       pressureIndex: finalResult.combatPressure.pressureIndex,
-      smokeRate: finalResult.tradeStats.teammateKnocks > 0 ? Math.round((finalResult.tradeStats.smokeCount / finalResult.tradeStats.teammateKnocks) * 100) : 0,
+      smokeRate: finalResult.tradeStats.teammateKnocks > 0 ? Math.round((finalResult.tradeStats.smokeCount / finalResult.tradeStats.teammateKnocks) * 100) : -1,
       suppCount: finalResult.tradeStats.suppCount,
-      reviveRate: finalResult.tradeStats.teammateKnocks > 0 ? Math.round((finalResult.tradeStats.revCount / finalResult.tradeStats.teammateKnocks) * 100) : 0,
-      tradeRate: finalResult.tradeStats.teammateKnocks > 0 ? Math.round((finalResult.tradeStats.tradeKills / finalResult.tradeStats.teammateKnocks) * 100) : 0,
+      reviveRate: finalResult.tradeStats.teammateKnocks > 0 ? Math.round((finalResult.tradeStats.revCount / finalResult.tradeStats.teammateKnocks) * 100) : -1,
+      tradeRate: finalResult.tradeStats.teammateKnocks > 0 ? Math.round((finalResult.tradeStats.tradeKills / finalResult.tradeStats.teammateKnocks) * 100) : -1,
       teamWipes: finalResult.tradeStats.enemyTeamWipes,
-      reversalRate: finalResult.duelStats.reversalRate,
+      reversalRate: finalResult.duelStats.reversalAttempts > 0 ? finalResult.duelStats.reversalRate : -1,
       deathPhase: finalResult.deathPhase
     };
 
-    const { tier: benchmarkTier, score: benchmarkScore } = getBenchmarkTier(tierInput, isSolo);
+    const benchmark = getBenchmarkTier(tierInput, isSolo);
+    const benchmarkTier = benchmark.tier;
+    const benchmarkScore = benchmark.score;
+    
+    // [V11.9.5] 프론트엔드 UI를 위해 상세 점수 포함
+    (finalResult as any).benchmark = benchmark;
+
     const isValidBenchmark = benchmarkTier !== null && isNotTdmOrEvent && isNotBotMatch;
 
     const backgroundTasks = [
@@ -250,18 +256,20 @@ export async function GET(request: Request) {
         tier: benchmarkTier, score: benchmarkScore,
         damage: Math.floor(myStats.damageDealt), kills: myStats.kills,
         win_place: myStats.winPlace, game_mode: matchAttr.gameMode, map_name: matchAttr.mapName,
-        counter_latency_ms: finalResult.tradeStats.counterLatencyMs, initiative_rate: finalResult.initiative_rate,
+        counter_latency_ms: tierInput.counterLatencyMs, initiative_rate: tierInput.initiativeRate,
         revive_rate: tierInput.reviveRate, smoke_count: finalResult.itemUseSummary.smokes, frag_count: finalResult.itemUseSummary.frags,
         pressure_index: finalResult.combatPressure.pressureIndex, enemy_death_distance: finalResult.deathDistance,
         smoke_rate: tierInput.smokeRate, supp_count: finalResult.tradeStats.suppCount, team_wipes: finalResult.tradeStats.enemyTeamWipes,
         utility_count: finalResult.itemUseSummary.smokes + finalResult.itemUseSummary.frags, survival_time: tierInput.survivalTime,
-        solo_kill_rate: totalKills > 0 ? Math.round((finalResult.killContribution.solo / totalKills) * 100) : 0,
+        solo_kill_rate: totalKills > 0 ? Math.round((finalResult.killContribution.solo / totalKills) * 100) : -1,
         burst_damage: finalResult.goldenTimeDamage.early, isolation_index: finalResult.isolationData.isolationIndex,
         min_dist: finalResult.isolationData.minDist, height_diff: finalResult.isolationData.heightDiff,
         is_crossfire: finalResult.isolationData.isCrossfire, death_phase: finalResult.deathPhase,
-        trade_rate: tierInput.tradeRate, reversal_rate: finalResult.duelStats.reversalRate,
+        trade_rate: tierInput.tradeRate, 
+        trade_latency_ms: finalResult.tradeStats.tradeLatencyMs > 0 ? finalResult.tradeStats.tradeLatencyMs : -1,
+        reversal_rate: tierInput.reversalRate,
         lethal_throw_count: finalResult.itemUseStats.lethalThrowCount,
-        duel_win_rate: finalResult.duelStats.duelWinRate
+        duel_win_rate: finalResult.duelStats.totalDuels > 0 ? finalResult.duelStats.duelWinRate : -1
       }, { onConflict: 'match_id,player_id' }));
     }
 

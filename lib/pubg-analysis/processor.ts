@@ -213,7 +213,7 @@ export class AnalysisEngine {
         revCount: this.state.myReviveEvents.length,
         baitCount: this.state.totalBaitCount,
         tradeLatencyMs: avgTradeLat,
-        counterLatencyMs: avgTradeLat,
+        counterLatencyMs: avgReactLat,
         reactionLatencyMs: avgReactLat,
         coverRate: this.state.totalCoverAttempts > 0 ? (this.state.totalCoverSuccess / this.state.totalCoverAttempts) * 100 : 0,
         coverRateSampleCount: this.state.totalCoverAttempts,

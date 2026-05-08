@@ -166,4 +166,14 @@ export interface MatchData {
   edgePlay?: number;
   bluezoneWaste?: number;
   v: number;
+  /** [V11.9.5] 티어 벤치마크 상세 데이터 */
+  benchmark?: {
+    tier: string;
+    score: number;
+    breakdown: {
+      combat: number;
+      tactical: number;
+      survival: number;
+    };
+  };
 }
