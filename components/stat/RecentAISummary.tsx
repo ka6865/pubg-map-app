@@ -38,6 +38,9 @@ interface DebateData {
     counterLatency: string;
     latestMatchTime?: string;
     reactionLatency: string;
+    reactionTier?: string;
+    backupTier?: string;
+    overallTier?: string;
     initiativeSuccess: string;
     duelStats?: { winRate: string; wins: number; losses: number; reversals: number; reversalAttempts: number };
     reversalRate: string;
@@ -348,12 +351,31 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
       </div>
 
       {debateData?.signature && (
-        <div className="p-8 bg-gradient-to-r from-yellow-500/20 via-yellow-500/5 to-transparent border-l-4 border-yellow-500 rounded-r-[32px] animate-in fade-in slide-in-from-left duration-1000 shadow-2xl shadow-yellow-500/5">
-          <div className="flex items-center gap-6">
+        <div className="p-8 bg-gradient-to-r from-yellow-500/20 via-yellow-500/5 to-transparent border-l-4 border-yellow-500 rounded-r-[32px] animate-in fade-in slide-in-from-left duration-1000 shadow-2xl shadow-yellow-500/5 relative overflow-hidden">
+          <div className="absolute top-0 right-0 h-full flex items-center pr-8">
+            <div className={`flex flex-col items-center justify-center p-4 rounded-2xl border-2 shadow-2xl ${
+              debateData?.visuals?.overallTier === 'S' ? 'bg-blue-500/20 border-blue-500 shadow-blue-500/30' :
+              debateData?.visuals?.overallTier === 'A' ? 'bg-emerald-500/20 border-emerald-500 shadow-emerald-500/30' :
+              debateData?.visuals?.overallTier === 'B' ? 'bg-yellow-500/20 border-yellow-500 shadow-yellow-500/30' :
+              'bg-gray-500/20 border-gray-500 shadow-gray-500/30'
+            }`}>
+              <span className="text-[10px] font-black text-white/60 uppercase tracking-widest mb-1">Tactical Tier</span>
+              <span className={`text-4xl font-black ${
+                debateData?.visuals?.overallTier === 'S' ? 'text-blue-400' :
+                debateData?.visuals?.overallTier === 'A' ? 'text-emerald-400' :
+                debateData?.visuals?.overallTier === 'B' ? 'text-yellow-400' :
+                'text-gray-400'
+              }`}>
+                {debateData?.visuals?.overallTier || 'C'}
+              </span>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-6 relative z-10">
             <div className="w-16 h-16 bg-yellow-500 rounded-[20px] flex items-center justify-center text-3xl shadow-[0_0_30px_rgba(234,179,8,0.5)] animate-pulse">
               🏆
             </div>
-            <div className="flex flex-col">
+            <div className="flex flex-col pr-32">
               <span className="text-[10px] text-amber-500 font-black uppercase tracking-[0.2em] mb-1">시그니처 플레이 분석</span>
               <h2 className="text-xl md:text-2xl text-white font-black tracking-tight mb-1">{debateData?.signature || "데이터 분석 중..."}</h2>
               <p className="text-[11px] text-gray-500 font-bold leading-relaxed">{debateData?.signatureSub || "데이터 분석을 통한 플레이 스타일 정의"}</p>
@@ -507,9 +529,9 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
         </div>
 
         <div className="relative group p-6 bg-orange-500/10 border border-orange-500/20 rounded-[28px] text-center transition-all hover:bg-orange-500/15">
-          <div className="text-[10px] text-orange-400 font-black uppercase mb-1 tracking-widest">반격 성공률</div>
-          <div className="text-3xl font-black text-white mb-1">{debateData?.visuals?.reversalRate || "0%"}</div>
-          <div className="text-[9px] text-gray-500 font-medium">피격 시 교전 대응 성공률</div>
+          <div className="text-[10px] text-orange-400 font-black uppercase mb-1 tracking-widest">대응 사격 속도</div>
+          <div className="text-3xl font-black text-white mb-1">{debateData?.visuals?.reactionLatency || "0.00s"}</div>
+          <div className="text-[9px] text-gray-500 font-medium">피격 시 교전 대응(반응) 시간</div>
         </div>
 
         <div className="relative group p-6 bg-cyan-500/10 border border-cyan-500/20 rounded-[28px] text-center transition-all hover:bg-cyan-500/15">

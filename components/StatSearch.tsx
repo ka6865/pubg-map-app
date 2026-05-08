@@ -5,6 +5,7 @@ import React, { useState, useEffect, useId, useCallback } from "react";
 import { MatchCard } from "./stat/MatchCard";
 import { StatSummaryCard } from "./stat/StatSummaryCard";
 import { RecentAISummary } from "./stat/RecentAISummary";
+import { Shield, ChevronDown } from "lucide-react";
 
 const STORAGE_KEY_RECENT = "pubg_recent_searches_v2";
 const STORAGE_KEY_FAVORITES = "pubg_favorites_v2";
@@ -257,6 +258,8 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
     });
   };
 
+  const [showGuideline, setShowGuideline] = useState(false);
+
   return (
     <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "20px", color: "white" }}>
       <h2 style={{ color: "#F2A900", fontSize: "24px", fontWeight: "bold", marginBottom: "20px", textAlign: "center" }}>
@@ -375,73 +378,82 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
             </div>
           </div>
 
-          {/* BGMS AI 전술 분석 시스템 설명 추가 */}
-          <div style={{ 
-            marginTop: "10px",
-            padding: "25px", 
-            backgroundColor: "rgba(242, 169, 0, 0.03)", 
-            border: "1px solid rgba(242, 169, 0, 0.15)", 
-            borderRadius: "24px",
-            backdropFilter: "blur(10px)"
-          }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "15px" }}>
-              <div style={{ padding: "8px", backgroundColor: "#F2A900", borderRadius: "8px" }}>
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="black" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          {/* BGMS AI 전술 분석 시스템 설명 (토글형으로 최적화) */}
+          <div className="mt-4 mb-6">
+            <button 
+              onClick={() => setShowGuideline(!showGuideline)}
+              className="w-full flex items-center justify-between p-4 bg-amber-500/5 border border-amber-500/20 rounded-2xl hover:bg-amber-500/10 transition-all group"
+            >
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-amber-500 rounded-lg shadow-[0_0_15px_rgba(245,158,11,0.3)]">
+                  <Shield size={18} className="text-black" />
+                </div>
+                <div className="flex flex-col items-start">
+                  <h3 className="text-sm font-black text-amber-500 tracking-tight">BGMS AI 전술 분석 가이드 (V7.0)</h3>
+                  <span className="text-[10px] text-amber-500/60 font-bold">지표 산출 공식 및 시스템 안내 확인하기</span>
+                </div>
               </div>
-              <h3 style={{ fontSize: "18px", fontWeight: "900", color: "#F2A900", margin: 0, letterSpacing: "-0.5px" }}>BGMS AI 정밀 전술 분석 시스템 (V6.7 Unified)</h3>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr 1fr", gap: "20px" }}>
-              <div style={{ backgroundColor: "rgba(255,255,255,0.03)", padding: "15px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.05)" }}>
-                <div style={{ color: "#F2A900", fontSize: "12px", fontWeight: "900", marginBottom: "5px" }}>01. 정밀한 상황 판단</div>
-                <div style={{ color: "#aaa", fontSize: "13px", lineHeight: "1.6" }}>단순 킬/딜을 넘어 교전 거리, 아군 거리, 지형 고도차 등 텔레메트리 데이터를 입체적으로 분석합니다.</div>
-              </div>
-              <div style={{ backgroundColor: "rgba(255,255,255,0.03)", padding: "15px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.05)" }}>
-                <div style={{ color: "#F2A900", fontSize: "12px", fontWeight: "900", marginBottom: "5px" }}>02. 공정한 평가 로직</div>
-                <div style={{ color: "#aaa", fontSize: "13px", lineHeight: "1.6" }}>불가항력적인 후반 자기장 피해나 기회가 없던 상황은 부활 기회에서 제외하여 억울한 비난을 방지합니다.</div>
-              </div>
-              <div style={{ backgroundColor: "rgba(255,255,255,0.03)", padding: "15px", borderRadius: "16px", border: "1px solid rgba(255,255,255,0.05)" }}>
-                <div style={{ color: "#F2A900", fontSize: "12px", fontWeight: "900", marginBottom: "5px" }}>03. 실전적 전술 코칭</div>
-                <div style={{ color: "#aaa", fontSize: "13px", lineHeight: "1.6" }}>투척물 효율, 엄호 지연 시간, 팀 기여도 등을 분석하여 당신의 플레이 스타일을 날카롭게 진단합니다.</div>
-              </div>
-            </div>
+              <ChevronDown 
+                size={20} 
+                className={`text-amber-500/50 group-hover:text-amber-500 transition-transform duration-300 ${showGuideline ? 'rotate-180' : ''}`} 
+              />
+            </button>
 
-            {/* 지표 산출 공식 (지표 사전) 추가 */}
-            <div style={{ marginTop: "25px", borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: "20px" }}>
-              <div style={{ fontSize: "14px", fontWeight: "900", color: "#F2A900", marginBottom: "12px", display: "flex", alignItems: "center", gap: "6px" }}>
-                <span style={{ width: "4px", height: "14px", backgroundColor: "#F2A900", borderRadius: "2px" }}></span>
-                핵심 지표 산출 공식 (Metric Dictionary)
+            {showGuideline && (
+              <div className="mt-3 p-6 bg-black/40 border border-white/5 rounded-[2rem] backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-300">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                  <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
+                    <div className="text-amber-500 text-[11px] font-black mb-1">01. 상황 입체 분석</div>
+                    <div className="text-gray-400 text-xs leading-relaxed">단순 킬/딜을 넘어 교전 거리, 지형 고도차, 아군과의 거리 등 텔레메트리를 입체적으로 분석합니다.</div>
+                  </div>
+                  <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
+                    <div className="text-amber-500 text-[11px] font-black mb-1">02. 공정한 평가</div>
+                    <div className="text-gray-400 text-xs leading-relaxed">불가항력적인 자기장 피해나 교전 기회가 없던 상황(N/A)은 지표 계산에서 제외하여 억울한 비난을 방지합니다.</div>
+                  </div>
+                  <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
+                    <div className="text-amber-500 text-[11px] font-black mb-1">03. 티어 판별 엔진</div>
+                    <div className="text-gray-400 text-xs leading-relaxed">프로급(Elite) 유저들의 전술 데이터를 기준으로 당신의 현재 실력을 S~C 티어로 정밀 판별합니다.</div>
+                  </div>
+                </div>
+
+                <div className="border-t border-white/5 pt-6">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-1 h-3 bg-amber-500 rounded-full" />
+                    <span className="text-xs font-black text-white uppercase tracking-wider">핵심 지표 사전 (Metric Dictionary)</span>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+                    <div className="flex gap-3">
+                      <span className="text-amber-500/30 font-black italic">01</span>
+                      <div>
+                        <div className="text-gray-200 text-xs font-bold mb-1">반응 속도 (Reaction Latency)</div>
+                        <div className="text-gray-500 text-[11px] leading-relaxed">피격 시점부터 적에게 반격을 가하기까지의 시간. 당신의 순수 피지컬과 위기 대처 능력을 측정합니다.</div>
+                      </div>
+                    </div>
+                    <div className="flex gap-3">
+                      <span className="text-amber-500/30 font-black italic">02</span>
+                      <div>
+                        <div className="text-gray-200 text-xs font-bold mb-1">백업 속도 (Trade Latency)</div>
+                        <div className="text-gray-500 text-[11px] leading-relaxed">아군이 기절한 후 당신이 해당 적을 처치하기까지의 시간. 팀워크와 커버 능력을 측정합니다.</div>
+                      </div>
+                    </div>
+                    <div className="flex gap-3">
+                      <span className="text-amber-500/30 font-black italic">03</span>
+                      <div>
+                        <div className="text-gray-200 text-xs font-bold mb-1">전투 주도권 (Initiative)</div>
+                        <div className="text-gray-500 text-[11px] leading-relaxed">교전 시작 시 먼저 선제 타격을 가한 비율. 능동적으로 교전을 리드하는 성향을 분석합니다.</div>
+                      </div>
+                    </div>
+                    <div className="flex gap-3">
+                      <span className="text-amber-500/30 font-black italic">04</span>
+                      <div>
+                        <div className="text-gray-200 text-xs font-bold mb-1">팀 기여 임팩트 (Team Impact)</div>
+                        <div className="text-gray-500 text-[11px] leading-relaxed">팀 전체 데미지 중 당신의 지분. 단순 킬 수를 넘어 교전에서 실제로 얼마나 화력을 담당했는지 측정합니다.</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: "15px" }}>
-                <div style={{ display: "flex", gap: "10px" }}>
-                  <div style={{ fontSize: "16px", color: "rgba(242, 169, 0, 0.5)", fontWeight: "900" }}>01</div>
-                  <div>
-                    <div style={{ color: "#eee", fontSize: "13px", fontWeight: "bold" }}>대응 사격 속도 (Counter-Attack Latency)</div>
-                    <div style={{ color: "#777", fontSize: "12px", lineHeight: "1.5" }}>유저가 피격당한 시점부터 해당 적에게 다시 유효 타격을 가하기까지의 시간차를 계산합니다.</div>
-                  </div>
-                </div>
-                <div style={{ display: "flex", gap: "10px" }}>
-                  <div style={{ fontSize: "16px", color: "rgba(242, 169, 0, 0.5)", fontWeight: "900" }}>02</div>
-                  <div>
-                    <div style={{ color: "#eee", fontSize: "13px", fontWeight: "bold" }}>반격 성공률 (Counter-Attack Rate)</div>
-                    <div style={{ color: "#777", fontSize: "12px", lineHeight: "1.5" }}>피격 시 당황하지 않고 적에게 다시 반격 사격을 성공시킨 비율입니다. 위기 대처 지능을 측정합니다.</div>
-                  </div>
-                </div>
-                <div style={{ display: "flex", gap: "10px" }}>
-                  <div style={{ fontSize: "16px", color: "rgba(242, 169, 0, 0.5)", fontWeight: "900" }}>03</div>
-                  <div>
-                    <div style={{ color: "#eee", fontSize: "13px", fontWeight: "bold" }}>전투 주도권 (Initiative)</div>
-                    <div style={{ color: "#777", fontSize: "12px", lineHeight: "1.5" }}>교전 시작 시 유저가 먼저 선제 타격을 가했는지 여부를 판별하여 능동적인 교전 성향을 측정합니다.</div>
-                  </div>
-                </div>
-                <div style={{ display: "flex", gap: "10px" }}>
-                  <div style={{ fontSize: "16px", color: "rgba(242, 169, 0, 0.5)", fontWeight: "900" }}>04</div>
-                  <div>
-                    <div style={{ color: "#eee", fontSize: "13px", fontWeight: "bold" }}>팀 기여 임팩트 (Team Impact)</div>
-                    <div style={{ color: "#777", fontSize: "12px", lineHeight: "1.5" }}>팀 전체 딜량/킬 중 유저가 기여한 비중을 분석하여 팀 내 화력 비중과 교전 기여도를 측정합니다.</div>
-                  </div>
-                </div>
-              </div>
-            </div>
+            )}
           </div>
 
           {/* 최근 10경기 AI 종합 분석 섹션 추가 - 닉네임이 바뀔 때마다 리셋되도록 key 부여 */}

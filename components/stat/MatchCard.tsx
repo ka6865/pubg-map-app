@@ -26,6 +26,21 @@ import {
 import { useRouter } from "next/navigation";
 import type { MatchData } from "../../types/stat";
 
+const ScoreBar = ({ label, score, max, color }: { label: string, score: number, max: number, color: string }) => (
+  <div className="flex flex-col gap-1.5">
+    <div className="flex justify-between items-center text-[11px]">
+      <span className="text-gray-400 font-bold">{label}</span>
+      <span className="text-white font-black">{score} <span className="text-gray-600 font-medium">/ {max}</span></span>
+    </div>
+    <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/5">
+      <div 
+        className={`h-full ${color} transition-all duration-1000 ease-out shadow-[0_0_8px_rgba(255,255,255,0.1)]`}
+        style={{ width: `${Math.min(100, (score / max) * 100)}%` }}
+      />
+    </div>
+  </div>
+);
+
 const getRelativeTime = (dateStr: string) => {
   if (!dateStr) return "";
   const date = new Date(dateStr);
@@ -341,20 +356,43 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
           </div>
         </div>
 
-        {/* V3 Tactical Badges */}
+        {/* V3 Tactical Badges & Tier */}
         <div className="flex items-center justify-between md:justify-end gap-3">
+          {matchData.benchmark && (
+            <div className="relative group/tier">
+              <div className={`px-4 py-1.5 rounded-xl border flex items-center gap-2 transition-all cursor-help
+                ${matchData.benchmark.tier === 'S' ? 'bg-amber-500/20 border-amber-500/50 text-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.2)]' :
+                  matchData.benchmark.tier === 'A' ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400' :
+                  matchData.benchmark.tier === 'B' ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-500' :
+                  'bg-white/5 border-white/10 text-gray-400'}`}>
+                <span className="text-sm font-black italic tracking-tighter">{matchData.benchmark.tier} Tier</span>
+                <div className="w-px h-3 bg-current opacity-20" />
+                <span className="text-[11px] font-black">{matchData.benchmark.score}pt</span>
+              </div>
+              
+              {/* Tooltip Breakdown */}
+              <div className="absolute bottom-full right-0 mb-3 w-52 bg-[#0a0a0a]/95 backdrop-blur-xl border border-white/10 p-4 rounded-2xl shadow-2xl opacity-0 group-hover/tier:opacity-100 transition-all duration-300 pointer-events-none z-50 transform translate-y-2 group-hover/tier:translate-y-0">
+                <div className="text-[10px] font-black text-gray-500 mb-3 uppercase tracking-widest flex justify-between items-center">
+                  <span>Score Breakdown</span>
+                  <span className="text-white/40">{matchData.benchmark.score} / 100</span>
+                </div>
+                <div className="space-y-3">
+                  <ScoreBar label="전투 (Combat)" score={matchData.benchmark.breakdown.combat} max={isRanked ? 40 : 50} color="bg-red-500" />
+                  <ScoreBar label="전술 (Tactical)" score={matchData.benchmark.breakdown.tactical} max={isRanked ? 35 : 15} color="bg-indigo-500" />
+                  <ScoreBar label="생존 (Survival)" score={matchData.benchmark.breakdown.survival} max={isRanked ? 25 : 35} color="bg-green-500" />
+                </div>
+                <div className="mt-4 pt-3 border-t border-white/5 text-[9px] text-gray-500 leading-relaxed font-medium">
+                  * 딜량, 선제공격, 반응속도, 팀기여, 생존시간 등을 종합 분석한 실력 점수입니다.
+                </div>
+              </div>
+            </div>
+          )}
+
           {matchData.myRank && (
-            <div className="flex gap-2">
+            <div className="flex gap-2 hidden md:flex">
               <div className="px-3 py-1.5 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center gap-2 group/rank">
                 <Trophy size={14} className="text-amber-500 group-hover/rank:scale-110 transition-transform" />
                 <span className="text-[11px] font-black text-amber-500">킬 순위 #{matchData.myRank.killRank || 1}</span>
-              </div>
-              <div className="px-3 py-1.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center gap-2 group/perc">
-                <Flame size={14} className="text-emerald-500 group-hover/perc:animate-pulse" />
-                <div className="flex flex-col">
-                  <span className="text-[11px] font-black text-emerald-500 leading-none">상위 {100 - matchData.myRank.damagePercentile}%</span>
-                  <span className="text-[8px] font-bold text-emerald-500/60 leading-none mt-1">딜량 상위</span>
-                </div>
               </div>
             </div>
           )}
@@ -458,9 +496,18 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                   tooltip="선제 공격(먼저 사격)을 시작한 교전 세션 중, 승리(적 기절/킬)한 비율입니다."
                 />
                 <TacticalBox 
+                  icon={<Zap size={18} />} 
+                  label="반응 속도" 
+                  value={`${(matchData.tradeStats?.reactionLatencyMs ?? 0) > 0 ? (matchData.tradeStats.reactionLatencyMs! / 1000).toFixed(2) : 0}s`} 
+                  subLabel={`피격 후 반격`}
+                  color="text-yellow-400"
+                  bgColor="bg-yellow-400/10"
+                  tooltip="적에게 피격당한 직후 고개를 돌려 반격(사격)하기까지 걸린 평균 시간입니다."
+                />
+                <TacticalBox 
                   icon={<Clock size={18} />} 
                   label="트레이드 속도" 
-                  value={`${(matchData.tradeStats.tradeLatencyMs ?? 0) > 0 ? (matchData.tradeStats.tradeLatencyMs! / 1000).toFixed(1) : 0}s`} 
+                  value={`${(matchData.tradeStats?.tradeLatencyMs ?? 0) > 0 ? (matchData.tradeStats.tradeLatencyMs! / 1000).toFixed(1) : 0}s`} 
                   subLabel={`평균 백업 시간`}
                   color="text-indigo-400"
                   bgColor="bg-indigo-400/10"
