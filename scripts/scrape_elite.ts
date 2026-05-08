@@ -32,6 +32,22 @@ async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function sampleParticipants(rawStats: any[], excludeName: string): string[] {
+  // rawStats는 이미 damage 내림차순 정렬된 상태로 가정
+  const n = rawStats.length;
+  if (n === 0) return [];
+
+  const sIndex = Math.floor(n * 0.05);
+  const bIndex = Math.floor(n * 0.40);
+
+  const reps = new Set<string>();
+  
+  if (rawStats[sIndex] && rawStats[sIndex].player_id !== excludeName) reps.add(rawStats[sIndex].player_id);
+  if (rawStats[bIndex] && rawStats[bIndex].player_id !== excludeName) reps.add(rawStats[bIndex].player_id);
+
+  return Array.from(reps).slice(0, 2);
+}
+
 async function scrapeEliteData() {
   console.log("🚀 [BGMS Smart Scraper] 작업을 시작합니다...");
 
@@ -93,6 +109,29 @@ async function scrapeEliteData() {
           if (res.status === 200) {
             const d = res.data;
             console.log(`     ✅ 성공: (딜량: ${Math.round(d.stats.damageDealt)}, 생존: ${d.deathPhase}Ph)`);
+
+            // [Phase 4] 매치 참가자 샘플링 추가 (S, B 대표)
+            const { data: rawStats } = await supabase
+              .from("match_stats_raw")
+              .select("player_id, damage")
+              .eq("match_id", matchId)
+              .order("damage", { ascending: false });
+
+            if (rawStats && rawStats.length > 0) {
+              const excludeName = nickname.toLowerCase().trim();
+              const samples = sampleParticipants(rawStats, excludeName);
+
+              for (const sampleName of samples) {
+                console.log(`       -> [샘플링] ${sampleName} 분석 요청 중...`);
+                try {
+                  await sleep(5000); // 샘플 참가자 분석 시 매치당 sleep 적용
+                  await axios.get(`${MATCH_API_URL}?matchId=${matchId}&nickname=${encodeURIComponent(sampleName)}&platform=steam`);
+                  console.log(`         ✅ 샘플링 완료`);
+                } catch (apiErr: any) {
+                  console.log(`         ℹ️ 스킵: ${apiErr.response?.data?.error || "처리 불가"}`);
+                }
+              }
+            }
           }
         } catch (apiErr: any) {
           console.log(`     ℹ️ 스킵: ${apiErr.response?.data?.error || "처리 불가"}`);
