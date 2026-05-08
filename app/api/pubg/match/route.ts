@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { AnalysisEngine } from "@/lib/pubg-analysis/processor";
 import { RESULT_VERSION } from "@/lib/pubg-analysis/constants";
+import { getBenchmarkTier, MatchTierInput } from "@/lib/pubg-analysis/benchmarkScore";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -19,7 +20,6 @@ export async function GET(request: Request) {
   const matchId = searchParams.get("matchId");
   const nickname = searchParams.get("nickname");
   const platform = searchParams.get("platform") || "steam";
-  const forceBenchmark = searchParams.get("forceBenchmark") === "true";
   const normalizeName = (n: string) => n?.toLowerCase().trim() || "";
   const lowerNickname = normalizeName(nickname || "");
 
@@ -43,9 +43,11 @@ export async function GET(request: Request) {
     const teamStats = myRoster ? myRoster.relationships.participants.data.map((pRef: any) => participants.find((p: any) => p.id === pRef.id)?.attributes.stats).filter(Boolean) : [myInfo.attributes.stats];
     const teamNames: Set<string> = new Set(teamStats.map((m: any) => normalizeName(m.name)));
 
-    const allStats = participants.map((p: any) => p.attributes.stats);
+    const humanParticipants = participants.filter((p: any) => !p.attributes.accountId?.startsWith("ai."));
+    const allStats = humanParticipants.map((p: any) => p.attributes.stats);
     const sortedByDamage = [...allStats].sort((a, b) => b.damageDealt - a.damageDealt);
     const myDamageRank = sortedByDamage.findIndex((s: any) => normalizeName(s.name) === lowerNickname) + 1;
+    const rankPct = humanParticipants.length > 0 ? myDamageRank / humanParticipants.length : 1;
 
     // [V11.7] 최신 엔진 버전으로 동기화 (미끼/섬광탄/반격 로직 완성본)
     const { data: cached } = await supabase.from("processed_match_telemetry").select("data, updated_at").eq("match_id", matchId).eq("player_id", lowerNickname).single();
@@ -56,27 +58,21 @@ export async function GET(request: Request) {
     const isFpp = matchAttr.gameMode.includes('fpp');
     const isSquad = matchAttr.gameMode.includes('squad');
     
-    // 벤치마크 전체 조회 (최신 순)
-    let eliteQuery = supabase.from("global_benchmarks").select("*");
-    if (isFpp) eliteQuery = eliteQuery.ilike('game_mode', '%fpp%');
-    else eliteQuery = eliteQuery.not('game_mode', 'ilike', '%fpp%');
-    
-    if (isSquad) eliteQuery = eliteQuery.ilike('game_mode', '%squad%');
-    else eliteQuery = eliteQuery.not('game_mode', 'ilike', '%squad%');
+    // 벤치마크 뷰에서 Tier별 데이터 조회
+    const { data: tierStatsRaw } = await supabase.from('benchmark_stats_by_tier').select('*').eq('game_mode', matchAttr.gameMode);
+    const tierStats = tierStatsRaw || [];
 
-    const { data: elitePoolRaw } = await eliteQuery.order('created_at', { ascending: false }).limit(200);
-    let elitePool = elitePoolRaw || [];
+    const fallbackS = { avg_damage: 620, avg_kills: 4.5, avg_latency: 1200, avg_initiative_rate: 65, avg_death_phase: 7.5 };
+    const fallbackA = { avg_damage: 450, avg_kills: 3.0, avg_latency: 1650, avg_initiative_rate: 55, avg_death_phase: 6.0 };
+    const fallbackB = { avg_damage: 290, avg_kills: 1.8, avg_latency: 2100, avg_initiative_rate: 42, avg_death_phase: 4.5 };
+    const fallbackC = { avg_damage: 150, avg_kills: 0.7, avg_latency: 2800, avg_initiative_rate: 28, avg_death_phase: 3.0 };
 
-    // 샘플이 부족할 경우 대비 (현재는 전체 조회만 수행)
-    if (elitePool.length < 10) {
-      // 신규 데이터가 쌓일 때까지는 기본값을 사용하거나 대기
-    }
-
-    const calcAvg = (arr: any[], key: string, def = 0) => arr.length ? arr.reduce((a, b) => a + (b[key] || 0), 0) / arr.length : def;
-    const eliteAvgDamage = Math.round(calcAvg(elitePool, 'damage', 450));
-    const eliteAvgKills = Number(calcAvg(elitePool, 'kills', 3.0).toFixed(1));
-    const validLatencies = elitePool.filter(p => (p.counter_latency_ms || 0) > 0);
-    const eliteAvgCounterLatency = validLatencies.length ? Math.round(validLatencies.reduce((a, b) => a + b.counter_latency_ms, 0) / validLatencies.length) : 1800;
+    const tiers = {
+      S: tierStats.find(t => t.tier === 'S') || fallbackS,
+      A: tierStats.find(t => t.tier === 'A') || fallbackA,
+      B: tierStats.find(t => t.tier === 'B') || fallbackB,
+      C: tierStats.find(t => t.tier === 'C') || fallbackC,
+    };
 
     const telemetryAsset = data.included.find((item: any) => item.type === "asset");
     let telData: any[] = [];
@@ -188,32 +184,50 @@ export async function GET(request: Request) {
     }
 
     // [V11.3] 신규 엔진 호출
-    const eliteNames = new Set(elitePool.map(p => normalizeName(p.player_id)));
     const myStats = myInfo.attributes.stats;
     const myRosterId = rosters.find((r: any) => r.relationships.participants.data.some((p: any) => p.id === myInfo.id))?.id;
     
-    const engine = new AnalysisEngine(nickname, teamNames, eliteNames, myRosterId || "");
+    const engine = new AnalysisEngine(nickname, teamNames, new Set(), myRosterId || "");
     const eliteBenchmarks = {
-      avgDamage: eliteAvgDamage,
-      avgKills: eliteAvgKills,
-      avgCounterLatency: eliteAvgCounterLatency,
-      avgInitiativeRate: Math.round(calcAvg(elitePool, 'initiative_rate', 55)),
-      avgReviveRate: Math.round(calcAvg(elitePool, 'revive_rate', 80)),
-      avgSmokeRate: Math.round(calcAvg(elitePool, 'smoke_rate', 60)),
-      avgSuppCount: Number(calcAvg(elitePool, 'supp_count', 3).toFixed(1)),
-      avgDeathDistance: Math.round(calcAvg(elitePool, 'enemy_death_distance', 30)),
-      avgIsolationIndex: Number(calcAvg(elitePool, 'isolation_index', 1.0).toFixed(2)),
-      avgPressureIndex: Number(calcAvg(elitePool, 'pressure_index', 3.0).toFixed(2)),
-      avgDeathPhase: Number(calcAvg(elitePool, 'death_phase', 6).toFixed(1))
+      avgDamage: tiers.A.avg_damage,
+      avgKills: tiers.A.avg_kills,
+      avgCounterLatency: tiers.A.avg_latency,
+      avgInitiativeRate: tiers.A.avg_initiative_rate,
+      avgReviveRate: 80,
+      avgSmokeRate: 60,
+      avgSuppCount: 3.0,
+      avgDeathDistance: 30,
+      avgIsolationIndex: 1.0,
+      avgPressureIndex: 3.0,
+      avgDeathPhase: tiers.A.avg_death_phase
     };
 
     const finalResult = engine.run(telData, matchAttr, rosters, participants, myStats, teamStats, eliteBenchmarks);
 
     // [V11.3] 데이터 수집 및 벤치마크 저장
-    const botCount = participants.filter((p: any) => p.attributes.accountId?.startsWith("ai.")).length;
-    const isNotBotMatch = participants.length > 0 && (botCount / participants.length) < 0.3;
     const isNotTdmOrEvent = !matchAttr.gameMode.includes('tdm') && !matchAttr.gameMode.includes('event') && !matchAttr.gameMode.includes('training');
-    const isValidBenchmark = (myDamageRank / Math.max(1, participants.length)) <= 0.25 && myStats.timeSurvived >= 600 && isNotTdmOrEvent && isNotBotMatch;
+    const isBotMatch = participants.length > 0 && (participants.filter((p: any) => p.attributes.accountId?.startsWith("ai.")).length / participants.length) >= 0.3;
+    const isNotBotMatch = !isBotMatch;
+    
+    const isSolo = matchAttr.gameMode.includes('solo');
+    
+    const tierInput: MatchTierInput = {
+      rankPct,
+      survivalTime: Math.round(myStats.timeSurvived),
+      initiativeRate: finalResult.initiative_rate,
+      counterLatencyMs: finalResult.tradeStats.counterLatencyMs,
+      pressureIndex: finalResult.combatPressure.pressureIndex,
+      smokeRate: finalResult.tradeStats.teammateKnocks > 0 ? Math.round((finalResult.tradeStats.smokeCount / finalResult.tradeStats.teammateKnocks) * 100) : 0,
+      suppCount: finalResult.tradeStats.suppCount,
+      reviveRate: finalResult.tradeStats.teammateKnocks > 0 ? Math.round((finalResult.tradeStats.revCount / finalResult.tradeStats.teammateKnocks) * 100) : 0,
+      tradeRate: finalResult.tradeStats.teammateKnocks > 0 ? Math.round((finalResult.tradeStats.tradeKills / finalResult.tradeStats.teammateKnocks) * 100) : 0,
+      teamWipes: finalResult.tradeStats.enemyTeamWipes,
+      reversalRate: finalResult.duelStats.reversalRate,
+      deathPhase: finalResult.deathPhase
+    };
+
+    const { tier: benchmarkTier, score: benchmarkScore } = getBenchmarkTier(tierInput, isSolo);
+    const isValidBenchmark = benchmarkTier !== null && isNotTdmOrEvent && isNotBotMatch;
 
     const backgroundTasks = [
       supabase.from("match_stats_raw").upsert(participants.map((p: any) => ({
@@ -226,24 +240,24 @@ export async function GET(request: Request) {
       }, { onConflict: 'match_id,player_id' })
     ];
 
-    if (isValidBenchmark || forceBenchmark) {
+    if (isValidBenchmark) {
       const totalKills = (finalResult.killContribution.solo || 0) + (finalResult.killContribution.cleanup || 0);
       backgroundTasks.push(supabase.from("global_benchmarks").upsert({
         match_id: matchId, player_id: lowerNickname, 
+        tier: benchmarkTier, score: benchmarkScore,
         damage: Math.floor(myStats.damageDealt), kills: myStats.kills,
         win_place: myStats.winPlace, game_mode: matchAttr.gameMode, map_name: matchAttr.mapName,
         counter_latency_ms: finalResult.tradeStats.counterLatencyMs, initiative_rate: finalResult.initiative_rate,
-        revive_rate: finalResult.tradeStats.teammateKnocks > 0 ? Math.round((finalResult.tradeStats.revCount / finalResult.tradeStats.teammateKnocks) * 100) : 0,
-        smoke_count: finalResult.itemUseSummary.smokes, frag_count: finalResult.itemUseSummary.frags,
+        revive_rate: tierInput.reviveRate, smoke_count: finalResult.itemUseSummary.smokes, frag_count: finalResult.itemUseSummary.frags,
         pressure_index: finalResult.combatPressure.pressureIndex, enemy_death_distance: finalResult.deathDistance,
-        smoke_rate: finalResult.tradeStats.teammateKnocks > 0 ? Math.round((finalResult.tradeStats.smokeCount / finalResult.tradeStats.teammateKnocks) * 100) : 0,
-        supp_count: finalResult.tradeStats.suppCount, team_wipes: finalResult.tradeStats.enemyTeamWipes,
-        utility_count: finalResult.itemUseSummary.smokes + finalResult.itemUseSummary.frags, survival_time: Math.round(myStats.timeSurvived),
+        smoke_rate: tierInput.smokeRate, supp_count: finalResult.tradeStats.suppCount, team_wipes: finalResult.tradeStats.enemyTeamWipes,
+        utility_count: finalResult.itemUseSummary.smokes + finalResult.itemUseSummary.frags, survival_time: tierInput.survivalTime,
         solo_kill_rate: totalKills > 0 ? Math.round((finalResult.killContribution.solo / totalKills) * 100) : 0,
         burst_damage: finalResult.goldenTimeDamage.early, isolation_index: finalResult.isolationData.isolationIndex,
         min_dist: finalResult.isolationData.minDist, height_diff: finalResult.isolationData.heightDiff,
         is_crossfire: finalResult.isolationData.isCrossfire, death_phase: finalResult.deathPhase,
-        trade_rate: finalResult.tradeStats.teammateKnocks > 0 ? Math.round((finalResult.tradeStats.tradeKills / finalResult.tradeStats.teammateKnocks) * 100) : 0
+        trade_rate: tierInput.tradeRate, reversal_rate: finalResult.duelStats.reversalRate,
+        lethal_throw_count: finalResult.itemUseStats.lethalThrowCount
       }, { onConflict: 'match_id,player_id' }));
     }
 
