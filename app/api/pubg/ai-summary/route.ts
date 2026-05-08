@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { createClient } from "@supabase/supabase-js";
-import { RESULT_VERSION } from "@/lib/pubg-analysis/constants";
+import { RESULT_VERSION, WEAPON_NAMES } from "@/lib/pubg-analysis/constants";
 import { estimateUserTier } from "@/lib/pubg-analysis/benchmarkScore";
+import { classifyRole } from "@/lib/pubg-analysis/roleClassifier";
 
 // ✅ Server Route에서는 SERVICE_ROLE_KEY 기반 서버 클라이언트 사용 (RLS 우회)
 const supabase = createClient(
@@ -31,9 +32,19 @@ function aggregateMatches(matches: any[]) {
   const backupLatencies: number[] = [], reactionLatencies: number[] = [];
   const goldenTimeFinal = { early: 0, mid1: 0, mid2: 0, late: 0 };
   const killContribFinal = { solo: 0, cleanup: 0 };
+  const weaponStatsFinal: Record<string, any> = {};
   const allBadges: any[] = [];
 
   matches.forEach((m: any) => {
+    // 무기 통계 합산
+    if (m.weaponStats) {
+      Object.entries(m.weaponStats).forEach(([wId, wData]: [string, any]) => {
+        if (!weaponStatsFinal[wId]) weaponStatsFinal[wId] = { kills: 0, dbnos: 0, damage: 0 };
+        weaponStatsFinal[wId].kills += (wData.kills || 0);
+        weaponStatsFinal[wId].dbnos += (wData.dbnos || 0);
+        weaponStatsFinal[wId].damage += (wData.damage || 0);
+      });
+    }
     const isRanked = m.matchType === 'competitive' || (m.gameMode || "").includes("competitive");
     if (isRanked) rankedCount++; else normalCount++;
 
@@ -162,17 +173,33 @@ function aggregateMatches(matches: any[]) {
     totalBaitCount, totalSmokeCount, totalStunCount, totalStunHits, totalEdgePlay, totalFatalDelay,
     totalMaxHitDist, totalTeamWipes, isolationCountFinal, totalIsolationIndexFinal, totalCombatIso,
     totalDeathIso, totalMinDist, totalHeightDiff, totalCrossfireCount, totalTeammateCountFinal,
-    totalUtilityThrows, totalUtilityHits, totalUtilityDamage, totalUtilityKills, totalBluezoneWaste
+    totalUtilityThrows, totalUtilityHits, totalUtilityDamage, totalUtilityKills, totalBluezoneWaste,
+    weaponStatsFinal
   };
 }
 
 export async function POST(request: Request) {
   try {
-    const { matchIds, nickname, platform } = await request.json();
+    const { matchIds, nickname, platform, force = false } = await request.json();
     const normalizeName = (n: string) => n?.toLowerCase().trim() || "";
     const lowerNickname = normalizeName(nickname);
 
     if (!matchIds || matchIds.length === 0) return NextResponse.json({ error: "No matches" }, { status: 400 });
+
+    // [V9.1] 캐시 바이패스 로직: force가 true면 DB 조회 건너뜀
+    if (!force) {
+      const { data: existing, error: fetchError } = await supabase
+        .from('ai_summaries')
+        .select('*')
+        .eq('nickname', lowerNickname)
+        .eq('match_ids', matchIds.sort().join(','))
+        .maybeSingle();
+
+      if (existing) {
+        console.log(`[Cache Hit] Returning existing summary for ${nickname}`);
+        return NextResponse.json(existing.summary_json);
+      }
+    }
 
     const geminiApiKey = process.env.GOOGLE_GEMINI_API_KEY;
     if (!geminiApiKey) return NextResponse.json({ error: "No API Key" }, { status: 500 });
@@ -241,14 +268,13 @@ export async function POST(request: Request) {
     const tierConfidence = mainModeCount >= 7 ? '높음' : mainModeCount >= 3 ? '보통' : '낮음 (데이터 부족)';
 
     const promptLines = [
-      "당신들은 PUBG 전술 분석 데스크의 전문 코치입니다. 전달받은 경기 데이터를 바탕으로 끝장 토론을 진행하십시오.",
-      "1. KIND COACH: 획득한 배지를 근거로 유저의 강점을 극대화하고 멘탈을 케어하십시오.",
-      "2. SPICY BOMBER: 팀 영향력(Impact)이 낮거나 배지가 적다면 실력 부족을 냉혹하게 찌르십시오.",
+      "당신들은 PUBG 전술 분석 데스크의 전문 코치입니다. 전달받은 경기 데이터와 'Benchmark(엘리트 지표)'를 바탕으로 끝장 토론을 진행하십시오.",
+      "1. KIND COACH: 획득한 배지와 벤치마크보다 우수한 지표를 근거로 유저의 강점을 극대화하고 멘탈을 케어하십시오.",
+      "2. SPICY BOMBER: 유저의 지표가 벤치마크(Benchmark)보다 미달하는 부분을 냉혹하게 찌르고, 구체적인 수치 차이를 언급하며 비난하십시오.",
+      "- [ZERO HALLUCINATION] 데이터에 명시된 숫자를 1%의 오차도 없이 그대로 인용하십시오. 18% 적중률을 '0%에 가깝다'고 말하는 것은 엄격히 금지됩니다. 반드시 '18% 적중률'이라고 정확히 명시하십시오.",
+      "- [STRICT BENCHMARK] 15m, 30m와 같은 일반적인 게임 상식을 사용하지 마십시오. 오직 전달된 'Benchmark' 수치를 '최상의 목표'로 삼아 비교하십시오. 벤치마크가 9.08m라면 반드시 9.08m를 기준으로 피드백하십시오.",
+      "- [DATA COMPARISON] 모든 항목에서 (유저 수치 vs 벤치마크 수치)를 병기하여 유저가 객관적인 격차를 체감하게 하십시오.",
       "- 모든 분석 용어는 유저가 이해하기 쉬운 게임 용어를 사용하십시오. (예: 십자포화 -> 양각 노출, 고립 -> 혼자 떨어짐)",
-      "- [Apple-to-Apple] 데이터 증거(userStats/benchmarkStats) 비교 시, 반드시 동일한 항목(Label)을 동일한 순서로 비교하십시오. 특히 '백업 속도(Trade)'와 '대응 사격 속도(Reaction)'는 전혀 다른 지표이므로 혼동하여 비난하지 마십시오.",
-      "- [TONE-CONTROL] 지표가 낮다고 해서 단순히 '실력이 없다'고 비난하지 말고, '엄폐물 활용 부족'이나 '팀과의 거리 조절 실패' 등 구체적인 전술적 원인을 짚어주십시오. 특히 10초 이상의 백업 시간은 피지컬 문제가 아닌 '위치 선정'의 문제로 분석하십시오.",
-      "- [TEAMPLAY] '부활률'을 단독 토론 주제로 삼지 마십시오. 대신 연막탄 활용, 사격 지원(커버), 팀원과의 거리 유지 등을 종합적으로 고려하십시오.",
-      "- 모드별(Solo/Duo/Squad)로 차이가 큰 부분이 있다면 해당 모드를 구체적으로 지목하며 분석하십시오.",
       "- debateIssues는 반드시 3개를 작성하고, 각 issue의 userStats/benchmarkStats는 인덱스별로 라벨과 항목이 완벽히 대칭되어야 합니다.",
       "반드시 아래 구조의 JSON 객체로만 응답하세요.",
       "{",
@@ -357,7 +383,7 @@ export async function POST(request: Request) {
            avgBaselineDamageFinal: Math.round(globalStats.reduce((acc: any, s: any) => acc + (s.damage || 0), 0) / gLen),
            avgRealInitiativeSuccessFinal: Math.round(globalStats.reduce((acc: any, s: any) => acc + (s.initiative_rate || 0), 0) / gLen),
            b_isolationIndex: Number((globalStats.reduce((acc: any, s: any) => acc + (s.isolation_index || 0), 0) / gLen).toFixed(2)),
-           b_minDist: Math.round(globalStats.reduce((acc: any, s: any) => acc + (s.min_dist || 0), 0) / gLen),
+           b_minDist: Math.round(globalStats.reduce((acc: any, s: any) => acc + (s.min_dist || 0), 0) / gLen / (globalStats[0]?.min_dist > 5000 ? 100 : 1)), // [V12.0] cm 단위를 m로 자동 보정
            b_counterLatency: Number((globalStats.reduce((acc: any, s: any) => acc + (s.counter_latency_ms || 500), 0) / gLen / 1000).toFixed(2)),
            b_tradeLatency: Number((globalStats.reduce((acc: any, s: any) => acc + (s.trade_latency_ms || 12000), 0) / gLen / 1000).toFixed(2)),
            b_soloKillRate: Math.round(globalStats.reduce((acc: any, s: any) => acc + (s.solo_kill_rate || 0), 0) / gLen),
@@ -391,6 +417,7 @@ export async function POST(request: Request) {
       userPrompt += `- [반응 속도] 대응 사격 속도: ${gStats.avgReactionLatency} (Benchmark: ${bench.b_counterLatency}s), 반격 성공률: ${gStats.totalReversalAttempts > 0 ? Math.round((gStats.totalReversalWins / gStats.totalReversalAttempts) * 100) : 0}%\n`;
       userPrompt += `- [백업 속도] 아군 백업 속도: ${gStats.avgBackupLatency} (Benchmark: ${bench.b_tradeLatency}s)\n`;
       userPrompt += `- [생존 환경] 고립 지수(운영/교전/사망): ${gStats.avgIsolationStr}/${gStats.isolationCountFinal>0?(gStats.totalCombatIso/gStats.isolationCountFinal).toFixed(2):"0"}/${gStats.isolationCountFinal>0?(gStats.totalDeathIso/gStats.isolationCountFinal).toFixed(2):"0"}\n`;
+      userPrompt += `- [거리 관리] 팀원과의 평균 거리: ${gStats.avgMinDistStr}, 평균 고도차: ${gStats.avgHeightDiffStr}\n`;
       userPrompt += `- [킬 분류] 솔로 킬: ${gStats.killContribFinal.solo}회, 클린업 킬: ${gStats.killContribFinal.cleanup}회 (솔로 비중: ${gStats.soloKillRate}% vs Benchmark: ${bench.b_soloKillRate}%)\n`;
       userPrompt += `- [유틸리티] 총 투척 ${gStats.totalUtilityThrows}회, 적중 ${gStats.totalUtilityHits}회, 데미지 ${gStats.totalUtilityDamage}\n`;
       userPrompt += `- [운영 패턴] 평균 사망 페이즈: ${gStats.avgDeathPhase} (Benchmark: ${bench.avgDeathPhaseElite}), 자기장 누적 피해: ${Math.round(gStats.totalBluezoneWaste / gStats.mLen)} HP, 엣지(Edge) 플레이: ${gStats.totalEdgePlay}회, 진입 지연: ${gStats.totalFatalDelay}회\n\n`;
@@ -404,6 +431,16 @@ export async function POST(request: Request) {
       userPrompt += `반드시 아래 3개 주제를 순서대로 다루어 주십시오:\n`;
       userPrompt += `${autoTopics.map((t, i) => `${i+1}. ${t}`).join(', ')}\n`;
     }
+
+    // [V8.0] 전술 직업군(Role) 판정 연동
+    const mainModeStats = aggregateMatches(groups[mainModeName] || []);
+    const roleInfo = classifyRole(mainModeStats, mainBench, mainUserTier);
+    
+    userPrompt += `\n### [유저 전술적 정체성]\n`;
+    userPrompt += `- 부여된 칭호: ${roleInfo.title}\n`;
+    userPrompt += `- 전술 직업군: ${roleInfo.roleLabel}\n`;
+    userPrompt += `- 특징 요약: ${roleInfo.description}\n`;
+    userPrompt += `- 시그니처 무기: ${roleInfo.signatureWeapon} (${roleInfo.signatureWeaponStats?.kills}킬, ${roleInfo.signatureWeaponStats?.dbnos}기절)\n`;
 // [V7.4] ④ AI 스트림 호출
     // --- [작업 1: System Instruction 분리 및 JSON 모드 적용] ---
     const genAI = new GoogleGenerativeAI(geminiApiKey);
@@ -461,7 +498,7 @@ export async function POST(request: Request) {
     // [V7.4] ⑤ precomputedVisuals 구성 (UI 렌더링용)
     const precomputedVisuals = {
       latestMatchTime, counterLatency: avgBackupLatency, reactionLatency: avgReactionLatency,
-      reactionTier, backupTier, overallTier: mainUserTier,
+      reactionTier, backupTier, overallTier: mainUserTier, roleInfo,
       initiativeSuccess: `${userInitiativeRate}%`, pressureIndex: avgPressureIndex, 
       reversalRate: `${totalReversalAttempts > 0 ? Math.round((totalReversalWins / totalReversalAttempts) * 100) : 0}%`,
       duelStats: { winRate: `${avgDuelWinRate}%`, wins: totalDuelWins, losses: totalDuelLosses, reversals: totalReversalWins, reversalAttempts: totalReversalAttempts },
@@ -521,22 +558,34 @@ export async function POST(request: Request) {
             }
           }
 
-          // 최종 JSON 추출 및 무결성 검증
+          // [V8.1] 최종 JSON 추출 및 무결성 검증 (강화된 정규표현식)
           try {
             let cleaned = fullText.trim();
-            // 1. Markdown 태그 제거
+            // 1. Markdown 태그 및 전후 사족 제거
             cleaned = cleaned.replace(/```json|```/g, "").trim();
             
-            // 2. 순수 JSON 객체만 추출 (정규표현식 기반 고도화)
+            // 2. 가장 바깥쪽의 JSON 객체만 정밀 추출 (비탐욕적 매칭 시도 후 실패 시 탐욕적 매칭)
             const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
               cleaned = jsonMatch[0].trim();
             }
 
-            JSON.parse(cleaned);
+            // 구문 분석 시도 (실패 시 에러 throw)
+            const finalJson = JSON.parse(cleaned);
+
+            // [V9.2] DB 저장 또는 업데이트 (Upsert)
+            await supabase
+              .from('ai_summaries')
+              .upsert({
+                nickname: lowerNickname,
+                match_ids: matchIds.sort().join(','),
+                summary_json: finalJson,
+                updated_at: new Date().toISOString()
+              }, { onConflict: 'nickname,match_ids' });
+
             controller.enqueue(encoder.encode(JSON.stringify({ type: "done", valid: true }) + "\n"));
           } catch (jsonErr) {
-            console.error("[AI-SUMMARY] JSON Validation Failed:", jsonErr);
+            console.error("[AI-SUMMARY] JSON Validation Failed. Cleaned Text:", fullText.substring(0, 100) + "...");
             controller.enqueue(encoder.encode(JSON.stringify({ type: "done", valid: false, raw: fullText }) + "\n"));
           }
         } catch (e: any) { 

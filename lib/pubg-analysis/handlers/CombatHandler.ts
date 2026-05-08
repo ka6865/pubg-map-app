@@ -40,9 +40,10 @@ export class CombatHandler extends BaseHandler {
     if (attackerName === this.state.lowerNickname) {
       if (victimName !== this.state.lowerNickname && !isVehicleDamage) {
         // 1. 무기 스탯 및 데미지 누적
-        const wId = e.weaponId || "Unknown";
-        let wStat = this.state.weaponStats.get(wId) || { hits: 0, headshots: 0 };
+        const wId = e.damageCauserName || (e.damageCauser && e.damageCauser.itemId) || e.weaponId || "Unknown";
+        const wStat = this.state.weaponStats.get(wId) || { hits: 0, headshots: 0, damage: 0, kills: 0, dbnos: 0 };
         wStat.hits++;
+        wStat.damage += damage;
         if (e.damageReason === "HeadShot") wStat.headshots++;
         this.state.weaponStats.set(wId, wStat);
 
@@ -119,11 +120,19 @@ export class CombatHandler extends BaseHandler {
     };
     const finalMakerName = getMaker(e);
 
-    if (e.dBNOId !== undefined) {
-      this.state.dbnoMap.set(e.dBNOId, { attacker: finalMakerName, victim: victimName, ts });
+    const weaponId = e.damageCauserName || (e.damageCauser && e.damageCauser.itemId) || e.weaponId || "Unknown";
+    if (e.dBNOId !== undefined && finalMakerName) {
+      this.state.dbnoMap.set(e.dBNOId, { attacker: finalMakerName, victim: victimName, weaponId, ts });
     }
 
-    if (finalMakerName === this.state.lowerNickname) this.state.myActionTimestamps.push(ts);
+    if (finalMakerName === this.state.lowerNickname) {
+      this.state.myActionTimestamps.push(ts);
+      // 무기별 기절(DBNO) 카운트 추가
+      const wId = e.damageCauserName || (e.damageCauser && e.damageCauser.itemId) || e.weaponId || "Unknown";
+      const wStat = this.state.weaponStats.get(wId) || { hits: 0, headshots: 0, damage: 0, kills: 0, dbnos: 0 };
+      wStat.dbnos = (wStat.dbnos || 0) + 1;
+      this.state.weaponStats.set(wId, wStat);
+    }
     this.updateDuelOutcome(finalMakerName, victimName, true);
 
     if (victimName === this.state.lowerNickname) {
@@ -147,6 +156,24 @@ export class CombatHandler extends BaseHandler {
     if (finalKillerName === this.state.lowerNickname) {
       this.state.myActionTimestamps.push(ts);
       
+      // 1. dBNOId를 통한 무기 역추적 시도
+      let wId = "Unknown";
+      if (e.dBNOId !== undefined) {
+        const dbnoInfo = this.state.dbnoMap.get(e.dBNOId);
+        if (dbnoInfo) {
+          wId = dbnoInfo.weaponId;
+        }
+      }
+      
+      // 2. 역추적 실패 시 현재 이벤트의 무기 정보 확인
+      if (wId === "Unknown" || !wId) {
+        wId = e.damageCauserName || (e.damageCauser && e.damageCauser.itemId) || e.weaponId || "Unknown";
+      }
+
+      const wStat = this.state.weaponStats.get(wId) || { hits: 0, headshots: 0, damage: 0, kills: 0, dbnos: 0 };
+      wStat.kills = (wStat.kills || 0) + 1;
+      this.state.weaponStats.set(wId, wStat);
+
       // 정밀 트레이드 (dBNOId 기반)
       let isTrade = false;
       if (e.dBNOId !== undefined) {

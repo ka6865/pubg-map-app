@@ -342,7 +342,7 @@ export default function GameDataEditor() {
                   <h3 className="text-lg font-bold text-[#F2A900] mb-2">글로벌 벤치마크 초기화</h3>
                   <p className="text-sm text-gray-400 mb-4">
                     엘리트 선수들의 통계 데이터(global_benchmarks)를 모두 비웁니다.<br/>
-                    수행 후 '벤치마커 스크립트'를 다시 돌려야 최신 데이터로 채워집니다.
+                    수행 후 &apos;벤치마커 스크립트&apos;를 다시 돌려야 최신 데이터로 채워집니다.
                   </p>
                   <button
                     onClick={async () => {
