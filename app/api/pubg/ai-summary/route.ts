@@ -45,7 +45,7 @@ function aggregateMatches(matches: any[]) {
       totalBaitCount += m.tradeStats.baitCount || 0;
       totalCoverAttempts += m.tradeStats.coverRateSampleCount || 0;
       totalCoverSuccess += (m.tradeStats.coverRate > 0 ? Math.round((m.tradeStats.coverRate / 100) * (m.tradeStats.coverRateSampleCount || 1)) : 0);
-      if (m.tradeStats.counterLatencyMs > 0) backupLatencies.push(m.tradeStats.counterLatencyMs);
+      if (m.tradeStats.tradeLatencyMs > 0) backupLatencies.push(m.tradeStats.tradeLatencyMs);
       if (m.tradeStats.reactionLatencyMs > 0) reactionLatencies.push(m.tradeStats.reactionLatencyMs);
     }
 
@@ -245,7 +245,8 @@ export async function POST(request: Request) {
       "1. KIND COACH: 획득한 배지를 근거로 유저의 강점을 극대화하고 멘탈을 케어하십시오.",
       "2. SPICY BOMBER: 팀 영향력(Impact)이 낮거나 배지가 적다면 실력 부족을 냉혹하게 찌르십시오.",
       "- 모든 분석 용어는 유저가 이해하기 쉬운 게임 용어를 사용하십시오. (예: 십자포화 -> 양각 노출, 고립 -> 혼자 떨어짐)",
-      "- [Apple-to-Apple] 데이터 증거(userStats/benchmarkStats) 비교 시, 반드시 동일한 항목(Label)을 동일한 순서로 비교하십시오.",
+      "- [Apple-to-Apple] 데이터 증거(userStats/benchmarkStats) 비교 시, 반드시 동일한 항목(Label)을 동일한 순서로 비교하십시오. 특히 '백업 속도(Trade)'와 '대응 사격 속도(Reaction)'는 전혀 다른 지표이므로 혼동하여 비난하지 마십시오.",
+      "- [TONE-CONTROL] 지표가 낮다고 해서 단순히 '실력이 없다'고 비난하지 말고, '엄폐물 활용 부족'이나 '팀과의 거리 조절 실패' 등 구체적인 전술적 원인을 짚어주십시오. 특히 10초 이상의 백업 시간은 피지컬 문제가 아닌 '위치 선정'의 문제로 분석하십시오.",
       "- [TEAMPLAY] '부활률'을 단독 토론 주제로 삼지 마십시오. 대신 연막탄 활용, 사격 지원(커버), 팀원과의 거리 유지 등을 종합적으로 고려하십시오.",
       "- 모드별(Solo/Duo/Squad)로 차이가 큰 부분이 있다면 해당 모드를 구체적으로 지목하며 분석하십시오.",
       "- debateIssues는 반드시 3개를 작성하고, 각 issue의 userStats/benchmarkStats는 인덱스별로 라벨과 항목이 완벽히 대칭되어야 합니다.",
@@ -270,8 +271,58 @@ export async function POST(request: Request) {
       "}"
     ];
 
+    // --- [작업 2, 3, 4를 위한 유틸리티 함수 추가] ---
+    function getGoldenTimePattern(g: any): string {
+      if (!g) return "데이터 부족";
+      if (g.early > g.mid1 && g.early > g.mid2) return "핫드랍형 (초반 집중)";
+      if (g.late > g.early && g.late > g.mid1) return "생존형 (후반 집중)";
+      if (g.mid1 + g.mid2 > g.early + g.late) return "중반 교전형";
+      return "균형형";
+    }
+
+    function selectDebateTopics(stats: any, bench: any): string[] {
+      if (!stats || !bench) return ["화력", "교전 주도권", "포지셔닝"];
+      const issues = [
+        { topic: "화력", gap: Math.abs(stats.avgDamage - (bench.avgBaselineDamageFinal || 200)) / Math.max(bench.avgBaselineDamageFinal || 200, 1) },
+        { topic: "교전 주도권", gap: Math.abs(stats.userInitiativeRate - (bench.avgRealInitiativeSuccessFinal || 40)) / 100 },
+        { topic: "1:1 결정력", gap: Math.abs(stats.avgDuelWinRate - (bench.b_duelWinRate || 50)) / 100 },
+        { topic: "포지셔닝", gap: parseFloat(stats.avgIsolationStr) > 1.3 ? 0.35 : 0.05 },
+        { topic: "아군 백업 속도", gap: Math.abs(parseFloat(stats.avgBackupLatency || "15") - (bench.b_tradeLatency || 12)) / 20 }
+      ];
+      return issues.sort((a, b) => b.gap - a.gap).slice(0, 3).map(i => i.topic);
+    }
+    // ------------------------------------------
+
     let userPrompt = `- 분석 대상: 총 ${mLen}경기 (랭크 매치: ${rankedCount}판 포함)\n`;
-    userPrompt += `- 주력 모드: ${mainModeName.toUpperCase()} (신뢰도: ${tierConfidence}, 기반: ${mainModeCount}판)\n\n`;
+    userPrompt += `- 주력 모드: ${mainModeName.toUpperCase()} (신뢰도: ${tierConfidence}, 기반: ${mainModeCount}판)\n`;
+
+    // --- [작업 2: 골든타임 패턴 분석] ---
+    if (goldenTimeAvg) {
+      userPrompt += `\n### [전술 지표 분석]\n`;
+      userPrompt += `- 교전 타이밍(GoldenTime): ${getGoldenTimePattern(goldenTimeAvg)}\n`;
+      userPrompt += `- 평균 백업 속도(Trade): ${avgBackupLatency} (아군 기절 시 적 제압 시간)\n`;
+      userPrompt += `- 대응 사격 속도(Reaction): ${avgReactionLatency} (피격 시 반격 시간)\n`;
+    }
+
+    // --- [작업 3: 최근 트렌드 분석 (5 vs 5)] ---
+    const matchesForTrend = detailedMatches.slice(0, 10);
+    if (matchesForTrend.length >= 6) {
+      const recentMatches = matchesForTrend.slice(0, 5);
+      const olderMatches = matchesForTrend.slice(5);
+      
+      const recentStats = aggregateMatches(recentMatches);
+      const olderStats = aggregateMatches(olderMatches);
+      
+      if (recentStats && olderStats) {
+        const dmgTrend = Math.round(recentStats.avgDamage - olderStats.avgDamage);
+        const winTrend = Number((recentStats.avgDuelWinRate - olderStats.avgDuelWinRate).toFixed(1));
+        
+        userPrompt += `\n### [최근 트렌드 (최근 5판 vs 이전 5판)]\n`;
+        userPrompt += `- 딜량 변화: ${Math.floor(olderStats.avgDamage)} → ${Math.floor(recentStats.avgDamage)} (${dmgTrend >= 0 ? '+' : ''}${dmgTrend})\n`;
+        userPrompt += `- 교전 승률: ${olderStats.avgDuelWinRate}% → ${recentStats.avgDuelWinRate}% (${winTrend >= 0 ? '+' : ''}${winTrend}%)\n`;
+        userPrompt += `- 종합 추세: ${dmgTrend > 50 ? '📈 실력 상승세' : dmgTrend < -50 ? '📉 컨디션 하락세' : '➡️ 안정권 유지'}\n`;
+      }
+    }
 
     let maxMatches = 0;
     let mainUserTier = "C";
@@ -295,7 +346,7 @@ export async function POST(request: Request) {
 
       let bench: any = {
          avgRealPressureFinal: 1.5, avgBaselineDamageFinal: 450, avgRealInitiativeSuccessFinal: 55,
-         b_isolationIndex: 1.0, b_minDist: 15, b_counterLatency: 0.5, b_soloKillRate: 50,
+         b_isolationIndex: 1.0, b_minDist: 15, b_counterLatency: 0.5, b_tradeLatency: 12.0, b_soloKillRate: 50,
          b_reviveRate: 30, b_tradeRate: 35, b_reversalRate: 25, avgDeathPhaseElite: 6,
          b_duelWinRate: userTier === 'S' ? 65 : userTier === 'A' ? 55 : userTier === 'B' ? 45 : 35
       };
@@ -308,6 +359,7 @@ export async function POST(request: Request) {
            b_isolationIndex: Number((globalStats.reduce((acc: any, s: any) => acc + (s.isolation_index || 0), 0) / gLen).toFixed(2)),
            b_minDist: Math.round(globalStats.reduce((acc: any, s: any) => acc + (s.min_dist || 0), 0) / gLen),
            b_counterLatency: Number((globalStats.reduce((acc: any, s: any) => acc + (s.counter_latency_ms || 500), 0) / gLen / 1000).toFixed(2)),
+           b_tradeLatency: Number((globalStats.reduce((acc: any, s: any) => acc + (s.trade_latency_ms || 12000), 0) / gLen / 1000).toFixed(2)),
            b_soloKillRate: Math.round(globalStats.reduce((acc: any, s: any) => acc + (s.solo_kill_rate || 0), 0) / gLen),
            b_reviveRate: Math.round(globalStats.reduce((acc: any, s: any) => acc + (s.revive_rate || 0), 0) / gLen),
            b_tradeRate: Math.round(globalStats.reduce((acc: any, s: any) => acc + (s.trade_rate || 0), 0) / gLen),
@@ -336,33 +388,80 @@ export async function POST(request: Request) {
         userPrompt += `- [팀플레이] 아군 기절 ${gStats.totalTeammateKnocks}회 → 부활: ${gStats.totalRevCount}회, 복수(Trade): ${gStats.totalTradeKills}회 (복수 성공률: ${gStats.totalTeammateKnocks>0?Math.round((gStats.totalTradeKills/gStats.totalTeammateKnocks)*100):0}% vs Benchmark: ${bench.b_tradeRate}%)\n`;
         userPrompt += `- [전술 기여] 견제 지원율: ${gStats.totalTeammateKnocks>0?Math.round((gStats.totalSuppCount/gStats.totalTeammateKnocks)*100):0}%, 미끼: ${gStats.totalBaitCount}회, 연막: ${gStats.totalSmokeCount}회, 섬광: ${gStats.totalStunCount}회\n`;
       }
-      userPrompt += `- [반응 속도] 대응 사격: ${gStats.avgBackupLatency} (Benchmark: ${bench.b_counterLatency}s), 반격 성공률: ${gStats.totalReversalAttempts > 0 ? Math.round((gStats.totalReversalWins / gStats.totalReversalAttempts) * 100) : 0}%\n`;
+      userPrompt += `- [반응 속도] 대응 사격 속도: ${gStats.avgReactionLatency} (Benchmark: ${bench.b_counterLatency}s), 반격 성공률: ${gStats.totalReversalAttempts > 0 ? Math.round((gStats.totalReversalWins / gStats.totalReversalAttempts) * 100) : 0}%\n`;
+      userPrompt += `- [백업 속도] 아군 백업 속도: ${gStats.avgBackupLatency} (Benchmark: ${bench.b_tradeLatency}s)\n`;
       userPrompt += `- [생존 환경] 고립 지수(운영/교전/사망): ${gStats.avgIsolationStr}/${gStats.isolationCountFinal>0?(gStats.totalCombatIso/gStats.isolationCountFinal).toFixed(2):"0"}/${gStats.isolationCountFinal>0?(gStats.totalDeathIso/gStats.isolationCountFinal).toFixed(2):"0"}\n`;
       userPrompt += `- [킬 분류] 솔로 킬: ${gStats.killContribFinal.solo}회, 클린업 킬: ${gStats.killContribFinal.cleanup}회 (솔로 비중: ${gStats.soloKillRate}% vs Benchmark: ${bench.b_soloKillRate}%)\n`;
       userPrompt += `- [유틸리티] 총 투척 ${gStats.totalUtilityThrows}회, 적중 ${gStats.totalUtilityHits}회, 데미지 ${gStats.totalUtilityDamage}\n`;
       userPrompt += `- [운영 패턴] 평균 사망 페이즈: ${gStats.avgDeathPhase} (Benchmark: ${bench.avgDeathPhaseElite}), 자기장 누적 피해: ${Math.round(gStats.totalBluezoneWaste / gStats.mLen)} HP, 엣지(Edge) 플레이: ${gStats.totalEdgePlay}회, 진입 지연: ${gStats.totalFatalDelay}회\n\n`;
     }
+
+    // --- [작업 4: Debate Topic 자동 선정] ---
+    if (mainBench) {
+      const mainModeStats = aggregateMatches(groups[mainModeName] || []);
+      const autoTopics = selectDebateTopics(mainModeStats, mainBench);
+      userPrompt += `\n### [분석 집중 영역 (Debate Issues)]\n`;
+      userPrompt += `반드시 아래 3개 주제를 순서대로 다루어 주십시오:\n`;
+      userPrompt += `${autoTopics.map((t, i) => `${i+1}. ${t}`).join(', ')}\n`;
+    }
 // [V7.4] ④ AI 스트림 호출
+    // --- [작업 1: System Instruction 분리 및 JSON 모드 적용] ---
     const genAI = new GoogleGenerativeAI(geminiApiKey);
     const modelsToTry = ["gemini-3.1-flash-lite-preview", "gemini-3-flash-preview", "gemini-2.5-flash"];
     
     let streamResult = null;
+    let lastError = null;
+
     for (const modelName of modelsToTry) {
       try {
-        // console.log(`[AI-SUMMARY] Attempting: ${modelName}`);
-        const model = genAI.getGenerativeModel({ model: modelName });
-        streamResult = await model.generateContentStream(promptLines.join("\n") + "\n\n" + userPrompt);
-        if (streamResult) break;
+        const model = genAI.getGenerativeModel({ 
+          model: modelName,
+          systemInstruction: promptLines.join("\n"),
+          generationConfig: {
+            responseMimeType: "application/json",
+            temperature: 0.75,
+            maxOutputTokens: 3000,
+          }
+        });
+        streamResult = await model.generateContentStream(userPrompt);
+        if (streamResult) break; // 성공 시 루프 탈출
       } catch (err: any) {
-        console.error(`[AI-SUMMARY] ${modelName} failed:`, err.message || err);
+        console.warn(`[AI-SUMMARY] Model ${modelName} failed, trying next...`, err.message);
+        lastError = err;
       }
     }
 
-    if (!streamResult) throw new Error("모든 AI 모델 응답 실패");
+    if (!streamResult) {
+      throw new Error(`모든 AI 모델 호출에 실패했습니다: ${lastError?.message}`);
+    }
+    // --------------------------------------------------------
+    // --------------------------------------------------------
+
+    // [V7.5] 티어 계산 로직
+    const getReactionTier = (lat: string) => {
+      const v = parseFloat(lat);
+      if (isNaN(v)) return "C";
+      if (v < 0.4) return "S";
+      if (v < 0.6) return "A";
+      if (v < 0.8) return "B";
+      return "C";
+    };
+    const getBackupTier = (lat: string) => {
+      const v = parseFloat(lat);
+      if (isNaN(v)) return "C";
+      if (v < 10) return "S";
+      if (v < 14) return "A";
+      if (v < 18) return "B";
+      return "C";
+    };
+
+    const reactionTier = getReactionTier(avgReactionLatency);
+    const backupTier = getBackupTier(avgBackupLatency);
 
     // [V7.4] ⑤ precomputedVisuals 구성 (UI 렌더링용)
     const precomputedVisuals = {
       latestMatchTime, counterLatency: avgBackupLatency, reactionLatency: avgReactionLatency,
+      reactionTier, backupTier, overallTier: mainUserTier,
       initiativeSuccess: `${userInitiativeRate}%`, pressureIndex: avgPressureIndex, 
       reversalRate: `${totalReversalAttempts > 0 ? Math.round((totalReversalWins / totalReversalAttempts) * 100) : 0}%`,
       duelStats: { winRate: `${avgDuelWinRate}%`, wins: totalDuelWins, losses: totalDuelLosses, reversals: totalReversalWins, reversalAttempts: totalReversalAttempts },
@@ -411,11 +510,40 @@ export async function POST(request: Request) {
     const encoder = new TextEncoder();
     return new Response(new ReadableStream({
       async start(controller) {
+        let fullText = "";
         try {
           controller.enqueue(encoder.encode(JSON.stringify({ type: "visuals", data: precomputedVisuals }) + "\n"));
-          for await (const chunk of streamResult.stream) { controller.enqueue(encoder.encode(JSON.stringify({ type: "chunk", data: chunk.text() }) + "\n")); }
-          controller.enqueue(encoder.encode(JSON.stringify({ type: "done" }) + "\n"));
-        } catch (e: any) { controller.error(e); } finally { controller.close(); }
+          if (streamResult) {
+            for await (const chunk of streamResult.stream) {
+              const text = chunk.text();
+              fullText += text;
+              controller.enqueue(encoder.encode(JSON.stringify({ type: "chunk", data: text }) + "\n"));
+            }
+          }
+
+          // 최종 JSON 추출 및 무결성 검증
+          try {
+            let cleaned = fullText.trim();
+            // 1. Markdown 태그 제거
+            cleaned = cleaned.replace(/```json|```/g, "").trim();
+            
+            // 2. 순수 JSON 객체만 추출 (정규표현식 기반 고도화)
+            const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+              cleaned = jsonMatch[0].trim();
+            }
+
+            JSON.parse(cleaned);
+            controller.enqueue(encoder.encode(JSON.stringify({ type: "done", valid: true }) + "\n"));
+          } catch (jsonErr) {
+            console.error("[AI-SUMMARY] JSON Validation Failed:", jsonErr);
+            controller.enqueue(encoder.encode(JSON.stringify({ type: "done", valid: false, raw: fullText }) + "\n"));
+          }
+        } catch (e: any) { 
+          controller.error(e); 
+        } finally { 
+          controller.close(); 
+        }
       }
     }), { headers: { "Content-Type": "application/x-ndjson", "Cache-Control": "no-cache" } });
   } catch (error: any) {
