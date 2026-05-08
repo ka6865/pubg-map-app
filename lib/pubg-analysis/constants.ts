@@ -2,7 +2,7 @@
  * PUBG 전술 분석 엔진 상수 정의
  */
 
-export const RESULT_VERSION = 11.97; // [V11.9.7] duel_win_rate DB 연동을 위한 전체 재분석 트리거
+export const RESULT_VERSION = 11.97;
 export const TELEMETRY_VERSION = 16;
 
 export const MAP_NAMES: Record<string, string> = {
@@ -27,3 +27,34 @@ export const TACTICAL_THRESHOLDS = {
   MID_GAME_1_MIN: 15,            // 중반전1 기준 (분)
   MID_GAME_2_MIN: 25,            // 중반전2 기준 (분)
 };
+
+export const WEAPON_NAMES: Record<string, string> = {
+  // AR
+  "WeapBerylM762_C": "베릴 M762", "WeapAKM_C": "AKM", "WeapM416_C": "M416", "WeapSCAR-L_C": "SCAR-L", 
+  "WeapG36C_C": "G36C", "WeapQBZ95_C": "QBZ95", "WeapAUG_C": "AUG", "WeapGroza_C": "그로자",
+  "WeapK2_C": "K2", "WeapACE32_C": "ACE32", "WeapFAMAS_C": "FAMAS",
+
+  // DMR
+  "WeapSLR_C": "SLR", "WeapSKS_C": "SKS", "WeapMk14_C": "Mk14", "WeapMini14_C": "Mini14", 
+  "WeapQBU88_C": "QBU", "WeapVSS_C": "VSS", "WeapMk12_C": "Mk12", "WeapDragunov_C": "드라구노프",
+
+  // SR
+  "WeapKar98k_C": "Kar98k", "WeapM24_C": "M24", "WeapAWM_C": "AWM", "WeapMosin_C": "모신나강", "WeapWin94_C": "Win94",
+
+  // SMG
+  "WeapUMP_C": "UMP45", "WeapVector_C": "Vector", "WeapMicroUZI_C": "Micro UZI", "WeapTommyGun_C": "토미건", 
+  "WeapBizon_C": "비존", "WeapMP5K_C": "MP5K", "WeapP90_C": "P90", "WeapJS9_C": "JS9",
+
+  // SG / Others
+  "WeapS12K_C": "S12K", "WeapS1897_C": "S1897", "WeapS686_C": "S686", "WeapDBS_C": "DBS", 
+  "WeapM249_C": "M249", "WeapDP28_C": "DP-28", "WeapMG3_C": "MG3", "WeapOriginS12_C": "O12",
+  "WeapPanzerFaust100M_C": "판처파우스트", "WeapMortar_C": "박격포", "WeapCrossbow_C": "석궁"
+};
+
+/**
+ * 분석에서 제외할 무기 (투척물, 주먹 등)
+ */
+export const IGNORE_WEAPONS = [
+  "WeapGrenade_C", "WeapMolotov_C", "WeapSmokeBomb_C", "WeapFlashBang_C", "WeapStickyGrenade_C",
+  "WeapSpikeStrip_C", "WeapDecoyGrenade_C", "WeapBluezoneGrenade_C", "None", "Cowbar_C", "Pan_C"
+];

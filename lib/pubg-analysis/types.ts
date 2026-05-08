@@ -191,7 +191,7 @@ export interface InternalAnalysisState {
   
   // [V11.3] 정밀 트레이드용 dBNO 매핑
   // key: dBNOId, value: { attackerName, victimName, ts }
-  dbnoMap: Map<string, { attacker: string, victim: string, ts: number, attackerName?: string, attackerAccountId?: string, time?: string }>;
+  dbnoMap: Map<number, { attacker: string, victim: string, weaponId: string, ts: number, attackerName?: string, attackerAccountId?: string, time?: string }>;
   totalPressureSum: number;
   pressureSampleCount: number;
   combatPressure: {

@@ -41,6 +41,16 @@ interface DebateData {
     reactionTier?: string;
     backupTier?: string;
     overallTier?: string;
+    roleInfo?: {
+      primaryRole: string;
+      secondaryRole: string | null;
+      title: string;
+      roleLabel: string;
+      description: string;
+      signatureWeapon: string;
+      signatureWeaponStats?: { kills: number; dbnos: number };
+      scores: Record<string, number>;
+    };
     initiativeSuccess: string;
     duelStats?: { winRate: string; wins: number; losses: number; reversals: number; reversalAttempts: number };
     reversalRate: string;
@@ -121,7 +131,8 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
         body: JSON.stringify({ 
           matchIds: matchIds, 
           nickname, 
-          platform: platform 
+          platform: platform,
+          force: force
         })
       });
 
@@ -350,35 +361,71 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
         </div>
       </div>
 
-      {debateData?.signature && (
-        <div className="p-8 bg-gradient-to-r from-yellow-500/20 via-yellow-500/5 to-transparent border-l-4 border-yellow-500 rounded-r-[32px] animate-in fade-in slide-in-from-left duration-1000 shadow-2xl shadow-yellow-500/5 relative overflow-hidden">
-          <div className="absolute top-0 right-0 h-full flex items-center pr-8">
-            <div className={`flex flex-col items-center justify-center p-4 rounded-2xl border-2 shadow-2xl ${
-              debateData?.visuals?.overallTier === 'S' ? 'bg-blue-500/20 border-blue-500 shadow-blue-500/30' :
-              debateData?.visuals?.overallTier === 'A' ? 'bg-emerald-500/20 border-emerald-500 shadow-emerald-500/30' :
-              debateData?.visuals?.overallTier === 'B' ? 'bg-yellow-500/20 border-yellow-500 shadow-yellow-500/30' :
-              'bg-gray-500/20 border-gray-500 shadow-gray-500/30'
-            }`}>
-              <span className="text-[10px] font-black text-white/60 uppercase tracking-widest mb-1">Tactical Tier</span>
-              <span className={`text-4xl font-black ${
-                debateData?.visuals?.overallTier === 'S' ? 'text-blue-400' :
-                debateData?.visuals?.overallTier === 'A' ? 'text-emerald-400' :
-                debateData?.visuals?.overallTier === 'B' ? 'text-yellow-400' :
-                'text-gray-400'
-              }`}>
-                {debateData?.visuals?.overallTier || 'C'}
-              </span>
-            </div>
-          </div>
+      {debateData?.visuals?.roleInfo && (
+        <div className="relative group overflow-hidden rounded-[32px] border border-white/10 bg-black/60 backdrop-blur-xl shadow-2xl animate-in fade-in slide-in-from-bottom-8 duration-1000">
+          {/* 배경 장식 */}
+          <div className="absolute -top-24 -left-24 w-64 h-64 bg-indigo-500/10 blur-[100px] rounded-full group-hover:bg-indigo-500/20 transition-colors" />
+          <div className="absolute -bottom-24 -right-24 w-64 h-64 bg-emerald-500/10 blur-[100px] rounded-full group-hover:bg-emerald-500/20 transition-colors" />
           
-          <div className="flex items-center gap-6 relative z-10">
-            <div className="w-16 h-16 bg-yellow-500 rounded-[20px] flex items-center justify-center text-3xl shadow-[0_0_30px_rgba(234,179,8,0.5)] animate-pulse">
-              🏆
+          <div className="relative z-10 flex flex-col md:flex-row items-center gap-8 p-8 md:p-10">
+            {/* 왼쪽: 티어 및 역할 아이콘 */}
+            <div className="flex flex-col items-center gap-4">
+              <div className={`w-24 h-24 rounded-[32px] flex items-center justify-center text-4xl shadow-2xl transition-transform group-hover:scale-110 duration-500 ${
+                debateData.visuals.overallTier === 'S' ? 'bg-gradient-to-br from-blue-600 to-blue-400 shadow-blue-500/40' :
+                debateData.visuals.overallTier === 'A' ? 'bg-gradient-to-br from-emerald-600 to-emerald-400 shadow-emerald-500/40' :
+                debateData.visuals.overallTier === 'B' ? 'bg-gradient-to-br from-yellow-600 to-yellow-400 shadow-yellow-500/40' :
+                'bg-gradient-to-br from-gray-600 to-gray-400 shadow-gray-500/40'
+              }`}>
+                {debateData.visuals.overallTier === 'S' ? '💎' : debateData.visuals.overallTier === 'A' ? '🔥' : '⚔️'}
+              </div>
+              <div className="px-4 py-1.5 bg-white/10 rounded-full border border-white/10">
+                <span className="text-[12px] font-black text-white tracking-widest uppercase">{debateData.visuals.overallTier} TIER</span>
+              </div>
             </div>
-            <div className="flex flex-col pr-32">
-              <span className="text-[10px] text-amber-500 font-black uppercase tracking-[0.2em] mb-1">시그니처 플레이 분석</span>
-              <h2 className="text-xl md:text-2xl text-white font-black tracking-tight mb-1">{debateData?.signature || "데이터 분석 중..."}</h2>
-              <p className="text-[11px] text-gray-500 font-bold leading-relaxed">{debateData?.signatureSub || "데이터 분석을 통한 플레이 스타일 정의"}</p>
+
+            {/* 중간: 직업군 설명 */}
+            <div className="flex-1 text-center md:text-left space-y-3">
+              <div className="space-y-1">
+                <span className="text-[12px] text-indigo-400 font-black uppercase tracking-[0.3em]">Tactical Identity</span>
+                <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight leading-none italic">
+                  {debateData.visuals.roleInfo.title}
+                </h2>
+              </div>
+              <div className="inline-flex items-center gap-2 px-3 py-1 bg-indigo-500/20 rounded-lg border border-indigo-500/30">
+                <Target size={14} className="text-indigo-400" />
+                <span className="text-xs font-black text-indigo-300 uppercase tracking-wider">{debateData.visuals.roleInfo.roleLabel}</span>
+              </div>
+              <p className="text-[13px] text-gray-400 font-bold leading-relaxed max-w-xl">
+                {debateData.visuals.roleInfo.description}
+              </p>
+            </div>
+
+            {/* 오른쪽: 무기 스탯 카드 (유저가 원한 '총 보여주기') */}
+            <div className="w-full md:w-64 p-6 bg-white/5 rounded-3xl border border-white/10 shadow-inner group/weapon relative overflow-hidden">
+              <div className="absolute top-0 right-0 p-4 opacity-5 group-hover/weapon:scale-125 transition-transform duration-700">
+                <Skull size={80} className="text-white" />
+              </div>
+              
+              <div className="relative z-10 space-y-4">
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] text-gray-500 font-black uppercase tracking-widest">Signature Weapon</span>
+                  <div className="text-xl font-black text-white flex items-center gap-2">
+                    <Flame size={18} className="text-orange-500 animate-pulse" />
+                    {debateData.visuals.roleInfo.signatureWeapon}
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/10">
+                  <div className="flex flex-col">
+                    <span className="text-[18px] font-black text-white">{debateData.visuals.roleInfo.signatureWeaponStats?.kills || 0}</span>
+                    <span className="text-[9px] text-gray-500 font-black uppercase tracking-tighter">Kills</span>
+                  </div>
+                  <div className="flex flex-col">
+                    <span className="text-[18px] font-black text-indigo-400">{debateData.visuals.roleInfo.signatureWeaponStats?.dbnos || 0}</span>
+                    <span className="text-[9px] text-gray-500 font-black uppercase tracking-tighter">Knocks (DBNO)</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -534,10 +581,24 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
           <div className="text-[9px] text-gray-500 font-medium">피격 시 교전 대응(반응) 시간</div>
         </div>
 
-        <div className="relative group p-6 bg-cyan-500/10 border border-cyan-500/20 rounded-[28px] text-center transition-all hover:bg-cyan-500/15">
+        <div className="relative p-6 bg-cyan-500/10 border border-cyan-500/20 rounded-[28px] text-center transition-all hover:bg-cyan-500/15">
           <div className="text-[10px] text-cyan-400 font-black uppercase mb-1 tracking-widest">아군 백업 속도</div>
-          <div className="text-3xl font-black text-white mb-1">
+          <div className="text-3xl font-black text-white mb-1 flex items-center justify-center gap-2">
             {debateData?.visuals?.counterLatency || "0.00s"}
+            {debateData?.visuals?.counterLatency === "측정 불가" && (
+              <div className="group relative cursor-help text-cyan-400/50 hover:text-cyan-400 transition-colors">
+                <div className="w-4 h-4 rounded-full border border-cyan-400/30 flex items-center justify-center text-[10px] font-black">?</div>
+                
+                {/* Tooltip Content */}
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 p-3 bg-[#111] border border-cyan-500/20 rounded-xl shadow-2xl z-50 w-64 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                  <div className="text-[10px] font-black uppercase mb-1 text-cyan-400 text-left">측정 불가 사유</div>
+                  <div className="text-[11px] text-cyan-200/70 font-medium leading-relaxed text-left">
+                    최근 분석된 경기 중 <span className="text-cyan-400 font-bold">아군이 기절(DBNO)하거나 교전에 참여하여 백업이 필요한 상황</span>이 발생하지 않았습니다. 샘플 데이터가 부족하여 지표 산출이 불가능합니다.
+                  </div>
+                  <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#111] border-r border-bottom border-cyan-500/20 rotate-45" />
+                </div>
+              </div>
+            )}
           </div>
           <div className="text-[9px] text-gray-500 font-medium">아군 피격 시 커버 소요 시간</div>
         </div>
