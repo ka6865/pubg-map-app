@@ -1,6 +1,7 @@
 /**
  * @fileoverview 전적 검색 결과 및 개별 매치 내 플레이어의 통계를 나타내는 타입들을 정의합니다.
  */
+import { TimelineEvent } from "../lib/pubg-analysis/types";
 
 export interface MatchStats {
   winPlace: number;
@@ -176,4 +177,14 @@ export interface MatchData {
       survival: number;
     };
   };
+  /** [V12.5] 1:1 교전 통계 */
+  duelStats?: {
+    totalDuels: number;
+    wins: number;
+    losses: number;
+    reversalRate: number;
+    duelWinRate: number;
+  };
+  /** [V12.5] 상세 경기 타임라인 */
+  timeline?: TimelineEvent[];
 }

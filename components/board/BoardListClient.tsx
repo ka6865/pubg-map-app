@@ -54,12 +54,10 @@ export default function BoardListClient({
 
   const formatTimeAgo = (dateString: string) => {
     const date = new Date(dateString);
-    const now = new Date();
-    const diff = (now.getTime() - date.getTime()) / 1000;
-    if (diff < 60) return "방금 전";
-    if (diff < 3600) return `${Math.floor(diff / 60)}분 전`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)}시간 전`;
-    return date.toLocaleDateString();
+    const y = date.getFullYear();
+    const m = date.getMonth() + 1;
+    const d = date.getDate();
+    return `${y}. ${m}. ${d}.`;
   };
 
   const handleSearch = (e: React.FormEvent) => {

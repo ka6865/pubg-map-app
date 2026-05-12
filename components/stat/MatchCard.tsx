@@ -24,6 +24,8 @@ import {
   Map as MapIcon
 } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { MatchTimeline } from "./MatchTimeline";
+import { PerformanceRadar } from "./PerformanceRadar";
 import type { MatchData } from "../../types/stat";
 
 const ScoreBar = ({ label, score, max, color }: { label: string, score: number, max: number, color: string }) => (
@@ -320,7 +322,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
               </div>
               <div className="w-1 h-1 bg-white/10 rounded-full" />
               <div className="flex items-baseline gap-1">
-                <span className="text-indigo-400 font-black text-sm">{Math.floor(matchData.stats.damageDealt)}</span>
+                <span className="text-indigo-400 font-black text-sm">{Math.floor(Number(matchData.stats.damageDealt) || 0)}</span>
                 <span className="text-[10px] text-indigo-400/60 font-bold uppercase">Dmg</span>
               </div>
               {(matchData.teamImpact?.teamDamageShare ?? 0) > 0 && (
@@ -358,7 +360,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
 
         {/* V3 Tactical Badges & Tier */}
         <div className="flex items-center justify-between md:justify-end gap-3">
-          {matchData.benchmark && (
+          {matchData.benchmark && matchData.benchmark.tier && (
             <div className="relative group/tier">
               <div className={`px-4 py-1.5 rounded-xl border flex items-center gap-2 transition-all cursor-help
                 ${matchData.benchmark.tier === 'S' ? 'bg-amber-500/20 border-amber-500/50 text-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.2)]' :
@@ -430,110 +432,65 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
         <div className="p-6 pt-0 border-t border-white/5 animate-in slide-in-from-top-4 duration-500">
           {/* Detailed Stats Grid */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
-            <StatBox icon={<Crosshair size={16} />} label="헤드샷" value={matchData.stats.headshotKills} color="text-red-400" />
-            <StatBox icon={<Zap size={16} />} label="어시스트" value={matchData.stats.assists} color="text-indigo-400" />
-            <StatBox icon={<Shield size={16} />} label="기절시킴" value={matchData.stats.DBNOs} color="text-yellow-400" />
-            <StatBox icon={<Clock size={16} />} label="생존시간" value={`${Math.floor(matchData.stats.timeSurvived / 60)}분`} color="text-green-400" />
+            <StatBox icon={<Crosshair size={16} />} label="헤드샷" value={Number(matchData.stats.headshotKills) || 0} color="text-red-400" />
+            <StatBox icon={<Zap size={16} />} label="어시스트" value={Number(matchData.stats.assists) || 0} color="text-indigo-400" />
+            <StatBox icon={<Shield size={16} />} label="기절시킴" value={Number(matchData.stats.DBNOs) || 0} color="text-yellow-400" />
+            <StatBox icon={<Clock size={16} />} label="생존시간" value={`${Math.floor((Number(matchData.stats.timeSurvived) || 0) / 60)}분`} color="text-green-400" />
           </div>
 
-          {/* V8.1 Tactical Contribution Dashboard */}
-          {matchData.tradeStats && (
-            <div className="mt-8">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="w-8 h-8 bg-emerald-500/20 rounded-lg flex items-center justify-center">
-                  <ShieldAlert size={16} className="text-emerald-400" />
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-white font-black text-sm">전술적 기여도</span>
-                  <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Fact-Based Performance Metrics</span>
-                </div>
+          {/* [V12.5] New Tactical Dashboard (Radar + Timeline) */}
+          <div className="mt-8">
+            <div className="flex items-center gap-2 mb-6">
+              <div className="w-8 h-8 bg-indigo-500/20 rounded-lg flex items-center justify-center">
+                <Target size={16} className="text-indigo-400" />
               </div>
-              
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-8 gap-4">
-                <TacticalBox 
-                  icon={<Flame size={18} />} 
-                  label="견제 사격" 
-                  value={matchData.tradeStats.suppCount} 
-                  subLabel="아군 위기 시 지원"
-                  color="text-orange-400"
-                  bgColor="bg-orange-400/10"
-                  tooltip="아군이 기절 상태일 때 주변의 적에게 데미지를 입히거나 사격하여 엄호한 횟수입니다."
-                />
-                <TacticalBox 
-                  icon={<Heart size={18} />} 
-                  label="부활 성공" 
-                  value={matchData.tradeStats.revCount} 
-                  subLabel="직접 구조 완료"
-                  color="text-pink-400"
-                  bgColor="bg-pink-400/10"
-                  tooltip="기절한 팀원을 직접 끝까지 부활시켜 전장에 복귀시킨 횟수입니다."
-                />
-                <TacticalBox 
-                  icon={<TrendingUp size={18} />} 
-                  label="복수 성공률" 
-                  value={`${Number(matchData.tradeStats?.tradeRate || 0).toFixed(1)}%`} 
-                  subLabel="아군 손실 즉시 복구"
-                  color="text-emerald-400"
-                  bgColor="bg-emerald-400/10"
-                  tooltip="아군이 기절한 뒤 30초 이내에 해당 적을 제압(기절/킬)한 비율입니다."
-                />
-                <TacticalBox 
-                  icon={<MousePointer2 size={18} />} 
-                  label="섬광 적중" 
-                  value={`${matchData.combatPressure?.stunHits || 0}회`} 
-                  subLabel={`총 ${matchData.combatPressure?.utilityHits || 0}회 적중`}
-                  color="text-amber-400"
-                  bgColor="bg-amber-400/10"
-                  tooltip="섬광탄으로 적을 무력화시킨 횟수입니다."
-                />
-                <TacticalBox 
-                  icon={<Target size={18} />} 
-                  label="주도권 성공률" 
-                  value={`${Number(matchData.initiative_rate || matchData.initiativeStats?.rate || 0).toFixed(1)}%`} 
-                  subLabel={`선제 공격 승리`}
-                  color="text-cyan-400"
-                  bgColor="bg-cyan-400/10"
-                  tooltip="선제 공격(먼저 사격)을 시작한 교전 세션 중, 승리(적 기절/킬)한 비율입니다."
-                />
-                <TacticalBox 
-                  icon={<Zap size={18} />} 
-                  label="반응 속도" 
-                  value={`${(matchData.tradeStats?.reactionLatencyMs ?? 0) > 0 ? (matchData.tradeStats.reactionLatencyMs! / 1000).toFixed(2) : 0}s`} 
-                  subLabel={`피격 후 반격`}
-                  color="text-yellow-400"
-                  bgColor="bg-yellow-400/10"
-                  tooltip="적에게 피격당한 직후 고개를 돌려 반격(사격)하기까지 걸린 평균 시간입니다."
-                />
-                <TacticalBox 
-                  icon={<Clock size={18} />} 
-                  label="트레이드 속도" 
-                  value={`${(matchData.tradeStats?.tradeLatencyMs ?? 0) > 0 ? (matchData.tradeStats.tradeLatencyMs! / 1000).toFixed(1) : 0}s`} 
-                  subLabel={`평균 백업 시간`}
-                  color="text-indigo-400"
-                  bgColor="bg-indigo-400/10"
-                  tooltip="아군이 기절한 직후, 해당 적을 눕히거나 킬하여 상황을 반전시킨 평균 시간입니다."
-                />
-                <TacticalBox 
-                  icon={<Wind size={18} />} 
-                  label="끝선 플레이" 
-                  value={`${matchData.edgePlay || 0}회`} 
-                  subLabel={`자기장 Edge 활용`}
-                  color="text-blue-400"
-                  bgColor="bg-blue-400/10"
-                  tooltip="자기장 경계선(50m 이내)에서 전략적으로 플레이한 횟수입니다."
-                />
-                <TacticalBox 
-                  icon={<ShieldAlert size={18} />} 
-                  label="자기장 피해" 
-                  value={`${Math.floor(matchData.bluezoneWaste || 0)} HP`} 
-                  subLabel={`누적 데미지량`}
-                  color="text-red-400"
-                  bgColor="bg-red-400/10"
-                  tooltip="자기장 밖에서 입은 총 누적 피해량입니다. (V11.9.2 정규화)"
-                />
+              <div className="flex flex-col">
+                <span className="text-white font-black text-sm">전술 시각화 리포트</span>
+                <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Performance Radar & Match Timeline</span>
               </div>
             </div>
-          )}
+            
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+              {/* Left: Radar Chart */}
+              <div className="lg:col-span-4 bg-white/2 border border-white/5 rounded-[2.5rem] p-6 flex flex-col items-center justify-center">
+                <div className="text-[10px] text-gray-500 font-black uppercase tracking-widest mb-4">Tactical Balance</div>
+                <PerformanceRadar 
+                  data={{
+                    combat: Math.min(100, (matchData.teamImpact?.damageImpact || 0 + (matchData.teamImpact?.killImpact || 0)) / 2),
+                    survival: Math.min(100, (matchData.stats.timeSurvived / 1800) * 100),
+                    support: Math.min(100, ((matchData.tradeStats?.revCount || 0) * 30 + (matchData.tradeStats?.suppCount || 0) * 20 + (matchData.tradeStats?.smokeCount || 0) * 10)),
+                    precision: matchData.duelStats?.duelWinRate || 0,
+                    strategy: Math.min(100, ((matchData.edgePlay || 0) * 15 + (matchData.initiative_rate || 0) * 0.5))
+                  }} 
+                />
+                <div className="mt-4 grid grid-cols-2 gap-4 w-full">
+                   <div className="flex flex-col items-center p-3 bg-white/5 rounded-2xl border border-white/5">
+                      <span className="text-[9px] text-gray-500 font-bold uppercase">주도권</span>
+                      <span className="text-xs font-black text-indigo-400">{Number(matchData.initiative_rate || 0).toFixed(1)}%</span>
+                   </div>
+                   <div className="flex flex-col items-center p-3 bg-white/5 rounded-2xl border border-white/5">
+                      <span className="text-[9px] text-gray-500 font-bold uppercase">복수율</span>
+                      <span className="text-xs font-black text-emerald-400">{Number(matchData.tradeStats?.tradeRate || 0).toFixed(1)}%</span>
+                   </div>
+                </div>
+              </div>
+
+              {/* Right: Timeline */}
+              <div className="lg:col-span-8 bg-white/2 border border-white/5 rounded-[2.5rem] p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="text-[10px] text-gray-500 font-black uppercase tracking-widest">Match Timeline</div>
+                  <div className="flex items-center gap-1.5 px-3 py-1 bg-white/5 rounded-full border border-white/10 text-[10px] text-gray-400 font-bold">
+                    <Clock size={10} />
+                    <span>{Math.floor(matchData.stats.timeSurvived / 60)}m {matchData.stats.timeSurvived % 60}s Survived</span>
+                  </div>
+                </div>
+                
+                <div className="max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                  <MatchTimeline events={matchData.timeline || []} />
+                </div>
+              </div>
+            </div>
+          </div>
 
           {/* AI Analysis Section */}
           <div className="mt-8">
@@ -750,19 +707,19 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                     <div className="grid grid-cols-2 gap-3">
                       <div className="bg-black/20 p-2 rounded-xl flex flex-col items-center">
                         <span className="text-[9px] text-gray-500 font-bold uppercase">Kills</span>
-                        <span className="text-sm font-black text-red-400">{member.kills}</span>
+                        <span className="text-sm font-black text-red-400">{Number(member.kills) || 0}</span>
                       </div>
                       <div className="bg-black/20 p-2 rounded-xl flex flex-col items-center">
                         <span className="text-[9px] text-gray-500 font-bold uppercase">Assists</span>
-                        <span className="text-sm font-black text-indigo-400">{member.assists}</span>
+                        <span className="text-sm font-black text-indigo-400">{Number(member.assists) || 0}</span>
                       </div>
                       <div className="bg-black/20 p-2 rounded-xl flex flex-col items-center">
                         <span className="text-[9px] text-gray-500 font-bold uppercase">DBNOs</span>
-                        <span className="text-sm font-black text-yellow-500">{member.DBNOs}</span>
+                        <span className="text-sm font-black text-yellow-500">{Number(member.DBNOs) || 0}</span>
                       </div>
                       <div className="bg-black/20 p-2 rounded-xl flex flex-col items-center">
                         <span className="text-[9px] text-gray-500 font-bold uppercase">Damage</span>
-                        <span className="text-sm font-black text-white">{Math.floor(member.damageDealt)}</span>
+                        <span className="text-sm font-black text-white">{Math.floor(Number(member.damageDealt) || 0)}</span>
                       </div>
                     </div>
                   </div>

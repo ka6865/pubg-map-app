@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useState } from "react";
-import { ShieldAlert, Clock, TrendingUp, Flame, Wind, Heart, Skull, Target } from "lucide-react";
+import { ShieldAlert, Clock, TrendingUp, Flame, Wind, Heart, Skull, Target, HelpCircle } from "lucide-react";
 import { IsolationRadar } from "./IsolationRadar";
 import { SpiderChart } from "./SpiderChart";
+import { MapKingCard } from "./MapKingCard";
 import { useEffect, useRef } from "react";
 
 interface DebateStat {
@@ -36,6 +37,12 @@ interface DebateData {
   visuals?: {
     // ✅ API 응답 실제 구조에 맞게 정리: latency 객체는 미사용, counterLatency만 실제 사용됨
     counterLatency: string;
+    tierBreakdown?: {
+      combat: number;
+      tactical: number;
+      survival: number;
+      total: number;
+    };
     latestMatchTime?: string;
     reactionLatency: string;
     reactionTier?: string;
@@ -64,14 +71,34 @@ interface DebateData {
       normal: number;
       main: string;
     };
+    mapStats?: {
+      list: Array<{
+        mapName: string;
+        displayName: string;
+        matchCount: number;
+        avgDamage: number;
+        avgKills: number;
+        avgDeathPhase: number;
+      }>;
+      bestMap: { mapName: string; displayName: string; matchCount: number; avgDamage: number; avgKills: number; avgDeathPhase: number };
+      worstMap: { mapName: string; displayName: string; matchCount: number; avgDamage: number; avgKills: number; avgDeathPhase: number };
+    } | null;
     tactical?: {
       suppRate: string;
       smokeRate: string;
       reviveRate: string;
       baitCount: number;
-      suppRaw?: { count: number; total: number };
-      smokeRaw?: { count: number; total: number; teamCover?: number };
-      reviveRaw?: { count: number; total: number };
+      counts?: {
+        knocks: number;
+        smokes: number;
+        smokeRescues: number;
+        revives: number;
+        trades: number;
+        supps: number;
+        stuns?: number;
+        stunDuration?: number;
+        initiative: { attempts: number; success: number };
+      };
       isolation?: {
         isolationIndex: number;
         minDist: number;
@@ -214,12 +241,18 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
   const score = getScore();
   
   useEffect(() => {
+    // [V40.9] 닉네임이 바뀌면 기존 데이터를 초기화하여 데이터 전이 방지
+    setDebateData(null);
+    setStreamingText("");
+    textBufferRef.current = "";
+    lineBufferRef.current = "";
+    
     return () => {
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
     };
-  }, []);
+  }, [nickname]); // nickname 변경 시 실행
 
   if (error) {
     return (
@@ -362,10 +395,12 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
       </div>
 
       {debateData?.visuals?.roleInfo && (
-        <div className="relative group overflow-hidden rounded-[32px] border border-white/10 bg-black/60 backdrop-blur-xl shadow-2xl animate-in fade-in slide-in-from-bottom-8 duration-1000">
-          {/* 배경 장식 */}
-          <div className="absolute -top-24 -left-24 w-64 h-64 bg-indigo-500/10 blur-[100px] rounded-full group-hover:bg-indigo-500/20 transition-colors" />
-          <div className="absolute -bottom-24 -right-24 w-64 h-64 bg-emerald-500/10 blur-[100px] rounded-full group-hover:bg-emerald-500/20 transition-colors" />
+        <div className="relative z-20 group rounded-[32px] border border-white/10 bg-black/60 backdrop-blur-xl shadow-2xl animate-in fade-in slide-in-from-bottom-8 duration-1000">
+          {/* [V38.2.8] 배경 장식용 별도 overflow-hidden 레이어 */}
+          <div className="absolute inset-0 overflow-hidden rounded-[32px] pointer-events-none">
+            <div className="absolute -top-24 -left-24 w-64 h-64 bg-indigo-500/10 blur-[100px] rounded-full group-hover:bg-indigo-500/20 transition-colors" />
+            <div className="absolute -bottom-24 -right-24 w-64 h-64 bg-emerald-500/10 blur-[100px] rounded-full group-hover:bg-emerald-500/20 transition-colors" />
+          </div>
           
           <div className="relative z-10 flex flex-col md:flex-row items-center gap-8 p-8 md:p-10">
             {/* 왼쪽: 티어 및 역할 아이콘 */}
@@ -378,8 +413,64 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
               }`}>
                 {debateData.visuals.overallTier === 'S' ? '💎' : debateData.visuals.overallTier === 'A' ? '🔥' : '⚔️'}
               </div>
-              <div className="px-4 py-1.5 bg-white/10 rounded-full border border-white/10">
-                <span className="text-[12px] font-black text-white tracking-widest uppercase">{debateData.visuals.overallTier} TIER</span>
+              <div className="flex items-center gap-2">
+                <div className="px-4 py-1.5 bg-white/10 rounded-full border border-white/10">
+                  <span className="text-[12px] font-black text-white tracking-widest uppercase">{debateData.visuals.overallTier} TIER</span>
+                </div>
+                
+                {/* [V38.2] 티어 세부 점수 툴팁 */}
+                {debateData.visuals.tierBreakdown && (
+                  <div className="relative group/tooltip">
+                    <HelpCircle size={16} className="text-white/30 hover:text-white/60 cursor-help transition-colors" />
+                    <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 w-48 p-4 bg-black/90 border border-white/20 rounded-2xl backdrop-blur-xl shadow-2xl opacity-0 group-hover/tooltip:opacity-100 pointer-events-none transition-all z-50">
+                      <div className="text-[11px] text-white/50 font-black uppercase tracking-wider mb-3 pb-2 border-block border-white/10">Tier Analysis</div>
+                      <div className="space-y-2.5">
+                        <div className="flex justify-between items-center">
+                          <span className="text-[11px] text-gray-400 font-bold">교전 점수</span>
+                          <span className="text-[12px] text-indigo-400 font-black">{debateData.visuals.tierBreakdown.combat}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-[11px] text-gray-400 font-bold">전술 점수</span>
+                          <span className="text-[12px] text-emerald-400 font-black">{debateData.visuals.tierBreakdown.tactical}</span>
+                        </div>
+                        <div className="flex justify-between items-center">
+                          <span className="text-[11px] text-gray-400 font-bold">생존 점수</span>
+                          <span className="text-[12px] text-yellow-400 font-black">{debateData.visuals.tierBreakdown.survival}</span>
+                        </div>
+                        <div className="pt-2 mt-2 border-t border-white/10 flex justify-between items-center">
+                          <span className="text-[11px] text-white font-black uppercase">종합 점수</span>
+                          <span className="text-[14px] text-white font-black">{debateData.visuals.tierBreakdown.total}</span>
+                        </div>
+                      </div>
+
+                      {/* [V38.2.6] 다음 티어 안내 */}
+                      <div className="mt-4 px-3 py-2 bg-white/5 rounded-xl border border-white/10">
+                        <div className="text-[10px] text-gray-400 font-bold mb-1">Next Goal</div>
+                        <div className="text-[11px] text-white leading-relaxed">
+                          {debateData.visuals.tierBreakdown.total >= 75 ? (
+                            <span className="text-yellow-400 font-bold">최상위 S 티어 달성! 현재 실력을 유지하세요.</span>
+                          ) : (
+                            <>
+                              <span className="text-indigo-400 font-bold">
+                                {debateData.visuals.tierBreakdown.total >= 55 ? "S" : "A"} TIER
+                              </span>
+                              {" "}까지 {" "}
+                              <span className="text-white font-black">
+                                {( (debateData.visuals.tierBreakdown.total >= 55 ? 75 : 55) - debateData.visuals.tierBreakdown.total ).toFixed(1)}점
+                              </span>
+                              {" "}더 필요합니다.
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="mt-3 text-[9px] text-gray-500 leading-tight">
+                        * 55점 이상 A, 75점 이상 S 티어 부여
+                      </div>
+                      <div className="absolute left-[-6px] top-1/2 -translate-y-1/2 w-0 h-0 border-t-[6px] border-t-transparent border-r-[6px] border-r-white/20 border-b-[6px] border-b-transparent" />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -432,7 +523,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
       )}
 
       {debateData?.visuals?.goldenTime && (
-        <div className="p-10 bg-black/80 rounded-[40px] border border-white/10 backdrop-blur-2xl shadow-2xl overflow-hidden relative">
+        <div className="relative z-10 p-10 bg-black/80 rounded-[40px] border border-white/10 backdrop-blur-2xl shadow-2xl overflow-hidden">
           <div className="absolute -top-24 -right-24 w-48 h-48 bg-yellow-500/10 blur-[80px] rounded-full" />
           
           <div className="flex items-center justify-between mb-10 relative z-10">
@@ -559,7 +650,14 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
         <div className="relative group p-6 bg-indigo-500/10 border border-indigo-500/20 rounded-[28px] text-center transition-all hover:bg-indigo-500/15">
           <div className="text-[10px] text-indigo-400 font-black uppercase mb-1 tracking-widest">선제 타격 효율</div>
-          <div className="text-3xl font-black text-white mb-1">{debateData?.visuals?.initiativeSuccess || "0%"}</div>
+          <div className="text-3xl font-black text-white mb-1">
+            {debateData?.visuals?.initiativeSuccess || "0%"}
+          </div>
+          {debateData?.visuals?.tactical?.counts?.initiative && (
+            <div className="text-[10px] text-indigo-300/60 font-bold mb-1">
+              (성공 {debateData.visuals.tactical.counts.initiative.success} / 시도 {debateData.visuals.tactical.counts.initiative.attempts})
+            </div>
+          )}
           <div className="text-[9px] text-gray-500 font-medium">먼저 쐈을 때 킬 성공 비율</div>
         </div>
         
@@ -643,10 +741,12 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
             <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
               <div className="flex flex-col gap-1">
                 <span className="text-[10px] text-orange-400 font-black uppercase">견제 사격 성공률</span>
-                <span className="text-2xl font-black text-white">{debateData?.visuals?.tactical?.suppRate || "0%"}</span>
-                {debateData?.visuals?.tactical?.suppRaw && (
+                <span className="text-2xl font-black text-white">
+                  {debateData?.visuals?.tactical?.suppRate || "0%"}
+                </span>
+                {debateData?.visuals?.tactical?.counts && (
                   <span className="text-[10px] text-orange-300/60 font-bold">
-                    {debateData?.visuals?.tactical?.suppRaw?.count || 0}회 / {debateData?.visuals?.tactical?.suppRaw?.total || 0}위험상황
+                    (지원 {debateData.visuals.tactical.counts.supps} / 기절 {debateData.visuals.tactical.counts.knocks})
                   </span>
                 )}
                 <div className="w-full h-1 bg-white/5 rounded-full mt-1 overflow-hidden">
@@ -655,20 +755,13 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
               </div>
               <div className="flex flex-col gap-1">
                 <span className="text-[10px] text-blue-400 font-black uppercase">연막 세이브 확률</span>
-                <span className="text-2xl font-black text-white">{debateData?.visuals?.tactical?.smokeRate || "0%"}</span>
-                {debateData?.visuals?.tactical?.smokeRaw && (
-                    <div className="flex flex-col gap-0.5 mt-0.5">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        <span className="text-[10px] text-blue-300/60 font-bold whitespace-nowrap">
-                          {debateData?.visuals?.tactical?.smokeRaw?.count || 0} / {debateData?.visuals?.tactical?.smokeRaw?.total || 0} 회
-                        </span>
-                        {(debateData?.visuals?.tactical?.smokeRaw?.teamCover ?? 0) > 0 && (
-                          <span className="text-[9px] text-cyan-400 font-black whitespace-nowrap bg-cyan-400/20 px-1.5 py-0.5 rounded border border-cyan-400/30">
-                            팀커버 +{debateData?.visuals?.tactical?.smokeRaw?.teamCover || 0}
-                          </span>
-                        )}
-                      </div>
-                    </div>
+                <span className="text-2xl font-black text-white">
+                  {debateData?.visuals?.tactical?.smokeRate || "0%"}
+                </span>
+                {debateData?.visuals?.tactical?.counts && (
+                  <span className="text-[10px] text-blue-300/60 font-bold">
+                    (기절 {debateData.visuals.tactical.counts.knocks} / 연막 {debateData.visuals.tactical.counts.smokes} / 부활 {debateData.visuals.tactical.counts.smokeRescues})
+                  </span>
                 )}
                 <div className="w-full h-1 bg-white/5 rounded-full mt-1 overflow-hidden">
                   <div className="h-full bg-blue-400" style={{ width: `${parseRate(debateData?.visuals?.tactical?.smokeRate || "0%")}%` }} />
@@ -676,10 +769,12 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
               </div>
               <div className="flex flex-col gap-1">
                 <span className="text-[10px] text-pink-400 font-black uppercase">부활 성공률</span>
-                <span className="text-2xl font-black text-white">{debateData?.visuals?.tactical?.reviveRate || "0%"}</span>
-                {debateData?.visuals?.tactical?.reviveRaw && (
+                <span className="text-2xl font-black text-white">
+                  {debateData?.visuals?.tactical?.reviveRate || "0%"}
+                </span>
+                {debateData?.visuals?.tactical?.counts && (
                   <span className="text-[10px] text-pink-300/60 font-bold">
-                    {debateData?.visuals?.tactical?.reviveRaw?.count || 0}회 / {debateData?.visuals?.tactical?.reviveRaw?.total || 0}회 기절
+                    (성공 {debateData.visuals.tactical.counts.revives} / 기절 {debateData.visuals.tactical.counts.knocks})
                   </span>
                 )}
                 <div className="w-full h-1 bg-white/5 rounded-full mt-1 overflow-hidden">
@@ -694,6 +789,11 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
             </div>
           </div>
         </div>
+      )}
+
+      {/* [V38.1] 맵의 왕 카드 */}
+      {debateData?.visuals?.mapStats && (
+        <MapKingCard mapStats={debateData.visuals.mapStats} />
       )}
 
       <div className="flex flex-col gap-4">

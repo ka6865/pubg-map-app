@@ -31,7 +31,7 @@ export const IsolationRadar = ({ data, loading }: IsolationRadarProps) => {
   const heightInMeters = data.heightDiff;
 
   const normIsolation = Math.max(0, Math.min(100, 100 - (data.isolationIndex * 20)));
-  const normDist = Math.max(0, Math.min(100, 100 - (distInMeters / 1.5))); // 150m 초과 시 0점
+  const normDist = Math.max(0, Math.min(100, 100 - (distInMeters / 2.0))); // [V24] 200m 초과 시 0점 (기존 150m)
   const normHeight = Math.max(0, Math.min(100, 100 - (heightInMeters * 10))); // 10m 차이 시 0점
   const normPressure = data.isCrossfire ? 30 : 95;
 
