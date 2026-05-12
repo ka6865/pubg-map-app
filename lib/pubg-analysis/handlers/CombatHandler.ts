@@ -1,15 +1,21 @@
-import { BaseHandler } from './BaseHandler';
-import { normalizeName, calcDist3D, getElapsedMinutes } from '../utils';
+import { AnalysisState, TimelineEvent } from "../types";
+import { normalizeName, calcDist3D } from "../utils";
+import { WEAPON_NAMES } from "../constants";
+import { BaseHandler } from "./BaseHandler";
 
 export class CombatHandler extends BaseHandler {
-  handleEvent(e: any, ts: number, elapsed: number): void {
+  constructor(state: AnalysisState) {
+    super(state);
+  }
+
+  public handleEvent(e: any, ts: number, elapsed: number) {
     switch (e._T) {
       case "LogPlayerTakeDamage":
         this.handleDamage(e, ts);
         break;
       case "LogPlayerMakeGroggy":
-      case "LogPlayerMakeGroggyV2":
-        this.handleDBNO(e, ts);
+      case "LogPlayerMakeDBNO":
+        this.handleDown(e, ts);
         break;
       case "LogPlayerKill":
       case "LogPlayerKillV2":
@@ -18,8 +24,10 @@ export class CombatHandler extends BaseHandler {
       case "LogPlayerRevive":
         this.handleRevive(e, ts);
         break;
-      case "LogPlayerAttack":
-        this.handleAttack(e, ts);
+      case "LogPlayerRecall":
+      case "LogPlayerRecallShip":
+      case "LogPlayerRedeploy":
+        this.handleRecall(e, ts);
         break;
     }
   }
@@ -28,288 +36,435 @@ export class CombatHandler extends BaseHandler {
     const attackerName = normalizeName(e.attacker?.name || "");
     const victimName = normalizeName(e.victim?.name || "");
     const damage = e.damage || 0;
-    const dmgCat = (e.damageTypeCategory || "").toLowerCase();
-    const weapon = (e.damageCauser?.itemId || e.weaponId || "").toLowerCase();
-    const isVehicleDamage = weapon.includes("vehicle") || dmgCat.includes("vehicle");
 
-    // 모든 데미지 이벤트에서 듀얼 데이터 업데이트 (누가 먼저 쐈는지 판별)
-    if (!isVehicleDamage && attackerName && victimName && attackerName !== victimName) {
-      this.processDuelData(e, ts, attackerName, victimName);
+    if (!victimName) return;
+
+    // 아군 피격 시 최근 피격 시점 업데이트 (Trade/Bait 판정용)
+    if (this.state.teamNames.has(victimName) && victimName !== this.state.lowerNickname) {
+      this.state.recentTeammateDamageTaken.set(attackerName, ts);
     }
 
-    if (attackerName === this.state.lowerNickname) {
-      if (victimName !== this.state.lowerNickname && !isVehicleDamage) {
-        // 1. 무기 스탯 및 데미지 누적
+    const isSoloMode = this.state.gameMode.includes('solo');
+    const isMeAttacker = this.isMe(e.attacker);
+    const isTeammateAttacker = this.isTeammate(e.attacker);
+    const isMeVictim = this.isMe(e.victim);
+    const isTeammateVictim = this.isTeammate(e.victim);
+
+    if (
+      isMeAttacker && 
+      !isTeammateVictim && 
+      !isSoloMode
+    ) {
+      const lastTeammateHit = this.state.recentTeammateDamageTaken.get(victimName);
+      if (lastTeammateHit && ts - lastTeammateHit < 5000) {
+        const lastBaitTs = this.state.baitCooldown.get(victimName) || 0;
+        if (ts - lastBaitTs > 10000) {
+          this.state.totalBaitCount++;
+          this.state.baitCooldown.set(victimName, ts);
+        }
+      }
+    }
+
+    if (attackerName && victimName) {
+      this.processDuelData(e, ts, e.attacker, e.victim);
+    }
+
+    if (isMeAttacker) {
+      const elapsedSec = (ts - this.state.matchStartTime) / 1000;
+      if (elapsedSec < 300) this.state.goldenTimeDamage.early += damage;
+      else if (elapsedSec < 900) this.state.goldenTimeDamage.mid1 += damage;
+      else if (elapsedSec < 1500) this.state.goldenTimeDamage.mid2 += damage;
+      else this.state.goldenTimeDamage.late += damage;
+    }
+
+    if (isTeammateAttacker) {
+      if (isMeAttacker) {
+        this.state.myActionTimestamps.push(ts);
+        this.state.totalCombatIsolationSum += (this.state.isolationData?.isolationIndex || 0);
+        this.state.combatIsolationCount++;
+      }
+
+      const currentVictimDamage = this.state.victimDamage.get(victimName) || 0;
+      this.state.victimDamage.set(victimName, currentVictimDamage + damage);
+
+      if (isMeAttacker) {
         const wId = e.damageCauserName || (e.damageCauser && e.damageCauser.itemId) || e.weaponId || "Unknown";
-        const wStat = this.state.weaponStats.get(wId) || { hits: 0, headshots: 0, damage: 0, kills: 0, dbnos: 0 };
-        wStat.hits++;
+        const cleanWId = wId.replace(/Item_Weapon_|Weap|_Projectile|_C/g, "");
+        const wStat = this.state.weaponStats.get(cleanWId) || { kills: 0, dbnos: 0, damage: 0, hits: 0 };
         wStat.damage += damage;
-        if (e.damageReason === "HeadShot") wStat.headshots++;
-        this.state.weaponStats.set(wId, wStat);
-
-        let vDmg = this.state.victimDamage.get(victimName);
-        if (!vDmg || ts - vDmg.lastTs > 120000) vDmg = { total: 0, user: 0, lastTs: ts };
-        vDmg.total += damage; vDmg.user += damage; vDmg.lastTs = ts;
-        this.state.victimDamage.set(victimName, vDmg);
-
-        // 2. 교전 압박 (Pressure)
+        wStat.hits++;
+        this.state.weaponStats.set(cleanWId, wStat);
+        
         this.state.combatPressure.totalHits++;
-        this.state.combatPressure.uniqueVictims.add(victimName);
-        const dist = calcDist3D(e.attacker?.loc, e.victim?.loc);
-        if (dist !== 999) {
+        if (victimName) this.state.combatPressure.uniqueVictims.add(victimName);
+
+        const attackerLoc = e.attacker?.location || e.attacker?.loc;
+        const victimLoc = e.victim?.location || e.victim?.loc;
+        const dist = calcDist3D(attackerLoc, victimLoc) / 100;
+        if (dist !== 9.99) {
           const distM = Math.round(dist);
-          if (distM > this.state.combatPressure.maxHitDistance) this.state.combatPressure.maxHitDistance = distM;
+          this.state.combatPressure.maxHitDistance = Math.max(this.state.combatPressure.maxHitDistance, distM);
+          if (distM < 50) this.state.itemUseStats.distanceDamage.short += damage;
+          else if (distM < 200) this.state.itemUseStats.distanceDamage.mid += damage;
+          else this.state.itemUseStats.distanceDamage.long += damage;
         }
+      }
 
-        // 3. 골든타임
-        const minOffset = getElapsedMinutes(ts, this.state.matchStartTime);
-        if (minOffset <= 5) this.state.goldenTimeDamage.early += damage;
-        else if (minOffset <= 15) this.state.goldenTimeDamage.mid1 += damage;
-        else if (minOffset <= 25) this.state.goldenTimeDamage.mid2 += damage;
-        else this.state.goldenTimeDamage.late += damage;
+      let targetHits = this.state.playerCombatData.get(`hits_${victimName}`) || [];
+      targetHits = targetHits.filter((h: any) => ts - h.ts < 1000);
+      const otherTeammateHit = targetHits.find((h: any) => h.attacker !== attackerName);
+      if (otherTeammateHit) {
+        this.state.itemUseStats.focusFireCount++;
+      }
+      targetHits.push({ attacker: attackerName, ts });
+      this.state.playerCombatData.set(`hits_${victimName}`, targetHits);
+    }
 
-        // 4. 팀 전술 지원
-        const lastTeammateHit = this.state.recentTeammateDamageTaken.get(victimName);
-        if (lastTeammateHit && ts - lastTeammateHit < 10000) {
-          this.state.totalCoverAttempts++;
-          this.state.totalCoverSuccess++;
-          this.state.totalSuppCount++;
-          this.state.recentTeammateDamageTaken.delete(victimName);
+    if (isMeVictim && attackerName && !isTeammateAttacker) {
+      let recentAttackers = this.state.playerCombatData.get("recent_attackers_on_me") || [];
+      recentAttackers = recentAttackers.filter((a: any) => ts - a.ts < 10000);
+
+      const myLoc = e.victim?.location || e.victim?.loc;
+      const attackerLoc = e.attacker?.location || e.attacker?.loc;
+
+      if (myLoc && attackerLoc) {
+        const currentAngle = Math.atan2(attackerLoc.y - myLoc.y, attackerLoc.x - myLoc.x);
+        for (const prev of recentAttackers) {
+          if (prev.name === attackerName) continue;
+          let angleDiff = Math.abs(currentAngle - prev.angle) * (180 / Math.PI);
+          if (angleDiff > 180) angleDiff = 360 - angleDiff;
+          if (angleDiff > 90) {
+            this.state.itemUseStats.crossfireExposureCount++;
+            break;
+          }
         }
-
-        // 5. 반응 속도
-        const lastHitOnMe = this.state.myRecentDamageTaken.get(victimName);
-        if (lastHitOnMe && ts - lastHitOnMe < 5000) {
-          const lat = ts - lastHitOnMe;
-          this.state.reactLatSum += lat;
-          this.state.reactCount++;
-          this.state.reactionLatencies.push(lat);
-          this.state.myRecentDamageTaken.delete(victimName);
-        }
-
-        const vRosterId = this.state.teamMapping.get(victimName);
-        if (vRosterId && vRosterId !== this.state.myRosterId) this.state.teamsUserHit.add(vRosterId);
-        this.state.myDamageEvents.push({ ts, victim: victimName, loc: e.attacker?.loc, victimLoc: e.victim?.loc });
+        recentAttackers.push({ name: attackerName, angle: currentAngle, ts });
+        this.state.playerCombatData.set("recent_attackers_on_me", recentAttackers);
       }
-    } else if (this.state.teamNames.has(victimName) && attackerName && attackerName !== this.state.lowerNickname) {
-      // 아군(본인 포함)이 적에게 맞았을 때 기록
-      if (victimName === this.state.lowerNickname) {
-        this.state.totalTimesHit++;
-        this.state.myRecentDamageTaken.set(attackerName, ts);
-      }
-      this.state.recentTeammateDamageTaken.set(attackerName, ts);
-      this.state.recentAttacksOnUser.push({ ts, attacker: attackerName }); // 크로스파이어 판정 공유
-
-      // 크로스파이어 판정
-      const cutoffTs = ts - 5000;
-      while (this.state.recentAttacksOnUser.length > 0 && this.state.recentAttacksOnUser[0].ts < cutoffTs) {
-        this.state.recentAttacksOnUser.shift();
-      }
-      const uniqueAttackers = new Set(this.state.recentAttacksOnUser.map(a => a.attacker));
-      if (uniqueAttackers.size >= 2) this.state.totalCrossfireCount++;
-    } else if (this.state.teamNames.has(victimName) && attackerName && !this.state.teamNames.has(attackerName)) {
-      this.state.recentTeammateDamageTaken.set(attackerName, ts);
     }
   }
 
-  private handleDBNO(e: any, ts: number) {
+  private handleDown(e: any, ts: number) {
+    const attacker = e.attacker || e.maker;
+    const makerName = normalizeName(attacker?.name || "");
     const victimName = normalizeName(e.victim?.name || "");
-    const getMaker = (ev: any) => {
-      const name = ev.maker?.name || ev.dBNOMaker?.name || ev.attacker?.name || ev.character?.name || "";
-      return normalizeName(typeof name === 'string' ? name : "");
-    };
-    const finalMakerName = getMaker(e);
-
     const weaponId = e.damageCauserName || (e.damageCauser && e.damageCauser.itemId) || e.weaponId || "Unknown";
-    if (e.dBNOId !== undefined && finalMakerName) {
-      this.state.dbnoMap.set(e.dBNOId, { attacker: finalMakerName, victim: victimName, weaponId, ts });
+    const dBNOId = e.dBNOId;
+
+    const isMeMaker = this.isMe(attacker);
+    const isMeVictim = this.isMe(e.victim);
+    const isTeammateVictim = this.isTeammate(e.victim);
+
+    if (dBNOId !== undefined && dBNOId !== -1) {
+      this.state.dbnoMap.set(dBNOId, { attacker: makerName, victim: victimName, weaponId: weaponId, ts: ts, attackerAccountId: attacker?.accountId });
     }
 
-    if (finalMakerName === this.state.lowerNickname) {
+    if (isMeMaker) {
       this.state.myActionTimestamps.push(ts);
-      // 무기별 기절(DBNO) 카운트 추가
-      const wId = e.damageCauserName || (e.damageCauser && e.damageCauser.itemId) || e.weaponId || "Unknown";
-      const wStat = this.state.weaponStats.get(wId) || { hits: 0, headshots: 0, damage: 0, kills: 0, dbnos: 0 };
-      wStat.dbnos = (wStat.dbnos || 0) + 1;
-      this.state.weaponStats.set(wId, wStat);
+      this.updateDuelOutcome(attacker, e.victim, true);
+      const killerLoc = attacker?.location || attacker?.loc;
+      const victimLoc = e.victim?.location || e.victim?.loc;
+      const dist = Math.round(calcDist3D(killerLoc, victimLoc) / 100);
+
+      this.state.timeline.push({
+        ts: ts - this.state.matchStartTime,
+        type: 'KNOCK',
+        weapon: WEAPON_NAMES[weaponId] || weaponId.replace(/Item_Weapon_|Weap|_Projectile|_C/g, ""),
+        victim: victimName,
+        distance: dist !== 10 ? dist : undefined,
+        isHeadshot: e.damageReason === "HeadShot" || e.isHeadshot
+      });
     }
-    this.updateDuelOutcome(finalMakerName, victimName, true);
+
+    if (isMeVictim) {
+      this.state.myDownedIntervals.push({ start: ts, end: null });
+      this.updateDuelOutcome(attacker, e.victim, true);
+      this.state.timeline.push({
+        ts: ts - this.state.matchStartTime,
+        type: 'DOWNED',
+        attacker: makerName,
+        weapon: WEAPON_NAMES[weaponId] || weaponId.replace(/Item_Weapon_|Weap|_Projectile|_C/g, "")
+      });
+    }
+
+    if (isTeammateVictim && !isMeVictim) {
+      if (this.state.playerAliveStatus.get(this.state.lowerNickname) !== false) {
+        this.state.totalTeammateKnocks++;
+      }
+      this.state.teammateKnockEvents.push(ts);
+      this.state.playerAliveStatus.set(victimName, "groggy");
+      this.state.timeline.push({
+        ts: ts - this.state.matchStartTime,
+        type: 'TEAM_KNOCK',
+        victim: victimName,
+        attacker: makerName,
+        weapon: WEAPON_NAMES[weaponId] || weaponId.replace(/Item_Weapon_|Weap|_Projectile|_C/g, "")
+      });
+    }
 
     if (victimName === this.state.lowerNickname) {
-      this.state.myDownedIntervals.push({ start: ts, end: null });
-    }
-
-    if (this.state.teamNames.has(victimName) && victimName !== this.state.lowerNickname) {
-      this.state.totalTeammateKnocks++;
-      this.state.teammateKnockEvents.push(ts);
+      this.state.playerAliveStatus.set(victimName, "groggy");
     }
   }
 
   private handleKill(e: any, ts: number) {
     const victimName = normalizeName(e.victim?.name || "");
-    const getKiller = (ev: any) => {
-      const name = ev.killer?.name || ev.finisher?.name || ev.attacker?.name || "";
-      return normalizeName(typeof name === 'string' ? name : "");
+    const isMeKiller = this.isMe(e.killer);
+    const isMeFinisher = this.isMe(e.finisher);
+    const isMeVictim = this.isMe(e.victim);
+    const isTeammateKiller = this.isTeammate(e.killer);
+    const isTeammateVictim = this.isTeammate(e.victim);
+
+    const killerName = normalizeName(typeof e.killer === 'string' ? e.killer : e.killer?.name || "");
+    const finisherName = normalizeName(typeof e.finisher === 'string' ? e.finisher : e.finisher?.name || "");
+    const dBNOMakerName = normalizeName(typeof e.dBNOMaker === 'string' ? e.dBNOMaker : e.dBNOMaker?.name || "");
+
+    const getWeaponId = (ev: any) => {
+      let id = ev.weaponId || ev.damageCauserName || (ev.damageCauser && ev.damageCauser.itemId);
+      if (!id || id === "None" || id === "Unknown") {
+        const info = ev.killerDamageInfo || ev.finishDamageInfo || ev.dBNODamageInfo;
+        if (info) id = info.damageCauserName;
+      }
+      if ((!id || id === "None" || id === "Unknown") && ev.dBNOId !== undefined && ev.dBNOId !== -1) {
+        const dbnoInfo = this.state.dbnoMap.get(ev.dBNOId);
+        if (dbnoInfo) id = dbnoInfo.weaponId;
+      }
+      return id || "Unknown";
     };
-    const finalKillerName = getKiller(e);
+
+    const wId = getWeaponId(e);
     
-    if (finalKillerName === this.state.lowerNickname) {
-      this.state.myActionTimestamps.push(ts);
-      
-      // 1. dBNOId를 통한 무기 역추적 시도
-      let wId = "Unknown";
-      if (e.dBNOId !== undefined) {
-        const dbnoInfo = this.state.dbnoMap.get(e.dBNOId);
-        if (dbnoInfo) {
-          wId = dbnoInfo.weaponId;
-        }
+    if (isTeammateKiller && victimName && !isTeammateVictim) {
+      const lastTeammateKnock = this.state.teammateKnockEvents.length > 0 ? this.state.teammateKnockEvents[this.state.teammateKnockEvents.length - 1] : 0;
+      if (lastTeammateKnock > 0 && ts - lastTeammateKnock < 30000) {
+        this.state.totalTradeKills++;
+        this.state.tradeLatencies.push(ts - lastTeammateKnock);
       }
-      
-      // 2. 역추적 실패 시 현재 이벤트의 무기 정보 확인
-      if (wId === "Unknown" || !wId) {
-        wId = e.damageCauserName || (e.damageCauser && e.damageCauser.itemId) || e.weaponId || "Unknown";
-      }
-
-      const wStat = this.state.weaponStats.get(wId) || { hits: 0, headshots: 0, damage: 0, kills: 0, dbnos: 0 };
-      wStat.kills = (wStat.kills || 0) + 1;
-      this.state.weaponStats.set(wId, wStat);
-
-      // 정밀 트레이드 (dBNOId 기반)
-      let isTrade = false;
-      if (e.dBNOId !== undefined) {
-        const originalDown = this.state.dbnoMap.get(e.dBNOId);
-        if (originalDown && this.state.teamNames.has(originalDown.victim)) {
-          const lat = ts - originalDown.ts;
-          if (lat < 30000) {
-            this.state.tradeLatencies.push(lat);
-            this.state.totalTradeKills++;
-            isTrade = true;
-          }
-        }
-      }
-
-      // 폴백 트레이드: 최근 아군을 공격한 적을 잡았는지 확인
-      if (!isTrade) {
-        const lastDamageTime = this.state.recentTeammateDamageTaken.get(victimName);
-        if (lastDamageTime && (ts - lastDamageTime) < 30000) {
-          this.state.totalTradeKills++;
-          this.state.tradeLatencies.push(ts - lastDamageTime);
-          isTrade = true;
-        }
-      }
-
-      this.updateDuelOutcome(finalKillerName, victimName, false);
+      const totalDmgOnVictim = this.state.victimDamage.get(victimName) || 0;
+      if (totalDmgOnVictim > 100) this.state.totalSuppCount++;
     }
 
-    if (victimName && !this.state.teamNames.has(victimName)) {
-      if (finalKillerName === this.state.lowerNickname) {
-        const vDmg = this.state.victimDamage.get(victimName);
-        if (vDmg) {
-          const userRatio = vDmg.user / Math.max(1, vDmg.total);
-          if (userRatio >= 0.7) this.state.killContribution.solo++; else this.state.killContribution.cleanup++;
-        } else {
-          this.state.killContribution.solo++;
-        }
+    if (isMeKiller) {
+      this.state.myActionTimestamps.push(ts);
+      this.updateDuelOutcome(e.killer, e.victim, false);
+      const attackerObj = e.killer || e.attacker || e.finisher;
+      const killerLoc = attackerObj?.location || attackerObj?.loc;
+      const victimLoc = e.victim?.location || e.victim?.loc;
+      const dist = Math.round(calcDist3D(killerLoc, victimLoc) / 100);
+
+      this.state.timeline.push({
+        ts: ts - this.state.matchStartTime,
+        type: 'KILL',
+        weapon: WEAPON_NAMES[wId] || wId.replace(/Item_Weapon_|Weap|Vehicle_|BP_|_Projectile|_C/g, ""),
+        victim: victimName,
+        distance: dist !== 10 ? dist : undefined,
+        isHeadshot: e.damageReason === "HeadShot" || e.killer?.damageReason === "HeadShot"
+      });
+
+      if (victimName && !this.state.teamNames.has(victimName)) {
+        const vRosterId = this.state.teamMapping.get(victimName);
+        if (vRosterId && this.state.teamsUserHit.has(vRosterId)) this.state.killContribution.assist++;
+        else this.state.killContribution.solo++;
       }
-      this.state.victimDamage.delete(victimName);
+    } else if (isMeFinisher) {
+      this.state.timeline.push({
+        ts: ts - this.state.matchStartTime,
+        type: 'FINISH',
+        weapon: WEAPON_NAMES[wId] || wId.replace(/Item_Weapon_|Weap|Vehicle_|BP_|_Projectile|_C/g, ""),
+        victim: victimName,
+        attacker: killerName || dBNOMakerName || "Unknown"
+      });
+    } else if (isTeammateKiller) {
+      this.state.timeline.push({
+        ts: ts - this.state.matchStartTime,
+        type: 'TEAM_KILL',
+        attacker: killerName,
+        victim: victimName,
+        weapon: WEAPON_NAMES[wId] || wId.replace(/Item_Weapon_|Weap|Vehicle_|BP_|_Projectile|_C/g, "")
+      });
+    }
+
+    if (victimName) {
+      const cleanVictim = victimName.replace(/_/g, "");
+      this.state.playerAliveStatus.set(cleanVictim, false);
+      this.state.playerAliveStatus.set(victimName, false);
+
       const vRosterId = this.state.teamMapping.get(victimName);
       if (vRosterId && vRosterId !== this.state.myRosterId) {
         const members = this.state.teamAliveMembers.get(vRosterId);
         if (members) {
           members.delete(victimName);
-          if (members.size === 0 && (this.state.teamsUserHit.has(vRosterId) || finalKillerName === this.state.lowerNickname)) {
+          if (members.size === 0 && (this.state.teamsUserHit.has(vRosterId) || killerName === this.state.lowerNickname)) {
             this.state.wipedTeamsByUserParticipation.add(vRosterId);
           }
         }
       }
     }
 
-    if (victimName === this.state.lowerNickname) {
+    if (isTeammateVictim && !isMeVictim) {
+      this.state.timeline.push({
+        ts: ts - this.state.matchStartTime,
+        type: 'TEAM_DIED',
+        attacker: killerName || finisherName || "Unknown",
+        victim: victimName,
+        weapon: WEAPON_NAMES[wId] || wId.replace(/Item_Weapon_|Weap|Vehicle_|BP_|_Projectile|_C/g, "")
+      });
+    }
+
+    if (isMeVictim) {
       this.state.myDeathTime = ts;
       this.state.playerAliveStatus.set(this.state.lowerNickname, false);
-      const killerLoc = e.killer?.loc || e.finisher?.loc;
+      this.state.playerAliveStatus.set(this.state.myAccountId, false);
+      this.updateDuelOutcome(e.killer || e.finisher || e.dBNOMaker, e.victim, false);
+      const attackerObj = e.killer || e.finisher || e.attacker;
+      const killerLoc = attackerObj?.location || attackerObj?.loc;
       const myLoc = this.state.playerLocations.get(this.state.lowerNickname);
-      if (killerLoc && myLoc) {
-        this.state.deathDistance = Math.round(calcDist3D(killerLoc, myLoc) / 100);
-      }
-    } else if (victimName) {
-      this.state.playerAliveStatus.set(victimName, false);
+      if (killerLoc && myLoc) this.state.deathDistance = Math.round(calcDist3D(killerLoc, myLoc) / 100);
+      this.state.timeline.push({
+        ts: ts - this.state.matchStartTime,
+        type: 'DIED',
+        attacker: killerName || finisherName || "Unknown",
+        weapon: WEAPON_NAMES[wId] || wId.replace(/Item_Weapon_|Weap|Vehicle_|BP_|_Projectile|_C/g, "")
+      });
     }
   }
 
   private handleRevive(e: any, ts: number) {
-    const reviverName = normalizeName(e.reviver?.name || "");
-    if (reviverName === this.state.lowerNickname) {
-      this.state.myReviveEvents.push(ts);
-      this.state.myActionTimestamps.push(ts);
+    const isMeReviver = this.isMe(e.reviver);
+    const isTeammateReviver = this.isTeammate(e.reviver);
+    const isMeVictim = this.isMe(e.victim);
+    const isTeammateVictim = this.isTeammate(e.victim);
+    const victimName = normalizeName(e.victim?.name || "");
+
+    const cleanVictim = victimName.replace(/_/g, "");
+    const isPreviouslyDead = this.state.playerAliveStatus.get(cleanVictim) === false;
+
+    const isRecall = e.reviveType === "Recall" || e.reviveType === "BlueChip" || isPreviouslyDead;
+    if (isRecall) {
+      this.handleRecall(e, ts);
+      return;
+    }
+    this.state.playerAliveStatus.set(victimName, true);
+
+    if (isTeammateReviver || isTeammateVictim) {
+      this.state.totalReviveEvents.push(ts);
+      if (isMeReviver) {
+        this.state.myActionTimestamps.push(ts);
+        this.state.timeline.push({ ts: ts - this.state.matchStartTime, type: 'REVIVE', victim: victimName });
+      } else {
+        this.state.timeline.push({ ts: ts - this.state.matchStartTime, type: 'TEAM_REVIVE', attacker: normalizeName(e.reviver?.name || ""), victim: victimName });
+      }
     }
   }
 
-  private handleAttack(e: any, ts: number) {
-    const attackerName = normalizeName(e.attacker?.name || "");
-    if (attackerName === this.state.lowerNickname) {
-      this.state.myAttackEvents.add(e.attackId);
-    }
-  }
+  private handleRecall(e: any, ts: number) {
+    const recaller = e.recaller || e.reviver;
+    const recallerName = normalizeName(recaller?.name || "시스템");
+    const isTeammateRecaller = this.isTeammate(recaller);
 
-  private processDuelData(e: any, ts: number, attackerName: string, victimName: string) {
-    [attackerName, victimName].forEach(name => {
-      if (name === this.state.lowerNickname || this.state.eliteNames.has(name)) {
-        let pData = this.state.playerCombatData.get(name);
-        if (!pData) {
-          pData = { total: 0, success: 0, duelWins: 0, duelLosses: 0, reversalWins: 0, reversalAttempts: 0, sessions: new Map() };
-          this.state.playerCombatData.set(name, pData);
+    const victims: any[] = [];
+    if (e.recalledPlayers && Array.isArray(e.recalledPlayers)) {
+      e.recalledPlayers.forEach((p: any) => victims.push(p));
+    } else {
+      victims.push(e.victim || e.character || e.recallingPlayer || e.recalledPlayer);
+    }
+
+    victims.forEach(v => {
+      if (!v) return;
+      const vName = normalizeName(v.name || "");
+      const isTeammateVictim = this.isTeammate(v);
+      const isMeVictim = this.isMe(v);
+
+      if (isTeammateRecaller || isTeammateVictim) {
+        const isAlreadyAlive = this.state.playerAliveStatus.get(vName) === true;
+        if (!isAlreadyAlive) {
+          this.state.timeline.push({
+            ts: ts - this.state.matchStartTime,
+            type: 'RECALL',
+            attacker: recallerName,
+            victim: vName
+          });
         }
-        const opponent = name === attackerName ? victimName : attackerName;
-        let session = pData.sessions.get(opponent);
-        
-        // 세션이 없거나 2분 이상 지났으면 새로 생성
-        if (!session || ts - Math.max(session.lastHitByEnemy || 0, session.lastHitByUser || 0) > 120000) {
-          session = { 
-            lastHitByEnemy: name === victimName ? ts : 0, 
-            lastHitByUser: name === attackerName ? ts : 0, 
-            userStarted: name === attackerName, 
-            alreadySucceeded: false,
-            outcome: null
-          };
-          pData.sessions.set(opponent, session);
-          
-          // "내가 먼저 쐈을 때만" 선제 타격 시도(total)로 카운트
-          if (name === attackerName) {
-            pData.total++;
-          } else {
-            // "적에게 먼저 맞았을 때" 반격 시도(reversalAttempts)로 카운트
-            pData.reversalAttempts++;
-          }
-        } else {
-          // 기존 세션 업데이트
-          if (name === attackerName) session.lastHitByUser = ts;
-          else session.lastHitByEnemy = ts;
+        this.state.playerAliveStatus.set(vName, true);
+        if (isMeVictim) {
+          this.state.myDeathTime = null;
         }
       }
     });
   }
 
-  private updateDuelOutcome(attacker: string, victim: string, isDBNO: boolean) {
-    [attacker, victim].forEach(name => {
-      if (name === this.state.lowerNickname || this.state.eliteNames.has(name)) {
-        const pData = this.state.playerCombatData.get(name);
+  private processDuelData(e: any, ts: number, attacker: any, victim: any) {
+    const attackerName = normalizeName(attacker?.name || "");
+    const victimName = normalizeName(victim?.name || "");
+
+    [attacker, victim].forEach(char => {
+      if (!char) return;
+      const isMe = this.isMe(char);
+      const isElite = this.isElite(char);
+      if (isMe || isElite) {
+        const myName = isMe ? this.state.myAccountId : (char.accountId || normalizeName(char.name));
+        let pData = this.state.playerCombatData.get(myName);
+        if (!pData) {
+          pData = { total: 0, success: 0, duelWins: 0, duelLosses: 0, reversalWins: 0, reversalAttempts: 0, sessions: new Map() };
+          this.state.playerCombatData.set(myName, pData);
+        }
+        
+        const opponent = char === attacker ? victimName : attackerName;
+        let session = pData.sessions.get(opponent);
+        const lastActivity = session ? Math.max(session.lastHitByEnemy || 0, session.lastHitByUser || 0) : 0;
+        const isExpired = session && ts - lastActivity > 180000;
+
+        if (!session || isExpired) {
+          session = {
+            lastHitByEnemy: char === victim ? ts : 0,
+            lastHitByUser: char === attacker ? ts : 0,
+            userStarted: char === attacker,
+            alreadySucceeded: false,
+            outcome: null
+          };
+          pData.sessions.set(opponent, session);
+          if (char === attacker) pData.total++;
+          else pData.reversalAttempts++;
+        } else {
+          if (char === attacker) {
+            session.lastHitByUser = ts;
+            if (!session.userStarted && session.lastHitByEnemy > 0 && pData.reversalAttempts > 0) {
+              const latency = ts - session.lastHitByEnemy;
+              if (latency > 0 && latency < 10000) {
+                this.state.reactLatSum += latency;
+                this.state.reactCount++;
+              }
+            }
+          } else {
+            session.lastHitByEnemy = ts;
+          }
+        }
+      }
+    });
+  }
+
+  private updateDuelOutcome(attacker: any, victim: any, isKnock: boolean) {
+    if (!attacker || !victim) return;
+    const attackerName = normalizeName(attacker.name || "");
+    const victimName = normalizeName(victim.name || "");
+
+    [attacker, victim].forEach(char => {
+      const isMe = this.isMe(char);
+      if (isMe || this.isElite(char)) {
+        const myName = isMe ? this.state.myAccountId : (char.accountId || normalizeName(char.name));
+        const pData = this.state.playerCombatData.get(myName);
         if (pData) {
-          const opponent = name === attacker ? victim : attacker;
+          const opponent = char === attacker ? victimName : attackerName;
           const session = pData.sessions.get(opponent);
           if (session && !session.outcome) {
-            if (name === attacker) {
+            if (char === attacker) {
               session.outcome = "win";
               pData.duelWins++;
-              // 적이 먼저 쏜 세션에서 이겼다면 역전승(reversalWins) 카운트
-              if (!session.userStarted) {
-                pData.reversalWins++;
-              }
-              // 내가 먼저 쏜 세션에서 이겼다면 선제 타격 성공(success) 카운트
               if (session.userStarted && !session.alreadySucceeded) {
                 pData.success++;
                 session.alreadySucceeded = true;
               }
+              if (!session.userStarted) pData.reversalWins++;
             } else {
               session.outcome = "lose";
               pData.duelLosses++;

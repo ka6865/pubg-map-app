@@ -4,8 +4,11 @@
 
 import { Location } from "./types";
 
-export const normalizeName = (name: string): string => 
-  name?.toLowerCase().trim() || "";
+export function normalizeName(name: string): string {
+  if (!name) return "";
+  // [V40.13] 특수문자(-, _, .) 및 모든 공백을 제거하여 매칭 정밀도 극대화
+  return name.toLowerCase().replace(/[-_\s\.]/g, "").trim();
+}
 
 export const calcDist3D = (l1: Location | any, l2: Location | any): number => {
   if (!l1 || !l2) return 999;
@@ -15,5 +18,5 @@ export const calcDist3D = (l1: Location | any, l2: Location | any): number => {
   return Math.sqrt(dx * dx + dy * dy + dz * dz);
 };
 
-export const getElapsedMinutes = (ts: number, startTime: number): number => 
+export const getElapsedMinutes = (ts: number, startTime: number): number =>
   (ts - startTime) / 1000 / 60;

@@ -19,20 +19,20 @@ export class ZoneHandler extends BaseHandler {
   private handleGameState(e: any) {
     const gs = e.gameState;
     if (gs.safetyZonePosition) {
-      this.state.whiteZone = { 
-        x: gs.safetyZonePosition.x, 
-        y: gs.safetyZonePosition.y, 
-        radius: gs.safetyZoneRadius 
+      this.state.whiteZone = {
+        x: gs.safetyZonePosition.x / 100,
+        y: gs.safetyZonePosition.y / 100,
+        radius: gs.safetyZoneRadius / 100
       };
     }
     if (gs.poisonGasWarningPosition) {
       this.state.blueZone = {
-        x: gs.poisonGasWarningPosition.x,
-        y: gs.poisonGasWarningPosition.y,
-        radius: gs.poisonGasWarningRadius
+        x: gs.poisonGasWarningPosition.x / 100,
+        y: gs.poisonGasWarningPosition.y / 100,
+        radius: gs.poisonGasWarningRadius / 100
       };
     }
-    
+
     if (gs.isZoneMoving !== undefined) {
       this.state.isZoneMoving = gs.isZoneMoving;
     } else if (this.state.blueZone.radius > 0 && this.state.whiteZone.radius > 0) {
@@ -41,36 +41,36 @@ export class ZoneHandler extends BaseHandler {
   }
 
   private handleBluezoneDamage(e: any) {
-    const victimName = normalizeName(e.victim?.name || "");
     const dmgCat = (e.damageTypeCategory || "").toLowerCase();
     const damage = e.damage || 0;
 
-    if (victimName === this.state.lowerNickname && dmgCat.includes("bluezone")) {
+    if (this.isMe(e.victim) && dmgCat.includes("bluezone")) {
       this.state.bluezoneWaste = (this.state.bluezoneWaste || 0) + damage;
     }
   }
 
   private handleEdgePlay(e: any, ts: number, elapsed: number) {
-    const pName = normalizeName(e.character?.name || "");
-    if (pName !== this.state.lowerNickname) return;
-    
+    if (!this.isMe(e.character)) return;
+
     const charLoc = e.character.loc || e.character.location;
     if (!charLoc) return;
 
     const isLanded = this.state.hasLanded;
     const isAfterStart = elapsed > 120 * 1000;
 
-    if ((isLanded || isAfterStart) && 
-        this.state.playerAliveStatus.get(this.state.lowerNickname) !== false &&
-        this.state.blueZone.radius > 0 &&
-        ts - (this.state.lastEdgeSampleTime || 0) >= 5000) {
-      
+    if ((isLanded || isAfterStart) &&
+      (this.state.playerAliveStatus.get(this.state.lowerNickname) !== false || this.state.playerAliveStatus.get(this.state.myAccountId) !== false) &&
+      this.state.blueZone.radius > 0 &&
+      ts - (this.state.lastEdgeSampleTime || 0) >= 5000) {
+
       this.state.lastEdgeSampleTime = ts;
+      const charX = charLoc.x / 100;
+      const charY = charLoc.y / 100;
       const distToCenter = Math.sqrt(
-        Math.pow(charLoc.x - this.state.blueZone.x, 2) + 
-        Math.pow(charLoc.y - this.state.blueZone.y, 2)
+        Math.pow(charX - this.state.blueZone.x, 2) +
+        Math.pow(charY - this.state.blueZone.y, 2)
       );
-      const distToEdge = Math.abs(distToCenter - this.state.blueZone.radius) / 100;
+      const distToEdge = Math.abs(distToCenter - this.state.blueZone.radius);
       if (distToEdge < 50) {
         this.state.zoneStrategy.edgePlayCount++;
       }

@@ -7,29 +7,37 @@
  */
 
 import { normalizeName } from './utils';
-import { AnalysisResult, InternalAnalysisState } from './types';
+import { AnalysisResult, AnalysisState } from './types';
 import { MAP_NAMES, RESULT_VERSION } from './constants';
 import { CombatHandler } from './handlers/CombatHandler';
 import { ZoneHandler } from './handlers/ZoneHandler';
 import { UtilityHandler } from './handlers/UtilityHandler';
 import { PositionHandler } from './handlers/PositionHandler';
+import { getBenchmarkTier, MatchTierInput } from './benchmarkScore';
 
 export class AnalysisEngine {
-  private state: InternalAnalysisState;
+  private state: AnalysisState;
   private handlers: any[];
 
   constructor(
     nickname: string,
+    myAccountId: string,
     teamNames: Set<string>,
+    teamAccountIds: Set<string>,
     eliteNames: Set<string>,
+    eliteAccountIds: Set<string>,
     myRosterId: string
   ) {
     this.state = {
       lowerNickname: normalizeName(nickname),
+      myAccountId,
       teamNames,
+      teamAccountIds,
       eliteNames,
+      eliteAccountIds,
       myRosterId,
       matchStartTime: 0,
+      gameMode: "",
       playerCombatData: new Map(),
       victimDamage: new Map(),
       weaponStats: new Map(),
@@ -39,7 +47,7 @@ export class AnalysisEngine {
       teamAliveMembers: new Map(),
       myAttackEvents: new Set(),
       myDamageEvents: [],
-      myReviveEvents: [],
+      totalReviveEvents: [],
       teammateKnockEvents: [],
       myActionTimestamps: [],
       totalIsolationSum: 0,
@@ -58,7 +66,9 @@ export class AnalysisEngine {
       totalSuppCount: 0,
       totalTradeKills: 0,
       totalSmokeCount: 0,
+      totalSmokeRescues: 0,
       totalBaitCount: 0,
+      baitCooldown: new Map(),
       reactLatSum: 0,
       reactCount: 0,
       totalTimesHit: 0,
@@ -81,17 +91,24 @@ export class AnalysisEngine {
       zoneStrategy: { edgePlayCount: 0, fatalDelayCount: 0 },
       bluezoneWaste: 0,
       goldenTimeDamage: { early: 0, mid1: 0, mid2: 0, late: 0 },
-      killContribution: { solo: 0, cleanup: 0 },
+      killContribution: { solo: 0, cleanup: 0, assist: 0 },
       wipedTeamsByUserParticipation: new Set(),
       teamsUserHit: new Set(),
       myRecentDamageTaken: new Map(),
       recentAttacksOnUser: [],
       itemUseSummary: { smokes: 0, frags: 0, molotovs: 0, stuns: 0, others: 0 },
-      itemUseStats: { heals: 0, boosts: 0, throwCount: 0, lethalThrowCount: 0 },
+      itemUseStats: {
+        heals: 0, boosts: 0, throwCount: 0, lethalThrowCount: 0, stunDurationSum: 0,
+        focusFireCount: 0,
+        crossfireExposureCount: 0,
+        distanceDamage: { short: 0, mid: 0, long: 0 }
+      },
       phaseTimeline: [],
       myDeathTime: null,
       deathDistance: 0,
-      recentTeammateDamageTaken: new Map()
+      recentTeammateDamageTaken: new Map(),
+      isolationData: { isolationIndex: 0, combatIsolation: 0, deathIsolation: 0, minDist: 0, heightDiff: 0, isCrossfire: false, teammateCount: 0 },
+      timeline: []
     };
 
     // 핸들러 주입
@@ -112,49 +129,110 @@ export class AnalysisEngine {
     teamStats: any[],
     eliteBenchmark: any
   ): AnalysisResult {
-    // 1. 사전 매핑 구축
-    this.buildMappings(rosters);
+    // 1. 사전 매핑 및 기본 정보 주입
+    this.state.gameMode = matchAttr.gameMode || "";
+    this.buildMappings(rosters, participants);
 
-    // 2. 이벤트 루프
-    const startTime = new Date(telemetry[0]?._D || 0).getTime();
+    // 2. 정확한 시작 시점 (LogMatchStart) 찾기
+    const matchStartEv = telemetry.find(e => e._T === "LogMatchStart");
+    const startTime = matchStartEv ? new Date(matchStartEv._D).getTime() : new Date(telemetry[0]?._D || 0).getTime();
     this.state.matchStartTime = startTime;
+
+    // 3. 이벤트 루프
 
     telemetry.forEach(e => {
       const ts = new Date(e._D).getTime();
       const elapsed = ts - startTime;
 
-      // 엔진 공통 상태 관리
-      if (e._T === "LogPhaseStart") this.state.currentPhase = e.phase;
+      // 타임라인 기록 제한: 나 또는 아군 중 한 명이라도 살아있으면 계속 기록
+      const isMyTeamAlive = Array.from(this.state.teamNames).some(name => this.state.playerAliveStatus.get(name) !== false);
+      const isAfterTeamWipe = !isMyTeamAlive && this.state.myDeathTime && ts > (this.state.myDeathTime + 30000);
+      const isWin = e._T === "LogMatchEnd" && this.state.playerAliveStatus.get(this.state.lowerNickname) !== false;
 
-      // 도메인 핸들러에게 위임
-      this.handlers.forEach(h => h.handleEvent(e, ts, elapsed));
+      if (!isAfterTeamWipe || isWin) {
+        // 엔진 공통 상태 관리 (타임라인 기록 포함)
+        if (e._T === "LogPhaseStart" || e._T === "LogPhaseChange") {
+          const phaseNum = e.phase !== undefined ? e.phase : 0;
+          if (this.state.currentPhase !== phaseNum) {
+            this.state.currentPhase = phaseNum;
+            this.state.timeline.push({
+              ts: ts - startTime,
+              type: 'PHASE_START',
+              phase: phaseNum
+            });
+          }
+        }
+
+        // 도메인 핸들러에게 위임
+        this.handlers.forEach(h => h.handleEvent(e, ts, elapsed));
+      } else {
+        // 사망 이후라도 상태 업데이트는 필요할 수 있으므로 최소한의 핸들링만 수행 (타임라인 제외)
+        // 여기서는 간단히 페이즈 상태만 업데이트
+        if (e._T === "LogPhaseStart" || e._T === "LogPhaseChange") {
+          this.state.currentPhase = e.phase;
+        }
+      }
     });
 
     // 3. 결과 조립
     return this.assembleResult(matchAttr, rosters, participants, myStats, teamStats, eliteBenchmark);
   }
 
-  private buildMappings(rosters: any[]) {
+  private buildMappings(rosters: any[], participants: any[]) {
     rosters.forEach(r => {
       const teamMates = new Set<string>();
-      if (r.participants && Array.isArray(r.participants)) {
-        r.participants.forEach((p: any) => {
-          const name = normalizeName(p.name);
-          this.state.teamMapping.set(name, r.id);
-          teamMates.add(name);
+      const teamAccountIds = new Set<string>();
+      let isMyTeam = false;
+
+      const pRefs = r.relationships?.participants?.data;
+      if (pRefs && Array.isArray(pRefs)) {
+        pRefs.forEach((pRef: any) => {
+          const fullPart = participants.find(part => part.id === pRef.id);
+          const name = normalizeName(fullPart?.attributes?.stats?.name || "");
+          const accountId = fullPart?.attributes?.stats?.playerId || fullPart?.attributes?.accountId;
+          
+          if (name) {
+            this.state.teamMapping.set(name, r.id);
+            teamMates.add(name);
+          }
+          if (accountId) {
+            this.state.teamMapping.set(accountId, r.id);
+            teamAccountIds.add(accountId);
+          }
+
+          if (accountId === this.state.myAccountId || name === this.state.lowerNickname) isMyTeam = true;
         });
       }
+
       this.state.teamAliveMembers.set(r.id, teamMates);
+
+      if (isMyTeam) {
+        this.state.myRosterId = r.id;
+        this.state.teamNames = teamMates;
+        this.state.teamAccountIds = teamAccountIds;
+      }
     });
   }
 
   private assembleResult(matchAttr: any, rosters: any[], participants: any[], myStats: any, teamStats: any[], eliteBenchmark: any): AnalysisResult {
+    // [V12.5] 승리 이벤트 추가
+    if (myStats.winPlace === 1) {
+      this.state.timeline.push({
+        ts: myStats.timeSurvived * 1000,
+        type: 'VICTORY'
+      });
+    }
+
     const stats = Array.isArray(teamStats) ? teamStats : [];
     const totalTeamDamage = Math.max(1, stats.reduce((sum, s) => sum + (s?.damageDealt || 0), 0));
     const totalTeamKills = Math.max(1, stats.reduce((sum, s) => sum + (s?.kills || 0), 0));
-    
-    const damageImpact = Math.round((myStats.damageDealt / (eliteBenchmark?.avgDamage || 400)) * 100);
-    const killImpact = Math.round((myStats.kills / (eliteBenchmark?.avgKills || 3)) * 100);
+
+    const humanParticipants = participants.filter((p: any) => !p.attributes?.accountId?.startsWith("ai."));
+    const sortedByDamage = [...humanParticipants].map(p => p.attributes?.stats).filter(Boolean).sort((a, b) => b.damageDealt - a.damageDealt);
+    const damageRank = sortedByDamage.findIndex((s: any) => normalizeName(s.name) === this.state.lowerNickname) + 1 || 1;
+
+    const damageImpact = Math.round((myStats.damageDealt / (eliteBenchmark?.avg_damage || 400)) * 100);
+    const killImpact = Math.round((myStats.kills / (eliteBenchmark?.avg_kills || 3)) * 100);
     const teamDamageShare = Math.round((myStats.damageDealt / totalTeamDamage) * 100);
     const teamKillShare = Math.round((myStats.kills / totalTeamKills) * 100);
 
@@ -166,27 +244,33 @@ export class AnalysisEngine {
     const avgHeightDiff = this.state.isolationSampleCount > 0 ? this.state.totalHeightDiffSum / this.state.isolationSampleCount : 0;
     const avgTeammateCount = this.state.isolationSampleCount > 0 ? this.state.totalNearbyTeammatesSum / this.state.isolationSampleCount : 0;
 
-    const avgReactLat = this.state.reactCount > 0 ? this.state.reactLatSum / this.state.reactCount : 0;
-    const avgTradeLat = this.state.tradeLatencies.length > 0 ? this.state.tradeLatencies.reduce((a, b) => a + b, 0) / this.state.tradeLatencies.length : 0;
+    const avgReactLat = this.state.reactCount > 0 ? this.state.reactLatSum / this.state.reactCount : -1;
+    const avgTradeLat = this.state.tradeLatencies.length > 0 ? this.state.tradeLatencies.reduce((a, b) => a + b, 0) / this.state.tradeLatencies.length : -1;
 
     // 교전 및 선제 타격 지표 집계
-    const pData = this.state.playerCombatData.get(this.state.lowerNickname) || { total: 0, success: 0, duelWins: 0, duelLosses: 0, reversalWins: 0, reversalAttempts: 0 };
+    const pData = (this.state.playerCombatData.get(this.state.myAccountId) || this.state.playerCombatData.get(this.state.lowerNickname)) || { total: 0, success: 0, duelWins: 0, duelLosses: 0, reversalWins: 0, reversalAttempts: 0 };
     const duelWinRate = (pData.duelWins + pData.duelLosses) > 0 ? (pData.duelWins / (pData.duelWins + pData.duelLosses)) * 100 : 0;
     const reversalRate = pData.reversalAttempts > 0 ? (pData.reversalWins / pData.reversalAttempts) * 100 : 0;
-    const initiativeRate = pData.total > 0 ? (pData.success / pData.total) * 100 : 0;
+    const initiativeRate = pData.total > 0 ? (pData.success / pData.total) * 100 : -1;
 
     return {
       matchId: matchAttr.id,
       v: RESULT_VERSION,
       processedAt: new Date().toISOString(),
       createdAt: matchAttr.createdAt,
-      stats: myStats,
+      stats: {
+        ...myStats,
+        damageDealt: myStats.damageDealt ?? 0,
+        kills: myStats.kills ?? 0,
+        winPlace: myStats.winPlace ?? 100,
+        timeSurvived: myStats.timeSurvived ?? 0
+      },
       team: teamStats,
-      deathPhase: this.calculateDeathPhase(myStats.winPlace),
+      deathPhase: this.calculateDeathPhase(myStats.winPlace ?? 100),
       mapName: MAP_NAMES[matchAttr.mapName] || matchAttr.mapName,
       gameMode: matchAttr.gameMode,
       matchType: matchAttr.matchType || "Official",
-      totalTeams: rosters.length,
+      totalTeams: rosters.filter(r => r.relationships?.participants?.data?.length > 0).length,
       totalPlayers: participants.length,
       teamImpact: { damageImpact, killImpact, teamDamageShare, teamKillShare, totalTeamDamage, totalTeamKills },
       badges,
@@ -210,7 +294,8 @@ export class AnalysisEngine {
         suppCount: this.state.totalSuppCount,
         tradeKills: this.state.totalTradeKills,
         smokeCount: this.state.totalSmokeCount,
-        revCount: this.state.myReviveEvents.length,
+        smokeRescues: this.state.totalSmokeRescues,
+        revCount: this.state.totalReviveEvents.length,
         baitCount: this.state.totalBaitCount,
         tradeLatencyMs: avgTradeLat,
         counterLatencyMs: avgReactLat,
@@ -218,23 +303,24 @@ export class AnalysisEngine {
         coverRate: this.state.totalCoverAttempts > 0 ? (this.state.totalCoverSuccess / this.state.totalCoverAttempts) * 100 : 0,
         coverRateSampleCount: this.state.totalCoverAttempts,
         enemyTeamWipes: this.state.wipedTeamsByUserParticipation.size,
-        tradeRate: this.state.totalTeammateKnocks > 0 ? (this.state.totalTradeKills / this.state.totalTeammateKnocks) * 100 : 0
+        tradeRate: this.state.totalTeammateKnocks > 0 ? (this.state.totalTradeKills / this.state.totalTeammateKnocks) * 100 : 0,
+        suppRate: this.state.totalTeammateKnocks > 0 ? (this.state.totalSuppCount / this.state.totalTeammateKnocks) * 100 : 0
       },
       initiative_rate: initiativeRate,
       initiativeSampleCount: pData.total,
-      duelStats: { 
-        totalDuels: pData.duelWins + pData.duelLosses, 
-        wins: pData.duelWins, 
-        losses: pData.duelLosses, 
-        reversals: pData.reversalWins, 
+      duelStats: {
+        totalDuels: pData.duelWins + pData.duelLosses,
+        wins: pData.duelWins,
+        losses: pData.duelLosses,
+        reversals: pData.reversalWins,
         reversalAttempts: pData.reversalAttempts,
         reversalRate,
-        duelWinRate 
+        duelWinRate
       },
       combatPressure: {
         pressureScore: this.state.combatPressure.totalHits + (this.state.combatPressure.utilityHits * 2),
         pressureIndex: Number((this.state.combatPressure.totalHits / Math.max(5, (this.state.myActionTimestamps.length / 10))).toFixed(2)),
-        utilityStats: { 
+        utilityStats: {
           throwCount: this.state.itemUseStats.throwCount,
           hitCount: this.state.combatPressure.utilityHits,
           totalDamage: this.state.combatPressure.utilityDamage,
@@ -254,7 +340,24 @@ export class AnalysisEngine {
       itemUseSummary: this.state.itemUseSummary,
       deathDistance: this.state.deathDistance,
       edgePlay: this.state.zoneStrategy.edgePlayCount,
-      bluezoneWaste: this.state.bluezoneWaste
+      bluezoneWaste: this.state.bluezoneWaste,
+      benchmark: getBenchmarkTier({
+        rankPct: damageRank / Math.max(1, humanParticipants.length),
+        survivalTime: myStats.timeSurvived || 0,
+        initiativeRate: initiativeRate,
+        counterLatencyMs: avgReactLat,
+        pressureIndex: Number((this.state.combatPressure.totalHits / Math.max(5, (this.state.myActionTimestamps.length / 10))).toFixed(2)),
+        smokeRate: this.state.totalTeammateKnocks > 0 ? (this.state.totalSmokeRescues / this.state.totalTeammateKnocks) * 100 : 0,
+        suppCount: this.state.totalSuppCount,
+        reviveRate: this.state.totalTeammateKnocks > 0 ? (this.state.totalReviveEvents.length / this.state.totalTeammateKnocks) * 100 : 0,
+        tradeRate: this.state.totalTeammateKnocks > 0 ? (this.state.totalTradeKills / this.state.totalTeammateKnocks) * 100 : 0,
+        teamWipes: this.state.wipedTeamsByUserParticipation.size,
+        reversalRate: reversalRate,
+         deathPhase: this.calculateDeathPhase(myStats.winPlace || 100),
+         suppRate: this.state.totalTeammateKnocks > 0 ? (this.state.totalSuppCount / this.state.totalTeammateKnocks) * 100 : 0
+       }, (this.state.gameMode || "").includes("solo")),
+      isValidBenchmark: (myStats.timeSurvived || 0) >= 300,
+      timeline: this.state.timeline.sort((a, b) => a.ts - b.ts)
     };
   }
 

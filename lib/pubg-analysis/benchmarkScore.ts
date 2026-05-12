@@ -11,6 +11,7 @@ export interface MatchTierInput {
   teamWipes: number;         // 팀 전멸 기여
   reversalRate: number;      // 역전 승률 (0~100)
   deathPhase: number;        // 사망 페이즈 (0~9)
+  suppRate: number;          // 지원사격 확률 (0~100)
 }
 
 export function calcBenchmarkScore(input: MatchTierInput, isSolo: boolean): number {

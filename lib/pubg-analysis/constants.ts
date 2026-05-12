@@ -2,8 +2,8 @@
  * PUBG 전술 분석 엔진 상수 정의
  */
 
-export const RESULT_VERSION = 11.97;
-export const TELEMETRY_VERSION = 16;
+export const RESULT_VERSION = 26.0;
+export const TELEMETRY_VERSION = 37; // [V41.3] ID 기반 분석 및 슬림 텔레메트리 무결성 강화 버전
 
 export const MAP_NAMES: Record<string, string> = {
   "Baltic_Main": "에란겔", 
@@ -30,25 +30,54 @@ export const TACTICAL_THRESHOLDS = {
 
 export const WEAPON_NAMES: Record<string, string> = {
   // AR
-  "WeapBerylM762_C": "베릴 M762", "WeapAKM_C": "AKM", "WeapM416_C": "M416", "WeapSCAR-L_C": "SCAR-L", 
-  "WeapG36C_C": "G36C", "WeapQBZ95_C": "QBZ95", "WeapAUG_C": "AUG", "WeapGroza_C": "그로자",
-  "WeapK2_C": "K2", "WeapACE32_C": "ACE32", "WeapFAMAS_C": "FAMAS",
-
-  // DMR
-  "WeapSLR_C": "SLR", "WeapSKS_C": "SKS", "WeapMk14_C": "Mk14", "WeapMini14_C": "Mini14", 
-  "WeapQBU88_C": "QBU", "WeapVSS_C": "VSS", "WeapMk12_C": "Mk12", "WeapDragunov_C": "드라구노프",
-
+  "WeapM416_C": "M416", "WeapHK416_C": "M416", "HK416": "M416", "M416": "M416",
+  "WeapSCAR-L_C": "SCAR-L", "WeapAKM_C": "AKM", "WeapBerylM762_C": "베릴 M762", "BerylM762": "베릴 M762",
+  "WeapM16A4_C": "M16A4", "WeapMk47Mutant_C": "뮤턴트", "WeapG36C_C": "G36C", "WeapK2_C": "K2", "WeapACE32_C": "ACE32",
+  "WeapAUG_C": "AUG", "WeapGroza_C": "그로자", "WeapFAMAS_C": "파마스",
+  
   // SR
-  "WeapKar98k_C": "Kar98k", "WeapM24_C": "M24", "WeapAWM_C": "AWM", "WeapMosin_C": "모신나강", "WeapWin94_C": "Win94",
-
+  "WeapKar98k_C": "Kar98k", "WeapM24_C": "M24", "WeapMosinnagant_C": "모신나강", "WeapWin94_C": "Win94", "WeapAWM_C": "AWM",
+  
+  // DMR
+  "WeapSKS_C": "SKS", "WeapSLR_C": "SLR", "WeapMini14_C": "Mini14", "WeapMk14_C": "Mk14", "WeapQBU88_C": "QBU", "WeapVSS_C": "VSS", "WeapDragunov_C": "드라구노프",
+  
   // SMG
-  "WeapUMP_C": "UMP45", "WeapVector_C": "Vector", "WeapMicroUZI_C": "Micro UZI", "WeapTommyGun_C": "토미건", 
-  "WeapBizon_C": "비존", "WeapMP5K_C": "MP5K", "WeapP90_C": "P90", "WeapJS9_C": "JS9",
-
-  // SG / Others
+  "WeapUZI_C": "마이크로 UZI", "WeapUMP45_C": "UMP45", "WeapVector_C": "벡터", "WeapTommyGun_C": "토미건", "WeapMP5K_C": "MP5K", "WeapP90_C": "P90", "WeapJS9_C": "JS9",
+  
+  // SG
   "WeapS12K_C": "S12K", "WeapS1897_C": "S1897", "WeapS686_C": "S686", "WeapDBS_C": "DBS", 
+  
+  // LMG / Others
   "WeapM249_C": "M249", "WeapDP28_C": "DP-28", "WeapMG3_C": "MG3", "WeapOriginS12_C": "O12",
-  "WeapPanzerFaust100M_C": "판처파우스트", "WeapMortar_C": "박격포", "WeapCrossbow_C": "석궁"
+  "WeapPanzerFaust100M_C": "판처파우스트", "PanzerFaust100M_Projectile_C": "판처파우스트", "PanzerFaust100M_Projectile": "판처파우스트", "WeapMortar_C": "박격포", "WeapCrossbow_C": "석궁",
+  
+  // Damage Types
+  "Damage_BlueZone": "자기장", "Damage_Falling": "낙사", "Damage_Drowning": "익사", "Damage_Groggy": "출혈(기절)", "Damage_Gunshot": "총기", "Damage_Explosion": "폭발",
+  
+  // Vehicles
+  "Vehicle_Dacia_C": "다시아", "Vehicle_UAZ_C": "UAZ", "Vehicle_CoupeRB_C": "쿠페 RB", "BP_CoupeRB_C": "쿠페 RB", "CoupeRB": "쿠페 RB", "BPoupeRB": "쿠페 RB",
+  "Vehicle_Motorbike_C": "오토바이", "Vehicle_Zima_C": "지마", "Vehicle_Porter_C": "포터", "Vehicle_PonyCoupe_C": "포니 쿠페", "BP_PonyCoupe_C": "포니 쿠페",
+  "Vehicle_Mirado_C": "미라도", "Vehicle_TukTuk_C": "툭툭", "Vehicle_Rony_C": "로니", "Vehicle_Pickup_C": "픽업트럭",
+  "Vehicle_BRDM_C": "BRDM", "Vehicle_LootTruck_C": "보급 트럭", "Vehicle_AquaRail_C": "아쿠아레일", "Vehicle_PG117_C": "보트",
+  "Vehicle": "차량",
+  
+  // Items
+  "Item_Weapon_C4_C": "C4", "Item_Heal_FirstAid_C": "구급상자", "Item_Heal_MedKit_C": "의료용 키트",
+  "Item_Heal_Bandage_C": "붕대", "Item_Boost_EnergyDrink_C": "에너지 드링크", "Item_Boost_PainKiller_C": "진통제",
+  "Item_Boost_AdrenalineSyringe_C": "아드레날린 주사기",
+  
+  // Projectiles & Throwables
+  "ProjGrenade_C": "수류탄", "ProjMolotov_C": "화염병", "ProjSmokeBomb_C": "연막탄", "ProjFlashBang_C": "섬광탄",
+  "ProjBluezoneGrenade_C": "블루존 수류탄", "ProjStickyGrenade_C": "점착 폭탄", "ProjC4_C": "C4",
+  "Item_Weapon_Grenade_C": "수류탄", "item_weapon_grenade_c": "수류탄", "grenade": "수류탄",
+  "Item_Weapon_Molotov_C": "화염병", "item_weapon_molotov_c": "화염병", "molotov": "화염병",
+  "Item_Weapon_SmokeBomb_C": "연막탄", "item_weapon_smokebomb_c": "연막탄", "smoke": "연막탄",
+  "Item_Weapon_FlashBang_C": "섬광탄", "item_weapon_flashbang_c": "섬광탄", "flash": "섬광탄",
+  "Item_Weapon_BluezoneGrenade_C": "블루존 수류탄", "item_weapon_bluezonegrenade_c": "블루존 수류탄",
+  "Item_Weapon_StickyGrenade_C": "점착 폭탄", "item_weapon_stickygrenade_c": "점착 폭탄",
+  "item_weapon_c4_c": "C4", "c4": "C4",
+  
+  "Melee": "근접 무기", "Punch": "주먹", "BlueZone": "자기장", "None": "없음"
 };
 
 /**

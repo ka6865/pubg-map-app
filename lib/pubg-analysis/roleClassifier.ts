@@ -50,28 +50,74 @@ const ROLE_DESCRIPTIONS: Record<keyof RoleScore, string> = {
   fieldCommander: "모든 지표가 균형 있게 높으며 팀을 승리로 이끕니다. 전장의 흐름을 완벽하게 읽고 통제하는 지휘관입니다."
 };
 
+const TIER_PREFIX: Record<string, string> = {
+  S: "전설의",
+  A: "숙련된",
+  B: "성장하는",
+  C: "잠재된"
+};
+
+const ROLE_TITLES: Record<keyof RoleScore, string[]> = {
+  pointMan:        ["총구의 시계추", "첫 총성의 화신", "돌격의 화신"],
+  phantomOverwatch: ["전장의 망령",   "침묵의 감시자",  "보이지 않는 손"],
+  executor:        ["심판자",        "결투의 제왕",    "역전의 귀재"],
+  shield:          ["전우의 수호신", "마지막 방패",    "연막의 천사"],
+  zoneController:  ["구역의 지배자", "자기장의 주인",  "압박의 화신"],
+  dropPredator:    ["착지의 악마",   "핫존의 포식자",  "혼돈의 사냥꾼"],
+  decoy:           ["고의적 피탄자", "희생의 전략가",  "미끼의 달인"],
+  fieldCommander:  ["전장의 지휘관", "완전체",         "육각형 플레이어"]
+};
+
 /**
  * 시그니처 무기 및 상세 스탯 추출
  */
 function getSignatureWeapon(weaponStats: Record<string, any>) {
-  if (!weaponStats || Object.keys(weaponStats).length === 0) return { name: "주먹", stats: { kills: 0, dbnos: 0 } };
+  if (!weaponStats || Object.keys(weaponStats).length === 0) return { name: "주먹", stats: { kills: 0, dbnos: 0 }, isReliable: false, isSpecial: false };
 
   const sorted = Object.entries(weaponStats)
-    .filter(([id]) => !IGNORE_WEAPONS.includes(id))
+    .filter(([id]) => !IGNORE_WEAPONS.includes(id) && id !== "None")
     .sort((a, b) => {
       const scoreA = (a[1].kills || 0) * 2 + (a[1].dbnos || 0);
       const scoreB = (b[1].kills || 0) * 2 + (b[1].dbnos || 0);
       return scoreB - scoreA;
     });
 
-  if (sorted.length === 0) return { name: "알 수 없음", stats: { kills: 0, dbnos: 0 } };
+  if (sorted.length === 0) return { name: "전술가", stats: { kills: 0, dbnos: 0 }, isReliable: false, isSpecial: false };
   
   const [bestId, stats] = sorted[0];
+  const score = (stats.kills || 0) * 2 + (stats.dbnos || 0);
+  
+  // [V12.4] 특수 칭호 맵핑
+  let name = WEAPON_NAMES[bestId] || bestId.replace(/Item_Weapon_|Weap|_C/g, "");
+  let isSpecial = false;
+
+  if (bestId.includes("BP_")) {
+    name = "고라니 사냥꾼";
+    isSpecial = true;
+  } else if (bestId.includes("Proj") || bestId.includes("Grenade") || bestId.includes("Molotov")) {
+    name = "폭파 전문가";
+    isSpecial = true;
+  } else if (bestId === "Unknown") {
+    name = "어둠의 암살자";
+    isSpecial = true;
+  }
+
   return {
-    name: WEAPON_NAMES[bestId] || bestId.replace(/Item_Weapon_|Weap|_C/g, ""),
-    stats: { kills: stats.kills || 0, dbnos: stats.dbnos || 0 }
+    name,
+    stats: { kills: stats.kills || 0, dbnos: stats.dbnos || 0 },
+    isReliable: score >= 6, // 특수 칭호 포함 시 기준 완화
+    isSpecial
   };
 }
+
+/**
+ * 안전한 반응 속도 파싱 (ms 단위 변환)
+ */
+const parseLatency = (val: string | null | undefined) => {
+  if (!val || val === "N/A" || val === "측정 불가") return null;
+  const n = parseFloat(val);
+  return isNaN(n) ? null : n;
+};
 
 /**
  * 8종 직업군 판정 로직
@@ -88,63 +134,99 @@ export function classifyRole(stats: any, bench: any, overallTier: string): RoleI
     fieldCommander: 0
   };
 
+  const mLen = stats.mLen || 1;
+  const isSoloMode = stats.modeDistribution?.main === 'solo';
+
   // 1. 선봉대 (Point Man)
-  // 주도권 높음 + 대응 사격 빠름 + 팀과 붙어있음
-  scores.pointMan = (stats.userInitiativeRate || 0) * 0.4 + 
-                   (stats.avgReactionLatency < 0.5 ? 30 : 0) + 
-                   (parseFloat(stats.avgIsolationStr) < 1.0 ? 30 : 0);
+  // 주도권 높음 + 빠른 반응 + 근거리 유지
+  const reactionMs = parseLatency(stats.avgReactionLatency);
+  const reactionScore = reactionMs !== null ? Math.max(0, 40 - reactionMs * 20) : 0;
+  const isCloseRange = parseFloat(stats.avgMinDistStr || "999") < 20;
+  
+  scores.pointMan = (stats.userInitiativeRate || 0) * 0.5 
+    + reactionScore 
+    + (parseFloat(stats.avgMinDistStr) < 15 ? 10 : 5)
+    + (isCloseRange ? 15 : 0);
 
   // 2. 저격 유령 (Phantom Overwatch)
-  // 최대 타격 거리 멂 + 주도권 높음 + 고립 지수 높음
-  scores.phantomOverwatch = (stats.totalMaxHitDist > 200 ? 40 : 0) + 
-                           (stats.userInitiativeRate || 0) * 0.3 + 
-                           (parseFloat(stats.avgIsolationStr) > 1.5 ? 30 : 0);
+  // 원거리 타격 + 주도권 + 고립(외곽) 플레이
+  scores.phantomOverwatch = Math.max(0, 
+    Math.min(40, (stats.totalMaxHitDist / 10)) + 
+    (stats.userInitiativeRate || 0) * 0.3 + 
+    Math.min(30, parseFloat(stats.avgIsolationStr) * 10) +
+    (isCloseRange ? -10 : 10)
+  );
 
   // 3. 처형자 (Executor)
-  // 1:1 승률 높음 + 역전승 많음 + 팀 전멸 기여
-  scores.executor = (stats.avgDuelWinRate || 0) * 0.5 + 
-                    (stats.totalReversalWins || 0) * 10 + 
-                    (stats.totalTeamWipes || 0) * 5;
+  // 1:1 무력
+  scores.executor = (stats.avgDuelWinRate || 0) * 0.7 + 
+                    Math.min(30, (stats.totalReversalWins / mLen) * 15) + 
+                    Math.min(20, (stats.totalTeamWipes / mLen) * 15);
 
   // 4. 팀의 방패 (Shield)
-  // 부활/복수/연막 지원 지표 합산
-  const supportRate = stats.totalTeammateKnocks > 0 ? 
-    ((stats.totalRevCount + stats.totalTradeKills) / stats.totalTeammateKnocks) * 100 : 0;
-  scores.shield = supportRate * 0.6 + (stats.totalSmokeCount || 0) * 5;
+  // 수정된 연막 세이브 + 부활/복수 기여
+  const smokeEfficiency = stats.totalTeammateKnocks > 0 ? 
+    (stats.totalSmokeCount / stats.totalTeammateKnocks) * 40 : 0;
+  const rescueRate = stats.totalTeammateKnocks > 0 ? 
+    ((stats.totalRevCount + stats.totalTradeKills) / stats.totalTeammateKnocks) * 50 : 0;
+  
+  scores.shield = isSoloMode ? 0 : rescueRate + Math.min(50, smokeEfficiency);
 
   // 5. 전장 통제자 (Zone Controller)
-  // 엣지 플레이 + 자기장 피해 적음 + 압박 지수 높음
-  scores.zoneController = (stats.totalEdgePlay || 0) * 10 + 
-                         (200 - Math.min(200, stats.bluezoneWaste || 0)) * 0.2 + 
-                         (stats.avgPressureIndex || 0) * 10;
+  const edgePlayPerMatch = stats.totalEdgePlay / mLen;
+  scores.zoneController = Math.min(40, edgePlayPerMatch * 8) + 
+                         Math.min(10, (100 - Math.min(100, stats.totalBluezoneWaste / mLen)) * 0.1) + 
+                         Math.min(50, stats.avgPressureIndex * 10);
 
   // 6. 핫드랍 약탈자 (Drop Predator)
-  // 초반 데미지 비중 높음 + 초반 킬
-  const earlyImpact = stats.goldenTimeAvg?.early || 0;
-  scores.dropPredator = Math.min(100, earlyImpact / 2);
+  // [V15.1] 절대 딜량이 아닌 전체 딜량 대비 초반 비중으로 판정
+  const totalGoldenTime = (stats.goldenTimeAvg?.early || 0) + 
+                         (stats.goldenTimeAvg?.mid1 || 0) + 
+                         (stats.goldenTimeAvg?.mid2 || 0) + 
+                         (stats.goldenTimeAvg?.late || 0);
+  const earlyRatio = totalGoldenTime > 0 ? (stats.goldenTimeAvg?.early || 0) / totalGoldenTime : 0;
+  scores.dropPredator = Math.min(100, earlyRatio * 150);
 
   // 7. 미끼 전술가 (Decoy)
-  // 미끼 판정 횟수 + 기절 대비 복수 기여
-  scores.decoy = (stats.totalBaitCount || 0) * 20 + 
-                 (stats.totalSuppCount || 0) * 5;
+  scores.decoy = Math.min(70, (stats.totalBaitCount / mLen) * 35) + 
+                 Math.min(30, (stats.totalSuppCount / mLen) * 6);
 
   // 8. 전장의 지휘관 (Field Commander)
-  // 모든 지표의 평균치 기반 (올라운더)
-  scores.fieldCommander = (stats.avgDamage / 5) + (stats.avgDuelWinRate * 0.3) + (stats.avgCoverRate * 0.2);
+  // 위 7개 직업 중 30점 이상인 직업이 5개 이상일 때만 활성화 (올라운더 판정)
+  const activeRoles = (Object.entries(scores) as [keyof RoleScore, number][])
+    .filter(([k]) => k !== 'fieldCommander')
+    .filter(([, v]) => v >= 30).length;
+
+  scores.fieldCommander = activeRoles >= 5
+    ? (Object.entries(scores) as [keyof RoleScore, number][])
+        .filter(([k]) => k !== 'fieldCommander')
+        .reduce((acc, [, v]) => acc + v, 0) / 7
+    : 0;
 
   // 최고 점수 직업 선정
   const sortedRoles = (Object.entries(scores) as [keyof RoleScore, number][])
     .sort((a, b) => b[1] - a[1]);
 
   const primaryRole = sortedRoles[0][0];
-  const secondaryRole = sortedRoles[1][1] > 10 ? sortedRoles[1][0] : null;
+  const secondaryRole = sortedRoles[1][1] >= (sortedRoles[0][1] * 0.65) ? sortedRoles[1][0] : null;
 
   // 시그니처 무기 추출
   const weapon = getSignatureWeapon(stats.weaponStatsFinal || {});
 
-  // 칭호 및 텍스트 생성 (한글 명칭 전체 추출)
-  const roleNameOnly = ROLE_LABELS[primaryRole].replace(/\s*\(.*\)/, "");
-  const title = `${weapon.name}의 화신, ${roleNameOnly}`;
+  // [V15.1] 칭호 생성 로직 고도화: 티어 수식어 + 직업별 고유 칭호 + 무기 시그니처
+  const tierIndex = overallTier === 'S' ? 0 : overallTier === 'A' ? 1 : 2;
+  const roleTitle = ROLE_TITLES[primaryRole][tierIndex];
+  const prefix = TIER_PREFIX[overallTier] || "잠재된";
+
+  let title = "";
+  
+  if (weapon.isSpecial) {
+    title = `${weapon.name}, ${roleTitle}`; // "고라니 사냥꾼, 총구의 시계추"
+  } else if (weapon.isReliable) {
+    title = `${prefix} ${roleTitle} (${weapon.name})`;
+  } else {
+    title = `${prefix} ${roleTitle}`;
+  }
 
   return {
     primaryRole,

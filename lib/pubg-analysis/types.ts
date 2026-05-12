@@ -8,6 +8,17 @@ export interface Location {
   z: number;
 }
 
+export interface TimelineEvent {
+  ts: number;           // 경기 시작 후 경과 시간 (ms)
+  type: 'KILL' | 'KNOCK' | 'FINISH' | 'REVIVE' | 'DIED' | 'DOWNED' | 'TEAM_KNOCK' | 'TEAM_KILL' | 'TEAM_REVIVE' | 'TEAM_DIED' | 'RECALL' | 'VICTORY' | 'DAMAGE_TAKEN' | 'ITEM_USE' | 'PHASE_START';
+  weapon?: string;      // 사용 무기
+  victim?: string;      // 피해자
+  attacker?: string;    // 가해자
+  distance?: number;    // 거리 (m)
+  isHeadshot?: boolean; // 헤드샷 여부
+  phase?: number;       // 페이즈 번호
+}
+
 export interface PlayerStats {
   name: string;
   kills: number;
@@ -58,6 +69,7 @@ export interface TradeStats {
   suppCount: number;
   tradeKills: number;
   smokeCount: number;
+  smokeRescues: number;
   revCount: number;
   baitCount: number;
   tradeLatencyMs: number;
@@ -67,6 +79,7 @@ export interface TradeStats {
   coverRateSampleCount: number;
   enemyTeamWipes: number;
   tradeRate?: number;
+  suppRate?: number;
 }
 
 export interface DuelStats {
@@ -115,8 +128,18 @@ export interface AnalysisResult {
   killContribution: {
     solo: number;
     cleanup: number;
+    assist: number;
   };
-  itemUseStats: { heals: number, boosts: number, throwCount: number, lethalThrowCount: number }; // [V11.8] 회복/부스트 상세 통계
+  itemUseStats: { 
+    heals: number, 
+    boosts: number, 
+    throwCount: number, 
+    lethalThrowCount: number, 
+    stunDurationSum?: number,
+    focusFireCount: number,
+    crossfireExposureCount: number,
+    distanceDamage: { short: number, mid: number, long: number }
+  }; 
   wasZoneMovingAtDeath: boolean; // [V11.8] 사망 시점 자기장 상태
   isolationData: IsolationData;
   tradeStats: TradeStats;
@@ -129,15 +152,30 @@ export interface AnalysisResult {
   deathDistance: number;
   edgePlay?: number;
   bluezoneWaste?: number;
+  benchmark?: {
+    tier: string | null;
+    score: number;
+    breakdown: {
+      combat: number;
+      tactical: number;
+      survival: number;
+    };
+  };
+  isValidBenchmark: boolean; // [V26.0] 벤치마크 유효성 여부 (300초 이상 생존)
+  timeline: TimelineEvent[]; // [V12.5] 경기 타임라인 데이터
 }
 
 // 텔레메트리 이벤트 처리를 위한 내부 상태 타입
-export interface InternalAnalysisState {
+export interface AnalysisState {
   lowerNickname: string;
+  myAccountId: string; // [V41.0] 고유 ID 매칭 도입
   teamNames: Set<string>;
+  teamAccountIds: Set<string>; // [V41.0] 팀원 고유 ID 매칭
   eliteNames: Set<string>;
+  eliteAccountIds: Set<string>; // [V41.0] 엘리트 고유 ID 매칭
   myRosterId: string;
   matchStartTime: number;
+  gameMode: string; // [V16] 솔로 모드 판정용
   
   // 상황별 데이터 추적
   playerCombatData: Map<string, any>;
@@ -151,7 +189,7 @@ export interface InternalAnalysisState {
   // 이벤트 큐/셋
   myAttackEvents: Set<number>;
   myDamageEvents: any[];
-  myReviveEvents: any[];
+  totalReviveEvents: any[];
   teammateKnockEvents: number[];
   myActionTimestamps: number[];
   
@@ -173,7 +211,9 @@ export interface InternalAnalysisState {
   totalSuppCount: number;
   totalTradeKills: number;
   totalSmokeCount: number;
+  totalSmokeRescues: number;
   totalBaitCount: number;
+  baitCooldown: Map<string, number>; // [V16] 미끼 플레이 중복 방지용
   
   reactLatSum: number;
   reactCount: number;
@@ -211,16 +251,27 @@ export interface InternalAnalysisState {
   zoneStrategy: { edgePlayCount: number, fatalDelayCount: number };
   bluezoneWaste: number;
   goldenTimeDamage: { early: number, mid1: number, mid2: number, late: number };
-  killContribution: { solo: number, cleanup: number };
+  killContribution: { solo: number, cleanup: number, assist: number };
   wipedTeamsByUserParticipation: Set<string>;
   teamsUserHit: Set<string>;
   myRecentDamageTaken: Map<string, number>;
   recentAttacksOnUser: any[];
   itemUseSummary: any;
-  itemUseStats: { heals: number, boosts: number, throwCount: number, lethalThrowCount: number }; // [V11.8] 회복/부스트 상세 통계
+  itemUseStats: { 
+    heals: number, 
+    boosts: number, 
+    throwCount: number, 
+    lethalThrowCount: number, 
+    stunDurationSum?: number,
+    focusFireCount: number,
+    crossfireExposureCount: number,
+    distanceDamage: { short: number, mid: number, long: number }
+  }; 
   phaseTimeline: any[];
   myDeathTime: number | null;
   deathDistance: number;
   recentTeammateDamageTaken: Map<string, number>; // [V11.7] 미끼 플레이 추적용
   lastEdgeSampleTime?: number; // [V11.9.2] 끝선 플레이 샘플링 주기 관리
+  timeline: TimelineEvent[];    // [V12.5] 전술 타임라인 이벤트 저장소
+  isolationData?: IsolationData; // [V14] 현재 시점의 고립 데이터 (핸들러 참조용)
 }
