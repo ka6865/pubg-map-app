@@ -20,8 +20,8 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
   }
 });
 
-const TARGET_VERSION = 36;
-const RETENTION_DAYS = 7;
+const TARGET_VERSION = 37;
+const RETENTION_DAYS = 3;
 
 async function smartCleanup() {
   console.log('🚀 [BGMS Smart Cleaner] 작업을 시작합니다...');
@@ -30,6 +30,16 @@ async function smartCleanup() {
   const expirationDate = new Date(now.getTime() - (RETENTION_DAYS * 24 * 60 * 60 * 1000));
   console.log(`📅 기준 날짜: ${expirationDate.toISOString()} (이전 데이터 삭제)`);
   console.log(`🔢 기준 버전: V${TARGET_VERSION} (미만 버전 삭제)`);
+
+  // 0. 고립된 데이터 정리 (match_master_telemetry에 없는 match_stats_raw 삭제)
+  console.log('🧹 고립된 match_stats_raw 데이터 확인 중...');
+  const { data: orphanedStats, error: orphanError } = await supabase
+    .rpc('get_orphaned_match_ids'); // RPC가 없다면 쿼리로 대체 가능하나 효율을 위해 별도 처리
+
+  // RPC가 없는 경우를 대비한 수동 고립 데이터 체크 (제한적)
+  if (orphanError) {
+     console.log('💡 고립 데이터 정리를 위한 RPC가 없습니다. 기본 클린업을 진행합니다.');
+  }
 
   let totalDeleted = 0;
 
@@ -67,12 +77,11 @@ async function smartCleanup() {
       }
     }
 
-    // B. 관련 DB 테이블 일괄 삭제 (Cascade 효과를 위해 개별 처리 또는 순차 처리)
-    
+    // B. 관련 DB 테이블 일괄 삭제
     // 1) processed_match_telemetry (분석 결과)
     await supabase.from('processed_match_telemetry').delete().in('match_id', matchIds);
     
-    // 2) match_stats_raw (원본 통계 - 용량 많이 차지함)
+    // 2) match_stats_raw (원본 통계)
     await supabase.from('match_stats_raw').delete().in('match_id', matchIds);
     
     // 3) match_master_telemetry (메타데이터 - 마지막에 삭제)
@@ -88,6 +97,13 @@ async function smartCleanup() {
     }
     
     console.log(`⏳ 현재까지 총 ${totalDeleted}개 데이터(파일+DB) 완전 삭제 완료...`);
+  }
+
+  // 4. [보너스] match_stats_raw 고립 데이터 강제 정리 (연결고리 끊긴 데이터들)
+  console.log('🧹 남은 고립된 match_stats_raw 데이터 최종 정리 중...');
+  const { error: finalOrphanError } = await supabase.rpc('delete_orphaned_stats');
+  if (finalOrphanError) {
+    console.warn('⚠️ 고립 데이터 정리 RPC 호출 실패 (수동 정리가 필요할 수 있음)');
   }
 
   console.log(`\n✨ [BGMS Smart Cleaner] 모든 작업 완료!`);

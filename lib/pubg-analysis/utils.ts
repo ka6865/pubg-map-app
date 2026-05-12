@@ -6,8 +6,8 @@ import { Location } from "./types";
 
 export function normalizeName(name: string): string {
   if (!name) return "";
-  // [V40.13] 특수문자(-, _, .) 및 모든 공백을 제거하여 매칭 정밀도 극대화
-  return name.toLowerCase().replace(/[-_\s\.]/g, "").trim();
+  // [V41.0] 대소문자 구분 없이 소문자로 처리하되, PUBG 허용 특수문자(-, _)는 보존하여 충돌 방지
+  return name.toLowerCase().replace(/[\s\.]/g, "").trim();
 }
 
 export const calcDist3D = (l1: Location | any, l2: Location | any): number => {

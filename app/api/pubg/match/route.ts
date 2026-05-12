@@ -229,12 +229,31 @@ export async function GET(request: NextRequest) {
       }
     };
 
-    await supabase.from("processed_match_telemetry").upsert({
-      match_id: matchId,
-      player_id: lowerNickname,
-      data: { fullResult },
-      updated_at: new Date().toISOString()
-    });
+    // [V26.0] 지도 리플레이 데이터 분리 및 스토리지 저장
+    const { mapData, ...tacticalResult } = fullResult;
+    const mapCachePath = `${matchId}_${lowerNickname}_v${TELEMETRY_VERSION}_map.json`;
+    
+    await Promise.all([
+      // 1. 리플레이용 대용량 데이터는 스토리지로 (DB 부하 방지)
+      supabase.storage.from('telemetry').upload(mapCachePath, JSON.stringify(mapData), {
+        contentType: 'application/json',
+        upsert: true
+      }),
+      // 2. 전술 통계 및 요약 데이터는 DB로
+      supabase.from("processed_match_telemetry").upsert({
+        match_id: matchId,
+        player_id: lowerNickname,
+        data: { fullResult: tacticalResult },
+        updated_at: new Date().toISOString()
+      }),
+      // 3. 마스터 레코드 업데이트 (버전 관리용)
+      supabase.from("match_master_telemetry").upsert({
+        match_id: matchId,
+        map_name: matchAttr.mapId,
+        game_mode: matchAttr.gameMode,
+        telemetry_version: TELEMETRY_VERSION
+      }, { onConflict: 'match_id' })
+    ]);
 
     // 벤치마크 데이터 DB 저장을 위한 Ingest 트리거 (배경 실행)
     fetch(`${new URL(request.url).origin}/api/pubg/ingest`, {

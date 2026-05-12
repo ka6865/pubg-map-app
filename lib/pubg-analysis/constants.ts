@@ -13,7 +13,21 @@ export const MAP_NAMES: Record<string, string> = {
   "Chimera_Main": "파라모", 
   "Tiger_Main": "태이고",
   "Kiki_Main": "데스턴", 
-  "Neon_Main": "론도"
+  "Neon_Main": "론도",
+  "DihorOtok_Main": "비켄디"
+};
+
+export const MAP_SIZES: Record<string, number> = {
+  baltic: 819200, erangel: 819200,
+  desert: 819200, miramar: 819200,
+  tiger: 819200, taego: 819200,
+  kiki: 819200, deston: 819200,
+  neon: 819200, rondo: 819200,
+  dihorotok: 819200, vikendi: 819200,
+  savage: 409600, sanhok: 409600,
+  chimera: 307200, paramo: 307200,
+  summerland: 204800, karakin: 204800,
+  haven: 102400
 };
 
 // 전술 지표 임계값

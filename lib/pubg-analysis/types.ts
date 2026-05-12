@@ -10,7 +10,7 @@ export interface Location {
 
 export interface TimelineEvent {
   ts: number;           // 경기 시작 후 경과 시간 (ms)
-  type: 'KILL' | 'KNOCK' | 'FINISH' | 'REVIVE' | 'DIED' | 'DOWNED' | 'TEAM_KNOCK' | 'TEAM_KILL' | 'TEAM_REVIVE' | 'TEAM_DIED' | 'RECALL' | 'VICTORY' | 'DAMAGE_TAKEN' | 'ITEM_USE' | 'PHASE_START';
+  type: 'KILL' | 'KNOCK' | 'FINISH' | 'REVIVE' | 'DIED' | 'DOWNED' | 'TEAM_KNOCK' | 'TEAM_KILL' | 'TEAM_REVIVE' | 'TEAM_DIED' | 'RECALL' | 'VICTORY' | 'DAMAGE_TAKEN' | 'ITEM_USE' | 'PHASE_START' | 'UTILITY_HIT';
   weapon?: string;      // 사용 무기
   victim?: string;      // 피해자
   attacker?: string;    // 가해자
@@ -130,16 +130,16 @@ export interface AnalysisResult {
     cleanup: number;
     assist: number;
   };
-  itemUseStats: { 
-    heals: number, 
-    boosts: number, 
-    throwCount: number, 
-    lethalThrowCount: number, 
+  itemUseStats: {
+    heals: number,
+    boosts: number,
+    throwCount: number,
+    lethalThrowCount: number,
     stunDurationSum?: number,
     focusFireCount: number,
     crossfireExposureCount: number,
     distanceDamage: { short: number, mid: number, long: number }
-  }; 
+  };
   wasZoneMovingAtDeath: boolean; // [V11.8] 사망 시점 자기장 상태
   isolationData: IsolationData;
   tradeStats: TradeStats;
@@ -176,7 +176,9 @@ export interface AnalysisState {
   myRosterId: string;
   matchStartTime: number;
   gameMode: string; // [V16] 솔로 모드 판정용
-  
+  mapName: string;   // [V26.0] 지도 리플레이용 맵 이름
+  mapSize: number;   // [V26.0] 지도 스케일링용 맵 크기
+
   // 상황별 데이터 추적
   playerCombatData: Map<string, any>;
   victimDamage: Map<string, any>;
@@ -185,14 +187,14 @@ export interface AnalysisState {
   playerAliveStatus: Map<string, string | boolean>;
   teamMapping: Map<string, string>;
   teamAliveMembers: Map<string, Set<string>>;
-  
+
   // 이벤트 큐/셋
   myAttackEvents: Set<number>;
   myDamageEvents: any[];
   totalReviveEvents: any[];
   teammateKnockEvents: number[];
   myActionTimestamps: number[];
-  
+
   // 지표용 누적 변수
   totalIsolationSum: number;
   isolationSampleCount: number;
@@ -206,7 +208,7 @@ export interface AnalysisState {
   combatIsolationCount: number;
   hasLanded: boolean;
   currentPhase: number;
-  
+
   totalTeammateKnocks: number;
   totalSuppCount: number;
   totalTradeKills: number;
@@ -214,21 +216,21 @@ export interface AnalysisState {
   totalSmokeRescues: number;
   totalBaitCount: number;
   baitCooldown: Map<string, number>; // [V16] 미끼 플레이 중복 방지용
-  
+
   reactLatSum: number;
   reactCount: number;
   totalTimesHit: number;
   totalCrossfireCount: number;
   totalCoverAttempts: number;
   totalCoverSuccess: number;
-  
+
   reactionLatencies: number[];
   tradeLatencies: number[];
-  
+
   // [V11.2] 신규 트래커
   utilityTracker: Map<number, any>;
   utilitySummary: any;
-  
+
   // [V11.3] 정밀 트레이드용 dBNO 매핑
   // key: dBNOId, value: { attackerName, victimName, ts }
   dbnoMap: Map<number, { attacker: string, victim: string, weaponId: string, ts: number, attackerName?: string, attackerAccountId?: string, time?: string }>;
@@ -257,16 +259,16 @@ export interface AnalysisState {
   myRecentDamageTaken: Map<string, number>;
   recentAttacksOnUser: any[];
   itemUseSummary: any;
-  itemUseStats: { 
-    heals: number, 
-    boosts: number, 
-    throwCount: number, 
-    lethalThrowCount: number, 
+  itemUseStats: {
+    heals: number,
+    boosts: number,
+    throwCount: number,
+    lethalThrowCount: number,
     stunDurationSum?: number,
     focusFireCount: number,
     crossfireExposureCount: number,
     distanceDamage: { short: number, mid: number, long: number }
-  }; 
+  };
   phaseTimeline: any[];
   myDeathTime: number | null;
   deathDistance: number;
@@ -274,4 +276,13 @@ export interface AnalysisState {
   lastEdgeSampleTime?: number; // [V11.9.2] 끝선 플레이 샘플링 주기 관리
   timeline: TimelineEvent[];    // [V12.5] 전술 타임라인 이벤트 저장소
   isolationData?: IsolationData; // [V14] 현재 시점의 고립 데이터 (핸들러 참조용)
+
+  // [V26.0] 리플레이 지도 데이터 저장을 위한 신규 필드
+  mapEvents: any[];
+  mapZoneEvents: any[];
+  lastPosByPlayer: Map<string, { x: number, y: number }>;
+  lastRotByPlayer: Map<string, number>;
+  groggyMap: Map<string, { attackerAccountId: string, attackerName: string }>;
+  hasRealExplosions: boolean;
+  positionEventCount: number;
 }

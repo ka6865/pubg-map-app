@@ -13,7 +13,9 @@ import { CombatHandler } from './handlers/CombatHandler';
 import { ZoneHandler } from './handlers/ZoneHandler';
 import { UtilityHandler } from './handlers/UtilityHandler';
 import { PositionHandler } from './handlers/PositionHandler';
+import { MapReplayHandler } from './handlers/MapReplayHandler';
 import { getBenchmarkTier, MatchTierInput } from './benchmarkScore';
+import { MAP_SIZES } from './constants';
 
 export class AnalysisEngine {
   private state: AnalysisState;
@@ -108,7 +110,18 @@ export class AnalysisEngine {
       deathDistance: 0,
       recentTeammateDamageTaken: new Map(),
       isolationData: { isolationIndex: 0, combatIsolation: 0, deathIsolation: 0, minDist: 0, heightDiff: 0, isCrossfire: false, teammateCount: 0 },
-      timeline: []
+      timeline: [],
+      
+      // [V26.0] 리플레이 데이터 초기화
+      mapName: "",
+      mapSize: 819200,
+      mapEvents: [],
+      mapZoneEvents: [],
+      lastPosByPlayer: new Map(),
+      lastRotByPlayer: new Map(),
+      groggyMap: new Map(),
+      hasRealExplosions: false,
+      positionEventCount: 0
     };
 
     // 핸들러 주입
@@ -116,7 +129,8 @@ export class AnalysisEngine {
       new CombatHandler(this.state),
       new ZoneHandler(this.state),
       new UtilityHandler(this.state),
-      new PositionHandler(this.state)
+      new PositionHandler(this.state),
+      new MapReplayHandler(this.state)
     ];
   }
 
@@ -131,6 +145,10 @@ export class AnalysisEngine {
   ): AnalysisResult {
     // 1. 사전 매핑 및 기본 정보 주입
     this.state.gameMode = matchAttr.gameMode || "";
+    this.state.mapName = matchAttr.mapName || "Erangel";
+    const mapKey = this.state.mapName.toLowerCase().split('_')[0];
+    this.state.mapSize = MAP_SIZES[mapKey] || 819200;
+    
     this.buildMappings(rosters, participants);
 
     // 2. 정확한 시작 시점 (LogMatchStart) 찾기
@@ -357,7 +375,13 @@ export class AnalysisEngine {
          suppRate: this.state.totalTeammateKnocks > 0 ? (this.state.totalSuppCount / this.state.totalTeammateKnocks) * 100 : 0
        }, (this.state.gameMode || "").includes("solo")),
       isValidBenchmark: (myStats.timeSurvived || 0) >= 300,
-      timeline: this.state.timeline.sort((a, b) => a.ts - b.ts)
+      timeline: this.state.timeline.sort((a, b) => a.ts - b.ts),
+      // [V26.0] 지도 리플레이용 데이터 포함
+      mapData: {
+        events: this.state.mapEvents,
+        zoneEvents: this.state.mapZoneEvents,
+        teammates: Array.from(this.state.teamAccountIds)
+      }
     };
   }
 

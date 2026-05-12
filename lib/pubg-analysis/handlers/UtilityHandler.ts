@@ -103,8 +103,11 @@ export class UtilityHandler extends BaseHandler {
             this.underCoverKnocks.add(lastKnock);
           }
         }
-      } else if (itemId.includes("grenade") || itemId.includes("molotov") || itemId.includes("c4")) {
+      } else if (itemId.includes("grenade") || itemId.includes("c4")) {
         this.state.itemUseSummary.frags = (this.state.itemUseSummary.frags || 0) + 1;
+        this.state.itemUseStats.lethalThrowCount++;
+      } else if (itemId.includes("molotov")) {
+        this.state.itemUseSummary.molotovs = (this.state.itemUseSummary.molotovs || 0) + 1;
         this.state.itemUseStats.lethalThrowCount++;
       } else if (itemId.includes("flashbang") || itemId.includes("stun")) {
         this.state.itemUseSummary.stuns = (this.state.itemUseSummary.stuns || 0) + 1;
@@ -119,7 +122,22 @@ export class UtilityHandler extends BaseHandler {
 
     if (this.isMe(e.attacker)) {
       if (weapon.includes("flashbang") || weapon.includes("stun")) {
-        this.state.combatPressure.stunHits = (this.state.combatPressure.stunHits || 0) + 1;
+        // [V26.3] 적군인 경우에만 지표에 합산 (나 자신 및 아군 제외)
+        if (!this.isMe(e.victim) && !this.isTeammate(e.victim)) {
+          this.state.combatPressure.stunHits = (this.state.combatPressure.stunHits || 0) + 1;
+          this.state.combatPressure.utilityHits = (this.state.combatPressure.utilityHits || 0) + 1;
+          
+          // [V26.2] 지속 시간 누적 (LogPlayerTakeDamage에는 지속 시간이 없으므로 기본값 5초 부여)
+          this.state.itemUseStats.stunDurationSum = (this.state.itemUseStats.stunDurationSum || 0) + 5;
+          
+          // [V26.1] 타임라인 기록 (적중 시점)
+          this.state.timeline.push({
+            ts: (new Date(e._D).getTime()) - this.state.matchStartTime,
+            type: 'UTILITY_HIT',
+            weapon: 'FlashBang',
+            victim: normalizeName(e.victim?.name || "")
+          });
+        }
       }
     }
   }
@@ -301,12 +319,29 @@ export class UtilityHandler extends BaseHandler {
 
   private handleProjectileHit(e: any) {
     if (this.isMe(e.attacker)) {
+      const weaponId = (e.weaponId || "").toLowerCase();
+      const isStun = weaponId.includes("flashbang") || weaponId.includes("stun");
+
       const tracker = this.state.utilityTracker.get(e.attackId);
       if (tracker) {
         tracker.isLanded = true;
-        // [V14.2] 섬광탄 지속 시간 누적 (데이터가 있는 경우)
-        if (e.hitDuration && e.hitDuration > 0) {
-          this.state.itemUseStats.stunDurationSum = (this.state.itemUseStats.stunDurationSum || 0) + e.hitDuration;
+        if (isStun) tracker.hits = (tracker.hits || 0) + 1;
+      }
+
+      if (isStun) {
+        // [V26.3] 적군인 경우에만 지표에 합산 (나 자신 및 아군 제외)
+        if (!this.isMe(e.victim) && !this.isTeammate(e.victim)) {
+          this.state.combatPressure.stunHits = (this.state.combatPressure.stunHits || 0) + 1;
+          this.state.combatPressure.utilityHits = (this.state.combatPressure.utilityHits || 0) + 1;
+
+          // [V14.2] 섬광탄 지속 시간 누적 (데이터가 있는 경우)
+          // hitDuration은 일부 텔레메트리 제공자나 특정 버전에서 포함됨
+          if (e.hitDuration && e.hitDuration > 0) {
+            this.state.itemUseStats.stunDurationSum = (this.state.itemUseStats.stunDurationSum || 0) + e.hitDuration;
+          } else {
+            // [V26.1] hitDuration이 없을 경우 최소값 보정 (PUBG 기본 섬광 효과 약 5초 가정)
+            this.state.itemUseStats.stunDurationSum = (this.state.itemUseStats.stunDurationSum || 0) + 5;
+          }
         }
       }
     }
