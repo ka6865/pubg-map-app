@@ -80,10 +80,10 @@ export async function GET(request: Request) {
     const finalData = {
       matchId,
       startTime: matchData.data.attributes.createdAt,
-      teammates: result.mapData.teammates,
+      teammates: result.mapData?.teammates || [],
       teamNames: [nickname],
-      events: result.mapData.events,
-      zoneEvents: result.mapData.zoneEvents,
+      events: result.mapData?.events || [],
+      zoneEvents: result.mapData?.zoneEvents || [],
     };
 
     // [V26.0] 파싱된 최종 결과물을 스토리지에 저장

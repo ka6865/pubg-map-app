@@ -163,6 +163,11 @@ export interface AnalysisResult {
   };
   isValidBenchmark: boolean; // [V26.0] 벤치마크 유효성 여부 (300초 이상 생존)
   timeline: TimelineEvent[]; // [V12.5] 경기 타임라인 데이터
+  mapData?: { // [V26.0] 지도 리플레이용 데이터
+    events: any[];
+    zoneEvents: any[];
+    teammates: string[];
+  };
 }
 
 // 텔레메트리 이벤트 처리를 위한 내부 상태 타입
