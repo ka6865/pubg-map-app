@@ -95,7 +95,6 @@ export async function GET(request: Request) {
       .download(mapCachePath);
 
     if (!downloadError && fileData) {
-      console.log(`[TELEMETRY-API] Loading cached map data for ${matchId} (User: ${nickname}, Mode: ${mode})`);
       const text = await fileData.text();
       return NextResponse.json(JSON.parse(text), {
         headers: { "Cache-Control": "no-store" }

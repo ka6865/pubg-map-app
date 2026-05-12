@@ -6,6 +6,8 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+import { normalizeName } from "@/lib/pubg-analysis/utils";
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -15,7 +17,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Missing required data" }, { status: 400 });
     }
 
-    const lowerNickname = playerNickname.toLowerCase().trim();
+    const lowerNickname = normalizeName(playerNickname);
     const backgroundTasks = [];
 
     // 1. match_master_telemetry 저장 (슬림화된 텔레메트리)
@@ -66,7 +68,26 @@ export async function POST(request: Request) {
                 enemy_death_distance: finalResult.deathDistance,
                 survival_time: Math.round(stats.timeSurvived),
                 isolation_index: finalResult.isolationData.isolationIndex,
-                filter_version: 2
+                min_dist: finalResult.isolationData.minDist,
+                height_diff: finalResult.isolationData.heightDiff,
+                smoke_rate: (finalResult.totalSmokeRescues / Math.max(1, finalResult.totalTeammateKnocks)) * 100,
+                trade_rate: (finalResult.totalTradeKills / Math.max(1, finalResult.totalTeammateKnocks)) * 100,
+                reversal_rate: finalResult.duelStats?.reversalRate || 0,
+                duel_win_rate: finalResult.duelStats?.duelWinRate || 0,
+                trade_latency_ms: finalResult.tradeStats?.tradeLatencyMs || 0,
+                stun_count: finalResult.totalStunCount || 0,
+                stun_duration: finalResult.totalStunDuration || 0,
+                lethal_throw_count: finalResult.itemUseStats.lethalThrowCount || 0,
+                tier: finalResult.benchmark?.tier || 'C',
+                score: finalResult.benchmark?.score || 0,
+                combat_score: finalResult.benchmark?.breakdown?.combat || 0,
+                tactical_score: finalResult.benchmark?.breakdown?.tactical || 0,
+                survival_score: finalResult.benchmark?.breakdown?.survival || 0,
+                supp_count: finalResult.tradeStats?.suppCount || 0,
+                team_wipes: finalResult.tradeStats?.enemyTeamWipes || 0,
+                match_type: finalResult.matchType || 'Official',
+                death_phase: finalResult.deathPhase || 0,
+                filter_version: 4
             }, { onConflict: 'match_id,player_id' })
         );
     }

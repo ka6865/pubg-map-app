@@ -1,5 +1,22 @@
-// 파일 위치: app/api/pubg/player/route.ts
 import { NextResponse } from "next/server";
+
+// [V12.1] 네트워크 불안정 대응을 위한 재시도 헬퍼 함수
+async function withRetry<T>(fn: () => Promise<T>, retries = 3, delay = 1000): Promise<T> {
+  let lastError;
+  for (let i = 0; i < retries; i++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      lastError = err;
+      const isNetworkError = err.message?.includes('fetch') || err.code === 'ECONNRESET' || err.code === 'EPIPE' || err.message?.includes('timeout');
+      if (!isNetworkError) throw err;
+      console.warn(`[RETRY] Attempt ${i + 1} failed. Retrying in ${delay}ms...`, err.message);
+      await new Promise(res => setTimeout(res, delay));
+      delay *= 2;
+    }
+  }
+  throw lastError;
+}
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -21,10 +38,14 @@ export async function GET(request: Request) {
   };
 
   try {
-    const playerRes = await fetch(
+    const playerRes = await withRetry(() => fetch(
       `https://api.pubg.com/shards/${platform}/players?filter[playerNames]=${nickname}`,
-      { headers, next: { revalidate: 60 } }
-    );
+      { 
+        headers, 
+        next: { revalidate: 60 },
+        signal: AbortSignal.timeout(15000)
+      }
+    ));
     if (!playerRes.ok)
       throw new Error(
         playerRes.status === 404
@@ -38,10 +59,14 @@ export async function GET(request: Request) {
       (m: any) => m.id
     );
 
-    const seasonRes = await fetch(
+    const seasonRes = await withRetry(() => fetch(
       `https://api.pubg.com/shards/${platform}/seasons`,
-      { headers, next: { revalidate: 60 } }
-    );
+      { 
+        headers, 
+        next: { revalidate: 60 },
+        signal: AbortSignal.timeout(15000)
+      }
+    ));
     const seasonData = await seasonRes.json();
     // 🚀 [FIX] pc- 필터링을 완화하여 콘솔(Xbox, PSN) 시즌 데이터도 처리 가능하도록 수정
     const availableSeasons = seasonData.data
@@ -59,10 +84,14 @@ export async function GET(request: Request) {
     // 현재 시즌 요청 시 데이터가 없으면 데이터가 있는 최근 시즌 탐색 (최대 3개 시즌)
     if (!reqSeason) {
       try {
-        const checkRes = await fetch(
+        const checkRes = await withRetry(() => fetch(
           `https://api.pubg.com/shards/${platform}/players/${accountId}/seasons/${targetSeasonId}`,
-          { headers, next: { revalidate: 60 } }
-        );
+          { 
+            headers, 
+            next: { revalidate: 60 },
+            signal: AbortSignal.timeout(15000)
+          }
+        ));
         if (checkRes.ok) {
           const checkData = await checkRes.json();
           const stats = checkData.data.attributes.gameModeStats;
@@ -91,14 +120,14 @@ export async function GET(request: Request) {
     }
 
     const [rankedRes, normalRes] = await Promise.all([
-      fetch(
+      withRetry(() => fetch(
         `https://api.pubg.com/shards/${platform}/players/${accountId}/seasons/${targetSeasonId}/ranked`,
-        { headers, next: { revalidate: 60 } }
-      ),
-      fetch(
+        { headers, next: { revalidate: 60 }, signal: AbortSignal.timeout(15000) }
+      )),
+      withRetry(() => fetch(
         `https://api.pubg.com/shards/${platform}/players/${accountId}/seasons/${targetSeasonId}`,
-        { headers, next: { revalidate: 60 } }
-      ),
+        { headers, next: { revalidate: 60 }, signal: AbortSignal.timeout(15000) }
+      )),
     ]);
 
     const rankedStats = { solo: null as any, duo: null as any, squad: null as any };
