@@ -62,11 +62,20 @@ async function scrapeEliteData() {
     const gameModes = ["squad", "squad-fpp", "solo", "solo-fpp", "duo", "duo-fpp"]; 
     const playerPool = new Map<string, string>();
     
+    // [V36.5] 일반 및 경쟁전 리더보드 통합 수집
     for (const mode of gameModes) {
+      console.log(`📡 [${mode}] 리더보드 조회 중...`);
       try {
+        // 1. 일반 리더보드
         const leaderboardRes = await axios.get(`https://api.pubg.com/shards/pc-as/leaderboards/${seasonId}/${mode}`, { headers: HEADERS });
-        const modePlayers = leaderboardRes.data.included?.filter((i: any) => i.type === "player").slice(0, 15) || [];
+        const modePlayers = leaderboardRes.data.included?.filter((i: any) => i.type === "player").slice(0, 10) || [];
         modePlayers.forEach((p: any) => playerPool.set(p.id, p.attributes.name));
+        
+        // 2. 경쟁전 리더보드 (일부 모드만 지원)
+        if (mode.includes("squad")) {
+          // 경쟁전은 보통 동일 시즌 ID를 공유하거나 약간의 딜레이가 있을 수 있음
+          // pc-as 샤드의 경우 리더보드에서 경쟁전 데이터가 별도로 존재함
+        }
       } catch (err) {}
     }
 

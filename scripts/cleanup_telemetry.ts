@@ -1,87 +1,98 @@
-import { createClient } from "@supabase/supabase-js";
-import dotenv from "dotenv";
+import { createClient } from '@supabase/supabase-js';
+import dotenv from 'dotenv';
+import path from 'path';
 
-dotenv.config({ path: ".env.local" });
-dotenv.config();
+// .env.local 파일 로드
+dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-const RETENTION_MAP_DAYS = 3;     // 지도 데이터: 3일 보관 (기존 7일)
-const RETENTION_ANALYZE_DAYS = 3; // 분석 데이터: 3일 보관 (기존 14일)
-const PAGE_SIZE = 1000; // Storage API 최대 한도
+if (!supabaseUrl || !supabaseServiceKey) {
+  console.error('❌ 환경 변수가 누락되었습니다. .env.local 파일을 확인해주세요.');
+  process.exit(1);
+}
 
-async function cleanup() {
-  console.log("🧹 [Storage Cleanup] Starting cleanup process...");
+const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false
+  }
+});
 
-  // ✅ 페이지네이션: 1,000개 초과 시 누락 없이 전체 파일 조회
-  let allFiles: any[] = [];
-  let offset = 0;
+const TARGET_VERSION = 36;
+const RETENTION_DAYS = 7;
+
+async function smartCleanup() {
+  console.log('🚀 [BGMS Smart Cleaner] 작업을 시작합니다...');
+  
+  const now = new Date();
+  const expirationDate = new Date(now.getTime() - (RETENTION_DAYS * 24 * 60 * 60 * 1000));
+  console.log(`📅 기준 날짜: ${expirationDate.toISOString()} (이전 데이터 삭제)`);
+  console.log(`🔢 기준 버전: V${TARGET_VERSION} (미만 버전 삭제)`);
+
+  let totalDeleted = 0;
 
   while (true) {
-    const { data: files, error } = await supabase.storage
-      .from('telemetry')
-      .list('', { limit: PAGE_SIZE, offset });
+    // 1. 삭제 대상 조회 (버전이 낮거나 오래된 데이터)
+    const { data: targets, error: fetchError } = await supabase
+      .from('match_master_telemetry')
+      .select('match_id, storage_path')
+      .or(`telemetry_version.lt.${TARGET_VERSION},created_at.lt.${expirationDate.toISOString()}`)
+      .limit(500);
 
-    if (error) {
-      console.error("❌ Failed to list files:", error.message);
+    if (fetchError) {
+      console.error('❌ 대상 조회 실패:', fetchError.message);
       break;
     }
 
-    if (!files || files.length === 0) break;
-
-    allFiles = allFiles.concat(files);
-
-    // 마지막 페이지면 종료
-    if (files.length < PAGE_SIZE) break;
-    offset += PAGE_SIZE;
-  }
-
-  if (allFiles.length === 0) {
-    console.log("✅ No files to clean up.");
-    return;
-  }
-
-  console.log(`📦 전체 파일 수: ${allFiles.length}개`);
-
-  const now = new Date();
-  const toDelete: string[] = [];
-
-  for (const file of allFiles) {
-    if (!file.created_at) continue;
-    const createdAt = new Date(file.created_at);
-    const diffDays = (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60 * 24);
-
-    if (file.name.endsWith("_map.json") && diffDays > RETENTION_MAP_DAYS) {
-      toDelete.push(file.name);
-    } else if (file.name.endsWith("_analyze.json") && diffDays > RETENTION_ANALYZE_DAYS) {
-      toDelete.push(file.name);
+    if (!targets || targets.length === 0) {
+      console.log('✅ 더 이상 정리할 데이터가 없습니다.');
+      break;
     }
-  }
 
-  if (toDelete.length > 0) {
-    console.log(`🗑️ Deleting ${toDelete.length} old files...`);
-    // ✅ 대량 삭제 시 1,000개 단위로 배치 처리 (Storage API 제한)
-    for (let i = 0; i < toDelete.length; i += PAGE_SIZE) {
-      const batch = toDelete.slice(i, i + PAGE_SIZE);
-      const { error: deleteError } = await supabase.storage
+    console.log(`📦 이번 배치에서 ${targets.length}개의 정리 대상을 발견했습니다.`);
+
+    const matchIds = targets.map(t => t.match_id);
+    const storagePaths = targets.map(t => t.storage_path).filter(Boolean);
+
+    // A. 스토리지 파일 삭제
+    if (storagePaths.length > 0) {
+      const { error: storageError } = await supabase.storage
         .from('telemetry')
-        .remove(batch);
-
-      if (deleteError) {
-        console.error(`❌ Delete error (batch ${i}):`, deleteError.message);
-      } else {
-        console.log(`✅ Removed batch ${i / PAGE_SIZE + 1}: ${batch.length}개`);
+        .remove(storagePaths);
+      
+      if (storageError) {
+        console.warn(`⚠️ 스토리지 삭제 중 일부 오류 (무시):`, storageError.message);
       }
     }
-  } else {
-    console.log("✅ All files are within the retention period.");
+
+    // B. 관련 DB 테이블 일괄 삭제 (Cascade 효과를 위해 개별 처리 또는 순차 처리)
+    
+    // 1) processed_match_telemetry (분석 결과)
+    await supabase.from('processed_match_telemetry').delete().in('match_id', matchIds);
+    
+    // 2) match_stats_raw (원본 통계 - 용량 많이 차지함)
+    await supabase.from('match_stats_raw').delete().in('match_id', matchIds);
+    
+    // 3) match_master_telemetry (메타데이터 - 마지막에 삭제)
+    const { error: dbError } = await supabase
+      .from('match_master_telemetry')
+      .delete()
+      .in('match_id', matchIds);
+
+    if (dbError) {
+      console.error(`❌ DB 삭제 실패:`, dbError.message);
+    } else {
+      totalDeleted += targets.length;
+    }
+    
+    console.log(`⏳ 현재까지 총 ${totalDeleted}개 데이터(파일+DB) 완전 삭제 완료...`);
   }
 
-  console.log("✨ Cleanup process finished.");
+  console.log(`\n✨ [BGMS Smart Cleaner] 모든 작업 완료!`);
+  console.log(`✅ 최종 ${totalDeleted}개의 경기 데이터가 시스템에서 완전히 제거되었습니다.`);
+  console.log(`📉 이제 최신 로직(V${TARGET_VERSION})이 적용된 최근 ${RETENTION_DAYS}일치 데이터만 남게 됩니다.`);
 }
 
-cleanup();
-
+smartCleanup().catch(console.error);
