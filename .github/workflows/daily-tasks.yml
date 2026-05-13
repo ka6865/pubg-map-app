@@ -26,6 +26,7 @@ jobs:
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          CLEANUP_RETENTION_DAYS: 1 # 자동화 시에는 더 짧게 유지하여 용량 확보
         run: npx tsx scripts/cleanup_telemetry.ts
 
       - name: Run Smart Scraper
@@ -34,6 +35,9 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           APP_URL: ${{ secrets.APP_URL }}
+          ELITE_PLAYER_LIMIT: 5 # 인원 절반 축소
+          ELITE_MATCH_LIMIT: 3  # 매치 수 축소
+          ENABLE_SAMPLING: false # 샘플링 비활성화로 부하 최소화
         run: npx tsx scripts/scrape_elite.ts
 
       - name: Extract Bluezone Statistics
@@ -42,3 +46,13 @@ jobs:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: npx tsx scripts/extract_bluezone.ts
+
+      - name: Sync Patch Notes
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          GOOGLE_GEMINI_API_KEY: ${{ secrets.GOOGLE_GEMINI_API_KEY }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          ADMIN_SECRET_TOKEN: ${{ secrets.ADMIN_SECRET_TOKEN }}
+          NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
+        run: npx tsx scripts/sync_patch_notes.ts
