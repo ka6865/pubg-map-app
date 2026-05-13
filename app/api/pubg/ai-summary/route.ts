@@ -80,10 +80,12 @@ function aggregateMatches(matches: any[], lowerNickname: string, myAccountId?: s
   let totalDeathPhase = 0, totalBluezoneWaste = 0;
   let totalEdgePlay = 0, totalFatalDelay = 0;
   let totalFocusFireCount = 0, totalCrossfireExposureCount = 0;
+  let totalCircleLuck = 0, totalVehicleMastery = 0;
   const totalDistanceDamage = { short: 0, mid: 0, long: 0 };
   let totalIsolationIndexFinal = 0, totalCombatIso = 0, totalDeathIso = 0;
   let totalMinDist = 0, totalHeightDiff = 0, totalTeammateCountFinal = 0, isolationCountFinal = 0;
   let rankedCount = 0, normalCount = 0;
+  const weaponMatchCount: Record<string, number> = {};
 
   const backupLatencies: number[] = [], reactionLatencies: number[] = [];
   const goldenTimeFinal = { early: 0, mid1: 0, mid2: 0, late: 0 };
@@ -165,7 +167,7 @@ function aggregateMatches(matches: any[], lowerNickname: string, myAccountId?: s
       totalUtilityKills += u.killCount || 0;
     }
     totalMaxHitDist = Math.max(totalMaxHitDist, m.combatPressure?.maxHitDistance || 0);
-    totalTeamWipes += m.combatPressure?.enemyTeamWipes || 0;
+    totalTeamWipes += m.tradeStats?.enemyTeamWipes || 0;
 
     if (m.goldenTimeDamage) {
       goldenTimeFinal.early += (m.goldenTimeDamage.early || 0);
@@ -196,10 +198,19 @@ function aggregateMatches(matches: any[], lowerNickname: string, myAccountId?: s
       totalDistanceDamage.mid += (m.itemUseStats.distanceDamage.mid || 0);
       totalDistanceDamage.long += (m.itemUseStats.distanceDamage.long || 0);
     }
-    
+
     // [V42.1] 자기장 지표 합산 로직 복구 (전장 통제자 칭호 정확도 향상)
     totalEdgePlay += (m.edgePlay || m.zoneStrategy?.edgePlayCount || 0);
     totalFatalDelay += (m.zoneStrategy?.fatalDelayCount || 0);
+
+    // [V30.1] 신규 지표 합산
+    totalCircleLuck += (m.avgCircleLuck !== undefined ? m.avgCircleLuck : 50);
+    totalVehicleMastery += (m.avgVehicleMastery || 0);
+    if (Array.isArray(m.weaponMatchCount)) {
+      m.weaponMatchCount.forEach((w: string) => {
+        weaponMatchCount[w] = (weaponMatchCount[w] || 0) + 1;
+      });
+    }
   });
 
   const mLen = Math.max(1, matches.length);
@@ -265,7 +276,10 @@ function aggregateMatches(matches: any[], lowerNickname: string, myAccountId?: s
       long: Math.round(totalDistanceDamage.long / mLen),
     },
     totalSmokes,
-    itemUseSummary: { smokes: totalSmokes }
+    itemUseSummary: { smokes: totalSmokes },
+    avgCircleLuck: Math.round(totalCircleLuck / mLen),
+    avgVehicleMastery: Math.round(totalVehicleMastery / mLen),
+    weaponMatchCount
   };
 }
 
@@ -302,12 +316,16 @@ export async function POST(request: Request) {
     if (cachedMatches) {
       cachedMatches.forEach(m => {
         const fullResult = (m.data as any)?.fullResult;
-        if (fullResult) {
-          const pureId = m.match_id.includes(':') ? m.match_id.split(':').pop()! : m.match_id;
-          const normalizedData = { ...fullResult, matchId: pureId };
-          cachedMap.set(pureId, normalizedData);
-          cachedMap.set(m.match_id, normalizedData);
-        }
+          // [V30.1] RESULT_VERSION 체크 도입 - 버전이 낮으면 캐시 무시하고 재분석 유도
+          const version = (m.data as any)?.fullResult?.v || 0;
+          if (version >= RESULT_VERSION) {
+            const pureId = m.match_id.includes(':') ? m.match_id.split(':').pop()! : m.match_id;
+            const normalizedData = { ...fullResult, matchId: pureId };
+            cachedMap.set(pureId, normalizedData);
+            cachedMap.set(m.match_id, normalizedData);
+          } else {
+            console.log(`[AI-SUMMARY] Cache version mismatch for ${m.match_id}: ${version} < ${RESULT_VERSION}`);
+          }
       });
     }
 
@@ -427,14 +445,15 @@ export async function POST(request: Request) {
         ? "2. SPICY BOMBER: 솔로 스쿼드라는 핑계 뒤에 숨은 피지컬의 한계를 지적하십시오. '혼자 들어갔으면 전멸을 시켰어야지', '기절만 시키고 확킬을 못 내는 것은 실력 부족'이라며 더 높은 화력을 요구하십시오."
         : `2. SPICY BOMBER: 유저의 지표가 상위권(엘리트) 지표보다 미달하는 부분을 냉혹하게 찌르십시오. ${isCompetitiveFocus ? '[경쟁전 룰셋]을 고려할 때 이 정도 수치는 팀에게 민폐 수준임을 강조하십시오.' : '[일반전] 데이터임을 감안해도 처참한 수준임을 강조하십시오.'} 수치 격차를 언급하며 유저의 전술적 오만을 꺾으십시오.`,
       "- [STRICT KOREAN] 모든 응답에서 'DUO', 'SQUAD', 'SOLO', 'Benchmark'와 같은 영문 용어를 절대 사용하지 마십시오. 반드시 '듀오', '스쿼드', '솔로', '상위권 지표' 또는 '벤치마크'와 같은 한글 용어로 대체하여 출력하십시오.",
+      "- [INTELLIGENT ANALYSIS] 유저의 승률이나 딜량이 상위권 지표를 압도한다면, SPICY BOMBER조차도 \"피지컬은 괴물이지만...\" 이라는 식으로 실력 자체는 인정하며 시작해야 합니다. 무조건적인 비난은 '멍청한 AI'처럼 보입니다.",
       "- [ZERO HALLUCINATION] 데이터에 명시된 숫자를 1%의 오차도 없이 그대로 인용하십시오. 상위권 지표를 인용할 때는 반드시 정확한 소수점까지 포함하십시오.",
-      "- [UTILITY LOGIC] 연막은 '구출 및 생존' 목적, 섬광/수류탄은 '적 무력화 및 살상' 목적으로 구분하여 분석하십시오. \"연막을 많이 썼는데 적 무력화 시간이 짧다\"와 같은 인과관계가 틀린 비판은 절대 금지합니다.",
-      "- [DATA COMPARISON] 모든 피드백 항목에서 (내 수치 vs 상위권 수치) 형식을 사용하여 유저가 객관적인 실력 차이를 체감하게 하십시오. 수치 뒤에 반드시 '듀오', '스쿼드' 등 모드 명칭을 한글로 병기하십시오.",
-      "- 모든 분석 용어는 유저가 이해하기 쉬운 한국어 게임 용어를 사용하십시오. (예: 십자포화 -> 양각 노출, 고립 -> 혼자 떨어짐, 화력 -> 딜량, 주도권 -> 먼저 때리기)",
-      "- debateIssues는 반드시 3개를 작성하고, 각 issue의 userStats/benchmarkStats는 항목명(label)과 값이 완벽히 대칭되어야 합니다.",
+      "- [UTILITY LOGIC] 연막은 '구출 및 생존' 목적, 섬광/수류탄은 '적 무력화 및 살상' 목적으로 구분하여 분석하십시오.",
+      "- [DATA COMPARISON] 모든 피드백 항목에서 (내 수치 vs 상위권 수치) 형식을 사용하여 유저가 객관적인 실력 차이를 체감하게 하십시오.",
+      "- debateIssues는 반드시 3개를 작성하고, 각 issue의 userStats/benchmarkStats는 항목명(label)과 값의 단위(%, 회, m 등)가 완벽히 대칭되어야 합니다.",
       "반드시 아래 구조의 JSON 객체로만 응답하세요.",
       "{",
       '  "signature": "칭호", "signatureSub": "이유",',
+      '  "weaknessDiagnostic": "취약점 분석 및 코칭",',
       '  "debateIssues": [',
       '    {',
       '      "topic": "화력",',
@@ -479,14 +498,18 @@ export async function POST(request: Request) {
     userPrompt += `- 주력 모드: ${mainModeName.toUpperCase()} (신뢰도: ${tierConfidence}, 기반: ${mainModeCount}판)\n`;
 
     if (goldenTimeAvg) {
+      const smokeRescueRate = totalSmokeCount > 0 ? Math.round((totalSmokeRescues / totalSmokeCount) * 100) : 0;
       userPrompt += `\n### [전술 지표 분석]\n`;
       userPrompt += `- 교전 타이밍(GoldenTime): ${getGoldenTimePattern(goldenTimeAvg)}\n`;
       userPrompt += `- 평균 백업 속도(Trade): ${avgBackupLatency} (아군 기절 시 적 제압 시간)\n`;
       userPrompt += `- 대응 사격 속도(Reaction): ${avgReactionLatency} (피격 시 반격 시간)\n`;
       userPrompt += `- 유틸리티 활용: 총 투척 ${totalUtilityThrows}회 (연막 ${totalSmokes}회 사용)\n`;
-      userPrompt += `- 전술적 구출: 연막을 활용한 아군 구출 시도 ${totalSmokeCount}회 (성공: ${totalSmokeRescues}회)\n`;
+      userPrompt += `- 전술적 구출: 연막 활용 아군 구출 성공률 ${smokeRescueRate}% (시도: ${totalSmokeCount}회, 성공: ${totalSmokeRescues}회)\n`;
+      userPrompt += `- 자기장 축복: ${totalStats.avgCircleLuck}% (자기장 중심부 진입 빈도)\n`;
+      userPrompt += `- 탈것 숙련도: ${totalStats.avgVehicleMastery}% (이동 거리 및 탈것 활용도)\n`;
     }
 
+    let trendsData = null;
     const matchesForTrend = detailedMatches.slice(0, 10);
     if (matchesForTrend.length >= 6) {
       const recentMatches = matchesForTrend.slice(0, 5);
@@ -496,12 +519,26 @@ export async function POST(request: Request) {
       if (recentStats && olderStats) {
         const dmgTrend = Math.round(recentStats.avgDamage - olderStats.avgDamage);
         const winTrend = Number((recentStats.avgDuelWinRate - olderStats.avgDuelWinRate).toFixed(1));
+        const luckTrend = Math.round(recentStats.avgCircleLuck - olderStats.avgCircleLuck);
+        const status = dmgTrend > 50 ? '📈 실력 상승세' : dmgTrend < -50 ? '📉 컨디션 하락세' : '➡️ 안정권 유지';
+
+        trendsData = {
+          dmgTrend,
+          winTrend,
+          luckTrend,
+          status,
+          recent: { damage: Math.floor(recentStats.avgDamage), winRate: recentStats.avgDuelWinRate, luck: recentStats.avgCircleLuck },
+          older: { damage: Math.floor(olderStats.avgDamage), winRate: olderStats.avgDuelWinRate, luck: olderStats.avgCircleLuck }
+        };
+
         userPrompt += `\n### [최근 트렌드 (최근 5판 vs 이전 5판)]\n`;
         userPrompt += `- 딜량 변화: ${Math.floor(olderStats.avgDamage)} → ${Math.floor(recentStats.avgDamage)} (${dmgTrend >= 0 ? '+' : ''}${dmgTrend})\n`;
         userPrompt += `- 교전 승률: ${olderStats.avgDuelWinRate}% → ${recentStats.avgDuelWinRate}% (${winTrend >= 0 ? '+' : ''}${winTrend}%)\n`;
-        userPrompt += `- 종합 추세: ${dmgTrend > 50 ? '📈 실력 상승세' : dmgTrend < -50 ? '📉 컨디션 하락세' : '➡️ 안정권 유지'}\n`;
+        userPrompt += `- 자기장 운: ${olderStats.avgCircleLuck}% → ${recentStats.avgCircleLuck}% (${luckTrend >= 0 ? '+' : ''}${luckTrend}%)\n`;
+        userPrompt += `- 종합 추세: ${status}\n`;
       }
     }
+
 
     let maxMatches = 0;
     let mainUserTier = "C";
@@ -593,43 +630,44 @@ export async function POST(request: Request) {
 
     const mainModeStats = { ...aggregateMatches(groups[mainModeName] || [], lowerNickname, myAccountId), modeDistribution: { main: mainModeName } };
     const roleInfo = classifyRole(mainModeStats, mainBench, mainUserTier);
-    userPrompt += `\n### [유저 전술적 정체성]\n- 부여된 칭호: ${roleInfo.title}\n- 전술 직업군: ${roleInfo.roleLabel}\n- 특징 요약: ${roleInfo.description}\n- 시그니처 무기: ${roleInfo.signatureWeapon} (${roleInfo.signatureWeaponStats?.kills}킬, ${roleInfo.signatureWeaponStats?.dbnos}기절)\n`;
+    userPrompt += `\n### [유저 전술적 정체성]\n- 부여된 칭호: ${roleInfo.title}\n- 전술 직업군: ${roleInfo.roleLabel}\n- 특징 요약: ${roleInfo.description}\n- 주요 취약점: ${roleInfo.weakness || "식별된 약점 없음 (완성형)"}\n- 시그니처 무기: ${roleInfo.signatureWeapon} (${roleInfo.signatureWeaponStats?.kills}킬, ${roleInfo.signatureWeaponStats?.dbnos}기절, 사용 일관성: ${roleInfo.signatureWeaponStats?.consistency}%)\n`;
+    userPrompt += `\n[INSTRUCTION] 'weaknessDiagnostic' 필드에 위 '주요 취약점'을 바탕으로 유저를 매섭게 꾸짖거나(SPICY) 따뜻하게 격려(KIND)하는 2~3문장 분량의 진단을 작성하십시오.`;
 
     // [V43.0] AI 실패 시 사용할 시스템 템플릿 요약 (UX 보험)
     const generateFallbackContent = () => {
       const { duelStats, tactical, overallTier } = precomputedVisuals;
-      // [V43.2] UI 컴포넌트(signature, debateIssues, finalVerdict)와 완벽히 호응하는 구조로 재설계
       return JSON.stringify({
-        signature: roleInfo.title,
-        signatureSub: roleInfo.description,
+        signature: roleInfo.title || "미확인 전술가",
+        signatureSub: roleInfo.roleLabel || "분석 대기 중",
+        weaknessDiagnostic: roleInfo.weakness || "현재 지표상 뚜렷한 약점이 발견되지 않았습니다.",
         debateIssues: [
           {
-            topic: "교전 결정력",
-            question: "이 유저의 승률은 티어 평균 대비 적절한가?",
-            spicyOpinion: `승률 ${duelStats.winRate}은 벤치마크 지표에 못 미칩니다. 더 과감한 교전 설계가 필요합니다.`,
-            kindOpinion: `${overallTier} 티어에서 이 정도의 승률은 충분히 잠재력이 있음을 시사합니다.`,
-            winner: "draw",
-            reason: "AI 서버 지연으로 시스템 엔진이 산출한 지표 기반 분석입니다.",
-            evaluation: "교전 지표는 안정적이나 결정력 보강이 필요합니다.",
+            topic: "전투력",
+            question: "교전 승률과 결정력이 충분한가?",
+            spicyOpinion: `승률 ${duelStats.winRate}은 나쁘지 않지만, 반응 속도 ${avgReactionLatency}는 개선이 필요합니다.`,
+            kindOpinion: `상위권 평균을 상회하는 ${duelStats.winRate}의 승률은 매우 안정적인 전투력을 증명합니다.`,
+            winner: parseInt(duelStats.winRate) > 50 ? "kind" : "spicy",
+            reason: "데이터 기반 자동 판정 결과입니다.",
+            evaluation: parseInt(duelStats.winRate) > 50 ? "전투력은 합격점입니다." : "교전 정교함이 더 필요합니다.",
             userStats: [{ label: "교전 승률", value: duelStats.winRate }],
             benchmarkStats: [{ label: "상위권 평균", value: (mainBench?.avgDuelWinRate || 50) + "%" }]
           },
           {
-            topic: "팀워크",
-            question: "유틸리티와 백업 속도는 충분한가?",
-            spicyOpinion: `연막탄 활용률 ${tactical.smokeRate}은 팀을 살리기엔 너무 소극적입니다.`,
-            kindOpinion: `중요한 교전마다 보여주는 백업 속도는 팀원들에게 큰 힘이 됩니다.`,
-            winner: "draw",
-            reason: "데이터 통계 기반 자동 생성 결과입니다.",
-            evaluation: "유틸리티 사용 빈도를 높여 생존율을 극대화하십시오.",
-            userStats: [{ label: "연막 사용률", value: tactical.smokeRate }],
-            benchmarkStats: [{ label: "상위권 평균", value: (mainBench?.avgSmokeRate || 30) + "%" }]
+            topic: "기동력",
+            question: "탈것을 활용한 운영이 원활한가?",
+            spicyOpinion: `탈것 숙련도 ${totalStats.avgVehicleMastery}%는 기동 반경이 좁음을 의미합니다.`,
+            kindOpinion: `필요한 순간에 적절히 탈것을 활용하여 포지셔닝을 유지하고 있습니다.`,
+            winner: totalStats.avgVehicleMastery > 40 ? "kind" : "spicy",
+            reason: "이동 거리 데이터를 기반으로 한 운영 분석입니다.",
+            evaluation: totalStats.avgVehicleMastery > 40 ? "운영 기동성이 훌륭합니다." : "차량 확보 및 기동 훈련이 필요합니다.",
+            userStats: [{ label: "탈것 숙련도", value: totalStats.avgVehicleMastery + "%" }],
+            benchmarkStats: [{ label: "상위권 평균", value: "50%" }]
           }
         ],
-        finalVerdict: "현재 구글 AI 서비스의 일시적 지연으로 인해 시스템 엔진이 직접 분석한 결과입니다. 전반적인 지표는 우수하며, 위에 제시된 세부 항목들을 참고하여 플레이를 보완하십시오.",
+        finalVerdict: "구글 AI 서버 지연으로 인해 시스템 엔진이 지표를 바탕으로 자동 분석한 결과입니다. 차량 활용도와 반응 속도 개선에 집중하신다면 더 높은 티어로 올라갈 수 있습니다.",
         actionItems: [
-          { icon: "🎯", title: "교전 집중력 강화", desc: "1:1 상황에서 주도권을 잡는 연습이 필요합니다." },
-          { icon: "💨", title: "연막 활용 극대화", desc: "팀원 구출 시 연막탄을 더 적극적으로 활용하세요." }
+          { icon: "🏎️", title: "차량 운영 최적화", desc: "자기장 변화에 맞춰 선제적으로 차량을 확보하고 기동하십시오." },
+          { icon: "⚡", title: "반응성 개선", desc: "피격 시 즉각적인 대응 사격과 엄폐물 확보 훈련이 필요합니다." }
         ]
       });
     };
@@ -654,9 +692,9 @@ export async function POST(request: Request) {
           safetySettings
         });
 
-        // [V43.0] 12초 타임아웃 적용 - AI 응답이 너무 늦으면 다음 모델로 즉시 전환
+        // [V16.0] 타임아웃을 20초로 연장 (유저 요청)
         const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("Timeout")), 12000)
+          setTimeout(() => reject(new Error("Timeout")), 20000)
         );
 
         streamResult = await Promise.race([
@@ -709,7 +747,13 @@ export async function POST(request: Request) {
         } : null
       },
       mapStats: mapStatsResult,
+      trends: trendsData,
+      entertainment: {
+        circleLuck: mainModeStats.avgCircleLuck,
+        vehicleMastery: mainModeStats.avgVehicleMastery
+      }
     };
+
 
     const encoder = new TextEncoder();
     return new Response(new ReadableStream({
@@ -752,7 +796,14 @@ export async function POST(request: Request) {
           controller.close();
         }
       }
-    }), { headers: { "Content-Type": "application/x-ndjson", "Cache-Control": "no-cache" } });
+    }), {
+      headers: {
+        "Content-Type": "application/x-ndjson",
+        "Cache-Control": "no-cache, no-transform",
+        "Connection": "keep-alive",
+        "X-Content-Type-Options": "nosniff"
+      }
+    });
   } catch (error: any) {
     console.error("[AI-SUMMARY] CRITICAL ERROR:", error.message || error);
     return NextResponse.json({ error: error.message }, { status: 500 });

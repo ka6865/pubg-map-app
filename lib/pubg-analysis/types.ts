@@ -38,7 +38,9 @@ export interface UtilityStats {
   totalDamage: number;
   killCount: number;
   accuracy: number;
+  accuracyRaw?: number;
   avgDamagePerThrow: number;
+
   fragHits?: number;
   molotovHits?: number;
 }
@@ -168,6 +170,10 @@ export interface AnalysisResult {
     zoneEvents: any[];
     teammates: string[];
   };
+  // [V16.0] 신규 엔터테인먼트 지표
+  avgCircleLuck?: number;
+  avgVehicleMastery?: number;
+  weaponMatchCount?: string[];
 }
 
 // 텔레메트리 이벤트 처리를 위한 내부 상태 타입
@@ -276,6 +282,13 @@ export interface AnalysisState {
   myDeathTime: number | null;
   deathDistance: number;
   recentTeammateDamageTaken: Map<string, number>; // [V11.7] 미끼 플레이 추적용
+  // [V16.0] 신규 전술 지표 추적
+  circleLuckSum: number;
+  circleLuckCount: number;
+  vehicleDistance: number;
+  weaponMatchCount: Set<string>; // 이 매치에서 사용된 무기 목록
+  lastMyLoc?: Location; // [V16.0] 이동 거리 계산용
+
   lastEdgeSampleTime?: number; // [V11.9.2] 끝선 플레이 샘플링 주기 관리
   timeline: TimelineEvent[];    // [V12.5] 전술 타임라인 이벤트 저장소
   isolationData?: IsolationData; // [V14] 현재 시점의 고립 데이터 (핸들러 참조용)

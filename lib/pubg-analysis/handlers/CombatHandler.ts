@@ -103,7 +103,7 @@ export class CombatHandler extends BaseHandler {
 
         const attackerLoc = e.attacker?.location || e.attacker?.loc;
         const victimLoc = e.victim?.location || e.victim?.loc;
-        const dist = calcDist3D(attackerLoc, victimLoc) / 100;
+        const dist = calcDist3D(attackerLoc, victimLoc);
         if (dist !== 9.99) {
           const distM = Math.round(dist);
           this.state.combatPressure.maxHitDistance = Math.max(this.state.combatPressure.maxHitDistance, distM);
@@ -167,7 +167,7 @@ export class CombatHandler extends BaseHandler {
       this.updateDuelOutcome(attacker, e.victim, true);
       const killerLoc = attacker?.location || attacker?.loc;
       const victimLoc = e.victim?.location || e.victim?.loc;
-      const dist = Math.round(calcDist3D(killerLoc, victimLoc) / 100);
+      const dist = Math.round(calcDist3D(killerLoc, victimLoc));
 
       this.state.timeline.push({
         ts: ts - this.state.matchStartTime,
@@ -256,7 +256,7 @@ export class CombatHandler extends BaseHandler {
       const attackerObj = e.killer || e.attacker || e.finisher;
       const killerLoc = attackerObj?.location || attackerObj?.loc;
       const victimLoc = e.victim?.location || e.victim?.loc;
-      const dist = Math.round(calcDist3D(killerLoc, victimLoc) / 100);
+      const dist = Math.round(calcDist3D(killerLoc, victimLoc));
 
       this.state.timeline.push({
         ts: ts - this.state.matchStartTime,
@@ -332,7 +332,7 @@ export class CombatHandler extends BaseHandler {
       const attackerObj = e.killer || e.finisher || e.attacker;
       const killerLoc = attackerObj?.location || attackerObj?.loc;
       const myLoc = this.state.playerLocations.get(this.state.lowerNickname);
-      if (killerLoc && myLoc) this.state.deathDistance = Math.round(calcDist3D(killerLoc, myLoc) / 100);
+      if (killerLoc && myLoc) this.state.deathDistance = Math.round(calcDist3D(killerLoc, myLoc));
       this.state.timeline.push({
         ts: ts - this.state.matchStartTime,
         type: 'DIED',

@@ -86,7 +86,7 @@ export class UtilityHandler extends BaseHandler {
               if (knockedTeammate && myLoc) {
                 const tLoc = this.state.playerLocations.get(knockedTeammate);
                 if (tLoc) {
-                  const dist = calcDist3D(myLoc, tLoc) / 100; // m 단위
+                  const dist = calcDist3D(myLoc, tLoc); // 이미 m 단위
                   return dist < 40; // [V38.3] 거리 판정 상향 (40m)
                 }
               }
@@ -218,7 +218,7 @@ export class UtilityHandler extends BaseHandler {
             if (knockedTeammate && myLoc) {
               const tLoc = this.state.playerLocations.get(knockedTeammate);
               if (tLoc) {
-                const dist = calcDist3D(myLoc, tLoc) / 100;
+                const dist = calcDist3D(myLoc, tLoc);
                 return dist < 40; // [V38.3] 거리 판정 상향 (20m -> 40m) 
               }
             }
@@ -270,7 +270,7 @@ export class UtilityHandler extends BaseHandler {
           if (knockedTeammate && myLoc) {
             const tLoc = this.state.playerLocations.get(knockedTeammate);
             if (tLoc) {
-              const dist = calcDist3D(myLoc, tLoc) / 100;
+              const dist = calcDist3D(myLoc, tLoc);
               return dist < 40;
             }
           }
