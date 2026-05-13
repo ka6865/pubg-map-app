@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense, useRef, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Camera, Copy, Download, Share2 } from "lucide-react";
+import { Camera, Copy, Download, ImageDown, Share2 } from "lucide-react";
 
 interface Comparison {
   key: string;
@@ -51,7 +51,7 @@ function BattleContent() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [shareMessage, setShareMessage] = useState<string | null>(null);
-  const [shareBusy, setShareBusy] = useState<"share" | "copy" | "download" | "image" | null>(null);
+  const [shareBusy, setShareBusy] = useState<"share" | "copy" | "download" | "image" | "imageCopy" | null>(null);
 
   const buildShareUrl = (player1: string, player2: string) => {
     if (typeof window === "undefined") return "";
@@ -68,9 +68,9 @@ function BattleContent() {
   const buildBattlePath = (player1: string, player2: string) =>
     `/stats/battle?nick1=${encodeURIComponent(player1)}&nick2=${encodeURIComponent(player2)}`;
 
-  const handleBattle = useCallback(async (n1Override?: string, n2Override?: string) => {
-    const n1 = (n1Override ?? nick1).trim();
-    const n2 = (n2Override ?? nick2).trim();
+  const runBattle = useCallback(async (player1: string, player2: string) => {
+    const n1 = player1.trim();
+    const n2 = player2.trim();
     if (!n1 || !n2) return;
     
     setLoading(true);
@@ -94,7 +94,11 @@ function BattleContent() {
     } finally {
       setLoading(false);
     }
-  }, [nick1, nick2, router]);
+  }, [router]);
+
+  const handleBattle = useCallback(() => {
+    void runBattle(nick1, nick2);
+  }, [nick1, nick2, runBattle]);
 
   // 자동 검색 로직
   useEffect(() => {
@@ -108,9 +112,9 @@ function BattleContent() {
         return;
       }
       lastAutoBattleKeyRef.current = battleKey;
-      handleBattle(n1, n2);
+      void runBattle(n1, n2);
     }
-  }, [searchParams, handleBattle]);
+  }, [searchParams, runBattle]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") handleBattle();
@@ -186,6 +190,37 @@ function BattleContent() {
       clearShareMessageLater();
     } catch {
       setShareMessage("이미지 저장에 실패했습니다.");
+    } finally {
+      setShareBusy(null);
+    }
+  };
+
+  const handleCopyImage = async () => {
+    if (!result) return;
+
+    try {
+      setShareBusy("imageCopy");
+      const blob = await createShareImageBlob();
+
+      if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            [blob.type]: blob,
+          }),
+        ]);
+        setShareMessage("비교 이미지를 클립보드에 복사했어요.");
+      } else {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `bgms-battle-${result.nick1}-vs-${result.nick2}.png`;
+        link.click();
+        URL.revokeObjectURL(url);
+        setShareMessage("이미지 복사가 지원되지 않아 파일로 저장했어요.");
+      }
+      clearShareMessageLater();
+    } catch {
+      setShareMessage("이미지 복사에 실패했습니다.");
     } finally {
       setShareBusy(null);
     }
@@ -391,7 +426,7 @@ function BattleContent() {
                 )}
               </div>
 
-              <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-3">
                 <button
                   onClick={handleShareLink}
                   disabled={shareBusy !== null}
@@ -415,6 +450,14 @@ function BattleContent() {
                 >
                   <Camera size={16} />
                   {shareBusy === "image" ? "생성 중..." : "이미지 공유"}
+                </button>
+                <button
+                  onClick={handleCopyImage}
+                  disabled={shareBusy !== null}
+                  className="h-12 rounded-2xl border border-fuchsia-400/20 bg-fuchsia-500/10 text-fuchsia-200 font-black text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  <ImageDown size={16} />
+                  {shareBusy === "imageCopy" ? "복사 중..." : "이미지 복사"}
                 </button>
                 <button
                   onClick={handleDownloadImage}
