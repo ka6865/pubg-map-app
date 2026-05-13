@@ -20,18 +20,7 @@ export async function POST(request: Request) {
     const lowerNickname = normalizeName(playerNickname);
     const backgroundTasks = [];
 
-    // 1. match_master_telemetry 저장 (슬림화된 텔레메트리)
-    if (telData && matchAttr) {
-      backgroundTasks.push(
-        supabase.from("match_master_telemetry").upsert({
-          match_id: matchId,
-          map_name: matchAttr.mapName,
-          game_mode: matchAttr.gameMode,
-          telemetry_events: telData,
-          telemetry_version: 16
-        }, { onConflict: 'match_id' })
-      );
-    }
+    // 1. match_master_telemetry 저장은 match route에서 처리하므로 중복 방지를 위해 제거 (성능 최적화)
 
     // 2. match_stats_raw 저장
     if (rawParticipants && matchAttr) {
@@ -75,8 +64,6 @@ export async function POST(request: Request) {
                 reversal_rate: finalResult.duelStats?.reversalRate || 0,
                 duel_win_rate: finalResult.duelStats?.duelWinRate || 0,
                 trade_latency_ms: finalResult.tradeStats?.tradeLatencyMs || 0,
-                stun_count: finalResult.itemUseSummary?.stuns || 0,
-                stun_duration: finalResult.itemUseStats?.stunDurationSum || 0,
                 lethal_throw_count: finalResult.itemUseStats?.lethalThrowCount || 0,
                 tier: finalResult.benchmark?.tier || 'C',
                 score: finalResult.benchmark?.score || 0,

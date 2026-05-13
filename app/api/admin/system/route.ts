@@ -20,12 +20,9 @@ export async function POST(req: Request) {
 
       if (error) throw error;
 
-      // 2. AI 리포트 캐시도 함께 삭제
-      await supabaseAdmin.from("ai_summaries").delete().neq("nickname", "_dummy_");
-
       return NextResponse.json({
         success: true,
-        message: `모든 분석 및 AI 리포트 캐시 ${count || 0}개가 삭제되었습니다.`
+        message: `모든 분석 데이터 캐시 ${count || 0}개가 삭제되었습니다.`
       });
     }
 
@@ -45,10 +42,7 @@ export async function POST(req: Request) {
 
       if (error) throw error;
 
-      // 2. 해당 유저의 AI 리포트 캐시도 함께 삭제
-      await supabaseAdmin.from("ai_summaries").delete().eq("nickname", lowerNickname);
-
-      return NextResponse.json({ success: true, message: `${nickname}님의 분석 및 AI 리포트 캐시 ${count || 0}개가 삭제되었습니다.` });
+      return NextResponse.json({ success: true, message: `${nickname}님의 분석 데이터 캐시 ${count || 0}개가 삭제되었습니다.` });
     }
 
     if (action === "flush_match_cache") {

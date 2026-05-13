@@ -86,7 +86,7 @@ export default function BoardListClient({
     <div className="w-full flex justify-center pb-20">
       <div className="w-full max-w-[900px]">
         {/* 상단 필터 및 글쓰기 버튼 */}
-        <div className="flex justify-between items-center mb-4 gap-2">
+        <div className="flex justify-between items-center mb-6 gap-4">
           <div className="flex gap-2 overflow-x-auto no-scrollbar flex-1 py-1 px-1">
             {["전체", "추천", ...BOARD_CATEGORIES].map((f) => {
               const isActive = currentFilter === f;
@@ -94,10 +94,10 @@ export default function BoardListClient({
               return (
                 <Link key={f} href={href} className="shrink-0">
                   <button
-                    className={`px-3.5 py-1.5 rounded-full border text-xs whitespace-nowrap transition-all ${
+                    className={`px-4 py-2 rounded-lg border text-[13px] whitespace-nowrap transition-all duration-200 ${
                       isActive
-                        ? "border-[#F2A900] bg-[#F2A900] text-black font-bold"
-                        : "border-white/10 bg-white/5 text-white/50 hover:bg-white/10"
+                        ? "border-[#F2A900] bg-[#F2A900] text-black font-extrabold shadow-[0_0_15px_rgba(242,169,0,0.3)]"
+                        : "border-white/5 bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/70"
                     }`}
                   >
                     {f}
@@ -108,21 +108,22 @@ export default function BoardListClient({
           </div>
 
           <Link href="/board/write" className="shrink-0">
-            <button className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#F2A900] border-none rounded-lg font-bold text-[13px] text-black hover:bg-[#d4940a] active:scale-95 transition-all">
-              <PenLine size={14} strokeWidth={2.5} />
+            <button className="flex items-center gap-2 px-5 py-2 bg-[#F2A900] border-none rounded-lg font-black text-[14px] text-black hover:bg-[#d4940a] active:scale-95 transition-all shadow-[0_4px_12px_rgba(242,169,0,0.2)]">
+              <PenLine size={16} strokeWidth={3} />
               글쓰기
             </button>
           </Link>
         </div>
 
         {/* 게시글 목록 */}
-        <div className="bg-[#161616] rounded-xl border border-white/10 overflow-hidden">
+        <div className="bg-[#1a1a1a] rounded-2xl border border-white/5 overflow-hidden shadow-2xl">
           {posts.length === 0 ? (
-            <div className="py-16 text-center text-white/30">
-              <p className="text-sm">조건에 맞는 게시글이 없습니다</p>
+            <div className="py-24 text-center text-white/20">
+              <p className="text-base font-medium">등록된 게시글이 없습니다</p>
+              <p className="text-xs mt-2 opacity-50">첫 번째 주인공이 되어보세요!</p>
             </div>
           ) : isMobile ? (
-            <ul className="list-none p-0 m-0">
+            <ul className="list-none p-0 m-0 divide-y divide-white/5">
               {posts.map((post) => (
                 <PostItem 
                   key={post.id} 
@@ -134,15 +135,28 @@ export default function BoardListClient({
               ))}
             </ul>
           ) : (
-            <table className="w-full border-collapse text-[13px]">
+            <table className="w-full border-collapse">
               <thead>
-                <tr className="bg-white/5 border-b border-white/10">
-                  {["분류", "제목", "글쓴이", "작성일", "조회", "추천"].map((h) => (
-                    <th key={h} className="p-3 text-left text-[10px] font-bold tracking-widest uppercase text-white/30">{h}</th>
+                <tr className="bg-white/[0.02] border-b border-white/5">
+                  {[
+                    { label: "분류", width: "100px" },
+                    { label: "제목", width: "auto" },
+                    { label: "글쓴이", width: "120px" },
+                    { label: "작성일", width: "100px" },
+                    { label: "조회", width: "80px" },
+                    { label: "추천", width: "80px" }
+                  ].map((h) => (
+                    <th 
+                      key={h.label} 
+                      style={{ width: h.width }}
+                      className="p-4 text-left text-[11px] font-black tracking-widest uppercase text-white/20"
+                    >
+                      {h.label}
+                    </th>
                   ))}
                 </tr>
               </thead>
-              <tbody>
+              <tbody className="divide-y divide-white/[0.03]">
                 {posts.map((post) => (
                   <PostItem 
                     key={post.id} 

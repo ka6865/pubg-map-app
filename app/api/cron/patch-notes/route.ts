@@ -75,9 +75,13 @@ export async function GET(request: Request) {
     const force = searchParams.get("force") === "true";
     const manualUrl = searchParams.get("url"); // 수동 입력 URL
 
-    // 보안 인증 체크
-    const isCronAuth = process.env.CRON_SECRET && secret === process.env.CRON_SECRET;
-    const isAdminAuth = process.env.ADMIN_SECRET_TOKEN && secret === process.env.ADMIN_SECRET_TOKEN;
+    // 보안 인증 체크 (Query Param 및 Authorization Header 지원)
+    const authHeader = request.headers.get("Authorization");
+    const bearerToken = authHeader?.startsWith("Bearer ") ? authHeader.substring(7) : null;
+    
+    const isCronAuth = process.env.CRON_SECRET && (secret === process.env.CRON_SECRET || bearerToken === process.env.CRON_SECRET);
+    const isAdminAuth = process.env.ADMIN_SECRET_TOKEN && (secret === process.env.ADMIN_SECRET_TOKEN || bearerToken === process.env.ADMIN_SECRET_TOKEN);
+    
     if (!isCronAuth && !isAdminAuth && process.env.NODE_ENV === "production") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }

@@ -117,7 +117,8 @@ export default function GlobalHeader() {
     : "";
 
   const isBoardActive = pathname.startsWith("/board");
-  const isStatsActive = pathname.startsWith("/stats");
+  const isStatsActive = pathname.startsWith("/stats") && !pathname.startsWith("/stats/battle");
+  const isBattleActive = pathname.startsWith("/stats/battle");
   const isWeaponsActive = pathname.startsWith("/weapons");
   const isBackpackActive = pathname.startsWith("/backpack");
 
@@ -223,6 +224,21 @@ export default function GlobalHeader() {
                 AI 전적 검색
                 {isStatsActive && (
                   <span className="absolute bottom-[3px] left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-[#F2A900]" />
+                )}
+              </button>
+            </Link>
+
+            <Link href="/stats/battle" className="shrink-0">
+              <button
+                className={`relative h-8 px-3 rounded-lg font-extrabold text-[11px] uppercase whitespace-nowrap transition-all tracking-wide ${
+                  isBattleActive
+                    ? "bg-black/90 text-[#a855f7] shadow-sm"
+                    : "text-black/60 hover:bg-black/10 hover:text-black/80"
+                }`}
+              >
+                전적 비교
+                {isBattleActive && (
+                  <span className="absolute bottom-[3px] left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-[#a855f7]" />
                 )}
               </button>
             </Link>

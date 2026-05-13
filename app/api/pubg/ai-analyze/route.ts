@@ -40,7 +40,7 @@ export async function POST(request: Request) {
 - 전술 지원: 견제사격 ${tradeStats.suppCount || 0}회 (Elite Avg: ${eliteBenchmark.avgSuppCount || 3.0}회)
 - 위기 관리: 소생률 ${tradeStats.teammateKnocks > 0 ? Math.round((tradeStats.revCount / tradeStats.teammateKnocks) * 100) : 0}% (Elite Avg: ${eliteBenchmark.avgReviveRate || 80}%) / 연막 엄호율 ${tradeStats.teammateKnocks > 0 ? Math.round((tradeStats.smokeCount / tradeStats.teammateKnocks) * 100) : 0}% (Elite Avg: ${eliteBenchmark.avgSmokeRate || 60}%)
 - 공간 전술: 고립 지수 ${isolationData?.isolationIndex || "데이터 부족"} (Elite Avg: ${eliteBenchmark.avgIsolationIndex || 1.0}) / 아군 평균 거리: ${isolationData?.minDist || 0}m / 고도차 ${isolationData?.heightDiff || 0}m / 십자포화 노출: ${isolationData?.isCrossfire ? "있음" : "없음"}
-- 유틸리티 정밀: 총 투척 ${combatPressure.utilityStats?.throwCount || 0}회 / 정확도 ${combatPressure.utilityStats?.accuracy || 0}% / 섬광 적중 ${combatPressure.stunHits || 0}회
+- 유틸리티 정밀: 총 투척 ${combatPressure.utilityStats?.throwCount || 0}회 / 정확도 ${combatPressure.utilityStats?.accuracy || 0}% / 개당 평균 딜 ${combatPressure.utilityStats?.avgDamagePerThrow || 0}
 - 교전 압박: 압박 지수 ${combatPressure.pressureIndex || 0} (Elite Avg: ${eliteBenchmark.avgPressureIndex || 3.0}) / 투척물 딜량 ${combatPressure.utilityDamage || 0}
 - 운영 패턴: 사망 페이즈 ${matchData.deathPhase || 0} (Elite Avg: ${eliteBenchmark.avgDeathPhase || 6} 페이즈)
 - 팀 전멸 기여: ${tradeStats.enemyTeamWipes || 0}회
@@ -67,7 +67,7 @@ export async function POST(request: Request) {
       "- [투척물 분석 규칙 (V11.3)] ",
       "  * '정확도(Accuracy)'가 30% 이상이면 '폭파 전문가', 킬까지 있다면 '투척물 마스터' 칭호를 고려하십시오.",
       "  * '개당 평균 데미지'가 50 이상이면 적의 위치를 정확히 파악하고 던지는 '정밀 폭격기'로 칭송하십시오.",
-      "  * 딜량이 낮더라도 섬광탄 적중이 있다면 '교전 보조의 신'으로 극찬하십시오.",
+      "  * 딜량이 낮더라도 투척물 정확도가 높다면 '교전 보조의 신'으로 극찬하십시오.",
       "  * 투척물 딜량이 0이더라도 '정확도'가 존재한다면 절대 비난하지 말고 '교전 보조 능력이 탁월하다'고 강력하게 칭찬하십시오.",
       "- **핵심 규칙**: 불필요한 미사여구와 항목 나열을 절대 금지합니다. 칭호와 그에 대한 전술적 이유를 설명한 뒤, 하단에 정확히 3개의 핵심 피드백 문장만 제공하십시오.",
       "",
