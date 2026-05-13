@@ -189,7 +189,7 @@ function BattleContent() {
                   >
                     {/* 플레이어1 값 */}
                     <div className={`flex-1 text-right font-black text-xl ${n1Wins ? "text-indigo-400" : "text-white/50"}`}>
-                      {c.v1}{c.unit}
+                      {typeof c.v1 === 'number' ? c.v1.toFixed(1) : c.v1}{c.unit}
                     </div>
 
                     {/* 중앙: 항목명 + 승자 표시 */}
@@ -213,7 +213,7 @@ function BattleContent() {
 
                     {/* 플레이어2 값 */}
                     <div className={`flex-1 text-left font-black text-xl ${n2Wins ? "text-rose-400" : "text-white/50"}`}>
-                      {c.v2}{c.unit}
+                      {typeof c.v2 === 'number' ? c.v2.toFixed(1) : c.v2}{c.unit}
                     </div>
                   </div>
                 );

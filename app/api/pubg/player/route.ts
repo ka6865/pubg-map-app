@@ -46,12 +46,15 @@ export async function GET(request: Request) {
         signal: AbortSignal.timeout(15000)
       }
     ));
-    if (!playerRes.ok)
-      throw new Error(
-        playerRes.status === 404
-          ? "존재하지 않는 닉네임입니다."
-          : `API 에러: ${playerRes.status}`
-      );
+    if (!playerRes.ok) {
+      if (playerRes.status === 404) {
+        return NextResponse.json(
+          { error: "존재하지 않는 닉네임입니다. (닉네임 대소문자를 확인해주세요)" },
+          { status: 404 }
+        );
+      }
+      throw new Error(`PUBG API 에러: ${playerRes.status}`);
+    }
     const playerData = await playerRes.json();
     const accountId = playerData.data[0].id;
     const actualNickname = playerData.data[0].attributes.name;

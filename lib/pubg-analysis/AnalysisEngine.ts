@@ -121,7 +121,8 @@ export class AnalysisEngine {
       lastRotByPlayer: new Map(),
       groggyMap: new Map(),
       hasRealExplosions: false,
-      positionEventCount: 0
+      positionEventCount: 0,
+      matchEndRelativeTime: null
     };
 
     // 핸들러 주입
@@ -164,10 +165,19 @@ export class AnalysisEngine {
 
       // 타임라인 기록 제한: 나 또는 아군 중 한 명이라도 살아있으면 계속 기록
       const isMyTeamAlive = Array.from(this.state.teamNames).some(name => this.state.playerAliveStatus.get(name) !== false);
+      
+      // [V26.1] 부활/복귀전 관련 이벤트는 전멸 상태라도 무조건 처리해야 함
+      const eventType = e._T || "";
+      const isRecallEvent = [
+        "LogPlayerRevive", "LogPlayerRecall", "LogPlayerRecallShip", 
+        "LogPlayerRedeploy", "LogPlayerRedeployBRStart", "LogPlayerRedeployBrStart",
+        "LogPlayerCreate"
+      ].some(t => t.toLowerCase() === eventType.toLowerCase());
+      
       const isAfterTeamWipe = !isMyTeamAlive && this.state.myDeathTime && ts > (this.state.myDeathTime + 30000);
       const isWin = e._T === "LogMatchEnd" && this.state.playerAliveStatus.get(this.state.lowerNickname) !== false;
 
-      if (!isAfterTeamWipe || isWin) {
+      if (!isAfterTeamWipe || isWin || isRecallEvent) {
         // 엔진 공통 상태 관리 (타임라인 기록 포함)
         if (e._T === "LogPhaseStart" || e._T === "LogPhaseChange") {
           const phaseNum = e.phase !== undefined ? e.phase : 0;
@@ -179,6 +189,10 @@ export class AnalysisEngine {
               phase: phaseNum
             });
           }
+        }
+
+        if (e._T === "LogMatchEnd") {
+          this.state.matchEndRelativeTime = elapsed;
         }
 
         // 도메인 핸들러에게 위임
@@ -235,8 +249,17 @@ export class AnalysisEngine {
   private assembleResult(matchAttr: any, rosters: any[], participants: any[], myStats: any, teamStats: any[], eliteBenchmark: any): AnalysisResult {
     // [V12.5] 승리 이벤트 추가
     if (myStats.winPlace === 1) {
+      // 타임라인의 마지막 이벤트 시간 확인
+      const lastEventTs = this.state.timeline.length > 0 
+        ? Math.max(...this.state.timeline.map(e => e.ts)) 
+        : 0;
+
+      const victoryTs = this.state.matchEndRelativeTime !== null 
+        ? this.state.matchEndRelativeTime 
+        : Math.max(myStats.timeSurvived * 1000, lastEventTs + 1000);
+        
       this.state.timeline.push({
-        ts: myStats.timeSurvived * 1000,
+        ts: victoryTs,
         type: 'VICTORY'
       });
     }

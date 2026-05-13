@@ -87,7 +87,13 @@ export async function GET(request: Request) {
   const comparisons = METRICS.map((m) => {
     const v1 = avg1[m.key];
     const v2 = avg2[m.key];
-    const threshold = m.key === "damage" ? 20 : 2;
+    
+    // 지표별 변별력을 위한 임계값 조정 (무승부 방지)
+    let threshold = 0.1; 
+    if (m.key === "damage") threshold = 20;
+    else if (m.key === "death_phase") threshold = 0.5;
+    else if (m.key === "kills") threshold = 0.1;
+    
     const diff = Math.abs(v1 - v2);
     const winner: "nick1" | "nick2" | "draw" =
       diff < threshold ? "draw" : v1 > v2 ? "nick1" : "nick2";

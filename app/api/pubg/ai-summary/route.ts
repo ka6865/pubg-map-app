@@ -78,7 +78,7 @@ function aggregateMatches(matches: any[], lowerNickname: string, myAccountId?: s
   let totalDuelWins = 0, totalDuelLosses = 0, totalReversalWins = 0, totalReversalAttempts = 0;
   let totalUtilityThrows = 0, totalUtilityHits = 0, totalUtilityDamage = 0, totalUtilityKills = 0;
   let totalDeathPhase = 0, totalBluezoneWaste = 0;
-  const totalEdgePlay = 0, totalFatalDelay = 0;
+  let totalEdgePlay = 0, totalFatalDelay = 0;
   let totalFocusFireCount = 0, totalCrossfireExposureCount = 0;
   const totalDistanceDamage = { short: 0, mid: 0, long: 0 };
   let totalIsolationIndexFinal = 0, totalCombatIso = 0, totalDeathIso = 0;
@@ -196,6 +196,10 @@ function aggregateMatches(matches: any[], lowerNickname: string, myAccountId?: s
       totalDistanceDamage.mid += (m.itemUseStats.distanceDamage.mid || 0);
       totalDistanceDamage.long += (m.itemUseStats.distanceDamage.long || 0);
     }
+    
+    // [V42.1] 자기장 지표 합산 로직 복구 (전장 통제자 칭호 정확도 향상)
+    totalEdgePlay += (m.edgePlay || m.zoneStrategy?.edgePlayCount || 0);
+    totalFatalDelay += (m.zoneStrategy?.fatalDelayCount || 0);
   });
 
   const mLen = Math.max(1, matches.length);
@@ -358,11 +362,10 @@ export async function POST(request: Request) {
       avgDamageImpact, topBadges, goldenTimeAvg, killContribFinal, avgDeathPhase, totalBluezoneWaste, mLen,
       totalTeammateKnocks, totalSuppCount, totalTradeKills, totalSmokeCount, totalRevCount,
       totalBaitCount,
-      totalEdgePlay, totalFatalDelay, totalMaxHitDist,
-      totalTeamWipes, isolationCountFinal, totalIsolationIndexFinal, totalMinDist, totalHeightDiff, totalCrossfireCount, totalTeammateCountFinal,
-      totalUtilityThrows, totalUtilityHits, totalUtilityDamage, totalUtilityKills, rankedCount, normalCount,
+      isolationCountFinal, totalIsolationIndexFinal, totalMinDist, totalHeightDiff, totalCrossfireCount, totalTeammateCountFinal,
+      totalUtilityThrows, rankedCount, normalCount,
       totalInitiativeAttempts, totalInitiativeSuccess, totalSmokeRescues,
-      totalFocusFireCount, totalCrossfireExposureCount, totalDistanceDamage, totalSmokes
+      totalSmokes
     } = totalStats;
 
     // [V45.0] 모든 분석(통계, 그룹화, 역할 분류)은 '잘한 5판'을 기준으로 수행하여 유저의 잠재력을 극대화하여 분석
@@ -510,7 +513,7 @@ export async function POST(request: Request) {
 
       const gMatchIds = gMatches.map((m: any) => m.matchId || m.match_id || m.id).filter(Boolean);
 
-      const combinedScores = gMatchIds.map((id, index) => {
+      const combinedScores = gMatchIds.map((id) => {
         if (!id || typeof id !== 'string') return null;
         const normalizedId = id.includes(':') ? id.split(':').pop() : id;
 
@@ -634,7 +637,6 @@ export async function POST(request: Request) {
     const genAI = new GoogleGenerativeAI(geminiApiKey);
     const modelsToTry = ["gemini-3.1-flash-lite-preview", "gemini-3-flash-preview", "gemini-2.5-flash"];
     let streamResult = null;
-    let lastError = null;
 
     const safetySettings = [
       { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
@@ -668,7 +670,6 @@ export async function POST(request: Request) {
         }
       } catch (err: any) {
         console.warn(`[AI-SUMMARY] Model ${modelName} failed (${err.message}), trying next...`);
-        lastError = err;
       }
     }
 
@@ -746,7 +747,7 @@ export async function POST(request: Request) {
             const fallback = generateFallbackContent();
             controller.enqueue(encoder.encode(JSON.stringify({ type: "chunk", data: "\n" + fallback + "\n" }) + "\n"));
             controller.enqueue(encoder.encode(JSON.stringify({ type: "done", valid: true }) + "\n"));
-          } catch (innerE) { }
+          } catch { }
         } finally {
           controller.close();
         }

@@ -10,14 +10,17 @@ export interface Location {
 
 export interface TimelineEvent {
   ts: number;           // 경기 시작 후 경과 시간 (ms)
-  type: 'KILL' | 'KNOCK' | 'FINISH' | 'REVIVE' | 'DIED' | 'DOWNED' | 'TEAM_KNOCK' | 'TEAM_KILL' | 'TEAM_REVIVE' | 'TEAM_DIED' | 'RECALL' | 'VICTORY' | 'DAMAGE_TAKEN' | 'ITEM_USE' | 'PHASE_START' | 'UTILITY_HIT';
+  type: 'KILL' | 'KNOCK' | 'FINISH' | 'REVIVE' | 'DIED' | 'DOWNED' | 'TEAM_KNOCK' | 'TEAM_KILL' | 'TEAM_REVIVE' | 'TEAM_DIED' | 'RECALL' | 'TEAM_RECALL' | 'REDEPLOY' | 'VICTORY' | 'DAMAGE_TAKEN' | 'ITEM_USE' | 'PHASE_START' | 'UTILITY_HIT';
   weapon?: string;      // 사용 무기
   victim?: string;      // 피해자
   attacker?: string;    // 가해자
   distance?: number;    // 거리 (m)
   isHeadshot?: boolean; // 헤드샷 여부
   phase?: number;       // 페이즈 번호
+  isMe?: boolean;       // [V26.1] 본인 활동 여부 (UI 렌더링 최적화용)
+  isRecall?: boolean;   // [V26.1] 블루칩 부활 여부
 }
+
 
 export interface PlayerStats {
   name: string;
@@ -285,4 +288,5 @@ export interface AnalysisState {
   groggyMap: Map<string, { attackerAccountId: string, attackerName: string }>;
   hasRealExplosions: boolean;
   positionEventCount: number;
+  matchEndRelativeTime: number | null; // [V12.5] 승리 이벤트의 정확한 기록을 위한 매치 종료 상대 시간
 }

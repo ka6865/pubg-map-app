@@ -45,15 +45,17 @@ function sampleParticipants(rawStats: any[], excludeName: string): string[] {
   const n = rawStats.length;
   if (n === 0) return [];
 
-  const sIndex = Math.floor(n * 0.05);
-  const bIndex = Math.floor(n * 0.40);
+  const sIndex = Math.floor(n * 0.05); // S티어 후보
+  const bIndex = Math.floor(n * 0.40); // B티어 후보
+  const cIndex = Math.floor(n * 0.70); // C티어 후보
 
   const reps = new Set<string>();
   
   if (rawStats[sIndex] && rawStats[sIndex].player_id !== excludeName) reps.add(rawStats[sIndex].player_id);
   if (rawStats[bIndex] && rawStats[bIndex].player_id !== excludeName) reps.add(rawStats[bIndex].player_id);
+  if (rawStats[cIndex] && rawStats[cIndex].player_id !== excludeName) reps.add(rawStats[cIndex].player_id);
 
-  return Array.from(reps).slice(0, 2);
+  return Array.from(reps).slice(0, 3);
 }
 
 async function scrapeEliteData() {

@@ -68,15 +68,20 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
   }, []);
 
   useEffect(() => {
-    // 🎯 React 19 대응: 상태 초기화는 useState 이니셜라이저로 이동됨
-    // 닉네임과 플랫폼만 마지막 검색 기록에서 가져옴
-    const savedLast = localStorage.getItem(STORAGE_KEY_LAST_SEARCH);
-    if (savedLast) {
-      const { nickname: lastNick, platform: lastPlat } = JSON.parse(savedLast);
-      if (lastNick) setNickname(lastNick);
-      if (lastPlat) setPlatform(lastPlat);
+    // 🎯 React 19 대응: URL 파라미터가 없을 때만 localStorage에서 마지막 검색 기록을 가져옴
+    if (!initialNickname) {
+      const savedLast = localStorage.getItem(STORAGE_KEY_LAST_SEARCH);
+      if (savedLast) {
+        try {
+          const { nickname: lastNick, platform: lastPlat } = JSON.parse(savedLast);
+          if (lastNick) setNickname(lastNick);
+          if (lastPlat) setPlatform(lastPlat);
+        } catch (e) {
+          console.error("Failed to parse last search:", e);
+        }
+      }
     }
-  }, []);
+  }, [initialNickname]);
 
   useEffect(() => {
     if (user) {
@@ -292,7 +297,7 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
             id={nicknameId}
             name="nickname"
             type="text"
-            autoComplete="username"
+            autoComplete="off"
             placeholder="정확한 대소문자 닉네임을 입력하세요"
             value={nickname}
             onChange={(e) => setNickname(e.target.value)}

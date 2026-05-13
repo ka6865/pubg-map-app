@@ -73,6 +73,8 @@ export class ZoneHandler extends BaseHandler {
       const distToEdge = Math.abs(distToCenter - this.state.blueZone.radius);
       if (distToEdge < 50) {
         this.state.zoneStrategy.edgePlayCount++;
+      } else if (distToEdge < 150) {
+        this.state.zoneStrategy.fatalDelayCount++;
       }
     }
   }

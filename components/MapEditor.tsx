@@ -156,6 +156,9 @@ const MapEditorComponent = () => {
   }, [categoryInfoMap]);
 
   const [activeType, setActiveType] = useState<string>("Esports");
+  const [filters, setFilters] = useState<Record<string, boolean>>(
+    Object.keys(CATEGORY_INFO).reduce((acc, key) => ({ ...acc, [key]: true }), {})
+  );
 
   // 🎯 React 19 대응: 파생 상태를 사용하여 렌더링 중 setState 호출 방지
   const effectiveActiveType = allowedCategories.includes(activeType) 

@@ -18,6 +18,7 @@ import { TimelineEvent } from "../../lib/pubg-analysis/types";
 
 interface MatchTimelineProps {
   events: TimelineEvent[];
+  nickname: string; // [V26.1] 본인 식별을 위한 닉네임 추가
 }
 
 const formatTime = (ms: number) => {
@@ -35,17 +36,22 @@ const getEventLabel = (type: TimelineEvent['type']) => {
     case 'REVIVE': return { text: "아군 부활", color: "bg-emerald-500", textColor: "text-white" };
     case 'DIED': return { text: "최종 사망", color: "bg-gray-700", textColor: "text-gray-200" };
     case 'DOWNED': return { text: "나 기절", color: "bg-amber-600", textColor: "text-white" };
-    case 'TEAM_KNOCK': return { text: "팀원 기절", color: "bg-orange-500/80", textColor: "text-white" };
-    case 'TEAM_KILL': return { text: "팀원 킬", color: "bg-red-500/80", textColor: "text-white" };
-    case 'TEAM_REVIVE': return { text: "팀원 부활", color: "bg-emerald-500/80", textColor: "text-white" };
-    case 'TEAM_DIED': return { text: "팀원 사망", color: "bg-red-900/80", textColor: "text-red-100" };
-    case 'ITEM_USE': return { text: "아이템 사용", color: "bg-blue-600", textColor: "text-white" };
+    case 'TEAM_KNOCK': return { text: "팀원 기절", color: "bg-orange-500/10 border border-orange-500/30", textColor: "text-orange-400" };
+    case 'TEAM_KILL': return { text: "팀원 킬", color: "bg-orange-600/10 border border-orange-600/30", textColor: "text-orange-300" };
+    case 'TEAM_REVIVE': return { text: "팀원 부활", color: "bg-emerald-500/10 border border-emerald-500/30", textColor: "text-emerald-400" };
+    case 'TEAM_DIED': return { text: "팀원 사망", color: "bg-rose-500/10 border border-rose-500/30", textColor: "text-rose-400" };
+    case 'ITEM_USE': return { text: "아이템 사용", color: "bg-blue-600/20 border border-blue-500/30", textColor: "text-blue-300" };
     case 'RECALL': return { text: "블루칩 부활", color: "bg-indigo-600", textColor: "text-white" };
+    case 'TEAM_RECALL': return { text: "팀원 부활", color: "bg-indigo-600/10 border border-indigo-500/30", textColor: "text-indigo-400" };
+    case 'REDEPLOY': return { text: "복귀전 투입", color: "bg-cyan-600", textColor: "text-white" };
+    case 'VICTORY': return { text: "승리", color: "bg-yellow-500", textColor: "text-black" };
     default: return { text: "기타", color: "bg-gray-500", textColor: "text-white" };
   }
 };
 
-export const MatchTimeline = ({ events }: MatchTimelineProps) => {
+export const MatchTimeline = ({ events, nickname }: MatchTimelineProps) => {
+  const lowerNickname = nickname.toLowerCase().replace(/_/g, "");
+  
   // 회복/부스트 아이템 제외 및 빈 이름 유령 로그 필터링
   const filteredEvents = events.filter(e => {
     if (e.type === 'ITEM_USE') {
@@ -109,7 +115,12 @@ export const MatchTimeline = ({ events }: MatchTimelineProps) => {
             {group.events.map((event, idx) => {
               if (event.type === 'PHASE_START') return null;
 
-              const isMe = ['KILL', 'KNOCK', 'REVIVE', 'DIED', 'DOWNED', 'VICTORY', 'RECALL'].includes(event.type);
+              // [V26.1] 본인 활동 여부 판정 로직 정밀화 (엔진에서 주입한 isMe 플래그 우선 사용)
+              const isMe = event.isMe !== undefined ? event.isMe : (
+                (event.attacker?.toLowerCase().replace(/_/g, "") === lowerNickname) ||
+                (['DIED', 'DOWNED', 'RECALL', 'REDEPLOY'].includes(event.type) && event.victim?.toLowerCase().replace(/_/g, "") === lowerNickname) ||
+                (event.type === 'VICTORY')
+              );
               const labelInfo = getEventLabel(event.type);
 
               return (
@@ -132,7 +143,12 @@ export const MatchTimeline = ({ events }: MatchTimelineProps) => {
 
                     <div className="flex-1 flex items-center justify-between overflow-hidden">
                       <div className="flex items-center gap-2 truncate text-sm font-bold tracking-tight">
-                        {renderEventText(event)}
+                        {isMe && (
+                          <span className="px-1 py-0.5 rounded-[4px] bg-blue-500/20 text-blue-400 text-[9px] font-black mr-1 border border-blue-500/30">
+                            ME
+                          </span>
+                        )}
+                        {renderEventText(event, lowerNickname)}
                         {event.isHeadshot && (
                           <span className="text-red-500 flex items-center gap-1">
                             <Crosshair size={12} strokeWidth={3} />
@@ -153,7 +169,7 @@ export const MatchTimeline = ({ events }: MatchTimelineProps) => {
   );
 };
 
-const renderEventText = (event: TimelineEvent) => {
+const renderEventText = (event: TimelineEvent, lowerNickname: string) => {
   const weaponStr = event.weapon ? ` (${event.weapon})` : "";
   const isThrowable = ["수류탄", "연막", "화염병", "섬광", "C4"].some(k => event.weapon?.includes(k));
   const distStr = (!isThrowable && event.distance !== undefined) ? ` [${event.distance}m]` : "";
@@ -169,61 +185,91 @@ const renderEventText = (event: TimelineEvent) => {
     case 'KILL': 
       return (
         <div className="flex items-center gap-1.5">
+          <span className="text-blue-400 font-black">나</span>
+          <span className="text-[10px] text-gray-500">({event.weapon})</span>
+          <ArrowRight size={10} className="text-gray-600" />
           <span className="text-white font-black">{event.victim}</span>
-          <span className="text-[10px] text-gray-500 ml-1">({event.weapon}){distStr}</span>
+          {distStr && <span className="text-[10px] text-gray-500 ml-1">{distStr}</span>}
         </div>
       );
     case 'KNOCK':
       return (
         <div className="flex items-center gap-1.5">
+          <span className="text-blue-400 font-bold">나</span>
+          <span className="text-[10px] text-gray-500">({event.weapon})</span>
+          <ArrowRight size={10} className="text-gray-600" />
           <span className="text-white">{event.victim}</span>
-          <span className="text-[10px] text-gray-500 ml-1">({event.weapon}){distStr}</span>
+          {distStr && <span className="text-[10px] text-gray-500 ml-1">{distStr}</span>}
         </div>
       );
     case 'TEAM_KILL':
       return (
-        <div className="flex items-center gap-1.5 text-red-400/80">
-          <span className="font-bold">{event.attacker}</span>
-          <ArrowRight size={10} />
-          <span>{event.victim}{weaponStr}</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-orange-300 font-bold">{event.attacker}</span>
+          <span className="text-[10px] text-gray-500">{weaponStr}</span>
+          <ArrowRight size={10} className="text-gray-600" />
+          <span className="text-white/90">{event.victim}</span>
         </div>
       );
     case 'TEAM_KNOCK':
       return (
-        <div className="flex items-center gap-1.5 text-orange-400/80">
-          <span className="font-bold">{event.attacker}</span>
-          <ArrowRight size={10} />
-          <span>{event.victim}{weaponStr}</span>
+        <div className="flex items-center gap-1.5">
+          <span className="text-orange-400 font-bold">{event.attacker}</span>
+          <span className="text-[10px] text-gray-500">{weaponStr}</span>
+          <ArrowRight size={10} className="text-gray-600" />
+          <span className="text-white/80">{event.victim}</span>
         </div>
       );
     case 'REVIVE':
-      return <span className="text-emerald-400">{event.victim}님 부활 완료</span>;
+      return <span className="text-emerald-400 font-black"><span className="text-blue-400">나</span> → {event.victim} 부활 성공</span>;
     case 'TEAM_REVIVE':
-      return <span className="text-emerald-500/80">{event.attacker} → {event.victim} 부활</span>;
+      return <span className="text-emerald-500/80 font-medium">{event.attacker} → {event.victim} 부활</span>;
     case 'RECALL':
       return (
         <span className="text-indigo-400 font-bold">
-          {event.attacker ? `${event.attacker} → ` : ""}{event.victim} 블루칩 부활
+          {event.attacker ? <span className="text-white/60 font-medium">{event.attacker} → </span> : ""}<span className="text-blue-400">나</span> 블루칩 부활
+        </span>
+      );
+    case 'TEAM_RECALL':
+      const isMeRecaller = event.attacker?.toLowerCase().replace(/_/g, "") === lowerNickname;
+      return (
+        <span className="text-indigo-500/80">
+          {event.attacker ? <span className="text-white/60 font-medium">{isMeRecaller ? "나" : event.attacker} → </span> : ""}{event.victim} 블루칩 부활
+        </span>
+      );
+    case 'REDEPLOY':
+      const isMeRedeployed = event.victim?.toLowerCase().replace(/_/g, "") === lowerNickname;
+      return (
+        <span className="text-cyan-400 font-bold">
+          {isMeRedeployed ? <span className="text-blue-400">나</span> : event.victim} 복귀전 투입
         </span>
       );
     case 'TEAM_DIED':
       return (
         <div className="flex items-center gap-1.5">
-          <span className="text-red-400/90 font-bold">{event.victim} 사망</span>
-          <span className="text-[10px] text-gray-500 ml-1">({event.attacker}{weaponStr})</span>
+          <span className="text-rose-400 font-medium">{event.attacker}</span>
+          <span className="text-[10px] text-gray-500">{weaponStr}</span>
+          <ArrowRight size={10} className="text-gray-600" />
+          <span className="text-rose-500 font-bold">{event.victim} 사망</span>
         </div>
       );
     case 'DOWNED':
       return (
         <div className="flex items-center gap-1.5">
-          <span className="text-red-400 font-medium">{event.attacker}{weaponStr}</span>
-          <span className="text-[10px] text-gray-500 ml-1">{distStr}</span>
+          <span className="text-red-400 font-medium">{event.attacker}</span>
+          <span className="text-[10px] text-gray-500">{weaponStr}</span>
+          <ArrowRight size={10} className="text-gray-600" />
+          <span className="text-blue-400 font-black">나 기절</span>
+          {distStr && <span className="text-[10px] text-gray-500 ml-1">{distStr}</span>}
         </div>
       );
     case 'DIED':
       return (
         <div className="flex items-center gap-1.5">
-          <span className="text-red-600 font-black">{event.attacker}{weaponStr}</span>
+          <span className="text-red-600 font-black">{event.attacker}</span>
+          <span className="text-[10px] text-gray-500">{weaponStr}</span>
+          <ArrowRight size={10} className="text-gray-600" />
+          <span className="text-blue-600 font-black">나 사망</span>
         </div>
       );
     case 'ITEM_USE':

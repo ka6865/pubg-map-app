@@ -113,7 +113,7 @@ export async function GET(request: NextRequest) {
             "LogPlayerRecallShip", "LogPlayerRedeploy", "LogPlayerRedeployBRStart",
             "LogPlayerTakeDamage", "LogItemUse", "LogPlayerUseThrowable",
             "LogThrowableUse", "LogProjectileHit", "LogGameStatePeriodic",
-            "LogPhaseChange", "LogParachuteLanding"
+            "LogPhaseChange", "LogParachuteLanding", "LogMatchEnd"
           ].includes(e._T);
         }).map((e: any) => {
           const slim: any = { _T: e._T, _D: e._D };

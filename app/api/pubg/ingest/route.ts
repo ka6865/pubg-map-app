@@ -50,17 +50,18 @@ export async function POST(request: Request) {
                 map_name: finalResult.mapName,
                 counter_latency_ms: finalResult.tradeStats.counterLatencyMs,
                 initiative_rate: finalResult.initiative_rate,
-                revive_rate: finalResult.tradeStats.revCount > 0 ? 100 : 0, // 간소화
-                smoke_count: finalResult.itemUseSummary.smokes,
-                frag_count: finalResult.itemUseSummary.frags,
-                pressure_index: finalResult.combatPressure.pressureIndex,
-                enemy_death_distance: finalResult.deathDistance,
+                revive_rate: (finalResult.tradeStats?.revCount || 0) > 0 ? 100 : 0, 
+                smoke_count: finalResult.itemUseSummary?.smokes || 0,
+                frag_count: finalResult.itemUseSummary?.frags || 0,
+                pressure_index: finalResult.combatPressure?.pressureIndex || 0,
+                enemy_death_distance: finalResult.deathDistance || 0,
                 survival_time: Math.round(stats.timeSurvived),
-                isolation_index: finalResult.isolationData.isolationIndex,
-                min_dist: finalResult.isolationData.minDist,
-                height_diff: finalResult.isolationData.heightDiff,
-                smoke_rate: (finalResult.totalSmokeRescues / Math.max(1, finalResult.totalTeammateKnocks)) * 100,
-                trade_rate: (finalResult.totalTradeKills / Math.max(1, finalResult.totalTeammateKnocks)) * 100,
+                isolation_index: finalResult.isolationData?.isolationIndex || 0,
+                min_dist: finalResult.isolationData?.minDist || 0,
+                height_diff: finalResult.isolationData?.heightDiff || 0,
+                smoke_rate: ((finalResult.tradeStats?.smokeRescues || 0) / Math.max(1, finalResult.tradeStats?.teammateKnocks || 0)) * 100,
+                trade_rate: ((finalResult.tradeStats?.tradeKills || 0) / Math.max(1, finalResult.tradeStats?.teammateKnocks || 0)) * 100,
+                solo_kill_rate: ((finalResult.killContribution?.solo || 0) / Math.max(1, (finalResult.killContribution?.solo || 0) + (finalResult.killContribution?.assist || 0) + (finalResult.killContribution?.cleanup || 0))) * 100,
                 reversal_rate: finalResult.duelStats?.reversalRate || 0,
                 duel_win_rate: finalResult.duelStats?.duelWinRate || 0,
                 trade_latency_ms: finalResult.tradeStats?.tradeLatencyMs || 0,
@@ -74,7 +75,7 @@ export async function POST(request: Request) {
                 team_wipes: finalResult.tradeStats?.enemyTeamWipes || 0,
                 match_type: finalResult.matchType || 'Official',
                 death_phase: finalResult.deathPhase || 0,
-                filter_version: 4
+                filter_version: 5
             }, { onConflict: 'match_id,player_id' })
         );
     }

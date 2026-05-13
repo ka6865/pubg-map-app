@@ -268,7 +268,10 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
         className="w-full p-8 bg-indigo-500/5 border-2 border-dashed border-indigo-500/30 rounded-3xl text-indigo-400 font-bold flex flex-col items-center gap-4 hover:bg-indigo-500/10 transition-all active:scale-[0.98]"
       >
         <span className="text-4xl">🔥</span>
-        <span>최근 10경기 AI 끝장 토론 시작</span>
+        <div className="flex flex-col items-center gap-2">
+          <span>최근 10경기 AI 끝장 토론 시작</span>
+          <span className="text-xs font-normal opacity-60">(기본지표는 10판이지만 10판중 잘한5판 티어높은5판 기준으로 상위권과 비교합니다)</span>
+        </div>
       </button>
     );
   }
@@ -878,7 +881,9 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
         </div>
         <div className="relative z-10">
           <h4 className="text-xs font-black text-indigo-400 uppercase tracking-[0.2em] mb-4">Final Verdict</h4>
-          <p className="text-xl md:text-2xl font-black text-white leading-tight mb-8">&quot;{debateData?.finalVerdict}&quot;</p>
+          <p className="text-xl md:text-2xl font-black text-white leading-tight mb-8">
+            &quot;{debateData?.finalVerdict || (loading ? "전술 분석 데이터를 요약 중입니다..." : "분석 결과를 생성할 수 없습니다. 상세 지표를 확인해주세요.")}&quot;
+          </p>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {debateData?.actionItems?.map((item: { icon: string; title: string; desc: string }, idx: number) => (

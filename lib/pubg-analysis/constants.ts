@@ -3,7 +3,7 @@
  */
 
 export const RESULT_VERSION = 26.1; // [V26.7] recordStunEvent 통합 로직 - 적군 섬광 피격 추적 추가
-export const TELEMETRY_VERSION = 37; // [V41.3] ID 기반 분석 및 슬림 텔레메트리 무결성 강화 버전
+export const TELEMETRY_VERSION = 40; // [V40.0] 부활 감지 이벤트 리스트 확장 (LogPlayerRecall 추가) 및 캐시 갱신
 
 export const MAP_NAMES: Record<string, string> = {
   "Baltic_Main": "에란겔", 
@@ -51,6 +51,7 @@ export const WEAPON_NAMES: Record<string, string> = {
   
   // SR
   "WeapKar98k_C": "Kar98k", "WeapM24_C": "M24", "WeapMosinnagant_C": "모신나강", "WeapWin94_C": "Win94", "WeapAWM_C": "AWM",
+  "WeapL6_C": "링스 AMR", "L6": "링스 AMR", "LynxAMR": "링스 AMR", "l6": "링스 AMR", "weapL6_C": "링스 AMR",
   
   // DMR
   "WeapSKS_C": "SKS", "WeapSLR_C": "SLR", "WeapMini14_C": "Mini14", "WeapMk14_C": "Mk14", "WeapQBU88_C": "QBU", "WeapVSS_C": "VSS", "WeapDragunov_C": "드라구노프",
@@ -90,6 +91,11 @@ export const WEAPON_NAMES: Record<string, string> = {
   "Item_Weapon_BluezoneGrenade_C": "블루존 수류탄", "item_weapon_bluezonegrenade_c": "블루존 수류탄",
   "Item_Weapon_StickyGrenade_C": "점착 폭탄", "item_weapon_stickygrenade_c": "점착 폭탄",
   "item_weapon_c4_c": "C4", "c4": "C4",
+  
+  // New Utilities
+  "Item_Weapon_M79_C": "M79 연막탄", "item_weapon_m79_c": "M79 연막탄",
+  "Item_Weapon_CoverStructDropHandFlare_C": "비상 엄폐물", "item_weapon_coverstructdrophandflare_c": "비상 엄폐물",
+  "Item_Weapon_MountainBike_C": "접이식 자전거", "item_weapon_mountainbike_c": "접이식 자전거",
   
   "Melee": "근접 무기", "Punch": "주먹", "BlueZone": "자기장", "None": "없음"
 };

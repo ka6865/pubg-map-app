@@ -1,5 +1,5 @@
 // BGMS Refreshed V2
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import getApiUrl from "../lib/api-config";
 
 export interface TelemetryEvent {
@@ -67,7 +67,7 @@ export function useTelemetry(matchId: string | null, nickname: string | null, ma
   const [isFullMode, setIsFullMode] = useState(false);
   const teamColorMapRef = useRef<Record<number, string>>({});
 
-  const fetchTelemetry = async (full: boolean = false) => {
+  const fetchTelemetry = useCallback(async (full: boolean = false) => {
     if (!matchId || !nickname || !mapName) return;
     setLoading(true);
     setError(null);
@@ -111,7 +111,7 @@ export function useTelemetry(matchId: string | null, nickname: string | null, ma
     } finally {
       setLoading(false);
     }
-  };
+  }, [matchId, nickname, mapName]);
 
   // ✅ 시작 시점의 mode 파람리터를 ref로 고정하여 리렌더 시 불필요한 re-fetch 방지
   const initialModeRef = useRef<string | null>(
@@ -120,7 +120,7 @@ export function useTelemetry(matchId: string | null, nickname: string | null, ma
 
   useEffect(() => {
     fetchTelemetry(initialModeRef.current === "full");
-  }, [matchId, nickname, mapName]);
+  }, [fetchTelemetry]);
 
   const lastUpdateRef = useRef<number>(0);
   const timerRef = useRef<number | null>(null);

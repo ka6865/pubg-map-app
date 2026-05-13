@@ -60,8 +60,8 @@ export class UtilityHandler extends BaseHandler {
         this.state.itemUseStats.throwCount++;
       }
 
-      // [V12.7] 타임라인 기록 (매핑 테이블 우선 순위)
-      const mappedName = WEAPON_NAMES[e.weaponId] || WEAPON_NAMES[itemId] || itemId.replace(/Item_Weapon_|Weap|_C/g, "");
+      // [V41.0] 타임라인 기록 (매핑 테이블 우선 순위, 대소문자 무시 정규식 적용)
+      const mappedName = WEAPON_NAMES[e.weaponId] || WEAPON_NAMES[itemId] || itemId.replace(/Item_Weapon_|Weap|_C/gi, "");
 
       // 이름이 없는 아이템은 제외
       if (!mappedName || mappedName.trim() === "") return;
@@ -152,8 +152,8 @@ export class UtilityHandler extends BaseHandler {
     if (isMe || this.isTeammate(e.character)) {
       const itemId = (e.item?.itemId || e.item?.name || e.itemId || "").toLowerCase();
 
-      // [V12.7] 타임라인 기록 (매핑 테이블 우선 순위)
-      const mappedName = WEAPON_NAMES[e.item?.itemId] || WEAPON_NAMES[itemId] || itemId.replace(/Item_Weapon_|Item_Heal_|Item_Boost_|_C/g, "");
+      // [V41.0] 타임라인 기록 (매핑 테이블 우선 순위, 대소문자 무시 정규식 적용)
+      const mappedName = WEAPON_NAMES[e.item?.itemId] || WEAPON_NAMES[itemId] || itemId.replace(/Item_Weapon_|Item_Heal_|Item_Boost_|_C/gi, "");
 
       // 이름이 없는 아이템(불필요한 시스템 로그)은 타임라인에서 제외
       if (!mappedName || mappedName.trim() === "") return;
