@@ -226,13 +226,16 @@ export default function BoardDetailClient({
             )}
             
             <style>{`
-              .board-content > * { margin-bottom: 1.5rem !important; line-height: 1.8 !important; }
+              .board-content > * { margin-bottom: 1.75rem !important; line-height: 1.85 !important; }
               .board-content p:empty::before, .board-content div:empty::before { content: "\\00a0" !important; display: inline-block !important; width: 100% !important; height: 1.2rem !important; }
-              .board-content ul, .board-content ol { padding-left: 2rem !important; list-style-position: outside !important; }
+              .board-content ul, .board-content ol { padding-left: 1.5rem !important; list-style-position: outside !important; margin-bottom: 2rem !important; }
               .board-content ul { list-style-type: disc !important; }
               .board-content ol { list-style-type: decimal !important; }
-              .board-content li { margin-bottom: 0.5rem !important; display: list-item !important; }
-              .board-content { white-space: pre-wrap !important; word-break: break-word !important; font-family: inherit !important; color: #e5e5e5 !important; }
+              .board-content li { margin-bottom: 0.75rem !important; display: list-item !important; }
+              .board-content strong { color: #F2A900 !important; font-weight: 800 !important; }
+              .board-content a { color: #F2A900 !important; text-decoration: underline !important; text-underline-offset: 4px !important; transition: opacity 0.2s !important; }
+              .board-content a:hover { opacity: 0.7 !important; }
+              .board-content { white-space: pre-wrap !important; word-break: break-word !important; font-family: inherit !important; color: #e5e5e5 !important; letter-spacing: -0.01em !important; }
               .ql-snow .ql-editor { background-color: transparent !important; color: inherit !important; padding: 0 !important; }
               .ql-container.ql-snow { border: none !important; }
             `}</style>

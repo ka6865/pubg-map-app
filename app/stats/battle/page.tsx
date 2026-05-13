@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, Suspense, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 
 interface Comparison {
@@ -32,17 +33,22 @@ const TIER_STYLES: Record<string, { bg: string; text: string; label: string }> =
   C: { bg: "bg-gray-500/20",   text: "text-gray-400",    label: "C 티어" },
 };
 
-export default function BattlePage() {
-  const [nick1, setNick1] = useState("");
-  const [nick2, setNick2] = useState("");
+function BattleContent() {
+  const searchParams = useSearchParams();
+  
+  // URL 파라미터로 초기 상태 설정 (린트 에러 방지: useEffect 내 동기 setState 제거)
+  const [nick1, setNick1] = useState(() => searchParams.get("nick1") || "");
+  const [nick2, setNick2] = useState(() => searchParams.get("nick2") || "");
+  
   const [result, setResult] = useState<BattleResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleBattle = async () => {
-    const n1 = nick1.trim();
-    const n2 = nick2.trim();
+  const handleBattle = useCallback(async (n1Override?: string, n2Override?: string) => {
+    const n1 = (n1Override ?? nick1).trim();
+    const n2 = (n2Override ?? nick2).trim();
     if (!n1 || !n2) return;
+    
     setLoading(true);
     setError(null);
     setResult(null);
@@ -57,7 +63,16 @@ export default function BattlePage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [nick1, nick2]);
+
+  // 자동 검색 로직
+  useEffect(() => {
+    const n1 = searchParams.get("nick1");
+    const n2 = searchParams.get("nick2");
+    if (n1 && n2) {
+      handleBattle(n1, n2);
+    }
+  }, [searchParams, handleBattle]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") handleBattle();
@@ -80,25 +95,25 @@ export default function BattlePage() {
 
         {/* 입력폼 */}
         <div className="p-6 bg-white/5 border border-white/10 rounded-3xl flex flex-col gap-4">
-          <div className="flex items-center gap-4">
+          <div className="flex flex-col md:flex-row items-center gap-4">
             <input
               value={nick1}
               onChange={(e) => setNick1(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="내 닉네임"
-              className="flex-1 p-4 bg-black/40 border border-indigo-500/30 rounded-2xl text-white placeholder:text-gray-600 font-bold focus:outline-none focus:border-indigo-500/70 transition-colors"
+              className="w-full md:flex-1 p-4 bg-black/40 border border-indigo-500/30 rounded-2xl text-white placeholder:text-gray-600 font-bold focus:outline-none focus:border-indigo-500/70 transition-colors"
             />
-            <div className="text-xl font-black text-gray-600 shrink-0">VS</div>
+            <div className="text-xl font-black text-gray-600 shrink-0 md:rotate-0">VS</div>
             <input
               value={nick2}
               onChange={(e) => setNick2(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="상대 닉네임"
-              className="flex-1 p-4 bg-black/40 border border-rose-500/30 rounded-2xl text-white placeholder:text-gray-600 font-bold focus:outline-none focus:border-rose-500/70 transition-colors"
+              className="w-full md:flex-1 p-4 bg-black/40 border border-rose-500/30 rounded-2xl text-white placeholder:text-gray-600 font-bold focus:outline-none focus:border-rose-500/70 transition-colors"
             />
           </div>
           <button
-            onClick={handleBattle}
+            onClick={() => handleBattle()}
             disabled={loading || !nick1.trim() || !nick2.trim()}
             className="w-full py-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 rounded-2xl font-black text-lg tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98]"
           >
@@ -163,7 +178,6 @@ export default function BattlePage() {
               {result.comparisons.map((c) => {
                 const n1Wins = c.winner === "nick1";
                 const n2Wins = c.winner === "nick2";
-                const isDraw = c.winner === "draw";
                 return (
                   <div
                     key={c.key}
@@ -216,5 +230,17 @@ export default function BattlePage() {
         )}
       </div>
     </main>
+  );
+}
+
+export default function BattlePage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[#080810] flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
+      </div>
+    }>
+      <BattleContent />
+    </Suspense>
   );
 }

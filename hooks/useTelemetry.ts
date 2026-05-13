@@ -1,5 +1,5 @@
 // BGMS Refreshed V2
-import { useState, useEffect, useRef, useMemo } from "react";
+import { useState, useEffect, useRef } from "react";
 import getApiUrl from "../lib/api-config";
 
 export interface TelemetryEvent {
@@ -122,8 +122,13 @@ export function useTelemetry(matchId: string | null, nickname: string | null, ma
     fetchTelemetry(initialModeRef.current === "full");
   }, [matchId, nickname, mapName]);
 
-  const lastUpdateRef = useRef<number>(Date.now());
+  const lastUpdateRef = useRef<number>(0);
   const timerRef = useRef<number | null>(null);
+
+  // 🎯 React 19 대응: 마운트 시점에 안전하게 초기값 할당 (Purity 보장)
+  useEffect(() => {
+    lastUpdateRef.current = Date.now();
+  }, []);
 
   useEffect(() => {
     if (!isPlaying) {
@@ -153,8 +158,14 @@ export function useTelemetry(matchId: string | null, nickname: string | null, ma
   const historyPosRef = useRef<Record<string, { x: number, y: number, time: number, health: number }>>({});
   const futurePosRef = useRef<Record<string, { x: number, y: number, time: number, health: number } | null>>({});
 
-  const currentStates = useMemo(() => {
-    if (events.length === 0) return {};
+  // 🎯 React 19 대응: currentStates를 상태로 관리하고 useEffect에서 안전하게 업데이트 (Cascading Render 방지)
+  const [currentStates, setCurrentStates] = useState<Record<string, PlayerState>>({});
+
+  useEffect(() => {
+    if (events.length === 0) {
+      setCurrentStates({});
+      return;
+    }
 
     const isJump = Math.abs(currentTimeMs - lastProcessedTimeRef.current) > 2000 || currentTimeMs < lastProcessedTimeRef.current;
     
@@ -193,21 +204,19 @@ export function useTelemetry(matchId: string | null, nickname: string | null, ma
         const pname = rawName.trim().toLowerCase();
         if (!pname) return;
         
-        // 🎯 팩트: 시스템 플레이어("환경/자연사") 자체의 상태는 만들지 않되, 
-        // 해당 플레이어가 가담한 이벤트(사망, 어시스트 등)는 다른 플레이어에게 반영되어야 함.
         if (!states[pname] && !ev.isSystem) {
           const isEnemy = !teamNames.map(t => t.trim().toLowerCase()).includes(pname);
           states[pname] = { 
             name: rawName, 
-            accountId: ev.character?.accountId || ev.accountId, // 🎯 계정 ID 저장 추가
+            accountId: ev.character?.accountId || ev.accountId,
             x: -9999, y: -9999, isDead: false, isGroggy: false, isInVehicle: false, 
             health: 100, kills: 0, assists: 0, teamId: ev.teamId || 999,
-            color: isEnemy ? (teamColorMapRef.current[ev.teamId] || "#ffffff") : "#F2A900",
+            color: isEnemy ? (teamColorMapRef.current[ev.teamId || 999] || "#ffffff") : "#F2A900",
             isEnemy: isEnemy
           };
         }
         const s = states[pname];
-        if (!s) return; // 시스템 플레이어인 경우 s가 없을 수 있음 (의도됨)
+        if (!s) return;
         if (ev.type === "position" && ev.name === rawName) {
           s.x = ev.x; s.y = ev.y; s.health = ev.health ?? s.health; s.lastUpdateMs = ev.relativeTimeMs;
           historyPosRef.current[pname] = { x: ev.x, y: ev.y, time: ev.relativeTimeMs, health: s.health };
@@ -217,7 +226,6 @@ export function useTelemetry(matchId: string | null, nickname: string | null, ma
         } else if (ev.type === "leave" && ev.name === rawName) {
           s.isInVehicle = false; s.vehicleId = undefined;
         } else if (ev.type === "kill" || ev.type === "groggy") {
-          // 🎯 팩트: Kill 뿐만 아니라 Groggy 이벤트에서도 어시스트를 집계함 (누락 방지)
           if (ev.victim === rawName) {
             if (ev.type === "kill") {
               s.isDead = true; s.isGroggy = false; s.health = 0; s.lastDeathMs = ev.relativeTimeMs; 
@@ -228,7 +236,6 @@ export function useTelemetry(matchId: string | null, nickname: string | null, ma
           }
           if (ev.attacker === rawName) {
             if (ev.type === "kill") s.kills = (s.kills || 0) + 1;
-            // Groggy는 킬로 치지 않음 (기존 로직 유지)
           }
           if (ev.assistants && Array.isArray(ev.assistants)) {
             const isAsst = ev.assistants.some((a: any) => {
@@ -274,8 +281,8 @@ export function useTelemetry(matchId: string | null, nickname: string | null, ma
       interpolatedStates[pname] = s;
     }
 
-    return interpolatedStates;
-  }, [currentTimeMs, events, teamNames]);
+    setCurrentStates(interpolatedStates);
+  }, [currentTimeMs, events, teamNames, nickname, teammates]);
 
   return {
     events,

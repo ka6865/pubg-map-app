@@ -156,21 +156,18 @@ const MapEditorComponent = () => {
   }, [categoryInfoMap]);
 
   const [activeType, setActiveType] = useState<string>("Esports");
-  const [filters, setFilters] = useState<Record<string, boolean>>(() => {
-    const init: Record<string, boolean> = {};
-    Object.keys(categoryInfoMap).forEach((k) => (init[k] = true));
-    return init;
-  });
 
+  // 🎯 React 19 대응: 파생 상태를 사용하여 렌더링 중 setState 호출 방지
+  const effectiveActiveType = allowedCategories.includes(activeType) 
+    ? activeType 
+    : (allowedCategories[0] || "Esports");
 
+  // 만약 activeType이 현재 허용된 카테고리에 없다면, 다음 렌더링 시 보정되도록 함 (동기적 setState 피함)
   useEffect(() => {
-    if (
-      allowedCategories.length > 0 &&
-      !allowedCategories.includes(activeType)
-    ) {
+    if (allowedCategories.length > 0 && !allowedCategories.includes(activeType)) {
       setActiveType(allowedCategories[0]);
     }
-  }, [activeMapId, activeType, allowedCategories]);
+  }, [allowedCategories, activeType]);
 
   useEffect(() => {
     const checkAdmin = async () => {
@@ -458,7 +455,7 @@ const MapEditorComponent = () => {
           {allowedCategories.map((id) => {
             const info = CATEGORY_INFO[id];
             if (!info) return null; // 방어 로직 추가
-            const isActive = activeType === id;
+            const isActive = effectiveActiveType === id;
             const isFiltered = filters[id];
             return (
               <button

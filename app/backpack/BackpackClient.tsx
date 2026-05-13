@@ -89,6 +89,27 @@ const InventoryItemRow = ({
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </button>
+
+        {/* 모바일 전용 이동 버튼 (D&D 대체) */}
+        <button 
+          onClick={(e) => {
+            e.stopPropagation();
+            const target = source === 'backpack' ? 'trunk' : 'backpack';
+            // handleDrop과 유사한 로직을 직접 호출하거나 이벤트를 에뮬레이션
+            // 여기서는 단순화를 위해 handleDrop 로직을 별도 함수로 분리하지 않았으므로 직접 구현
+            const moveEvent = {
+              preventDefault: () => {},
+              dataTransfer: {
+                getData: () => JSON.stringify({ item, source }),
+              }
+            } as any;
+            (window as any)._handleMobileMove?.(item, source, target);
+          }}
+          className="xl:hidden w-7 h-7 flex items-center justify-center bg-[#F2A900]/20 text-[#F2A900] rounded-lg border border-[#F2A900]/30 active:scale-95"
+          title={source === 'backpack' ? '트렁크로 이동' : '배낭으로 이동'}
+        >
+          {source === 'backpack' ? '→' : '←'}
+        </button>
       </div>
     </div>
   );
@@ -119,6 +140,16 @@ export default function BackpackSimulator() {
 
   useEffect(() => {
     async function fetchAllData() {
+      console.log("[Backpack] 데이터 로드 시작...");
+      
+      // 10초 후 강제 로딩 해제 (무한 로딩 방지)
+      const timeoutId = setTimeout(() => {
+        if (loading) {
+          console.warn("[Backpack] 데이터 로드 타임아웃 발생 (10초)");
+          setLoading(false);
+        }
+      }, 10000);
+
       try {
         const [
           { data: cons }, { data: throwa }, { data: atts }, { data: amms }, { data: vehs }, { data: weaps }
@@ -130,6 +161,11 @@ export default function BackpackSimulator() {
           supabase.from("vehicles").select("*"),
           supabase.from("weapons").select("*")
         ]);
+
+        console.log("[Backpack] 데이터 로드 완료:", { 
+          consumables: cons?.length, 
+          vehicles: vehs?.length 
+        });
 
         setConsumables(cons || []);
         setThrowables(throwa || []);
@@ -143,8 +179,9 @@ export default function BackpackSimulator() {
           setSelectedVehicleId(porter ? porter.id : vehs[0].id);
         }
       } catch (err) {
-        console.error("데이터 로드 실패:", err);
+        console.error("[Backpack] 데이터 로드 실패:", err);
       } finally {
+        clearTimeout(timeoutId);
         setLoading(false);
       }
     }
@@ -171,6 +208,42 @@ export default function BackpackSimulator() {
     if (source === 'backpack') setBackpack(prev => prev.filter(i => i.id !== id));
     else setTrunk(prev => prev.filter(i => i.id !== id));
   }, []);
+
+  // 모바일 이동 핸들러 등록 (변수 선언 이후로 이동)
+  useEffect(() => {
+    (window as any)._handleMobileMove = (item: InventoryItem, source: 'backpack' | 'trunk', target: 'backpack' | 'trunk') => {
+      if (source === target) return;
+      
+      if (target === 'backpack') {
+        if (item.can_be_in_backpack === false) {
+          alert("이 아이템은 배낭에 넣을 수 없습니다.");
+          return;
+        }
+        if (backpackWeight + (item.weight * item.quantity) > maxBackpackCapacity) {
+          alert("배낭 용량이 부족합니다!");
+          return;
+        }
+        removeFromInventory(item.id, source);
+        setBackpack(prev => {
+          const existing = prev.find(i => i.id === item.id);
+          if (existing) return prev.map(i => i.id === item.id ? { ...i, quantity: i.quantity + item.quantity } : i);
+          return [...prev, item];
+        });
+      } else {
+        if (trunkWeight + (item.weight * item.quantity) > maxTrunkCapacity) {
+          alert("트렁크 용량이 부족합니다!");
+          return;
+        }
+        removeFromInventory(item.id, source);
+        setTrunk(prev => {
+          const existing = prev.find(i => i.id === item.id);
+          if (existing) return prev.map(i => i.id === item.id ? { ...i, quantity: i.quantity + item.quantity } : i);
+          return [...prev, item];
+        });
+      }
+    };
+    return () => { delete (window as any)._handleMobileMove; };
+  }, [backpackWeight, trunkWeight, maxBackpackCapacity, maxTrunkCapacity, removeFromInventory]);
 
   const updateQuantity = useCallback((id: string, source: 'backpack' | 'trunk', newQty: number) => {
     if (newQty <= 0) {
