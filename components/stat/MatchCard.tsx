@@ -486,7 +486,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                 </div>
                 
                 <div className="max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                  <MatchTimeline events={matchData.timeline || []} />
+                  <MatchTimeline events={matchData.timeline || []} nickname={nickname} />
                 </div>
               </div>
             </div>

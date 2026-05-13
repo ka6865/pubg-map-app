@@ -20,18 +20,7 @@ export async function POST(request: Request) {
     const lowerNickname = normalizeName(playerNickname);
     const backgroundTasks = [];
 
-    // 1. match_master_telemetry 저장 (슬림화된 텔레메트리)
-    if (telData && matchAttr) {
-      backgroundTasks.push(
-        supabase.from("match_master_telemetry").upsert({
-          match_id: matchId,
-          map_name: matchAttr.mapName,
-          game_mode: matchAttr.gameMode,
-          telemetry_events: telData,
-          telemetry_version: 16
-        }, { onConflict: 'match_id' })
-      );
-    }
+    // 1. match_master_telemetry 저장은 match route에서 처리하므로 중복 방지를 위해 제거 (성능 최적화)
 
     // 2. match_stats_raw 저장
     if (rawParticipants && matchAttr) {
@@ -61,22 +50,21 @@ export async function POST(request: Request) {
                 map_name: finalResult.mapName,
                 counter_latency_ms: finalResult.tradeStats.counterLatencyMs,
                 initiative_rate: finalResult.initiative_rate,
-                revive_rate: finalResult.tradeStats.revCount > 0 ? 100 : 0, // 간소화
-                smoke_count: finalResult.itemUseSummary.smokes,
-                frag_count: finalResult.itemUseSummary.frags,
-                pressure_index: finalResult.combatPressure.pressureIndex,
-                enemy_death_distance: finalResult.deathDistance,
+                revive_rate: (finalResult.tradeStats?.revCount || 0) > 0 ? 100 : 0, 
+                smoke_count: finalResult.itemUseSummary?.smokes || 0,
+                frag_count: finalResult.itemUseSummary?.frags || 0,
+                pressure_index: finalResult.combatPressure?.pressureIndex || 0,
+                enemy_death_distance: finalResult.deathDistance || 0,
                 survival_time: Math.round(stats.timeSurvived),
-                isolation_index: finalResult.isolationData.isolationIndex,
-                min_dist: finalResult.isolationData.minDist,
-                height_diff: finalResult.isolationData.heightDiff,
-                smoke_rate: (finalResult.totalSmokeRescues / Math.max(1, finalResult.totalTeammateKnocks)) * 100,
-                trade_rate: (finalResult.totalTradeKills / Math.max(1, finalResult.totalTeammateKnocks)) * 100,
+                isolation_index: finalResult.isolationData?.isolationIndex || 0,
+                min_dist: finalResult.isolationData?.minDist || 0,
+                height_diff: finalResult.isolationData?.heightDiff || 0,
+                smoke_rate: ((finalResult.tradeStats?.smokeRescues || 0) / Math.max(1, finalResult.tradeStats?.teammateKnocks || 0)) * 100,
+                trade_rate: ((finalResult.tradeStats?.tradeKills || 0) / Math.max(1, finalResult.tradeStats?.teammateKnocks || 0)) * 100,
+                solo_kill_rate: ((finalResult.killContribution?.solo || 0) / Math.max(1, (finalResult.killContribution?.solo || 0) + (finalResult.killContribution?.assist || 0) + (finalResult.killContribution?.cleanup || 0))) * 100,
                 reversal_rate: finalResult.duelStats?.reversalRate || 0,
                 duel_win_rate: finalResult.duelStats?.duelWinRate || 0,
                 trade_latency_ms: finalResult.tradeStats?.tradeLatencyMs || 0,
-                stun_count: finalResult.itemUseSummary?.stuns || 0,
-                stun_duration: finalResult.itemUseStats?.stunDurationSum || 0,
                 lethal_throw_count: finalResult.itemUseStats?.lethalThrowCount || 0,
                 tier: finalResult.benchmark?.tier || 'C',
                 score: finalResult.benchmark?.score || 0,
@@ -87,7 +75,7 @@ export async function POST(request: Request) {
                 team_wipes: finalResult.tradeStats?.enemyTeamWipes || 0,
                 match_type: finalResult.matchType || 'Official',
                 death_phase: finalResult.deathPhase || 0,
-                filter_version: 4
+                filter_version: 5
             }, { onConflict: 'match_id,player_id' })
         );
     }

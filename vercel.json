@@ -1,10 +1,6 @@
 {
   "crons": [
     {
-      "path": "/api/cron/patch-notes",
-      "schedule": "0 9 * * 2"
-    },
-    {
       "path": "/api/cron/hotdrop",
       "schedule": "0 18 * * *"
     }

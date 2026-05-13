@@ -20,8 +20,9 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
   }
 });
 
-const TARGET_VERSION = 37;
-const RETENTION_DAYS = 3;
+// 환경 변수에 따라 삭제 강도 조절 (Daily Action용)
+const TARGET_VERSION = parseInt(process.env.CLEANUP_TARGET_VERSION || '37');
+const RETENTION_DAYS = parseInt(process.env.CLEANUP_RETENTION_DAYS || '3');
 
 async function smartCleanup() {
   console.log('🚀 [BGMS Smart Cleaner] 작업을 시작합니다...');
@@ -49,7 +50,7 @@ async function smartCleanup() {
       .from('match_master_telemetry')
       .select('match_id, storage_path')
       .or(`telemetry_version.lt.${TARGET_VERSION},created_at.lt.${expirationDate.toISOString()}`)
-      .limit(500);
+      .limit(50);
 
     if (fetchError) {
       console.error('❌ 대상 조회 실패:', fetchError.message);

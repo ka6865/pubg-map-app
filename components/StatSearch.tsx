@@ -5,7 +5,7 @@ import React, { useState, useEffect, useId, useCallback } from "react";
 import { MatchCard } from "./stat/MatchCard";
 import { StatSummaryCard } from "./stat/StatSummaryCard";
 import { RecentAISummary } from "./stat/RecentAISummary";
-import { Shield, ChevronDown } from "lucide-react";
+import { Shield, ChevronDown, Swords } from "lucide-react";
 
 const STORAGE_KEY_RECENT = "pubg_recent_searches_v2";
 const STORAGE_KEY_FAVORITES = "pubg_favorites_v2";
@@ -46,8 +46,16 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
   const [error, setError] = useState("");
   const [selectedSeason, setSelectedSeason] = useState("");
 
-  const [recentSearches, setRecentSearches] = useState<string[]>([]);
-  const [favorites, setFavorites] = useState<string[]>([]);
+  const [recentSearches, setRecentSearches] = useState<string[]>(() => {
+    if (typeof window === "undefined") return [];
+    const saved = localStorage.getItem(STORAGE_KEY_RECENT);
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [favorites, setFavorites] = useState<string[]>(() => {
+    if (typeof window === "undefined") return [];
+    const saved = localStorage.getItem(STORAGE_KEY_FAVORITES);
+    return saved ? JSON.parse(saved) : [];
+  });
   const [showDropdown, setShowDropdown] = useState(false);
   const [activeTab, setActiveTab] = useState<"recent" | "favorites">("recent");
   const [isMobile, setIsMobile] = useState(false);
@@ -60,19 +68,20 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
   }, []);
 
   useEffect(() => {
-    const savedRecent = localStorage.getItem(STORAGE_KEY_RECENT);
-    if (savedRecent) setRecentSearches(JSON.parse(savedRecent));
-
-    const savedFavorites = localStorage.getItem(STORAGE_KEY_FAVORITES);
-    if (savedFavorites) setFavorites(JSON.parse(savedFavorites));
-
-    const savedLast = localStorage.getItem(STORAGE_KEY_LAST_SEARCH);
-    if (savedLast) {
-      const { nickname: lastNick, platform: lastPlat } = JSON.parse(savedLast);
-      if (lastNick) setNickname(lastNick);
-      if (lastPlat) setPlatform(lastPlat);
+    // 🎯 React 19 대응: URL 파라미터가 없을 때만 localStorage에서 마지막 검색 기록을 가져옴
+    if (!initialNickname) {
+      const savedLast = localStorage.getItem(STORAGE_KEY_LAST_SEARCH);
+      if (savedLast) {
+        try {
+          const { nickname: lastNick, platform: lastPlat } = JSON.parse(savedLast);
+          if (lastNick) setNickname(lastNick);
+          if (lastPlat) setPlatform(lastPlat);
+        } catch (e) {
+          console.error("Failed to parse last search:", e);
+        }
+      }
     }
-  }, []);
+  }, [initialNickname]);
 
   useEffect(() => {
     if (user) {
@@ -95,7 +104,7 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
     if (!searchName.trim() || cooldown) return;
 
     setLoading(true);
-    setResult(null); // 새로운 검색 시작 시 기존 결과 초기화 (버그 수정)
+    setResult(null); // 새로운 검색 시작 시 기존 결과 초기화 (버그 수정 및 cascading render 방지)
     setError("");
     setCooldown(true);
     setShowDropdown(false);
@@ -267,53 +276,56 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
       </h2>
       
       {/* 하이드레이션 오류 방지를 위해 마운트 후에만 인터랙티브 요소 렌더링 활성화 */}
-      <div style={{ display: "flex", gap: "10px", maxWidth: "800px", position: "relative", flexWrap: "wrap", margin: "0 auto 30px auto", opacity: mounted ? 1 : 0.5 }}>
+      <div 
+        className="flex flex-col md:flex-row gap-3 max-w-3xl mx-auto mb-8 relative"
+        style={{ opacity: mounted ? 1 : 0.5 }}
+      >
         <select
           id={platformId}
           name="platform"
           autoComplete="off"
           value={platform}
           onChange={(e) => setPlatform(e.target.value)}
-          style={{ padding: "12px", backgroundColor: "#252525", color: "white", border: "1px solid #444", borderRadius: "6px", fontSize: "16px" }}
+          className="w-full md:w-48 p-3 bg-[#252525] color-white border border-[#444] rounded-md text-base focus:outline-none focus:border-[#F2A900] transition-colors"
         >
           <option value="steam">스팀 (Steam)</option>
           <option value="kakao">카카오 (Kakao)</option>
         </select>
         
-        <div style={{ position: "relative", flex: "1 1 200px" }}>
+        <div className="relative flex-1">
           <input
             id={nicknameId}
             name="nickname"
             type="text"
-            autoComplete="username"
+            autoComplete="off"
             placeholder="정확한 대소문자 닉네임을 입력하세요"
             value={nickname}
             onChange={(e) => setNickname(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSearch()}
             onFocus={() => setShowDropdown(true)}
             onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
-            style={{ width: "100%", padding: "12px", backgroundColor: "#252525", color: "white", border: "1px solid #444", borderRadius: "6px", boxSizing: "border-box", fontSize: "16px" }}
+            className="w-full p-3 bg-[#252525] text-white border border-[#444] rounded-md text-base focus:outline-none focus:border-[#F2A900] transition-colors"
           />
           {showDropdown && (
             <div
               onMouseDown={(e) => e.preventDefault()}
-              style={{ position: "absolute", top: "100%", left: 0, right: 0, marginTop: "5px", backgroundColor: "#e9ecef", borderRadius: "6px", overflow: "hidden", zIndex: 10, boxShadow: "0 4px 12px rgba(0,0,0,0.5)" }}
+              className="absolute top-full left-0 right-0 mt-1 bg-[#e9ecef] rounded-md overflow-hidden z-50 shadow-xl"
             >
-              <div style={{ display: "flex", backgroundColor: "#dee2e6", borderBottom: "1px solid #ced4da" }}>
+              <div className="flex bg-[#dee2e6] border-b border-[#ced4da]">
                 <div
                   onClick={() => setActiveTab("recent")}
-                  style={{ flex: 1, padding: "10px 15px", textAlign: "center", cursor: "pointer", fontSize: "14px", fontWeight: activeTab === "recent" ? "bold" : "normal", color: activeTab === "recent" ? "#212529" : "#666", backgroundColor: activeTab === "recent" ? "#e9ecef" : "transparent" }}
+                  className={`flex-1 py-2 text-center cursor-pointer text-sm ${activeTab === "recent" ? "font-bold text-[#212529] bg-[#e9ecef]" : "text-[#666]"}`}
                 >
                   최근 검색
                 </div>
                 <div
                   onClick={() => setActiveTab("favorites")}
-                  style={{ flex: 1, padding: "10px 15px", textAlign: "center", cursor: "pointer", fontSize: "14px", fontWeight: activeTab === "favorites" ? "bold" : "normal", color: activeTab === "favorites" ? "#212529" : "#666", backgroundColor: activeTab === "favorites" ? "#e9ecef" : "transparent", borderLeft: "1px solid #ced4da" }}
+                  className={`flex-1 py-2 text-center cursor-pointer text-sm border-l border-[#ced4da] ${activeTab === "favorites" ? "font-bold text-[#212529] bg-[#e9ecef]" : "text-[#666]"}`}
                 >
                   즐겨찾기
                 </div>
               </div>
-              <div style={{ maxHeight: "300px", overflowY: "auto" }}>
+              <div className="max-h-[300px] overflow-y-auto">
                 {activeTab === "recent"
                   ? renderDropdownList(recentSearches, "recent")
                   : renderDropdownList(favorites, "favorites")}
@@ -322,13 +334,23 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
           )}
         </div>
         
-        <button
-          onClick={() => handleSearch()}
-          disabled={loading || cooldown}
-          style={{ padding: "0 20px", backgroundColor: loading || cooldown ? "#555" : "#F2A900", color: loading || cooldown ? "#aaa" : "black", fontWeight: "bold", border: "none", borderRadius: "6px", fontSize: "16px", whiteSpace: "nowrap", flexShrink: 0, cursor: loading || cooldown ? "not-allowed" : "pointer" }}
-        >
-          {loading ? "검색중..." : cooldown ? "쿨타임 ⏳" : "검색"}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => handleSearch()}
+            disabled={loading || cooldown}
+            className={`flex-1 md:flex-none px-6 py-3 rounded-md font-bold text-base whitespace-nowrap transition-all active:scale-95 ${loading || cooldown ? "bg-[#555] text-[#aaa] cursor-not-allowed" : "bg-[#F2A900] text-black cursor-pointer hover:bg-[#ffb700]"}`}
+          >
+            {loading ? "검색중..." : cooldown ? "쿨타임 ⏳" : "검색"}
+          </button>
+
+          <button
+            onClick={() => router.push('/stats/battle')}
+            className="px-4 bg-purple-600 hover:bg-purple-500 text-white font-bold border-none rounded-md flex items-center justify-center gap-2 transition-all active:scale-95 whitespace-nowrap cursor-pointer"
+          >
+            <Swords size={20} />
+            <span className="hidden md:inline">비교 모드</span>
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -339,12 +361,21 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
 
       {result && (
         <div style={{ display: "flex", flexDirection: "column", gap: "30px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", borderBottom: "2px solid #333", paddingBottom: "15px" }}>
-            <div style={{ fontSize: "28px", fontWeight: "bold" }}>
-              <span style={{ color: "#888", fontSize: "16px", marginRight: "10px", verticalAlign: "middle" }}>
-                {result.platform === "steam" ? "Steam" : "Kakao"}
-              </span>
-              {result.nickname}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "2px solid #333", paddingBottom: "15px", flexWrap: "wrap", gap: "15px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "15px", flexWrap: "wrap" }}>
+              <div style={{ fontSize: "28px", fontWeight: "bold" }}>
+                <span style={{ color: "#888", fontSize: "16px", marginRight: "10px", verticalAlign: "middle" }}>
+                  {result.platform === "steam" ? "Steam" : "Kakao"}
+                </span>
+                {result.nickname}
+              </div>
+              <button
+                onClick={() => router.push(`/stats/battle?nick1=${encodeURIComponent(result.nickname)}`)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600/20 hover:bg-purple-600/30 text-purple-400 border border-purple-500/30 rounded-full text-[11px] font-black transition-all group"
+              >
+                <Swords size={12} className="group-hover:rotate-12 transition-transform" />
+                <span>이 플레이어와 비교하기</span>
+              </button>
             </div>
             <select
               id={seasonId}

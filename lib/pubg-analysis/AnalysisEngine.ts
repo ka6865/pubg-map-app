@@ -84,7 +84,7 @@ export class AnalysisEngine {
       dbnoMap: new Map(),
       totalPressureSum: 0,
       pressureSampleCount: 0,
-      combatPressure: { totalHits: 0, uniqueVictims: new Set(), maxHitDistance: 0, utilityDamage: 0, utilityHits: 0, stunHits: 0, isClutched: false },
+      combatPressure: { totalHits: 0, uniqueVictims: new Set(), maxHitDistance: 0, utilityDamage: 0, utilityHits: 0, isClutched: false },
       myDownedIntervals: [],
       whiteZone: { x: 0, y: 0, radius: 0 },
       blueZone: { x: 0, y: 0, radius: 0 },
@@ -98,9 +98,9 @@ export class AnalysisEngine {
       teamsUserHit: new Set(),
       myRecentDamageTaken: new Map(),
       recentAttacksOnUser: [],
-      itemUseSummary: { smokes: 0, frags: 0, molotovs: 0, stuns: 0, others: 0 },
+      itemUseSummary: { smokes: 0, frags: 0, molotovs: 0, others: 0 },
       itemUseStats: {
-        heals: 0, boosts: 0, throwCount: 0, lethalThrowCount: 0, stunDurationSum: 0,
+        heals: 0, boosts: 0, throwCount: 0, lethalThrowCount: 0,
         focusFireCount: 0,
         crossfireExposureCount: 0,
         distanceDamage: { short: 0, mid: 0, long: 0 }
@@ -111,7 +111,7 @@ export class AnalysisEngine {
       recentTeammateDamageTaken: new Map(),
       isolationData: { isolationIndex: 0, combatIsolation: 0, deathIsolation: 0, minDist: 0, heightDiff: 0, isCrossfire: false, teammateCount: 0 },
       timeline: [],
-      
+
       // [V26.0] 리플레이 데이터 초기화
       mapName: "",
       mapSize: 819200,
@@ -121,7 +121,8 @@ export class AnalysisEngine {
       lastRotByPlayer: new Map(),
       groggyMap: new Map(),
       hasRealExplosions: false,
-      positionEventCount: 0
+      positionEventCount: 0,
+      matchEndRelativeTime: null
     };
 
     // 핸들러 주입
@@ -148,7 +149,7 @@ export class AnalysisEngine {
     this.state.mapName = matchAttr.mapName || "Erangel";
     const mapKey = this.state.mapName.toLowerCase().split('_')[0];
     this.state.mapSize = MAP_SIZES[mapKey] || 819200;
-    
+
     this.buildMappings(rosters, participants);
 
     // 2. 정확한 시작 시점 (LogMatchStart) 찾기
@@ -164,10 +165,19 @@ export class AnalysisEngine {
 
       // 타임라인 기록 제한: 나 또는 아군 중 한 명이라도 살아있으면 계속 기록
       const isMyTeamAlive = Array.from(this.state.teamNames).some(name => this.state.playerAliveStatus.get(name) !== false);
+      
+      // [V26.1] 부활/복귀전 관련 이벤트는 전멸 상태라도 무조건 처리해야 함
+      const eventType = e._T || "";
+      const isRecallEvent = [
+        "LogPlayerRevive", "LogPlayerRecall", "LogPlayerRecallShip", 
+        "LogPlayerRedeploy", "LogPlayerRedeployBRStart", "LogPlayerRedeployBrStart",
+        "LogPlayerCreate"
+      ].some(t => t.toLowerCase() === eventType.toLowerCase());
+      
       const isAfterTeamWipe = !isMyTeamAlive && this.state.myDeathTime && ts > (this.state.myDeathTime + 30000);
       const isWin = e._T === "LogMatchEnd" && this.state.playerAliveStatus.get(this.state.lowerNickname) !== false;
 
-      if (!isAfterTeamWipe || isWin) {
+      if (!isAfterTeamWipe || isWin || isRecallEvent) {
         // 엔진 공통 상태 관리 (타임라인 기록 포함)
         if (e._T === "LogPhaseStart" || e._T === "LogPhaseChange") {
           const phaseNum = e.phase !== undefined ? e.phase : 0;
@@ -179,6 +189,10 @@ export class AnalysisEngine {
               phase: phaseNum
             });
           }
+        }
+
+        if (e._T === "LogMatchEnd") {
+          this.state.matchEndRelativeTime = elapsed;
         }
 
         // 도메인 핸들러에게 위임
@@ -208,7 +222,7 @@ export class AnalysisEngine {
           const fullPart = participants.find(part => part.id === pRef.id);
           const name = normalizeName(fullPart?.attributes?.stats?.name || "");
           const accountId = fullPart?.attributes?.stats?.playerId || fullPart?.attributes?.accountId;
-          
+
           if (name) {
             this.state.teamMapping.set(name, r.id);
             teamMates.add(name);
@@ -235,8 +249,17 @@ export class AnalysisEngine {
   private assembleResult(matchAttr: any, rosters: any[], participants: any[], myStats: any, teamStats: any[], eliteBenchmark: any): AnalysisResult {
     // [V12.5] 승리 이벤트 추가
     if (myStats.winPlace === 1) {
+      // 타임라인의 마지막 이벤트 시간 확인
+      const lastEventTs = this.state.timeline.length > 0 
+        ? Math.max(...this.state.timeline.map(e => e.ts)) 
+        : 0;
+
+      const victoryTs = this.state.matchEndRelativeTime !== null 
+        ? this.state.matchEndRelativeTime 
+        : Math.max(myStats.timeSurvived * 1000, lastEventTs + 1000);
+        
       this.state.timeline.push({
-        ts: myStats.timeSurvived * 1000,
+        ts: victoryTs,
         type: 'VICTORY'
       });
     }
@@ -249,8 +272,8 @@ export class AnalysisEngine {
     const sortedByDamage = [...humanParticipants].map(p => p.attributes?.stats).filter(Boolean).sort((a, b) => b.damageDealt - a.damageDealt);
     const damageRank = sortedByDamage.findIndex((s: any) => normalizeName(s.name) === this.state.lowerNickname) + 1 || 1;
 
-    const damageImpact = Math.round((myStats.damageDealt / (eliteBenchmark?.avg_damage || 400)) * 100);
-    const killImpact = Math.round((myStats.kills / (eliteBenchmark?.avg_kills || 3)) * 100);
+    const damageImpact = Math.round((myStats.damageDealt / (eliteBenchmark?.avgDamage || 400)) * 100);
+    const killImpact = Math.round((myStats.kills / (eliteBenchmark?.avgKills || 3)) * 100);
     const teamDamageShare = Math.round((myStats.damageDealt / totalTeamDamage) * 100);
     const teamKillShare = Math.round((myStats.kills / totalTeamKills) * 100);
 
@@ -348,7 +371,6 @@ export class AnalysisEngine {
         },
         isClutched: false,
         utilityDamage: this.state.combatPressure.utilityDamage,
-        stunHits: this.state.combatPressure.stunHits,
         utilityHits: this.state.combatPressure.utilityHits,
         totalHits: this.state.combatPressure.totalHits,
         maxHitDist: this.state.combatPressure.maxHitDistance,
@@ -371,9 +393,9 @@ export class AnalysisEngine {
         tradeRate: this.state.totalTeammateKnocks > 0 ? (this.state.totalTradeKills / this.state.totalTeammateKnocks) * 100 : 0,
         teamWipes: this.state.wipedTeamsByUserParticipation.size,
         reversalRate: reversalRate,
-         deathPhase: this.calculateDeathPhase(myStats.winPlace || 100),
-         suppRate: this.state.totalTeammateKnocks > 0 ? (this.state.totalSuppCount / this.state.totalTeammateKnocks) * 100 : 0
-       }, (this.state.gameMode || "").includes("solo")),
+        deathPhase: this.calculateDeathPhase(myStats.winPlace || 100),
+        suppRate: this.state.totalTeammateKnocks > 0 ? (this.state.totalSuppCount / this.state.totalTeammateKnocks) * 100 : 0
+      }, (this.state.gameMode || "").includes("solo")),
       isValidBenchmark: (myStats.timeSurvived || 0) >= 300,
       timeline: this.state.timeline.sort((a, b) => a.ts - b.ts),
       // [V26.0] 지도 리플레이용 데이터 포함

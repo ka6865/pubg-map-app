@@ -82,7 +82,7 @@ export async function GET(request: Request) {
       startTime: matchData.data.attributes.createdAt,
       teammates: result.mapData?.teammates || [],
       teamNames: [nickname],
-      events: result.mapData?.events || [],
+      events: result.timeline || [],
       zoneEvents: result.mapData?.zoneEvents || [],
     };
 

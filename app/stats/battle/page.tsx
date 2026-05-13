@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, Suspense, useRef, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { Camera, Copy, Download, Share2 } from "lucide-react";
 
 interface Comparison {
   key: string;
@@ -20,6 +22,9 @@ interface BattleResult {
   tier2: string;
   matchCount1: number;
   matchCount2: number;
+  availableMatchCount1: number;
+  availableMatchCount2: number;
+  comparisonMatchCount: number;
   comparisons: Comparison[];
   score: { nick1: number; nick2: number; draw: number };
   overallWinner: string;
@@ -32,35 +37,192 @@ const TIER_STYLES: Record<string, { bg: string; text: string; label: string }> =
   C: { bg: "bg-gray-500/20",   text: "text-gray-400",    label: "C 티어" },
 };
 
-export default function BattlePage() {
-  const [nick1, setNick1] = useState("");
-  const [nick2, setNick2] = useState("");
+function BattleContent() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const resultCardRef = useRef<HTMLDivElement | null>(null);
+  const lastAutoBattleKeyRef = useRef<string>("");
+  
+  // URL 파라미터로 초기 상태 설정 (린트 에러 방지: useEffect 내 동기 setState 제거)
+  const [nick1, setNick1] = useState(() => searchParams.get("nick1") || "");
+  const [nick2, setNick2] = useState(() => searchParams.get("nick2") || "");
+  
   const [result, setResult] = useState<BattleResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [shareMessage, setShareMessage] = useState<string | null>(null);
+  const [shareBusy, setShareBusy] = useState<"share" | "copy" | "download" | "image" | null>(null);
 
-  const handleBattle = async () => {
-    const n1 = nick1.trim();
-    const n2 = nick2.trim();
+  const buildShareUrl = (player1: string, player2: string) => {
+    if (typeof window === "undefined") return "";
+    const url = new URL("/stats/battle", window.location.origin);
+    url.searchParams.set("nick1", player1);
+    url.searchParams.set("nick2", player2);
+    return url.toString();
+  };
+
+  const clearShareMessageLater = () => {
+    window.setTimeout(() => setShareMessage(null), 2500);
+  };
+
+  const buildBattlePath = (player1: string, player2: string) =>
+    `/stats/battle?nick1=${encodeURIComponent(player1)}&nick2=${encodeURIComponent(player2)}`;
+
+  const handleBattle = useCallback(async (n1Override?: string, n2Override?: string) => {
+    const n1 = (n1Override ?? nick1).trim();
+    const n2 = (n2Override ?? nick2).trim();
     if (!n1 || !n2) return;
+    
     setLoading(true);
     setError(null);
     setResult(null);
+    setShareMessage(null);
 
     try {
       const res = await fetch(`/api/pubg/battle?nick1=${encodeURIComponent(n1)}&nick2=${encodeURIComponent(n2)}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "알 수 없는 오류");
       setResult(data);
+      const battlePath = buildBattlePath(n1, n2);
+      const currentPath = `${window.location.pathname}${window.location.search}`;
+      lastAutoBattleKeyRef.current = `${n1}::${n2}`;
+      if (currentPath !== battlePath) {
+        router.replace(battlePath);
+      }
     } catch (e: any) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
-  };
+  }, [nick1, nick2, router]);
+
+  // 자동 검색 로직
+  useEffect(() => {
+    const n1 = searchParams.get("nick1");
+    const n2 = searchParams.get("nick2");
+    if (n1 && n2) {
+      setNick1(n1);
+      setNick2(n2);
+      const battleKey = `${n1}::${n2}`;
+      if (lastAutoBattleKeyRef.current === battleKey) {
+        return;
+      }
+      lastAutoBattleKeyRef.current = battleKey;
+      handleBattle(n1, n2);
+    }
+  }, [searchParams, handleBattle]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") handleBattle();
+  };
+
+  const createShareImageBlob = async () => {
+    if (!resultCardRef.current) throw new Error("공유할 결과 카드가 없습니다.");
+    const { toPng } = await import("html-to-image");
+    const dataUrl = await toPng(resultCardRef.current, {
+      cacheBust: true,
+      pixelRatio: 2,
+      backgroundColor: "#080810",
+    });
+    const response = await fetch(dataUrl);
+    return response.blob();
+  };
+
+  const handleCopyLink = async () => {
+    if (!result) return;
+    try {
+      setShareBusy("copy");
+      await navigator.clipboard.writeText(buildShareUrl(result.nick1, result.nick2));
+      setShareMessage("공유 링크를 복사했어요.");
+      clearShareMessageLater();
+    } catch {
+      setShareMessage("링크 복사에 실패했습니다.");
+    } finally {
+      setShareBusy(null);
+    }
+  };
+
+  const handleShareLink = async () => {
+    if (!result) return;
+    const shareUrl = buildShareUrl(result.nick1, result.nick2);
+    const shareText = `${result.nick1} vs ${result.nick2} 전적 비교 결과`;
+
+    try {
+      setShareBusy("share");
+      if (navigator.share) {
+        await navigator.share({
+          title: "BGMS 전적 비교",
+          text: shareText,
+          url: shareUrl,
+        });
+        setShareMessage("공유 시트를 열었어요.");
+      } else {
+        await navigator.clipboard.writeText(shareUrl);
+        setShareMessage("공유 기능이 없어 링크를 대신 복사했어요.");
+      }
+      clearShareMessageLater();
+    } catch (error: any) {
+      if (error?.name !== "AbortError") {
+        setShareMessage("링크 공유에 실패했습니다.");
+      }
+    } finally {
+      setShareBusy(null);
+    }
+  };
+
+  const handleDownloadImage = async () => {
+    if (!result) return;
+
+    try {
+      setShareBusy("download");
+      const blob = await createShareImageBlob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `bgms-battle-${result.nick1}-vs-${result.nick2}.png`;
+      link.click();
+      URL.revokeObjectURL(url);
+      setShareMessage("비교 이미지를 저장했어요.");
+      clearShareMessageLater();
+    } catch {
+      setShareMessage("이미지 저장에 실패했습니다.");
+    } finally {
+      setShareBusy(null);
+    }
+  };
+
+  const handleShareImage = async () => {
+    if (!result) return;
+
+    try {
+      setShareBusy("image");
+      const blob = await createShareImageBlob();
+      const file = new File([blob], `bgms-battle-${result.nick1}-vs-${result.nick2}.png`, { type: "image/png" });
+
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({
+          title: "BGMS 전적 비교",
+          text: `${result.nick1} vs ${result.nick2} 전적 비교 결과`,
+          files: [file],
+        });
+        setShareMessage("이미지 공유 시트를 열었어요.");
+      } else {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = file.name;
+        link.click();
+        URL.revokeObjectURL(url);
+        setShareMessage("이미지 공유가 지원되지 않아 파일로 저장했어요.");
+      }
+      clearShareMessageLater();
+    } catch (error: any) {
+      if (error?.name !== "AbortError") {
+        setShareMessage("이미지 공유에 실패했습니다.");
+      }
+    } finally {
+      setShareBusy(null);
+    }
   };
 
   return (
@@ -75,30 +237,30 @@ export default function BattlePage() {
           <div className="text-5xl mb-4">⚔️</div>
           <h1 className="text-3xl font-black tracking-tight mb-2">전적 비교 배틀</h1>
           <p className="text-gray-500 text-sm">두 플레이어의 BGMS 분석 데이터를 항목별로 대결시킵니다</p>
-          <p className="text-gray-600 text-xs mt-1">※ BGMS에서 한 번 이상 전적 분석을 받은 플레이어만 비교 가능합니다</p>
+          <p className="text-gray-600 text-xs mt-1">※ 최근 최대 20경기 중 더 적은 플레이어의 경기 수에 맞춰 비교합니다</p>
         </div>
 
         {/* 입력폼 */}
         <div className="p-6 bg-white/5 border border-white/10 rounded-3xl flex flex-col gap-4">
-          <div className="flex items-center gap-4">
+          <div className="flex flex-col md:flex-row items-center gap-4">
             <input
               value={nick1}
               onChange={(e) => setNick1(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="내 닉네임"
-              className="flex-1 p-4 bg-black/40 border border-indigo-500/30 rounded-2xl text-white placeholder:text-gray-600 font-bold focus:outline-none focus:border-indigo-500/70 transition-colors"
+              className="w-full md:flex-1 p-4 bg-black/40 border border-indigo-500/30 rounded-2xl text-white placeholder:text-gray-600 font-bold focus:outline-none focus:border-indigo-500/70 transition-colors"
             />
-            <div className="text-xl font-black text-gray-600 shrink-0">VS</div>
+            <div className="text-xl font-black text-gray-600 shrink-0 md:rotate-0">VS</div>
             <input
               value={nick2}
               onChange={(e) => setNick2(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder="상대 닉네임"
-              className="flex-1 p-4 bg-black/40 border border-rose-500/30 rounded-2xl text-white placeholder:text-gray-600 font-bold focus:outline-none focus:border-rose-500/70 transition-colors"
+              className="w-full md:flex-1 p-4 bg-black/40 border border-rose-500/30 rounded-2xl text-white placeholder:text-gray-600 font-bold focus:outline-none focus:border-rose-500/70 transition-colors"
             />
           </div>
           <button
-            onClick={handleBattle}
+            onClick={() => handleBattle()}
             disabled={loading || !nick1.trim() || !nick2.trim()}
             className="w-full py-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 rounded-2xl font-black text-lg tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98]"
           >
@@ -116,105 +278,169 @@ export default function BattlePage() {
         {/* 결과 */}
         {result && (
           <div className="flex flex-col gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
-
-            {/* 총 스코어 */}
-            <div className="p-6 bg-black/60 rounded-3xl border border-white/10 backdrop-blur-xl">
-              <div className="flex items-center justify-between mb-6">
-                {/* 플레이어 1 */}
-                <div className="text-center flex-1">
-                  <div className={`inline-block px-3 py-1 rounded-full text-xs font-black mb-2 ${TIER_STYLES[result.tier1]?.bg ?? ""} ${TIER_STYLES[result.tier1]?.text ?? ""}`}>
-                    {TIER_STYLES[result.tier1]?.label ?? result.tier1}
-                  </div>
-                  <div className="font-black text-lg text-indigo-300 truncate">{result.nick1}</div>
-                  <div className="text-[10px] text-gray-600">{result.matchCount1}경기 데이터</div>
-                </div>
-
-                {/* 스코어 */}
-                <div className="flex items-center gap-3 px-4">
-                  <div className="text-4xl font-black text-indigo-400">{result.score.nick1}</div>
-                  <div className="text-lg text-gray-600 font-black">:</div>
-                  <div className="text-4xl font-black text-rose-400">{result.score.nick2}</div>
-                </div>
-
-                {/* 플레이어 2 */}
-                <div className="text-center flex-1">
-                  <div className={`inline-block px-3 py-1 rounded-full text-xs font-black mb-2 ${TIER_STYLES[result.tier2]?.bg ?? ""} ${TIER_STYLES[result.tier2]?.text ?? ""}`}>
-                    {TIER_STYLES[result.tier2]?.label ?? result.tier2}
-                  </div>
-                  <div className="font-black text-lg text-rose-300 truncate">{result.nick2}</div>
-                  <div className="text-[10px] text-gray-600">{result.matchCount2}경기 데이터</div>
-                </div>
-              </div>
-
-              {/* 최종 승자 배너 */}
-              <div className={`p-4 rounded-2xl text-center font-black text-sm ${
-                result.overallWinner === result.nick1 ? "bg-indigo-500/20 border border-indigo-500/30 text-indigo-300" :
-                result.overallWinner === result.nick2 ? "bg-rose-500/20 border border-rose-500/30 text-rose-300" :
-                "bg-yellow-500/10 border border-yellow-500/20 text-yellow-400"
-              }`}>
-                {result.overallWinner === "draw"
-                  ? "🤝 무승부 — 두 플레이어의 실력이 비슷합니다"
-                  : `🏆 ${result.overallWinner} 승리! (${Math.max(result.score.nick1, result.score.nick2)}항목 우세)`}
-              </div>
-            </div>
-
-            {/* 항목별 비교 */}
-            <div className="flex flex-col gap-3">
-              {result.comparisons.map((c) => {
-                const n1Wins = c.winner === "nick1";
-                const n2Wins = c.winner === "nick2";
-                const isDraw = c.winner === "draw";
-                return (
-                  <div
-                    key={c.key}
-                    className={`p-4 rounded-2xl border flex items-center gap-4 transition-all ${
-                      n1Wins ? "border-indigo-500/30 bg-indigo-500/5" :
-                      n2Wins ? "border-rose-500/30 bg-rose-500/5" :
-                               "border-white/10 bg-white/5"
-                    }`}
-                  >
-                    {/* 플레이어1 값 */}
-                    <div className={`flex-1 text-right font-black text-xl ${n1Wins ? "text-indigo-400" : "text-white/50"}`}>
-                      {c.v1}{c.unit}
+            <div
+              ref={resultCardRef}
+              className="flex flex-col gap-4 rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.14),_transparent_35%),radial-gradient(circle_at_bottom,_rgba(244,63,94,0.16),_transparent_32%),rgba(3,7,18,0.95)] p-2 shadow-[0_30px_120px_rgba(0,0,0,0.35)]"
+            >
+              {/* 총 스코어 */}
+              <div className="p-6 bg-black/60 rounded-3xl border border-white/10 backdrop-blur-xl">
+                <div className="flex items-center justify-between mb-6">
+                  {/* 플레이어 1 */}
+                  <div className="text-center flex-1">
+                    <div className={`inline-block px-3 py-1 rounded-full text-xs font-black mb-2 ${TIER_STYLES[result.tier1]?.bg ?? ""} ${TIER_STYLES[result.tier1]?.text ?? ""}`}>
+                      {TIER_STYLES[result.tier1]?.label ?? result.tier1}
                     </div>
+                    <div className="font-black text-lg text-indigo-300 truncate">{result.nick1}</div>
+                    <div className="text-[10px] text-gray-600">{result.matchCount1}경기 비교 기준</div>
+                  </div>
 
-                    {/* 중앙: 항목명 + 승자 표시 */}
-                    <div className="w-28 text-center shrink-0">
-                      <div className="text-[10px] text-gray-500 font-black uppercase tracking-wider mb-1">{c.label}</div>
-                      <div className="flex items-center justify-center gap-1.5 mt-1">
-                        {/* 왼쪽 점 */}
-                        <div className={`w-2.5 h-2.5 rounded-full ${n1Wins ? "bg-indigo-400 shadow-[0_0_6px_rgba(99,102,241,0.8)]" : "bg-white/10"}`} />
-                        {/* 화살표 */}
-                        <div className={`text-xs font-black ${
-                          n1Wins ? "text-indigo-400" :
-                          n2Wins ? "text-rose-400" :
-                          "text-gray-600"
-                        }`}>
-                          {n1Wins ? "◀" : n2Wins ? "▶" : "—"}
+                  {/* 스코어 */}
+                  <div className="flex items-center gap-3 px-4">
+                    <div className="text-4xl font-black text-indigo-400">{result.score.nick1}</div>
+                    <div className="text-lg text-gray-600 font-black">:</div>
+                    <div className="text-4xl font-black text-rose-400">{result.score.nick2}</div>
+                  </div>
+
+                  {/* 플레이어 2 */}
+                  <div className="text-center flex-1">
+                    <div className={`inline-block px-3 py-1 rounded-full text-xs font-black mb-2 ${TIER_STYLES[result.tier2]?.bg ?? ""} ${TIER_STYLES[result.tier2]?.text ?? ""}`}>
+                      {TIER_STYLES[result.tier2]?.label ?? result.tier2}
+                    </div>
+                    <div className="font-black text-lg text-rose-300 truncate">{result.nick2}</div>
+                    <div className="text-[10px] text-gray-600">{result.matchCount2}경기 비교 기준</div>
+                  </div>
+                </div>
+
+                {/* 최종 승자 배너 */}
+                <div className={`p-4 rounded-2xl text-center font-black text-sm ${
+                  result.overallWinner === result.nick1 ? "bg-indigo-500/20 border border-indigo-500/30 text-indigo-300" :
+                  result.overallWinner === result.nick2 ? "bg-rose-500/20 border border-rose-500/30 text-rose-300" :
+                  "bg-yellow-500/10 border border-yellow-500/20 text-yellow-400"
+                }`}>
+                  {result.overallWinner === "draw"
+                    ? "무승부 - 두 플레이어의 실력이 비슷합니다"
+                    : `${result.overallWinner} 승리! (${Math.max(result.score.nick1, result.score.nick2)}항목 우세)`}
+                </div>
+                {(result.availableMatchCount1 !== result.comparisonMatchCount || result.availableMatchCount2 !== result.comparisonMatchCount) && (
+                  <div className="mt-3 text-center text-[10px] text-gray-600 font-bold">
+                    보유 데이터: {result.nick1} {result.availableMatchCount1}경기 / {result.nick2} {result.availableMatchCount2}경기 → 최근 {result.comparisonMatchCount}경기 기준 비교
+                  </div>
+                )}
+              </div>
+
+              {/* 항목별 비교 */}
+              <div className="flex flex-col gap-3 px-2 pb-2">
+                {result.comparisons.map((c) => {
+                  const n1Wins = c.winner === "nick1";
+                  const n2Wins = c.winner === "nick2";
+                  return (
+                    <div
+                      key={c.key}
+                      className={`p-4 rounded-2xl border flex items-center gap-4 transition-all ${
+                        n1Wins ? "border-indigo-500/30 bg-indigo-500/5" :
+                        n2Wins ? "border-rose-500/30 bg-rose-500/5" :
+                                 "border-white/10 bg-white/5"
+                      }`}
+                    >
+                      <div className={`flex-1 text-right font-black text-xl ${n1Wins ? "text-indigo-400" : "text-white/50"}`}>
+                        {typeof c.v1 === "number" ? c.v1.toFixed(1) : c.v1}{c.unit}
+                      </div>
+
+                      <div className="w-28 text-center shrink-0">
+                        <div className="text-[10px] text-gray-500 font-black uppercase tracking-wider mb-1">{c.label}</div>
+                        <div className="flex items-center justify-center gap-1.5 mt-1">
+                          <div className={`w-2.5 h-2.5 rounded-full ${n1Wins ? "bg-indigo-400 shadow-[0_0_6px_rgba(99,102,241,0.8)]" : "bg-white/10"}`} />
+                          <div className={`text-xs font-black ${
+                            n1Wins ? "text-indigo-400" :
+                            n2Wins ? "text-rose-400" :
+                            "text-gray-600"
+                          }`}>
+                            {n1Wins ? "◀" : n2Wins ? "▶" : "—"}
+                          </div>
+                          <div className={`w-2.5 h-2.5 rounded-full ${n2Wins ? "bg-rose-400 shadow-[0_0_6px_rgba(244,63,94,0.8)]" : "bg-white/10"}`} />
                         </div>
-                        {/* 오른쪽 점 */}
-                        <div className={`w-2.5 h-2.5 rounded-full ${n2Wins ? "bg-rose-400 shadow-[0_0_6px_rgba(244,63,94,0.8)]" : "bg-white/10"}`} />
+                      </div>
+
+                      <div className={`flex-1 text-left font-black text-xl ${n2Wins ? "text-rose-400" : "text-white/50"}`}>
+                        {typeof c.v2 === "number" ? c.v2.toFixed(1) : c.v2}{c.unit}
                       </div>
                     </div>
+                  );
+                })}
 
-                    {/* 플레이어2 값 */}
-                    <div className={`flex-1 text-left font-black text-xl ${n2Wins ? "text-rose-400" : "text-white/50"}`}>
-                      {c.v2}{c.unit}
-                    </div>
+                {result.score.draw > 0 && (
+                  <div className="text-center text-xs text-gray-600">
+                    {result.score.draw}개 항목은 차이가 적어 무승부 처리되었습니다
                   </div>
-                );
-              })}
+                )}
+
+                <div className="px-2 pt-1 pb-2 text-center text-[11px] font-black tracking-[0.2em] text-white/35">
+                  BGMS BATTLE SHARE CARD
+                </div>
+              </div>
             </div>
 
-            {/* 무승부 항목 수 */}
-            {result.score.draw > 0 && (
-              <div className="text-center text-xs text-gray-600">
-                {result.score.draw}개 항목은 차이가 적어 무승부 처리되었습니다
+            <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-5 backdrop-blur-xl">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div>
+                  <div className="text-sm font-black text-white">공유하기</div>
+                  <div className="text-xs text-gray-500 mt-1">링크 공유, 링크 복사, 결과 이미지 저장까지 바로 할 수 있어요.</div>
+                </div>
+                {shareMessage && (
+                  <div className="text-xs font-bold text-emerald-300">{shareMessage}</div>
+                )}
               </div>
-            )}
+
+              <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
+                <button
+                  onClick={handleShareLink}
+                  disabled={shareBusy !== null}
+                  className="h-12 rounded-2xl border border-sky-400/20 bg-sky-500/10 text-sky-200 font-black text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  <Share2 size={16} />
+                  {shareBusy === "share" ? "공유 중..." : "링크 공유"}
+                </button>
+                <button
+                  onClick={handleCopyLink}
+                  disabled={shareBusy !== null}
+                  className="h-12 rounded-2xl border border-white/10 bg-white/5 text-white font-black text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  <Copy size={16} />
+                  {shareBusy === "copy" ? "복사 중..." : "링크 복사"}
+                </button>
+                <button
+                  onClick={handleShareImage}
+                  disabled={shareBusy !== null}
+                  className="h-12 rounded-2xl border border-rose-400/20 bg-rose-500/10 text-rose-200 font-black text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  <Camera size={16} />
+                  {shareBusy === "image" ? "생성 중..." : "이미지 공유"}
+                </button>
+                <button
+                  onClick={handleDownloadImage}
+                  disabled={shareBusy !== null}
+                  className="h-12 rounded-2xl border border-amber-400/20 bg-amber-500/10 text-amber-200 font-black text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  <Download size={16} />
+                  {shareBusy === "download" ? "저장 중..." : "이미지 저장"}
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>
     </main>
+  );
+}
+
+export default function BattlePage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[#080810] flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-500"></div>
+      </div>
+    }>
+      <BattleContent />
+    </Suspense>
   );
 }

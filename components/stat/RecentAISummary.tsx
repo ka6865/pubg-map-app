@@ -95,8 +95,6 @@ interface DebateData {
         revives: number;
         trades: number;
         supps: number;
-        stuns?: number;
-        stunDuration?: number;
         initiative: { attempts: number; success: number };
       };
       isolation?: {
@@ -270,7 +268,10 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
         className="w-full p-8 bg-indigo-500/5 border-2 border-dashed border-indigo-500/30 rounded-3xl text-indigo-400 font-bold flex flex-col items-center gap-4 hover:bg-indigo-500/10 transition-all active:scale-[0.98]"
       >
         <span className="text-4xl">🔥</span>
-        <span>최근 10경기 AI 끝장 토론 시작</span>
+        <div className="flex flex-col items-center gap-2">
+          <span>최근 10경기 AI 끝장 토론 시작</span>
+          <span className="text-xs font-normal opacity-60">(기본지표는 10판이지만 10판중 잘한5판 티어높은5판 기준으로 상위권과 비교합니다)</span>
+        </div>
       </button>
     );
   }
@@ -804,16 +805,16 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
               className="w-full p-6 flex justify-between items-center text-left group"
             >
               <div className="flex flex-col gap-1">
-                <span className="text-[10px] text-indigo-400 font-black uppercase tracking-widest">{issue.topic}</span>
-                <h4 className="text-lg font-black text-white group-hover:text-indigo-300 transition-colors">{issue.question}</h4>
+                <span className="text-[10px] text-indigo-400 font-black uppercase tracking-widest">{issue?.topic || "분석 항목"}</span>
+                <h4 className="text-lg font-black text-white group-hover:text-indigo-300 transition-colors">{issue?.question || "분석 내용 로드 중..."}</h4>
               </div>
               <div className="flex items-center gap-4">
                 <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter ${
-                  issue.winner === "spicy" ? "bg-red-500/20 text-red-400 border border-red-500/30" : 
-                  issue.winner === "kind" ? "bg-green-500/20 text-green-400 border border-green-500/30" : 
+                  issue?.winner === "spicy" ? "bg-red-500/20 text-red-400 border border-red-500/30" : 
+                  issue?.winner === "kind" ? "bg-green-500/20 text-green-400 border border-green-500/30" : 
                   "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30"
                 }`}>
-                  {issue.winner === "spicy" ? "매운맛 승" : issue.winner === "kind" ? "착한맛 승" : "무승부"}
+                  {issue?.winner === "spicy" ? "매운맛 승" : issue?.winner === "kind" ? "착한맛 승" : "무승부"}
                 </div>
                 <svg className={`w-6 h-6 text-white/50 transition-transform ${openIssueIdx === idx ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
               </div>
@@ -822,32 +823,32 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
             {openIssueIdx === idx && (
               <div className="px-6 pb-6 animate-in slide-in-from-top-4 duration-300">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className={`p-5 rounded-2xl border transition-all ${issue.winner === "kind" ? "bg-green-500/5 border-green-500/30 ring-1 ring-green-500/20" : "bg-black/30 border-white/10"}`}>
+                  <div className={`p-5 rounded-2xl border transition-all ${issue?.winner === "kind" ? "bg-green-500/5 border-green-500/30 ring-1 ring-green-500/20" : "bg-black/30 border-white/10"}`}>
                     <div className="flex items-center gap-2 mb-3">
                       <span className="text-lg">😊</span>
                       <span className="text-xs font-black text-green-400 uppercase">KIND COACH</span>
                     </div>
-                    <p className="text-sm text-gray-300 leading-relaxed font-medium">&quot;{issue.kindOpinion}&quot;</p>
+                    <p className="text-sm text-gray-300 leading-relaxed font-medium">&quot;{issue?.kindOpinion || "의견을 가져오는 중..."}&quot;</p>
                   </div>
  
-                  <div className={`p-5 rounded-2xl border transition-all ${issue.winner === "spicy" ? "bg-red-500/5 border-red-500/30 ring-1 ring-red-500/20" : "bg-black/30 border-white/10"}`}>
+                  <div className={`p-5 rounded-2xl border transition-all ${issue?.winner === "spicy" ? "bg-red-500/5 border-red-500/30 ring-1 ring-red-500/20" : "bg-black/30 border-white/10"}`}>
                     <div className="flex items-center gap-2 mb-3">
                       <span className="text-lg">⚡</span>
                       <span className="text-xs font-black text-red-400 uppercase">SPICY BOMBER</span>
                     </div>
-                    <p className="text-sm text-gray-300 leading-relaxed font-medium">&quot;{issue.spicyOpinion}&quot;</p>
+                    <p className="text-sm text-gray-300 leading-relaxed font-medium">&quot;{issue?.spicyOpinion || "의견을 가져오는 중..."}&quot;</p>
                   </div>
                 </div>
 
                 <div className="mt-8 p-6 bg-black/40 rounded-2xl border border-white/5">
                   <div className="flex flex-col gap-1 text-center md:text-left mb-8">
                     <span className="text-[10px] text-gray-500 font-black uppercase tracking-widest">데이터 증거 (Tactical Evidence)</span>
-                    <span className="text-lg font-black text-white">{issue.topic} 상세 비교</span>
+                    <span className="text-lg font-black text-white">{issue?.topic || "데이터"} 상세 비교</span>
                   </div>
                   
                   <div className="space-y-4">
-                    {issue.userStats.map((uStat: { label: string; value: string }, sIdx: number) => {
-                      const bStat = issue.benchmarkStats[sIdx];
+                    {issue.userStats?.map((uStat: { label: string; value: string }, sIdx: number) => {
+                      const bStat = issue.benchmarkStats?.[sIdx];
                       return (
                         <div key={sIdx} className="grid grid-cols-11 items-center gap-2 p-4 bg-white/5 rounded-xl border border-white/5 group hover:bg-white/10 transition-colors">
                           <div className="col-span-4 text-right">
@@ -880,7 +881,9 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
         </div>
         <div className="relative z-10">
           <h4 className="text-xs font-black text-indigo-400 uppercase tracking-[0.2em] mb-4">Final Verdict</h4>
-          <p className="text-xl md:text-2xl font-black text-white leading-tight mb-8">&quot;{debateData?.finalVerdict}&quot;</p>
+          <p className="text-xl md:text-2xl font-black text-white leading-tight mb-8">
+            &quot;{debateData?.finalVerdict || (loading ? "전술 분석 데이터를 요약 중입니다..." : "분석 결과를 생성할 수 없습니다. 상세 지표를 확인해주세요.")}&quot;
+          </p>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {debateData?.actionItems?.map((item: { icon: string; title: string; desc: string }, idx: number) => (

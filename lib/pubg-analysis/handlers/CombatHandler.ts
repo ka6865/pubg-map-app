@@ -27,6 +27,9 @@ export class CombatHandler extends BaseHandler {
       case "LogPlayerRecall":
       case "LogPlayerRecallShip":
       case "LogPlayerRedeploy":
+      case "LogPlayerRedeployBRStart": 
+      case "LogPlayerRedeployBrStart": 
+      case "LogPlayerCreate": // [V26.1] 태이고 복귀전 등 암시적 부활 대응
         this.handleRecall(e, ts);
         break;
     }
@@ -170,9 +173,10 @@ export class CombatHandler extends BaseHandler {
         ts: ts - this.state.matchStartTime,
         type: 'KNOCK',
         weapon: WEAPON_NAMES[weaponId] || weaponId.replace(/Item_Weapon_|Weap|_Projectile|_C/g, ""),
-        victim: victimName,
+        victim: e.victim?.name || victimName,
         distance: dist !== 10 ? dist : undefined,
-        isHeadshot: e.damageReason === "HeadShot" || e.isHeadshot
+        isHeadshot: e.damageReason === "HeadShot" || e.isHeadshot,
+        isMe: true
       });
     }
 
@@ -183,7 +187,8 @@ export class CombatHandler extends BaseHandler {
         ts: ts - this.state.matchStartTime,
         type: 'DOWNED',
         attacker: makerName,
-        weapon: WEAPON_NAMES[weaponId] || weaponId.replace(/Item_Weapon_|Weap|_Projectile|_C/g, "")
+        weapon: WEAPON_NAMES[weaponId] || weaponId.replace(/Item_Weapon_|Weap|_Projectile|_C/g, ""),
+        isMe: true // [V26.1] 내가 기절함
       });
     }
 
@@ -196,9 +201,10 @@ export class CombatHandler extends BaseHandler {
       this.state.timeline.push({
         ts: ts - this.state.matchStartTime,
         type: 'TEAM_KNOCK',
-        victim: victimName,
-        attacker: makerName,
-        weapon: WEAPON_NAMES[weaponId] || weaponId.replace(/Item_Weapon_|Weap|_Projectile|_C/g, "")
+        attacker: attacker?.name || makerName,
+        victim: e.victim?.name || victimName,
+        weapon: WEAPON_NAMES[weaponId] || weaponId.replace(/Item_Weapon_|Weap|_Projectile|_C/g, ""),
+        isMe: false
       });
     }
 
@@ -256,9 +262,10 @@ export class CombatHandler extends BaseHandler {
         ts: ts - this.state.matchStartTime,
         type: 'KILL',
         weapon: WEAPON_NAMES[wId] || wId.replace(/Item_Weapon_|Weap|Vehicle_|BP_|_Projectile|_C/g, ""),
-        victim: victimName,
+        victim: e.victim?.name || victimName,
         distance: dist !== 10 ? dist : undefined,
-        isHeadshot: e.damageReason === "HeadShot" || e.killer?.damageReason === "HeadShot"
+        isHeadshot: e.damageReason === "HeadShot" || e.killer?.damageReason === "HeadShot",
+        isMe: true
       });
 
       if (victimName && !this.state.teamNames.has(victimName)) {
@@ -271,16 +278,18 @@ export class CombatHandler extends BaseHandler {
         ts: ts - this.state.matchStartTime,
         type: 'FINISH',
         weapon: WEAPON_NAMES[wId] || wId.replace(/Item_Weapon_|Weap|Vehicle_|BP_|_Projectile|_C/g, ""),
-        victim: victimName,
-        attacker: killerName || dBNOMakerName || "Unknown"
+        victim: e.victim?.name || victimName,
+        attacker: e.killer?.name || e.finisher?.name || killerName || dBNOMakerName || "Unknown",
+        isMe: true
       });
     } else if (isTeammateKiller) {
       this.state.timeline.push({
         ts: ts - this.state.matchStartTime,
         type: 'TEAM_KILL',
-        attacker: killerName,
-        victim: victimName,
-        weapon: WEAPON_NAMES[wId] || wId.replace(/Item_Weapon_|Weap|Vehicle_|BP_|_Projectile|_C/g, "")
+        attacker: e.killer?.name || killerName,
+        victim: e.victim?.name || victimName,
+        weapon: WEAPON_NAMES[wId] || wId.replace(/Item_Weapon_|Weap|Vehicle_|BP_|_Projectile|_C/g, ""),
+        isMe: false
       });
     }
 
@@ -301,14 +310,18 @@ export class CombatHandler extends BaseHandler {
       }
     }
 
-    if (isTeammateVictim && !isMeVictim) {
-      this.state.timeline.push({
-        ts: ts - this.state.matchStartTime,
-        type: 'TEAM_DIED',
-        attacker: killerName || finisherName || "Unknown",
-        victim: victimName,
-        weapon: WEAPON_NAMES[wId] || wId.replace(/Item_Weapon_|Weap|Vehicle_|BP_|_Projectile|_C/g, "")
-      });
+    if (isTeammateVictim) {
+      this.state.playerAliveStatus.set(victimName, false);
+      if (!isMeVictim) {
+        this.state.timeline.push({
+          ts: ts - this.state.matchStartTime,
+          type: 'TEAM_DIED',
+          attacker: e.killer?.name || e.finisher?.name || killerName || finisherName || "Unknown",
+          victim: e.victim?.name || victimName,
+          weapon: WEAPON_NAMES[wId] || wId.replace(/Item_Weapon_|Weap|Vehicle_|BP_|_Projectile|_C/g, ""),
+          isMe: false
+        });
+      }
     }
 
     if (isMeVictim) {
@@ -323,8 +336,9 @@ export class CombatHandler extends BaseHandler {
       this.state.timeline.push({
         ts: ts - this.state.matchStartTime,
         type: 'DIED',
-        attacker: killerName || finisherName || "Unknown",
-        weapon: WEAPON_NAMES[wId] || wId.replace(/Item_Weapon_|Weap|Vehicle_|BP_|_Projectile|_C/g, "")
+        attacker: e.killer?.name || e.finisher?.name || killerName || finisherName || "Unknown",
+        weapon: WEAPON_NAMES[wId] || wId.replace(/Item_Weapon_|Weap|Vehicle_|BP_|_Projectile|_C/g, ""),
+        isMe: true
       });
     }
   }
@@ -336,12 +350,14 @@ export class CombatHandler extends BaseHandler {
     const isTeammateVictim = this.isTeammate(e.victim);
     const victimName = normalizeName(e.victim?.name || "");
 
-    const cleanVictim = victimName.replace(/_/g, "");
-    const isPreviouslyDead = this.state.playerAliveStatus.get(cleanVictim) === false;
+    const isPreviouslyDead = this.state.playerAliveStatus.get(victimName) === false;
 
-    const isRecall = e.reviveType === "Recall" || e.reviveType === "BlueChip" || isPreviouslyDead;
-    if (isRecall) {
-      this.handleRecall(e, ts);
+    const revType = (e.reviveType || "").toLowerCase();
+    const isBr = revType === "br" || revType === "redeploy";
+    const isRecall = revType === "recall" || revType === "bluechip" || isPreviouslyDead;
+
+    if (isRecall || isBr) {
+      this.handleRecall(e, ts, isBr);
       return;
     }
     this.state.playerAliveStatus.set(victimName, true);
@@ -350,24 +366,43 @@ export class CombatHandler extends BaseHandler {
       this.state.totalReviveEvents.push(ts);
       if (isMeReviver) {
         this.state.myActionTimestamps.push(ts);
-        this.state.timeline.push({ ts: ts - this.state.matchStartTime, type: 'REVIVE', victim: victimName });
+        this.state.timeline.push({ 
+          ts: ts - this.state.matchStartTime, 
+          type: 'REVIVE', 
+          victim: e.victim?.name || victimName,
+          isMe: true
+        });
       } else {
-        this.state.timeline.push({ ts: ts - this.state.matchStartTime, type: 'TEAM_REVIVE', attacker: normalizeName(e.reviver?.name || ""), victim: victimName });
+        this.state.timeline.push({ 
+          ts: ts - this.state.matchStartTime, 
+          type: isMeVictim ? 'REVIVE' : 'TEAM_REVIVE', 
+          attacker: e.reviver?.name || "동료", 
+          victim: e.victim?.name || victimName,
+          isMe: isMeVictim,
+          isRecall: false
+        });
       }
     }
   }
 
-  private handleRecall(e: any, ts: number) {
-    const recaller = e.recaller || e.reviver;
+  private handleRecall(e: any, ts: number, forceBr: boolean = false) {
+    const recaller = e.recaller || e.reviver || e.attacker;
     const recallerName = normalizeName(recaller?.name || "시스템");
+    const isMeRecaller = this.isMe(recaller);
     const isTeammateRecaller = this.isTeammate(recaller);
 
     const victims: any[] = [];
     if (e.recalledPlayers && Array.isArray(e.recalledPlayers)) {
       e.recalledPlayers.forEach((p: any) => victims.push(p));
     } else {
+      // character (LogPlayerRecallShip, LogPlayerRedeploy), victim (LogPlayerRevive-Recall)
       victims.push(e.victim || e.character || e.recallingPlayer || e.recalledPlayer);
     }
+
+    const eventType = e._T || "";
+    const isRedeploy = forceBr || 
+                      eventType.toLowerCase().includes("redeploy") || 
+                      (e.reviveType || "").toLowerCase() === "br";
 
     victims.forEach(v => {
       if (!v) return;
@@ -375,14 +410,18 @@ export class CombatHandler extends BaseHandler {
       const isTeammateVictim = this.isTeammate(v);
       const isMeVictim = this.isMe(v);
 
-      if (isTeammateRecaller || isTeammateVictim) {
-        const isAlreadyAlive = this.state.playerAliveStatus.get(vName) === true;
-        if (!isAlreadyAlive) {
+      if (isTeammateRecaller || isTeammateVictim || isMeVictim || isMeRecaller) {
+        const isPreviouslyDead = this.state.playerAliveStatus.get(vName) === false;
+        if (isPreviouslyDead) {
+          // [V26.1] UI 표시를 위해 원본 이름(v.name) 보존하여 기록
+          const displayName = v.name || vName; 
           this.state.timeline.push({
             ts: ts - this.state.matchStartTime,
-            type: 'RECALL',
-            attacker: recallerName,
-            victim: vName
+            type: isRedeploy ? 'REDEPLOY' : (isMeVictim ? 'RECALL' : 'TEAM_RECALL'),
+            attacker: recaller?.name || "시스템", // 원본 이름 보존
+            victim: displayName,
+            isMe: isMeVictim || isMeRecaller,
+            isRecall: !isRedeploy
           });
         }
         this.state.playerAliveStatus.set(vName, true);

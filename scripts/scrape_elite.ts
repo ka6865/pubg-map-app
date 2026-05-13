@@ -28,6 +28,14 @@ const HEADERS = {
   Accept: "application/vnd.api+json",
 };
 
+// [설정] 실행 모드에 따른 제한값 (기본값은 수동 실행용 Full 모드)
+const PLAYER_LIMIT = parseInt(process.env.ELITE_PLAYER_LIMIT || '10');
+const MATCH_LIMIT = parseInt(process.env.ELITE_MATCH_LIMIT || '10');
+const ENABLE_SAMPLING = process.env.ENABLE_SAMPLING === 'true' || !process.env.ELITE_PLAYER_LIMIT; 
+
+console.log(`📊 실행 모드: ${process.env.ELITE_PLAYER_LIMIT ? 'DAILY (Light)' : 'MANUAL (Full)'}`);
+console.log(`👥 인원: ${PLAYER_LIMIT}, 🎮 매치: ${MATCH_LIMIT}, 🧪 샘플링: ${ENABLE_SAMPLING}`);
+
 async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -37,15 +45,17 @@ function sampleParticipants(rawStats: any[], excludeName: string): string[] {
   const n = rawStats.length;
   if (n === 0) return [];
 
-  const sIndex = Math.floor(n * 0.05);
-  const bIndex = Math.floor(n * 0.40);
+  const sIndex = Math.floor(n * 0.05); // S티어 후보
+  const bIndex = Math.floor(n * 0.40); // B티어 후보
+  const cIndex = Math.floor(n * 0.70); // C티어 후보
 
   const reps = new Set<string>();
   
   if (rawStats[sIndex] && rawStats[sIndex].player_id !== excludeName) reps.add(rawStats[sIndex].player_id);
   if (rawStats[bIndex] && rawStats[bIndex].player_id !== excludeName) reps.add(rawStats[bIndex].player_id);
+  if (rawStats[cIndex] && rawStats[cIndex].player_id !== excludeName) reps.add(rawStats[cIndex].player_id);
 
-  return Array.from(reps).slice(0, 2);
+  return Array.from(reps).slice(0, 3);
 }
 
 async function scrapeEliteData() {
@@ -68,7 +78,7 @@ async function scrapeEliteData() {
       try {
         // 1. 일반 리더보드
         const leaderboardRes = await axios.get(`https://api.pubg.com/shards/pc-as/leaderboards/${seasonId}/${mode}`, { headers: HEADERS });
-        const modePlayers = leaderboardRes.data.included?.filter((i: any) => i.type === "player").slice(0, 10) || [];
+        const modePlayers = leaderboardRes.data.included?.filter((i: any) => i.type === "player").slice(0, PLAYER_LIMIT) || [];
         modePlayers.forEach((p: any) => playerPool.set(p.id, p.attributes.name));
         
         // 2. 경쟁전 리더보드 (일부 모드만 지원)
@@ -88,7 +98,7 @@ async function scrapeEliteData() {
       let matchIds: string[] = [];
       try {
         const pDetails = await axios.get(`${BASE_URL}/players/${accountId}`, { headers: HEADERS });
-        matchIds = pDetails.data.data.relationships.matches.data.slice(0, 10).map((m: any) => m.id);
+        matchIds = pDetails.data.data.relationships.matches.data.slice(0, MATCH_LIMIT).map((m: any) => m.id);
       } catch (err) { continue; }
 
       for (const matchId of matchIds) {
@@ -126,7 +136,7 @@ async function scrapeEliteData() {
               .eq("match_id", matchId)
               .order("damage", { ascending: false });
 
-            if (rawStats && rawStats.length > 0) {
+            if (ENABLE_SAMPLING && rawStats && rawStats.length > 0) {
               const excludeName = nickname.toLowerCase().trim();
               const samples = sampleParticipants(rawStats, excludeName);
 

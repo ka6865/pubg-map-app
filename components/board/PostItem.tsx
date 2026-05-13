@@ -15,30 +15,42 @@ interface PostItemProps {
 }
 
 export default function PostItem({ post, isMobile, onClickDesktop, formatTimeAgo }: PostItemProps) {
+  const isPatchNote = post.category === "패치노트";
+
   if (isMobile) {
     return (
-      <li className={`border-b border-white/5 ${post.is_notice ? "bg-[#F2A900]/5" : ""}`}>
-        <Link href={`/board/${post.id}`} className="flex flex-col gap-1.5 p-3.5 px-4 active:bg-white/5">
-          <div className="flex justify-between items-center">
-            <span className={`text-[10px] font-bold tracking-wider uppercase px-2 py-0.5 rounded ${post.is_notice ? 'text-[#F2A900] bg-[#F2A900]/10' : 'text-white/30 bg-white/5'}`}>
+      <li className={`border-b border-white/5 ${post.is_notice ? "bg-[#F2A900]/5" : isPatchNote ? "bg-[#F2A900]/3" : ""}`}>
+        <Link href={`/board/${post.id}`} className="flex flex-col gap-2 p-4 px-5 active:bg-white/5 transition-colors">
+          <div className="flex justify-between items-center mb-0.5">
+            <span className={`text-[10px] font-bold tracking-wider uppercase px-2.5 py-0.5 rounded-full ${
+              post.is_notice 
+                ? 'text-[#F2A900] bg-[#F2A900]/20 border border-[#F2A900]/30' 
+                : isPatchNote 
+                  ? 'text-[#F2A900] bg-[#F2A900]/10 border border-[#F2A900]/20'
+                  : 'text-white/40 bg-white/5 border border-white/10'
+            }`}>
               {post.is_notice ? "📢 공지" : post.category}
             </span>
-            <span className="text-[11px] text-white/30">{formatTimeAgo(post.created_at)}</span>
+            <span className="text-[11px] text-white/30 font-medium">{formatTimeAgo(post.created_at)}</span>
           </div>
-          <div className="flex items-center gap-1">
-            <span className={`text-sm break-all ${post.is_notice ? "text-[#F2A900] font-bold" : "text-white/90 font-medium"}`}>
+          <div className="flex items-start gap-1.5">
+            <span className={`text-[15px] leading-snug break-all ${post.is_notice || isPatchNote ? "text-[#F2A900] font-bold" : "text-white/90 font-semibold"}`}>
               {post.title}
             </span>
             {post.image_url && <ImageIcon />}
             {(post.comment_count || 0) > 0 && (
-              <span className="text-[11px] text-white/40 ml-1 flex items-center gap-0.5">
-                <MessageCircle size={11} /> {post.comment_count}
+              <span className="text-[12px] text-[#F2A900]/60 mt-0.5 flex items-center gap-0.5 font-bold">
+                [{post.comment_count}]
               </span>
             )}
           </div>
-          <div className="flex justify-between text-[11px] text-white/30 truncate">
-            <span>{post.author}</span>
-            <span>조회 {post.views} · 추천 {post.likes}</span>
+          <div className="flex justify-between items-center text-[11.5px] mt-1">
+            <span className="text-white/50 font-medium">{post.author}</span>
+            <div className="flex items-center gap-2 text-white/30">
+              <span>조회 {post.views}</span>
+              <span className="w-0.5 h-0.5 rounded-full bg-white/20"></span>
+              <span>추천 {post.likes}</span>
+            </div>
           </div>
         </Link>
       </li>
@@ -47,32 +59,42 @@ export default function PostItem({ post, isMobile, onClickDesktop, formatTimeAgo
 
   return (
     <tr 
-      className={`border-b border-white/5 hover:bg-white/5 transition-colors cursor-pointer ${post.is_notice ? "bg-[#F2A900]/5" : ""}`} 
+      className={`border-b border-white/5 hover:bg-white/[0.03] transition-all cursor-pointer group ${
+        post.is_notice ? "bg-[#F2A900]/5" : isPatchNote ? "bg-[#F2A900]/2" : ""
+      }`} 
       onClick={onClickDesktop}
     >
-      <td className={`p-3 pl-4 border-l-2 ${post.is_notice ? 'border-[#F2A900]' : 'border-transparent'}`}>
-        <span className={`text-[10px] font-bold tracking-wider px-2 py-0.5 rounded ${post.is_notice ? 'text-[#F2A900] bg-[#F2A900]/10' : 'text-white/30 bg-white/5'}`}>
+      <td className={`p-4 pl-5 border-l-2 ${post.is_notice ? 'border-[#F2A900]' : isPatchNote ? 'border-[#F2A900]/40' : 'border-transparent'}`}>
+        <span className={`text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-full whitespace-nowrap inline-block ${
+          post.is_notice 
+            ? 'text-[#F2A900] bg-[#F2A900]/20 border border-[#F2A900]/30' 
+            : isPatchNote 
+              ? 'text-[#F2A900] bg-[#F2A900]/10 border border-[#F2A900]/20'
+              : 'text-white/40 bg-white/5 border border-white/10'
+        }`}>
           {post.is_notice ? "공지" : post.category}
         </span>
       </td>
-      <td className="p-3">
-        <div className="flex items-center gap-1">
-          <span className={`${post.is_notice ? "text-[#F2A900] font-bold" : "text-white/90 font-medium"}`}>
+      <td className="p-4 py-5">
+        <div className="flex items-center gap-1.5">
+          <span className={`text-[14px] transition-colors group-hover:text-white ${
+            post.is_notice || isPatchNote ? "text-[#F2A900] font-bold" : "text-white/90 font-semibold"
+          }`}>
             {post.title}
           </span>
           {post.image_url && <ImageIcon />}
           {(post.comment_count || 0) > 0 && (
-            <span className="text-[11px] text-white/40 ml-1 flex items-center gap-0.5">
-              <MessageCircle size={11} /> {post.comment_count}
+            <span className="text-[12px] text-[#F2A900]/70 font-bold ml-1">
+              [{post.comment_count}]
             </span>
           )}
         </div>
       </td>
-      <td className="p-3 text-white/40 whitespace-nowrap">{post.author}</td>
-      <td className="p-3 text-white/30 whitespace-nowrap text-xs">{formatTimeAgo(post.created_at)}</td>
-      <td className="p-3 text-white/30">{post.views}</td>
-      <td className={`p-3 ${post.likes >= 5 ? 'font-bold' : ''}`}>
-        <span className={post.likes >= 5 ? "text-[#F2A900] bg-[#F2A900]/10 px-2 py-0.5 rounded" : "text-white/30"}>
+      <td className="p-4 text-white/50 font-medium whitespace-nowrap text-[13px]">{post.author}</td>
+      <td className="p-4 text-white/30 whitespace-nowrap text-[12px] font-medium">{formatTimeAgo(post.created_at)}</td>
+      <td className="p-4 text-white/30 text-[12px]">{post.views}</td>
+      <td className={`p-4 pr-5 ${post.likes >= 5 ? 'font-bold' : ''}`}>
+        <span className={post.likes >= 5 ? "text-[#F2A900] bg-[#F2A900]/15 border border-[#F2A900]/20 px-2 py-0.5 rounded-full text-[12px]" : "text-white/30 text-[12px]"}>
           {post.likes}
         </span>
       </td>

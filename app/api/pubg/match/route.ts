@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { AnalysisEngine } from "@/lib/pubg-analysis/AnalysisEngine";
 import { RESULT_VERSION, TELEMETRY_VERSION } from "@/lib/pubg-analysis/constants";
 import { normalizeName } from "@/lib/pubg-analysis/utils";
+import { adaptBenchmark } from "@/lib/pubg-analysis/benchmarkAdapter";
 
 // [V41.7] 2026 Next.js 16 Premium Configuration
 export const dynamic = 'force-dynamic';
@@ -112,7 +113,7 @@ export async function GET(request: NextRequest) {
             "LogPlayerRecallShip", "LogPlayerRedeploy", "LogPlayerRedeployBRStart",
             "LogPlayerTakeDamage", "LogItemUse", "LogPlayerUseThrowable",
             "LogThrowableUse", "LogProjectileHit", "LogGameStatePeriodic",
-            "LogPhaseChange", "LogParachuteLanding"
+            "LogPhaseChange", "LogParachuteLanding", "LogMatchEnd"
           ].includes(e._T);
         }).map((e: any) => {
           const slim: any = { _T: e._T, _D: e._D };
@@ -183,12 +184,14 @@ export async function GET(request: NextRequest) {
       .eq('tier', matchTier)
       .maybeSingle();
 
-    // 4. 엔진 실행
+    const bench = adaptBenchmark(tierStats);
+
     const engine = new AnalysisEngine(
       nickname, myAccountId, teamNames, teamAccountIds,
       new Set<string>(), new Set<string>(),
       myRosterId
     );
+
     const result = engine.run(
       telData,
       matchAttr,
@@ -196,7 +199,7 @@ export async function GET(request: NextRequest) {
       participants,
       myParticipant.attributes.stats,
       teamStats,
-      tierStats || { avg_damage: 200 }
+      bench
     );
 
     const defaultBenchmark = {
@@ -224,7 +227,7 @@ export async function GET(request: NextRequest) {
       },
       benchmark: {
         ...defaultBenchmark,
-        ...(tierStats || {}),
+        ...bench,
         ...(result.benchmark || {})
       }
     };
@@ -256,14 +259,14 @@ export async function GET(request: NextRequest) {
     ]);
 
     // 벤치마크 데이터 DB 저장을 위한 Ingest 트리거 (배경 실행)
+    // [V26.0] telData는 이미 Storage에 저장되었으므로 payload에서 제외하여 대역폭 및 메모리 절약
     fetch(`${new URL(request.url).origin}/api/pubg/ingest`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ 
         matchId, 
         playerNickname: lowerNickname, 
-        finalResult: fullResult,
-        telData,
+        finalResult: tacticalResult, // tacticalResult만 전달
         matchAttr,
         rawParticipants: participants 
       })
