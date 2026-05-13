@@ -111,7 +111,7 @@ export const MatchTimeline = ({ events, nickname }: MatchTimelineProps) => {
             <div className="flex-1 h-px bg-gradient-to-r from-blue-500/30 to-transparent" />
           </div>
 
-          <div className="pl-4 border-l-2 border-white/5 ml-8 mt-6 space-y-4">
+          <div className="pl-4 border-l-2 border-white/5 ml-2 md:ml-8 mt-6 space-y-4">
             {group.events.map((event, idx) => {
               if (event.type === 'PHASE_START') return null;
 
@@ -124,31 +124,33 @@ export const MatchTimeline = ({ events, nickname }: MatchTimelineProps) => {
               const labelInfo = getEventLabel(event.type);
 
               return (
-                <div key={idx} className={`relative flex items-center gap-6 group transition-all duration-300 ${isMe ? 'scale-[1.02]' : 'opacity-70 hover:opacity-100'}`}>
-                  <div className="absolute -left-[37px] top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-black border-2 border-white/10 flex items-center justify-center group-hover:border-blue-500 transition-colors">
-                    <div className={`w-2 h-2 rounded-full ${isMe ? 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)]' : 'bg-white/20'}`} />
+                <div key={idx} className={`relative flex items-center gap-3 md:gap-6 group transition-all duration-300 ${isMe ? 'scale-[1.02]' : 'opacity-70 hover:opacity-100'}`}>
+                  <div className="absolute -left-[21px] md:-left-[37px] top-1/2 -translate-y-1/2 w-4 h-4 md:w-5 md:h-5 rounded-full bg-black border-2 border-white/10 flex items-center justify-center group-hover:border-blue-500 transition-colors">
+                    <div className={`w-1.5 h-1.5 md:w-2 h-2 rounded-full ${isMe ? 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)]' : 'bg-white/20'}`} />
                   </div>
 
-                  <div className="w-16 shrink-0">
-                    <span className="text-[11px] font-bold text-gray-500 tabular-nums">
+                  <div className="w-10 md:w-16 shrink-0 text-center md:text-left">
+                    <span className="text-[9px] md:text-[11px] font-bold text-gray-600 tabular-nums">
                       {formatTime(event.ts)}
                     </span>
                   </div>
 
-                  <div className={`flex-1 flex items-center gap-4 p-3 rounded-xl border bg-white/[0.03] ${isMe ? 'border-white/10' : 'border-white/5'}`}>
+                  <div className={`flex-1 flex items-center gap-2 md:gap-4 p-2 md:p-3 rounded-xl border bg-white/[0.03] overflow-hidden ${isMe ? 'border-white/15' : 'border-white/5'}`}>
                     {/* 텍스트 배지(Badge) 추가 */}
-                    <div className={`px-2 py-0.5 rounded-md text-[10px] font-black shrink-0 ${labelInfo.color} ${labelInfo.textColor}`}>
+                    <div className={`px-1.5 py-0.5 rounded-md text-[8px] md:text-[10px] font-black shrink-0 ${labelInfo.color} ${labelInfo.textColor} whitespace-nowrap`}>
                       {labelInfo.text}
                     </div>
 
-                    <div className="flex-1 flex items-center justify-between overflow-hidden">
-                      <div className="flex items-center gap-2 truncate text-sm font-bold tracking-tight">
+                    <div className="flex-1 flex items-center justify-between overflow-hidden min-w-0">
+                      <div className="flex items-center gap-1 md:gap-2 truncate text-[11px] md:text-sm font-bold tracking-tight">
                         {isMe && (
-                          <span className="px-1 py-0.5 rounded-[4px] bg-blue-500/20 text-blue-400 text-[9px] font-black mr-1 border border-blue-500/30">
+                          <span className="px-1 py-0.5 rounded-[4px] bg-blue-500/20 text-blue-400 text-[8px] md:text-[9px] font-black mr-0.5 border border-blue-500/30 shrink-0">
                             ME
                           </span>
                         )}
-                        {renderEventText(event, lowerNickname)}
+                        <div className="truncate">
+                          {renderEventText(event, lowerNickname)}
+                        </div>
                         {event.isHeadshot && (
                           <span className="text-red-500 flex items-center gap-1">
                             <Crosshair size={12} strokeWidth={3} />
@@ -169,120 +171,169 @@ export const MatchTimeline = ({ events, nickname }: MatchTimelineProps) => {
   );
 };
 
+const Nickname = ({ name, isMe, className = "" }: { name: string, isMe?: boolean, className?: string }) => (
+  <span className={`truncate max-w-[60px] xs:max-w-[100px] md:max-w-none inline-block align-bottom ${isMe ? 'text-blue-400 font-black' : className}`} title={name}>
+    {isMe ? '나' : name}
+  </span>
+);
+
 const renderEventText = (event: TimelineEvent, lowerNickname: string) => {
-  const weaponStr = event.weapon ? ` (${event.weapon})` : "";
+  const weaponStr = event.weapon ? `(${event.weapon})` : "";
   const isThrowable = ["수류탄", "연막", "화염병", "섬광", "C4"].some(k => event.weapon?.includes(k));
   const distStr = (!isThrowable && event.distance !== undefined) ? ` [${event.distance}m]` : "";
+
+  const isAttackerMe = event.attacker?.toLowerCase().replace(/_/g, "") === lowerNickname;
+  const isVictimMe = event.victim?.toLowerCase().replace(/_/g, "") === lowerNickname;
 
   switch (event.type) {
     case 'FINISH':
       return (
-        <div className="flex items-center gap-1.5">
-          <span className="text-white">{event.victim}</span>
-          <span className="text-[10px] text-gray-500 ml-1">(킬 주인: {event.attacker}{weaponStr})</span>
+        <div className="flex items-center gap-1 min-w-0">
+          <Nickname name={event.victim || ""} isMe={isVictimMe} className="text-white" />
+          <span className="text-[9px] md:text-[10px] text-gray-500 truncate ml-1 shrink-0">
+            (킬 주인: {isAttackerMe ? '나' : event.attacker}{weaponStr})
+          </span>
         </div>
       );
     case 'KILL': 
       return (
-        <div className="flex items-center gap-1.5">
-          <span className="text-blue-400 font-black">나</span>
-          <span className="text-[10px] text-gray-500">({event.weapon})</span>
-          <ArrowRight size={10} className="text-gray-600" />
-          <span className="text-white font-black">{event.victim}</span>
-          {distStr && <span className="text-[10px] text-gray-500 ml-1">{distStr}</span>}
+        <div className="flex items-center gap-1 min-w-0">
+          <Nickname name="나" isMe={true} />
+          <span className="text-[9px] md:text-[10px] text-gray-500 truncate shrink min-w-0 max-w-[50px] md:max-w-none">{weaponStr}</span>
+          <ArrowRight size={10} className="text-gray-600 shrink-0" />
+          <Nickname name={event.victim || ""} isMe={isVictimMe} className="text-white font-black" />
+          {distStr && <span className="text-[9px] md:text-[10px] text-gray-500 ml-1 shrink-0">{distStr}</span>}
         </div>
       );
     case 'KNOCK':
       return (
-        <div className="flex items-center gap-1.5">
-          <span className="text-blue-400 font-bold">나</span>
-          <span className="text-[10px] text-gray-500">({event.weapon})</span>
-          <ArrowRight size={10} className="text-gray-600" />
-          <span className="text-white">{event.victim}</span>
-          {distStr && <span className="text-[10px] text-gray-500 ml-1">{distStr}</span>}
+        <div className="flex items-center gap-1 min-w-0">
+          <Nickname name="나" isMe={true} />
+          <span className="text-[9px] md:text-[10px] text-gray-500 truncate shrink min-w-0 max-w-[50px] md:max-w-none">{weaponStr}</span>
+          <ArrowRight size={10} className="text-gray-600 shrink-0" />
+          <Nickname name={event.victim || ""} isMe={isVictimMe} className="text-white" />
+          {distStr && <span className="text-[9px] md:text-[10px] text-gray-500 ml-1 shrink-0">{distStr}</span>}
         </div>
       );
     case 'TEAM_KILL':
       return (
-        <div className="flex items-center gap-1.5">
-          <span className="text-orange-300 font-bold">{event.attacker}</span>
-          <span className="text-[10px] text-gray-500">{weaponStr}</span>
-          <ArrowRight size={10} className="text-gray-600" />
-          <span className="text-white/90">{event.victim}</span>
+        <div className="flex items-center gap-1 min-w-0">
+          <Nickname name={event.attacker || ""} isMe={isAttackerMe} className="text-orange-300 font-bold" />
+          <span className="text-[9px] md:text-[10px] text-gray-500 truncate shrink min-w-0 max-w-[50px] md:max-w-none">{weaponStr}</span>
+          <ArrowRight size={10} className="text-gray-600 shrink-0" />
+          <Nickname name={event.victim || ""} isMe={isVictimMe} className="text-white/90" />
         </div>
       );
     case 'TEAM_KNOCK':
       return (
-        <div className="flex items-center gap-1.5">
-          <span className="text-orange-400 font-bold">{event.attacker}</span>
-          <span className="text-[10px] text-gray-500">{weaponStr}</span>
-          <ArrowRight size={10} className="text-gray-600" />
-          <span className="text-white/80">{event.victim}</span>
+        <div className="flex items-center gap-1 min-w-0">
+          <Nickname name={event.attacker || ""} isMe={isAttackerMe} className="text-orange-400 font-bold" />
+          <span className="text-[9px] md:text-[10px] text-gray-500 truncate shrink min-w-0 max-w-[50px] md:max-w-none">{weaponStr}</span>
+          <ArrowRight size={10} className="text-gray-600 shrink-0" />
+          <Nickname name={event.victim || ""} isMe={isVictimMe} className="text-white/80" />
         </div>
       );
     case 'REVIVE':
-      return <span className="text-emerald-400 font-black"><span className="text-blue-400">나</span> → {event.victim} 부활 성공</span>;
+      return (
+        <div className="flex items-center gap-1 min-w-0">
+          <Nickname name="나" isMe={true} />
+          <ArrowRight size={10} className="text-emerald-400 shrink-0" />
+          <Nickname name={event.victim || ""} isMe={isVictimMe} className="text-white" />
+          <span className="text-emerald-400 font-black ml-1 shrink-0">부활</span>
+        </div>
+      );
     case 'TEAM_REVIVE':
-      return <span className="text-emerald-500/80 font-medium">{event.attacker} → {event.victim} 부활</span>;
+      return (
+        <div className="flex items-center gap-1 min-w-0">
+          <Nickname name={event.attacker || ""} isMe={isAttackerMe} className="text-emerald-500/80 font-medium" />
+          <ArrowRight size={10} className="text-emerald-500 shrink-0" />
+          <Nickname name={event.victim || ""} isMe={isVictimMe} className="text-white" />
+          <span className="text-emerald-500/80 ml-1 shrink-0">부활</span>
+        </div>
+      );
     case 'RECALL':
       return (
-        <span className="text-indigo-400 font-bold">
-          {event.attacker ? <span className="text-white/60 font-medium">{event.attacker} → </span> : ""}<span className="text-blue-400">나</span> 블루칩 부활
-        </span>
+        <div className="flex items-center gap-1 min-w-0">
+          {event.attacker && (
+            <>
+              <Nickname name={event.attacker} isMe={isAttackerMe} className="text-white/60 font-medium" />
+              <ArrowRight size={10} className="text-indigo-400 shrink-0" />
+            </>
+          )}
+          <Nickname name="나" isMe={true} />
+          <span className="text-indigo-400 font-bold ml-1 shrink-0">블루칩 부활</span>
+        </div>
       );
     case 'TEAM_RECALL':
-      const isMeRecaller = event.attacker?.toLowerCase().replace(/_/g, "") === lowerNickname;
       return (
-        <span className="text-indigo-500/80">
-          {event.attacker ? <span className="text-white/60 font-medium">{isMeRecaller ? "나" : event.attacker} → </span> : ""}{event.victim} 블루칩 부활
-        </span>
+        <div className="flex items-center gap-1 min-w-0">
+          {event.attacker && (
+            <>
+              <Nickname name={event.attacker} isMe={isAttackerMe} className="text-white/60 font-medium" />
+              <ArrowRight size={10} className="text-indigo-500 shrink-0" />
+            </>
+          )}
+          <Nickname name={event.victim || ""} isMe={isVictimMe} className="text-white" />
+          <span className="text-indigo-500/80 ml-1 shrink-0">블루칩 부활</span>
+        </div>
       );
     case 'REDEPLOY':
-      const isMeRedeployed = event.victim?.toLowerCase().replace(/_/g, "") === lowerNickname;
       return (
-        <span className="text-cyan-400 font-bold">
-          {isMeRedeployed ? <span className="text-blue-400">나</span> : event.victim} 복귀전 투입
-        </span>
+        <div className="flex items-center gap-1 min-w-0">
+          <Nickname name={event.victim || ""} isMe={isVictimMe} className="text-cyan-400 font-bold" />
+          <span className="text-cyan-400 font-bold ml-1 shrink-0">복귀전 투입</span>
+        </div>
       );
     case 'TEAM_DIED':
       return (
-        <div className="flex items-center gap-1.5">
-          <span className="text-rose-400 font-medium">{event.attacker}</span>
-          <span className="text-[10px] text-gray-500">{weaponStr}</span>
-          <ArrowRight size={10} className="text-gray-600" />
-          <span className="text-rose-500 font-bold">{event.victim} 사망</span>
+        <div className="flex items-center gap-1 min-w-0">
+          <Nickname name={event.attacker || ""} isMe={isAttackerMe} className="text-rose-400 font-medium" />
+          <span className="text-[9px] md:text-[10px] text-gray-500 truncate shrink min-w-0 max-w-[50px] md:max-w-none">{weaponStr}</span>
+          <ArrowRight size={10} className="text-gray-600 shrink-0" />
+          <Nickname name={event.victim || ""} isMe={isVictimMe} className="text-rose-500 font-bold" />
+          <span className="text-rose-500 font-bold ml-1 shrink-0">사망</span>
         </div>
       );
     case 'DOWNED':
       return (
-        <div className="flex items-center gap-1.5">
-          <span className="text-red-400 font-medium">{event.attacker}</span>
-          <span className="text-[10px] text-gray-500">{weaponStr}</span>
-          <ArrowRight size={10} className="text-gray-600" />
-          <span className="text-blue-400 font-black">나 기절</span>
-          {distStr && <span className="text-[10px] text-gray-500 ml-1">{distStr}</span>}
+        <div className="flex items-center gap-1 min-w-0">
+          <Nickname name={event.attacker || ""} isMe={isAttackerMe} className="text-red-400 font-medium" />
+          <span className="text-[9px] md:text-[10px] text-gray-500 truncate shrink min-w-0 max-w-[50px] md:max-w-none">{weaponStr}</span>
+          <ArrowRight size={10} className="text-gray-600 shrink-0" />
+          <Nickname name="나" isMe={true} />
+          <span className="text-blue-400 font-black ml-1 shrink-0">기절</span>
+          {distStr && <span className="text-[9px] md:text-[10px] text-gray-500 ml-1 shrink-0">{distStr}</span>}
         </div>
       );
     case 'DIED':
       return (
-        <div className="flex items-center gap-1.5">
-          <span className="text-red-600 font-black">{event.attacker}</span>
-          <span className="text-[10px] text-gray-500">{weaponStr}</span>
-          <ArrowRight size={10} className="text-gray-600" />
-          <span className="text-blue-600 font-black">나 사망</span>
+        <div className="flex items-center gap-1 min-w-0">
+          <Nickname name={event.attacker || ""} isMe={isAttackerMe} className="text-red-600 font-black" />
+          <span className="text-[9px] md:text-[10px] text-gray-500 truncate shrink min-w-0 max-w-[50px] md:max-w-none">{weaponStr}</span>
+          <ArrowRight size={10} className="text-gray-600 shrink-0" />
+          <Nickname name="나" isMe={true} />
+          <span className="text-blue-600 font-black ml-1 shrink-0">사망</span>
         </div>
       );
     case 'ITEM_USE':
       return (
-        <span className="text-blue-300 font-bold">
-          {event.attacker ? `${event.attacker}: ` : ""}{event.weapon}
-        </span>
+        <div className="flex items-center gap-1 min-w-0">
+          {event.attacker && (
+            <Nickname name={event.attacker} isMe={isAttackerMe} className="text-blue-300 font-bold" />
+          )}
+          <span className="text-blue-300 font-bold truncate">{event.weapon}</span>
+        </div>
       );
     case 'VICTORY':
-      return <span className="text-yellow-400 font-black tracking-tighter">치킨 달성! 🍗</span>;
+      return <span className="text-yellow-400 font-black tracking-tighter shrink-0">치킨 달성! 🍗</span>;
     case 'PHASE_START':
-      return <span className="text-blue-400/80">Phase {event.phase ?? '?'} 시작</span>;
+      return <span className="text-blue-400/80 shrink-0">Phase {event.phase ?? '?'} 시작</span>;
     default:
-      return <span className="text-gray-500">{event.type}: {event.victim || event.weapon}</span>;
+      return (
+        <div className="flex items-center gap-1 min-w-0">
+          <span className="text-gray-500 shrink-0">{event.type}:</span>
+          <span className="text-gray-500 truncate">{event.victim || event.weapon}</span>
+        </div>
+      );
   }
 };

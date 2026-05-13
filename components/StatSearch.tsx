@@ -1,14 +1,13 @@
 // 파일 위치: components/StatSearch.tsx
 "use client";
 
-import React, { useState, useEffect, useId, useCallback } from "react";
+import React, { useState, useEffect, useId, useCallback, useRef } from "react";
 import { MatchCard } from "./stat/MatchCard";
 import { StatSummaryCard } from "./stat/StatSummaryCard";
 import { RecentAISummary } from "./stat/RecentAISummary";
-import { Shield, ChevronDown, Swords } from "lucide-react";
+import { Shield, ChevronDown, Swords, Star, Clock, User, X } from "lucide-react";
 
-const STORAGE_KEY_RECENT = "pubg_recent_searches_v2";
-const STORAGE_KEY_FAVORITES = "pubg_favorites_v2";
+import { STORAGE_KEY_RECENT, STORAGE_KEY_FAVORITES } from "../lib/pubg-analysis/constants";
 
 import type { UserProfile } from "../types/map";
 import { useAuth } from "./AuthProvider";
@@ -56,14 +55,23 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
     return saved ? JSON.parse(saved) : [];
   });
   const [showDropdown, setShowDropdown] = useState(false);
-  const [activeTab, setActiveTab] = useState<"recent" | "favorites">("recent");
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const [isMobile, setIsMobile] = useState(false);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowDropdown(false);
+      }
+    };
     handleResize();
     window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
   }, []);
 
   useEffect(() => {
@@ -170,80 +178,13 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
     });
   };
 
-  const renderDropdownList = (names: string[], type: "recent" | "favorites") => {
-    if (names.length === 0) {
-      return (
-        <div
-          style={{
-            padding: "30px 20px",
-            textAlign: "center",
-            color: "#666",
-            fontSize: "14px",
-          }}
-        >
-          {type === "recent" ? (
-            "최근 검색한 닉네임이 없습니다."
-          ) : (
-            <div style={{ textAlign: "left" }}>
-              관심있는 유저에 <span style={{ color: "#f2b822" }}>☆</span>{" "}
-              즐겨찾기를 하여 편리하게 정보를 받아보세요.
-            </div>
-          )}
-        </div>
-      );
-    }
-    return names.map((name) => {
-      const isFav = favorites.includes(name);
-      return (
-        <div
-          key={name}
-          onClick={() => {
-            setNickname(name);
-            handleSearch(selectedSeason, name);
-          }}
-          style={{
-            padding: "12px 15px",
-            cursor: "pointer",
-            color: "#212529",
-            borderBottom: "1px solid #ced4da",
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-          }}
-          onMouseOver={(e) => (e.currentTarget.style.backgroundColor = "#fff")}
-          onMouseOut={(e) => (e.currentTarget.style.backgroundColor = "transparent")}
-        >
-          <span style={{ fontWeight: "bold", flex: 1 }}>{name}</span>
-          <div style={{ display: "flex", gap: "10px", alignItems: "center", flexShrink: 0 }}>
-            <span
-              onClick={(e) => toggleFavorite(name, e)}
-              style={{
-                fontSize: "18px",
-                color: isFav ? "#f2b822" : "#adb5bd",
-                cursor: "pointer",
-                userSelect: "none",
-              }}
-            >
-              {isFav ? "⭐" : "☆"}
-            </span>
-            {type === "recent" && (
-              <span
-                onClick={(e) => removeRecentSearch(name, e)}
-                style={{
-                  fontSize: "16px",
-                  color: "#adb5bd",
-                  cursor: "pointer",
-                  fontWeight: "bold",
-                  padding: "0 2px",
-                }}
-              >
-                ✕
-              </span>
-            )}
-          </div>
-        </div>
-      );
-    });
+  const getDropdownItems = () => {
+    const items: { name: string; type: "favorite" | "recent" }[] = [];
+    favorites.forEach(name => items.push({ name, type: "favorite" }));
+    recentSearches
+      .filter(name => !favorites.includes(name))
+      .forEach(name => items.push({ name, type: "recent" }));
+    return items;
   };
 
   const [showGuideline, setShowGuideline] = useState(false);
@@ -271,7 +212,7 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
           <option value="kakao">카카오 (Kakao)</option>
         </select>
         
-        <div className="relative flex-1">
+        <div className="relative flex-1" ref={dropdownRef}>
           <input
             id={nicknameId}
             name="nickname"
@@ -282,32 +223,50 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
             onChange={(e) => setNickname(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleSearch()}
             onFocus={() => setShowDropdown(true)}
-            onBlur={() => setTimeout(() => setShowDropdown(false), 200)}
             className="w-full p-3 bg-[#252525] text-white border border-[#444] rounded-md text-base focus:outline-none focus:border-[#F2A900] transition-colors"
           />
-          {showDropdown && (
-            <div
-              onMouseDown={(e) => e.preventDefault()}
-              className="absolute top-full left-0 right-0 mt-1 bg-[#e9ecef] rounded-md overflow-hidden z-50 shadow-xl"
-            >
-              <div className="flex bg-[#dee2e6] border-b border-[#ced4da]">
-                <div
-                  onClick={() => setActiveTab("recent")}
-                  className={`flex-1 py-2 text-center cursor-pointer text-sm ${activeTab === "recent" ? "font-bold text-[#212529] bg-[#e9ecef]" : "text-[#666]"}`}
-                >
-                  최근 검색
-                </div>
-                <div
-                  onClick={() => setActiveTab("favorites")}
-                  className={`flex-1 py-2 text-center cursor-pointer text-sm border-l border-[#ced4da] ${activeTab === "favorites" ? "font-bold text-[#212529] bg-[#e9ecef]" : "text-[#666]"}`}
-                >
-                  즐겨찾기
-                </div>
-              </div>
-              <div className="max-h-[300px] overflow-y-auto">
-                {activeTab === "recent"
-                  ? renderDropdownList(recentSearches, "recent")
-                  : renderDropdownList(favorites, "favorites")}
+          {showDropdown && (recentSearches.length > 0 || favorites.length > 0) && (
+            <div className="absolute top-full left-0 right-0 mt-2 bg-[#0a0a1a]/95 border border-white/10 rounded-xl overflow-hidden shadow-[0_10px_40px_rgba(0,0,0,0.5)] backdrop-blur-xl z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+              <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
+                {getDropdownItems().map((item, i) => {
+                  const isFav = favorites.includes(item.name);
+                  return (
+                    <div
+                      key={`${item.name}-${i}`}
+                      onClick={() => {
+                        setNickname(item.name);
+                        handleSearch(selectedSeason, item.name);
+                        setShowDropdown(false);
+                      }}
+                      className="w-full px-4 py-3 flex items-center gap-3 hover:bg-white/5 transition-colors cursor-pointer border-b border-white/5 last:border-0 group"
+                    >
+                      {item.type === "favorite" ? (
+                        <Star size={14} className="text-yellow-400 fill-yellow-400 shrink-0" />
+                      ) : (
+                        <Clock size={14} className="text-gray-500 shrink-0" />
+                      )}
+                      <span className="text-sm font-bold text-gray-300 group-hover:text-white truncate">{item.name}</span>
+                      
+                      <div className="ml-auto flex items-center gap-2">
+                        <button
+                          onClick={(e) => toggleFavorite(item.name, e)}
+                          className={`p-1.5 rounded-lg transition-all ${isFav ? "text-yellow-400 bg-yellow-400/10" : "text-gray-600 hover:text-yellow-400 hover:bg-yellow-400/10"}`}
+                        >
+                          <Star size={14} fill={isFav ? "currentColor" : "none"} />
+                        </button>
+                        {item.type === "recent" && (
+                          <button
+                            onClick={(e) => removeRecentSearch(item.name, e)}
+                            className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all"
+                          >
+                            <X size={14} />
+                          </button>
+                        )}
+                        <User size={12} className="text-gray-700 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

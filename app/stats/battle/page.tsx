@@ -3,7 +3,8 @@
 import { useState, useEffect, Suspense, useRef, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Camera, Copy, Download, ImageDown, Share2 } from "lucide-react";
+import { Camera, Copy, Download, ImageDown, Share2, Star, Clock, User } from "lucide-react";
+import { STORAGE_KEY_RECENT, STORAGE_KEY_FAVORITES } from "../../../lib/pubg-analysis/constants";
 
 interface Comparison {
   key: string;
@@ -53,6 +54,31 @@ function BattleContent() {
   const [shareMessage, setShareMessage] = useState<string | null>(null);
   const [shareBusy, setShareBusy] = useState<"share" | "copy" | "download" | "image" | "imageCopy" | null>(null);
 
+  // 로컬 스토리지 데이터 상태
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [favorites, setFavorites] = useState<string[]>([]);
+  const [showDropdown1, setShowDropdown1] = useState(false);
+  const [showDropdown2, setShowDropdown2] = useState(false);
+
+  // 초기 데이터 로드
+  useEffect(() => {
+    const savedRecent = localStorage.getItem(STORAGE_KEY_RECENT);
+    const savedFavorites = localStorage.getItem(STORAGE_KEY_FAVORITES);
+    if (savedRecent) setRecentSearches(JSON.parse(savedRecent));
+    if (savedFavorites) setFavorites(JSON.parse(savedFavorites));
+  }, []);
+
+  // 검색 기록 업데이트 함수
+  const updateRecentSearches = useCallback((nick: string) => {
+    if (!nick.trim()) return;
+    setRecentSearches(prev => {
+      const filtered = prev.filter(n => n !== nick);
+      const next = [nick, ...filtered].slice(0, 10);
+      localStorage.setItem(STORAGE_KEY_RECENT, JSON.stringify(next));
+      return next;
+    });
+  }, []);
+
   const buildShareUrl = (player1: string, player2: string) => {
     if (typeof window === "undefined") return "";
     const url = new URL("/stats/battle", window.location.origin);
@@ -83,6 +109,11 @@ function BattleContent() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "알 수 없는 오류");
       setResult(data);
+      
+      // 검색 기록 업데이트 (두 명 모두 추가)
+      updateRecentSearches(n1);
+      updateRecentSearches(n2);
+
       const battlePath = buildBattlePath(n1, n2);
       const currentPath = `${window.location.pathname}${window.location.search}`;
       lastAutoBattleKeyRef.current = `${n1}::${n2}`;
@@ -117,7 +148,11 @@ function BattleContent() {
   }, [searchParams, runBattle]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter") handleBattle();
+    if (e.key === "Enter") {
+      handleBattle();
+      setShowDropdown1(false);
+      setShowDropdown2(false);
+    }
   };
 
   const createShareImageBlob = async () => {
@@ -260,6 +295,37 @@ function BattleContent() {
     }
   };
 
+  const setNicknameValue = (idx: 1 | 2, val: string) => {
+    if (idx === 1) setNick1(val);
+    else setNick2(val);
+  };
+
+  const getDropdownItems = () => {
+    const items: { name: string; type: "favorite" | "recent" }[] = [];
+    favorites.forEach(name => items.push({ name, type: "favorite" }));
+    recentSearches
+      .filter(name => !favorites.includes(name))
+      .forEach(name => items.push({ name, type: "recent" }));
+    return items;
+  };
+
+  // 드롭다운 외부 클릭 감지용 Ref
+  const dropdownRef1 = useRef<HTMLDivElement>(null);
+  const dropdownRef2 = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef1.current && !dropdownRef1.current.contains(event.target as Node)) {
+        setShowDropdown1(false);
+      }
+      if (dropdownRef2.current && !dropdownRef2.current.contains(event.target as Node)) {
+        setShowDropdown2(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   return (
     <main className="min-h-screen bg-[#080810] text-white px-4 py-12">
       <div className="max-w-2xl mx-auto flex flex-col gap-8">
@@ -276,26 +342,54 @@ function BattleContent() {
         </div>
 
         {/* 입력폼 */}
-        <div className="p-6 bg-white/5 border border-white/10 rounded-3xl flex flex-col gap-4">
+        <div className="p-6 bg-white/5 border border-white/10 rounded-3xl flex flex-col gap-4 relative z-40">
           <div className="flex flex-col md:flex-row items-center gap-4">
-            <input
-              value={nick1}
-              onChange={(e) => setNick1(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="내 닉네임"
-              className="w-full md:flex-1 p-4 bg-black/40 border border-indigo-500/30 rounded-2xl text-white placeholder:text-gray-600 font-bold focus:outline-none focus:border-indigo-500/70 transition-colors"
-            />
+            {/* 플레이어 1 입력 */}
+            <div className="w-full md:flex-1 relative" ref={dropdownRef1}>
+              <input
+                value={nick1}
+                onChange={(e) => setNicknameValue(1, e.target.value)}
+                onFocus={() => { setShowDropdown1(true); setShowDropdown2(false); }}
+                onKeyDown={handleKeyDown}
+                placeholder="내 닉네임"
+                className="w-full p-4 bg-black/40 border border-indigo-500/30 rounded-2xl text-white placeholder:text-gray-600 font-bold focus:outline-none focus:border-indigo-500/70 transition-colors"
+              />
+              {showDropdown1 && (recentSearches.length > 0 || favorites.length > 0) && (
+                <NicknameDropdown 
+                  items={getDropdownItems()} 
+                  onSelect={(val) => { setNick1(val); setShowDropdown1(false); }} 
+                  onClose={() => setShowDropdown1(false)}
+                />
+              )}
+            </div>
+
             <div className="text-xl font-black text-gray-600 shrink-0 md:rotate-0">VS</div>
-            <input
-              value={nick2}
-              onChange={(e) => setNick2(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="상대 닉네임"
-              className="w-full md:flex-1 p-4 bg-black/40 border border-rose-500/30 rounded-2xl text-white placeholder:text-gray-600 font-bold focus:outline-none focus:border-rose-500/70 transition-colors"
-            />
+
+            {/* 플레이어 2 입력 */}
+            <div className="w-full md:flex-1 relative" ref={dropdownRef2}>
+              <input
+                value={nick2}
+                onChange={(e) => setNicknameValue(2, e.target.value)}
+                onFocus={() => { setShowDropdown2(true); setShowDropdown1(false); }}
+                onKeyDown={handleKeyDown}
+                placeholder="상대 닉네임"
+                className="w-full p-4 bg-black/40 border border-rose-500/30 rounded-2xl text-white placeholder:text-gray-600 font-bold focus:outline-none focus:border-rose-500/70 transition-colors"
+              />
+              {showDropdown2 && (recentSearches.length > 0 || favorites.length > 0) && (
+                <NicknameDropdown 
+                  items={getDropdownItems()} 
+                  onSelect={(val) => { setNick2(val); setShowDropdown2(false); }} 
+                  onClose={() => setShowDropdown2(false)}
+                />
+              )}
+            </div>
           </div>
           <button
-            onClick={() => handleBattle()}
+            onClick={() => {
+              handleBattle();
+              setShowDropdown1(false);
+              setShowDropdown2(false);
+            }}
             disabled={loading || !nick1.trim() || !nick2.trim()}
             className="w-full py-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 rounded-2xl font-black text-lg tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed active:scale-[0.98]"
           >
@@ -305,7 +399,7 @@ function BattleContent() {
 
         {/* 에러 */}
         {error && (
-          <div className="p-5 bg-red-500/10 border border-red-500/30 rounded-2xl text-red-400 text-sm font-bold">
+          <div className="p-5 bg-red-500/10 border border-red-500/30 rounded-2xl text-red-400 text-sm font-bold [overflow-wrap:anywhere] [word-break:break-word] whitespace-normal">
             ❌ {error}
           </div>
         )}
@@ -321,36 +415,40 @@ function BattleContent() {
               <div className="p-6 bg-black/60 rounded-3xl border border-white/10 backdrop-blur-xl">
                 <div className="flex items-center justify-between mb-6">
                   {/* 플레이어 1 */}
-                  <div className="text-center flex-1">
-                    <div className={`inline-block px-3 py-1 rounded-full text-xs font-black mb-2 ${TIER_STYLES[result.tier1]?.bg ?? ""} ${TIER_STYLES[result.tier1]?.text ?? ""}`}>
+                  <div className="text-center flex-1 min-w-0 flex flex-col items-center">
+                    <div className={`inline-block px-3 py-1 rounded-full text-[10px] md:text-xs font-black mb-2 shrink-0 ${TIER_STYLES[result.tier1]?.bg ?? ""} ${TIER_STYLES[result.tier1]?.text ?? ""}`}>
                       {TIER_STYLES[result.tier1]?.label ?? result.tier1}
                     </div>
-                    <div className="font-black text-lg text-indigo-300 truncate">{result.nick1}</div>
-                    <div className="text-[10px] text-gray-600">{result.matchCount1}경기 비교 기준</div>
+                    <div className="font-black text-base md:text-xl text-indigo-300 truncate w-full max-w-[80px] xs:max-w-[120px] md:max-w-none px-1" title={result.nick1}>
+                      {result.nick1}
+                    </div>
+                    <div className="text-[9px] md:text-[10px] text-gray-600 font-medium shrink-0">{result.matchCount1}경기 비교</div>
                   </div>
 
                   {/* 스코어 */}
-                  <div className="flex items-center gap-3 px-4">
-                    <div className="text-4xl font-black text-indigo-400">{result.score.nick1}</div>
-                    <div className="text-lg text-gray-600 font-black">:</div>
-                    <div className="text-4xl font-black text-rose-400">{result.score.nick2}</div>
+                  <div className="flex items-center gap-2 md:gap-4 px-2 md:px-4 shrink-0 mx-auto">
+                    <div className="text-3xl md:text-5xl font-black text-indigo-400 drop-shadow-[0_0_15px_rgba(99,102,241,0.4)]">{result.score.nick1}</div>
+                    <div className="text-sm md:text-lg text-gray-700 font-black">VS</div>
+                    <div className="text-3xl md:text-5xl font-black text-rose-400 drop-shadow-[0_0_15px_rgba(244,63,94,0.4)]">{result.score.nick2}</div>
                   </div>
 
                   {/* 플레이어 2 */}
-                  <div className="text-center flex-1">
-                    <div className={`inline-block px-3 py-1 rounded-full text-xs font-black mb-2 ${TIER_STYLES[result.tier2]?.bg ?? ""} ${TIER_STYLES[result.tier2]?.text ?? ""}`}>
+                  <div className="text-center flex-1 min-w-0 flex flex-col items-center">
+                    <div className={`inline-block px-3 py-1 rounded-full text-[10px] md:text-xs font-black mb-2 shrink-0 ${TIER_STYLES[result.tier2]?.bg ?? ""} ${TIER_STYLES[result.tier2]?.text ?? ""}`}>
                       {TIER_STYLES[result.tier2]?.label ?? result.tier2}
                     </div>
-                    <div className="font-black text-lg text-rose-300 truncate">{result.nick2}</div>
-                    <div className="text-[10px] text-gray-600">{result.matchCount2}경기 비교 기준</div>
+                    <div className="font-black text-base md:text-xl text-rose-300 truncate w-full max-w-[80px] xs:max-w-[120px] md:max-w-none px-1" title={result.nick2}>
+                      {result.nick2}
+                    </div>
+                    <div className="text-[9px] md:text-[10px] text-gray-600 font-medium shrink-0">{result.matchCount2}경기 비교</div>
                   </div>
                 </div>
 
                 {/* 최종 승자 배너 */}
-                <div className={`p-4 rounded-2xl text-center font-black text-sm ${
-                  result.overallWinner === result.nick1 ? "bg-indigo-500/20 border border-indigo-500/30 text-indigo-300" :
-                  result.overallWinner === result.nick2 ? "bg-rose-500/20 border border-rose-500/30 text-rose-300" :
-                  "bg-yellow-500/10 border border-yellow-500/20 text-yellow-400"
+                <div className={`p-4 rounded-2xl text-center font-black text-sm transition-all duration-700 animate-pulse-slow ${
+                  result.overallWinner === result.nick1 ? "bg-indigo-500/25 border border-indigo-500/40 text-indigo-200 shadow-[0_0_20px_rgba(99,102,241,0.2)]" :
+                  result.overallWinner === result.nick2 ? "bg-rose-500/25 border border-rose-500/40 text-rose-200 shadow-[0_0_20px_rgba(244,63,94,0.2)]" :
+                  "bg-yellow-500/15 border border-yellow-500/30 text-yellow-300 shadow-[0_0_20px_rgba(234,179,8,0.1)]"
                 }`}>
                   {result.overallWinner === "draw"
                     ? "무승부 - 두 플레이어의 실력이 비슷합니다"
@@ -371,33 +469,33 @@ function BattleContent() {
                   return (
                     <div
                       key={c.key}
-                      className={`p-4 rounded-2xl border flex items-center gap-4 transition-all ${
-                        n1Wins ? "border-indigo-500/30 bg-indigo-500/5" :
-                        n2Wins ? "border-rose-500/30 bg-rose-500/5" :
+                      className={`p-3 md:p-4 rounded-2xl border flex items-center gap-2 md:gap-4 transition-all ${
+                        n1Wins ? "border-indigo-500/40 bg-indigo-500/10 shadow-[inset_0_0_12px_rgba(99,102,241,0.1)]" :
+                        n2Wins ? "border-rose-500/40 bg-rose-500/10 shadow-[inset_0_0_12px_rgba(244,63,94,0.1)]" :
                                  "border-white/10 bg-white/5"
                       }`}
                     >
-                      <div className={`flex-1 text-right font-black text-xl ${n1Wins ? "text-indigo-400" : "text-white/50"}`}>
-                        {typeof c.v1 === "number" ? c.v1.toFixed(1) : c.v1}{c.unit}
+                      <div className={`flex-1 text-right font-black text-lg md:text-2xl tracking-tighter ${n1Wins ? "text-indigo-400" : "text-white/30"}`}>
+                        {typeof c.v1 === "number" ? c.v1.toFixed(1) : c.v1}<span className="text-[10px] md:text-xs ml-0.5 opacity-60">{c.unit}</span>
                       </div>
 
-                      <div className="w-28 text-center shrink-0">
-                        <div className="text-[10px] text-gray-500 font-black uppercase tracking-wider mb-1">{c.label}</div>
-                        <div className="flex items-center justify-center gap-1.5 mt-1">
-                          <div className={`w-2.5 h-2.5 rounded-full ${n1Wins ? "bg-indigo-400 shadow-[0_0_6px_rgba(99,102,241,0.8)]" : "bg-white/10"}`} />
-                          <div className={`text-xs font-black ${
+                      <div className="w-20 md:w-32 text-center shrink-0">
+                        <div className="text-[9px] md:text-[10px] text-gray-500 font-black uppercase tracking-widest mb-1">{c.label}</div>
+                        <div className="flex items-center justify-center gap-1 md:gap-2 mt-1">
+                          <div className={`w-1.5 h-1.5 md:w-2.5 md:h-2.5 rounded-full transition-all ${n1Wins ? "bg-indigo-400 shadow-[0_0_10px_rgba(99,102,241,1)] scale-110" : "bg-white/10"}`} />
+                          <div className={`text-[10px] md:text-xs font-black transition-colors ${
                             n1Wins ? "text-indigo-400" :
                             n2Wins ? "text-rose-400" :
-                            "text-gray-600"
+                            "text-gray-700"
                           }`}>
                             {n1Wins ? "◀" : n2Wins ? "▶" : "—"}
                           </div>
-                          <div className={`w-2.5 h-2.5 rounded-full ${n2Wins ? "bg-rose-400 shadow-[0_0_6px_rgba(244,63,94,0.8)]" : "bg-white/10"}`} />
+                          <div className={`w-1.5 h-1.5 md:w-2.5 md:h-2.5 rounded-full transition-all ${n2Wins ? "bg-rose-400 shadow-[0_0_10px_rgba(244,63,94,1)] scale-110" : "bg-white/10"}`} />
                         </div>
                       </div>
 
-                      <div className={`flex-1 text-left font-black text-xl ${n2Wins ? "text-rose-400" : "text-white/50"}`}>
-                        {typeof c.v2 === "number" ? c.v2.toFixed(1) : c.v2}{c.unit}
+                      <div className={`flex-1 text-left font-black text-lg md:text-2xl tracking-tighter ${n2Wins ? "text-rose-400" : "text-white/30"}`}>
+                        {typeof c.v2 === "number" ? c.v2.toFixed(1) : c.v2}<span className="text-[10px] md:text-xs ml-0.5 opacity-60">{c.unit}</span>
                       </div>
                     </div>
                   );
@@ -473,6 +571,37 @@ function BattleContent() {
         )}
       </div>
     </main>
+  );
+}
+
+function NicknameDropdown({ items, onSelect, onClose }: { 
+  items: { name: string; type: "favorite" | "recent" }[];
+  onSelect: (val: string) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="absolute top-full left-0 right-0 mt-2 bg-[#0a0a1a]/95 border border-white/10 rounded-2xl overflow-hidden shadow-[0_10px_40px_rgba(0,0,0,0.5)] backdrop-blur-xl z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+      <div className="max-h-[240px] overflow-y-auto custom-scrollbar">
+        {items.map((item, i) => (
+          <button
+            key={`${item.name}-${i}`}
+            onClick={() => {
+              onSelect(item.name);
+              onClose();
+            }}
+            className="w-full px-4 py-3 flex items-center gap-3 hover:bg-white/5 transition-colors text-left border-b border-white/5 last:border-0 group"
+          >
+            {item.type === "favorite" ? (
+              <Star size={14} className="text-yellow-400 fill-yellow-400 shrink-0" />
+            ) : (
+              <Clock size={14} className="text-gray-500 shrink-0" />
+            )}
+            <span className="text-sm font-bold text-gray-300 group-hover:text-white truncate">{item.name}</span>
+            <User size={12} className="ml-auto text-gray-700 opacity-0 group-hover:opacity-100 transition-opacity" />
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 
