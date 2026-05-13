@@ -3,7 +3,7 @@
 import React, { useState, useEffect, startTransition } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Bell, User, Hammer, Database, LogIn, Menu, Settings } from 'lucide-react';
+import { Bell, User, Hammer, Database, LogIn, Settings } from 'lucide-react';
 import { useAuth } from "../AuthProvider";
 import { supabase } from "@/lib/supabase";
 import NotificationDropdown from "../map/NotificationDropdown";
@@ -117,8 +117,7 @@ export default function GlobalHeader() {
     : "";
 
   const isBoardActive = pathname.startsWith("/board");
-  const isStatsActive = pathname.startsWith("/stats") && !pathname.startsWith("/stats/battle");
-  const isBattleActive = pathname.startsWith("/stats/battle");
+  const isStatsActive = pathname.startsWith("/stats");
   const isWeaponsActive = pathname.startsWith("/weapons");
   const isBackpackActive = pathname.startsWith("/backpack");
 
@@ -228,21 +227,6 @@ export default function GlobalHeader() {
               </button>
             </Link>
 
-            <Link href="/stats/battle" className="shrink-0">
-              <button
-                className={`relative h-8 px-3 rounded-lg font-extrabold text-[11px] uppercase whitespace-nowrap transition-all tracking-wide ${
-                  isBattleActive
-                    ? "bg-black/90 text-[#a855f7] shadow-sm"
-                    : "text-black/60 hover:bg-black/10 hover:text-black/80"
-                }`}
-              >
-                전적 비교
-                {isBattleActive && (
-                  <span className="absolute bottom-[3px] left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-[#a855f7]" />
-                )}
-              </button>
-            </Link>
-            
             <Link href="/weapons" className="shrink-0">
               <button className={`relative h-8 px-3 rounded-lg font-extrabold text-[11px] uppercase whitespace-nowrap transition-all tracking-wide ${
                 isWeaponsActive ? "bg-black/90 text-[#F2A900] shadow-sm" : "text-black/60 hover:bg-black/10 hover:text-black/80"
