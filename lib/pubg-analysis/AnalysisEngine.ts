@@ -84,7 +84,7 @@ export class AnalysisEngine {
       dbnoMap: new Map(),
       totalPressureSum: 0,
       pressureSampleCount: 0,
-      combatPressure: { totalHits: 0, uniqueVictims: new Set(), maxHitDistance: 0, utilityDamage: 0, utilityHits: 0, stunHits: 0, isClutched: false },
+      combatPressure: { totalHits: 0, uniqueVictims: new Set(), maxHitDistance: 0, utilityDamage: 0, utilityHits: 0, isClutched: false },
       myDownedIntervals: [],
       whiteZone: { x: 0, y: 0, radius: 0 },
       blueZone: { x: 0, y: 0, radius: 0 },
@@ -98,9 +98,9 @@ export class AnalysisEngine {
       teamsUserHit: new Set(),
       myRecentDamageTaken: new Map(),
       recentAttacksOnUser: [],
-      itemUseSummary: { smokes: 0, frags: 0, molotovs: 0, stuns: 0, others: 0 },
+      itemUseSummary: { smokes: 0, frags: 0, molotovs: 0, others: 0 },
       itemUseStats: {
-        heals: 0, boosts: 0, throwCount: 0, lethalThrowCount: 0, stunDurationSum: 0,
+        heals: 0, boosts: 0, throwCount: 0, lethalThrowCount: 0,
         focusFireCount: 0,
         crossfireExposureCount: 0,
         distanceDamage: { short: 0, mid: 0, long: 0 }
@@ -111,7 +111,7 @@ export class AnalysisEngine {
       recentTeammateDamageTaken: new Map(),
       isolationData: { isolationIndex: 0, combatIsolation: 0, deathIsolation: 0, minDist: 0, heightDiff: 0, isCrossfire: false, teammateCount: 0 },
       timeline: [],
-      
+
       // [V26.0] 리플레이 데이터 초기화
       mapName: "",
       mapSize: 819200,
@@ -148,7 +148,7 @@ export class AnalysisEngine {
     this.state.mapName = matchAttr.mapName || "Erangel";
     const mapKey = this.state.mapName.toLowerCase().split('_')[0];
     this.state.mapSize = MAP_SIZES[mapKey] || 819200;
-    
+
     this.buildMappings(rosters, participants);
 
     // 2. 정확한 시작 시점 (LogMatchStart) 찾기
@@ -208,7 +208,7 @@ export class AnalysisEngine {
           const fullPart = participants.find(part => part.id === pRef.id);
           const name = normalizeName(fullPart?.attributes?.stats?.name || "");
           const accountId = fullPart?.attributes?.stats?.playerId || fullPart?.attributes?.accountId;
-          
+
           if (name) {
             this.state.teamMapping.set(name, r.id);
             teamMates.add(name);
@@ -249,8 +249,8 @@ export class AnalysisEngine {
     const sortedByDamage = [...humanParticipants].map(p => p.attributes?.stats).filter(Boolean).sort((a, b) => b.damageDealt - a.damageDealt);
     const damageRank = sortedByDamage.findIndex((s: any) => normalizeName(s.name) === this.state.lowerNickname) + 1 || 1;
 
-    const damageImpact = Math.round((myStats.damageDealt / (eliteBenchmark?.avg_damage || 400)) * 100);
-    const killImpact = Math.round((myStats.kills / (eliteBenchmark?.avg_kills || 3)) * 100);
+    const damageImpact = Math.round((myStats.damageDealt / (eliteBenchmark?.avgDamage || 400)) * 100);
+    const killImpact = Math.round((myStats.kills / (eliteBenchmark?.avgKills || 3)) * 100);
     const teamDamageShare = Math.round((myStats.damageDealt / totalTeamDamage) * 100);
     const teamKillShare = Math.round((myStats.kills / totalTeamKills) * 100);
 
@@ -348,7 +348,6 @@ export class AnalysisEngine {
         },
         isClutched: false,
         utilityDamage: this.state.combatPressure.utilityDamage,
-        stunHits: this.state.combatPressure.stunHits,
         utilityHits: this.state.combatPressure.utilityHits,
         totalHits: this.state.combatPressure.totalHits,
         maxHitDist: this.state.combatPressure.maxHitDistance,
@@ -371,9 +370,9 @@ export class AnalysisEngine {
         tradeRate: this.state.totalTeammateKnocks > 0 ? (this.state.totalTradeKills / this.state.totalTeammateKnocks) * 100 : 0,
         teamWipes: this.state.wipedTeamsByUserParticipation.size,
         reversalRate: reversalRate,
-         deathPhase: this.calculateDeathPhase(myStats.winPlace || 100),
-         suppRate: this.state.totalTeammateKnocks > 0 ? (this.state.totalSuppCount / this.state.totalTeammateKnocks) * 100 : 0
-       }, (this.state.gameMode || "").includes("solo")),
+        deathPhase: this.calculateDeathPhase(myStats.winPlace || 100),
+        suppRate: this.state.totalTeammateKnocks > 0 ? (this.state.totalSuppCount / this.state.totalTeammateKnocks) * 100 : 0
+      }, (this.state.gameMode || "").includes("solo")),
       isValidBenchmark: (myStats.timeSurvived || 0) >= 300,
       timeline: this.state.timeline.sort((a, b) => a.ts - b.ts),
       // [V26.0] 지도 리플레이용 데이터 포함

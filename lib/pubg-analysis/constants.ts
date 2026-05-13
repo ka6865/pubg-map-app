@@ -2,7 +2,7 @@
  * PUBG 전술 분석 엔진 상수 정의
  */
 
-export const RESULT_VERSION = 26.0;
+export const RESULT_VERSION = 26.1; // [V26.7] recordStunEvent 통합 로직 - 적군 섬광 피격 추적 추가
 export const TELEMETRY_VERSION = 37; // [V41.3] ID 기반 분석 및 슬림 텔레메트리 무결성 강화 버전
 
 export const MAP_NAMES: Record<string, string> = {

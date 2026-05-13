@@ -93,7 +93,6 @@ export interface MatchData {
     maxHitDistance: number;
     utilityDamage: number;
     utilityHits: number;
-    stunHits?: number;
   };
   /** [V3.0] 전술 지표 (견제, 세이브, 복수 등) */
   tradeStats?: {

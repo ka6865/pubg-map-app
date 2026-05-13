@@ -37,7 +37,6 @@ export interface UtilityStats {
   accuracy: number;
   avgDamagePerThrow: number;
   fragHits?: number;
-  stunHits?: number;
   molotovHits?: number;
 }
 
@@ -47,11 +46,10 @@ export interface CombatPressure {
   utilityStats: UtilityStats;
   isClutched: boolean;
   utilityDamage?: number;
-  stunHits?: number;
   utilityHits?: number;
   totalHits?: number;
-  uniqueVictims?: string[];
   maxHitDist?: number;
+  uniqueVictims?: string[];
 }
 
 export interface IsolationData {
@@ -135,7 +133,6 @@ export interface AnalysisResult {
     boosts: number,
     throwCount: number,
     lethalThrowCount: number,
-    stunDurationSum?: number,
     focusFireCount: number,
     crossfireExposureCount: number,
     distanceDamage: { short: number, mid: number, long: number }
@@ -247,7 +244,6 @@ export interface AnalysisState {
     maxHitDistance: number;
     utilityDamage: number;
     utilityHits: number;
-    stunHits: number;
     isClutched: boolean;
   };
   myDownedIntervals: Array<{ start: number, end: number | null }>;
@@ -269,7 +265,6 @@ export interface AnalysisState {
     boosts: number,
     throwCount: number,
     lethalThrowCount: number,
-    stunDurationSum?: number,
     focusFireCount: number,
     crossfireExposureCount: number,
     distanceDamage: { short: number, mid: number, long: number }
