@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
-import { ShieldAlert, Clock, TrendingUp, Flame, Wind, Heart, Skull, Target, HelpCircle } from "lucide-react";
+import { ShieldAlert, Clock, TrendingUp, TrendingDown, Minus, Flame, Wind, Heart, Skull, Target, HelpCircle, Zap, Brain, Car, Compass } from "lucide-react";
+
 import { IsolationRadar } from "./IsolationRadar";
 import { SpiderChart } from "./SpiderChart";
 import { MapKingCard } from "./MapKingCard";
@@ -31,7 +32,9 @@ interface ActionItem {
 interface DebateData {
   debateIssues: DebateIssue[];
   finalVerdict: string;
+  weaknessDiagnostic?: string;
   actionItems: ActionItem[];
+
   signature?: string;
   signatureSub?: string;
   visuals?: {
@@ -55,9 +58,12 @@ interface DebateData {
       roleLabel: string;
       description: string;
       signatureWeapon: string;
-      signatureWeaponStats?: { kills: number; dbnos: number };
+      signatureWeaponStats?: { kills: number; dbnos: number; consistency?: number; isReliable?: boolean };
+      weakness?: string | null;
+      specialMetrics?: { circleLuck: number; vehicleMastery: number };
       scores: Record<string, number>;
     };
+
     initiativeSuccess: string;
     duelStats?: { winRate: string; wins: number; losses: number; reversals: number; reversalAttempts: number };
     reversalRate: string;
@@ -83,20 +89,35 @@ interface DebateData {
       bestMap: { mapName: string; displayName: string; matchCount: number; avgDamage: number; avgKills: number; avgDeathPhase: number };
       worstMap: { mapName: string; displayName: string; matchCount: number; avgDamage: number; avgKills: number; avgDeathPhase: number };
     } | null;
+    weaknessDiagnostic?: string;
+    trends?: {
+      dmgTrend: number;
+      winTrend: number;
+      luckTrend: number;
+      status: string;
+      recent: { damage: number; winRate: number; luck: number };
+      older: { damage: number; winRate: number; luck: number };
+    } | null;
+    entertainment?: {
+      circleLuck: number;
+      vehicleMastery: number;
+    };
     tactical?: {
+
       suppRate: string;
       smokeRate: string;
       reviveRate: string;
       baitCount: number;
-      counts?: {
-        knocks: number;
-        smokes: number;
-        smokeRescues: number;
-        revives: number;
-        trades: number;
-        supps: number;
-        initiative: { attempts: number; success: number };
-      };
+        counts?: {
+          knocks: number;
+          smokes: number;
+          smokeRescues: number;
+          revives: number;
+          trades: number;
+          supps: number;
+          enemyTeamWipes: number;
+          initiative: { attempts: number; success: number };
+        };
       isolation?: {
         isolationIndex: number;
         minDist: number;
@@ -136,17 +157,30 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
 
   const handleFetchSummary = async (force = false) => {
     if (loading || (!force && debateData)) return;
+    
+    // [V45.1] 초기 상태 설정
     setLoading(true);
     setError(null);
+    setStreamingText("");
+    
     if (force) {
       setDebateData(null);
-      setStreamingText("");
       textBufferRef.current = "";
       lineBufferRef.current = "";
     }
 
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
+
+    // [V45.2] 클라이언트 측 세이프티 타임아웃 (45초)
+    const safetyTimeout = setTimeout(() => {
+      if (loading) {
+        console.warn("[AI-SUMMARY] Safety timeout triggered. Aborting stream.");
+        abortController.abort();
+        setError("분석 시간이 너무 오래 소요되어 중단되었습니다. 잠시 후 다시 시도해주세요.");
+        setLoading(false);
+      }
+    }, 45000);
     
     try {
       const response = await fetch('/api/pubg/ai-summary', {
@@ -154,22 +188,27 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
         headers: { 'Content-Type': 'application/json' },
         signal: abortController.signal,
         body: JSON.stringify({ 
-          matchIds: matchIds, 
+          matchIds, 
           nickname, 
-          platform: platform,
-          force: force
+          platform,
+          force
         })
       });
 
-      if (!response.ok) throw new Error("분석 중 오류가 발생했습니다.");
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || "분석 서버 응답 오류가 발생했습니다.");
+      }
 
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
       let fullText = "";
 
-      // [V6.2] Throttled UI Update 설정 (100ms 주기)
+      // [V45.3] UI 업데이트를 위한 인터벌 (스트리밍 시각화용)
       const updateInterval = setInterval(() => {
-        setStreamingText(textBufferRef.current);
+        if (textBufferRef.current !== streamingText) {
+          setStreamingText(textBufferRef.current);
+        }
       }, 100);
 
       if (reader) {
@@ -182,47 +221,65 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
             lineBufferRef.current += chunk;
 
             const lines = lineBufferRef.current.split("\n");
-            lineBufferRef.current = lines.pop() || ""; // 마지막 미완성 라인은 버퍼에 유지
+            lineBufferRef.current = lines.pop() || "";
 
             for (const line of lines) {
-              if (!line.trim()) continue;
+              const trimmedLine = line.trim();
+              if (!trimmedLine) continue;
+
               try {
-                const parsed = JSON.parse(line);
+                const parsed = JSON.parse(trimmedLine);
+                
                 if (parsed.type === "visuals") {
+                  // 비주얼 데이터가 오면 로딩을 풀고 UI를 보여줌
                   setDebateData(prev => ({ ...prev, visuals: parsed.data } as any));
-                  setLoading(false);
+                  setLoading(false); 
                 } else if (parsed.type === "chunk") {
                   textBufferRef.current += parsed.data;
                   fullText += parsed.data;
                 } else if (parsed.type === "done") {
                   try {
-                    // [V6.26] AI 응답 정제: 순수 JSON 블록만 추출 ({ ... })
                     let cleanJson = fullText.trim();
                     const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
-                    if (jsonMatch) {
-                      cleanJson = jsonMatch[0];
-                    }
+                    if (jsonMatch) cleanJson = jsonMatch[0];
                     
                     const finalJson = JSON.parse(cleanJson);
-                    setDebateData(prev => ({ ...finalJson, visuals: prev?.visuals || finalJson.visuals }));
+                    setDebateData(prev => ({ 
+                      ...finalJson, 
+                      visuals: prev?.visuals || finalJson.visuals 
+                    }));
                   } catch (e) {
-                    console.warn("Final JSON parse failed. FullText Sample:", fullText.substring(0, 100));
+                    console.error("[AI-SUMMARY] Final result parse failed:", e);
+                    // 실패 시 에러 상태로 전환하여 무한 대기 방지
+                    setError("분석 결과 데이터 처리에 실패했습니다.");
                   }
                 }
               } catch (e) {
-                console.error("NDJSON Parse Error:", e, line);
+                // 개별 라인 파싱 실패는 무시하되 로그 남김 (데이터가 잘렸을 경우 대비)
+                console.warn("[AI-SUMMARY] Line parse error (ignored):", e);
               }
             }
           }
+        } catch (readError: any) {
+          if (readError.name === 'AbortError') {
+            console.log("[AI-SUMMARY] Fetch aborted");
+          } else {
+            throw readError;
+          }
         } finally {
           clearInterval(updateInterval);
-          setStreamingText(textBufferRef.current); // 마지막 텍스트 동기화
+          setStreamingText(textBufferRef.current);
+          setLoading(false); // 스트림이 완전히 끝나면 다시 한 번 확실히 로딩 해제
         }
       }
 
     } catch (err: any) {
-      setError(err.message);
+      if (err.name !== 'AbortError') {
+        console.error("[AI-SUMMARY] Critical Error:", err);
+        setError(err.message || "알 수 없는 오류가 발생했습니다.");
+      }
     } finally {
+      clearTimeout(safetyTimeout);
       setLoading(false);
     }
   };
@@ -296,9 +353,21 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
       <div className="flex justify-end">
         <button 
           onClick={() => handleFetchSummary(true)}
-          className="px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-[10px] text-gray-400 font-black uppercase tracking-widest transition-all"
+          disabled={loading}
+          className={`px-4 py-2 border rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
+            loading 
+              ? "bg-white/5 border-white/5 text-gray-600 cursor-not-allowed" 
+              : "bg-white/5 hover:bg-white/10 border-white/10 text-gray-400"
+          }`}
         >
-          🔄 분석 데이터 갱신
+          {loading ? (
+            <>
+              <div className="w-3 h-3 border-2 border-gray-600 border-t-gray-400 rounded-full animate-spin" />
+              분석 중...
+            </>
+          ) : (
+            <>🔄 분석 데이터 갱신</>
+          )}
         </button>
       </div>
       {/* [V6.2] 공간 분석 레이더 및 CLS 방지 Skeleton */}
@@ -377,6 +446,42 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
           }}
         />
       )}
+
+      {/* [V16.0] 성장 트렌드 섹션 */}
+      {debateData?.visuals?.trends && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 animate-in fade-in slide-in-from-top-4 duration-700">
+          {[
+            { label: "딜량 트렌드", current: debateData.visuals.trends.recent.damage, diff: debateData.visuals.trends.dmgTrend, unit: "", icon: Flame },
+            { label: "교전 승률", current: debateData.visuals.trends.recent.winRate, diff: debateData.visuals.trends.winTrend, unit: "%", icon: Zap },
+            { label: "자기장 행운", current: debateData.visuals.trends.recent.luck, diff: debateData.visuals.trends.luckTrend, unit: "%", icon: Compass },
+          ].map((item, idx) => (
+            <div key={idx} className="bg-white/5 border border-white/10 rounded-2xl p-5 flex flex-col gap-3 relative overflow-hidden group">
+              <div className="flex justify-between items-start">
+                <span className="text-[10px] text-gray-500 font-black uppercase tracking-widest">{item.label}</span>
+                <item.icon size={16} className="text-white/20 group-hover:text-indigo-400 transition-colors" />
+              </div>
+              <div className="flex items-end justify-between">
+                <div className="text-2xl font-black text-white">{item.current}{item.unit}</div>
+                <div className={`flex items-center gap-1 text-[11px] font-black ${item.diff > 0 ? 'text-emerald-400' : item.diff < 0 ? 'text-red-400' : 'text-gray-500'}`}>
+                  {item.diff > 0 ? <TrendingUp size={12} /> : item.diff < 0 ? <TrendingDown size={12} /> : <Minus size={12} />}
+                  {item.diff > 0 ? '+' : ''}{item.diff}{item.unit}
+                </div>
+              </div>
+              <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
+                <div 
+                  className={`h-full transition-all duration-1000 ${item.diff > 0 ? 'bg-emerald-500' : item.diff < 0 ? 'bg-red-500' : 'bg-gray-500'}`}
+                  style={{ width: `${Math.min(100, 50 + (item.diff / (item.current || 1)) * 100)}%` }}
+                />
+              </div>
+            </div>
+          ))}
+          <div className="md:col-span-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl px-4 py-2 flex items-center justify-between">
+            <span className="text-[11px] text-indigo-300 font-bold">최근 5판 vs 이전 5판 성장 추세 분석 결과</span>
+            <span className="text-[11px] text-white font-black">{debateData.visuals.trends.status}</span>
+          </div>
+        </div>
+      )}
+
 
       <div className="flex justify-around items-center p-6 bg-black/40 rounded-3xl border border-white/10 backdrop-blur-md shadow-2xl">
         <div className="text-center group">
@@ -523,6 +628,29 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
         </div>
       )}
 
+      {/* [V16.0] 취약점 진단 및 코칭 */}
+      {debateData?.weaknessDiagnostic && (
+        <div className="bg-red-500/5 border border-red-500/20 rounded-[32px] p-8 relative overflow-hidden group animate-in fade-in slide-in-from-bottom-4 duration-700">
+          <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:scale-110 transition-transform">
+            <Brain size={80} className="text-red-500" />
+          </div>
+          <div className="relative z-10 space-y-4">
+            <div className="flex items-center gap-2">
+              <div className="px-3 py-1 bg-red-500/20 rounded-lg border border-red-500/30">
+                <span className="text-[10px] text-red-400 font-black uppercase tracking-widest flex items-center gap-2">
+                  <ShieldAlert size={12} /> Weakness Diagnostic
+                </span>
+              </div>
+              <span className="text-sm font-black text-white/80">실력 향상을 위한 치명적 약점 보완 가이드</span>
+            </div>
+            <p className="text-lg font-black text-white leading-relaxed italic">
+              &quot;{debateData.weaknessDiagnostic}&quot;
+            </p>
+          </div>
+        </div>
+      )}
+
+
       {debateData?.visuals?.goldenTime && (
         <div className="relative z-10 p-10 bg-black/80 rounded-[40px] border border-white/10 backdrop-blur-2xl shadow-2xl overflow-hidden">
           <div className="absolute -top-24 -right-24 w-48 h-48 bg-yellow-500/10 blur-[80px] rounded-full" />
@@ -648,7 +776,30 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
         </div>
       )}
 
+      {/* [V16.0] 재미 및 특수 지표 */}
+      {debateData?.visuals?.entertainment && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-1000">
+          <div className="bg-gradient-to-br from-yellow-500/10 to-orange-500/10 border border-white/10 rounded-3xl p-6 flex items-center gap-6 group">
+            <div className="w-16 h-16 bg-yellow-500/20 rounded-2xl flex items-center justify-center text-3xl group-hover:rotate-12 transition-transform">🎲</div>
+            <div className="flex-1">
+              <div className="text-[10px] text-yellow-400 font-black uppercase tracking-widest mb-1">자기장 축복 (Circle Luck)</div>
+              <div className="text-2xl font-black text-white mb-1">{debateData.visuals.entertainment.circleLuck}%</div>
+              <p className="text-[11px] text-gray-500 font-medium">자기장 중심부 진입 행운 지수 (높을수록 외곽 운영보다 중앙 선점 선호)</p>
+            </div>
+          </div>
+          <div className="bg-gradient-to-br from-blue-500/10 to-cyan-500/10 border border-white/10 rounded-3xl p-6 flex items-center gap-6 group">
+            <div className="w-16 h-16 bg-blue-500/20 rounded-2xl flex items-center justify-center text-3xl group-hover:-rotate-12 transition-transform">🏎️</div>
+            <div className="flex-1">
+              <div className="text-[10px] text-blue-400 font-black uppercase tracking-widest mb-1">기동력 마스터 (Vehicle Mastery)</div>
+              <div className="text-2xl font-black text-white mb-1">{debateData.visuals.entertainment.vehicleMastery}%</div>
+              <p className="text-[11px] text-gray-500 font-medium">탈것 활용도 및 이동 기동성 지수 (높을수록 적극적인 차량 운영 파악)</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+
         <div className="relative group p-6 bg-indigo-500/10 border border-indigo-500/20 rounded-[28px] text-center transition-all hover:bg-indigo-500/15">
           <div className="text-[10px] text-indigo-400 font-black uppercase mb-1 tracking-widest">선제 타격 효율</div>
           <div className="text-3xl font-black text-white mb-1">
@@ -739,7 +890,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
               )}
             </div>
             
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-6">
               <div className="flex flex-col gap-1">
                 <span className="text-[10px] text-orange-400 font-black uppercase">견제 사격 성공률</span>
                 <span className="text-2xl font-black text-white">
@@ -783,9 +934,14 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
                 </div>
               </div>
               <div className="flex flex-col gap-1">
-                <span className="text-[10px] text-purple-400 font-black uppercase">전술 대응력 (복수/미끼)</span>
+                <span className="text-[10px] text-emerald-400 font-black uppercase">팀 전멸 (Wipes)</span>
+                <span className="text-2xl font-black text-white">{debateData?.visuals?.tactical?.counts?.enemyTeamWipes || 0}회</span>
+                <div className="text-[9px] text-gray-500 font-bold mt-1">교전 중 적 스쿼드 전멸 기여</div>
+              </div>
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] text-purple-400 font-black uppercase">전술 대응력 (복수)</span>
                 <span className="text-2xl font-black text-white">{debateData?.visuals?.tactical?.baitCount || 0}회</span>
-                <div className="text-[9px] text-gray-500 font-bold mt-1">최근 10경기 합계</div>
+                <div className="text-[9px] text-gray-500 font-bold mt-1">10경기 합계</div>
               </div>
             </div>
           </div>

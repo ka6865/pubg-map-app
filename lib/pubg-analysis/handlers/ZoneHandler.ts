@@ -13,7 +13,31 @@ export class ZoneHandler extends BaseHandler {
       case "LogPlayerPosition":
         this.handleEdgePlay(e, ts, elapsed);
         break;
+      case "LogPhaseStart":
+      case "LogPhaseChange":
+        this.handlePhaseChange(e);
+        break;
     }
+  }
+
+  private handlePhaseChange(e: any) {
+    if (!this.state.whiteZone || this.state.whiteZone.radius === 0) return;
+    
+    // 내 마지막 위치 확인
+    const myLoc = this.state.playerLocations.get(this.state.lowerNickname) || 
+                  this.state.playerLocations.get(this.state.myAccountId);
+    if (!myLoc) return;
+
+    const distToCenter = Math.sqrt(
+      Math.pow(myLoc.x - this.state.whiteZone.x, 2) +
+      Math.pow(myLoc.y - this.state.whiteZone.y, 2)
+    );
+
+    // 다음 안전 구역 안에 있으면 운 좋음 (+1), 밖에 있으면 (+0)
+    if (distToCenter <= this.state.whiteZone.radius) {
+      this.state.circleLuckSum++;
+    }
+    this.state.circleLuckCount++;
   }
 
   private handleGameState(e: any) {

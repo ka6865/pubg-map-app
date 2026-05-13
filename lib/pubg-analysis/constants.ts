@@ -2,8 +2,8 @@
  * PUBG 전술 분석 엔진 상수 정의
  */
 
-export const RESULT_VERSION = 26.1; // [V26.7] recordStunEvent 통합 로직 - 적군 섬광 피격 추적 추가
-export const TELEMETRY_VERSION = 40; // [V40.0] 부활 감지 이벤트 리스트 확장 (LogPlayerRecall 추가) 및 캐시 갱신
+export const RESULT_VERSION = 30.1; // [V30.1] 탈것 데이터 보존 수정 및 AI 폴백 로직 개선에 따른 캐시 갱신
+export const TELEMETRY_VERSION = 41; // [V41.0] 탈것 숙련도(Vehicle Mastery) 계산을 위한 차량 정보 보존 및 캐시 갱신
 
 export const MAP_NAMES: Record<string, string> = {
   "Baltic_Main": "에란겔", 
@@ -107,3 +107,9 @@ export const IGNORE_WEAPONS = [
   "WeapGrenade_C", "WeapMolotov_C", "WeapSmokeBomb_C", "WeapFlashBang_C", "WeapStickyGrenade_C",
   "WeapSpikeStrip_C", "WeapDecoyGrenade_C", "WeapBluezoneGrenade_C", "None", "Cowbar_C", "Pan_C"
 ];
+
+/**
+ * 로컬 스토리지 키 (최근 검색, 즐겨찾기)
+ */
+export const STORAGE_KEY_RECENT = "pubg_recent_searches_v2";
+export const STORAGE_KEY_FAVORITES = "pubg_favorites_v2";

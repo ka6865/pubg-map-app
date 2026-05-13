@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
     let telData: any[] = [];
 
     if (telemetryAsset) {
-      const analyzePath = `${matchId}_${lowerNickname}_analyze.json`;
+      const analyzePath = `${matchId}_${lowerNickname}_v${TELEMETRY_VERSION}_analyze.json`;
       const { data: fileData, error: downloadError } = await supabase.storage.from('telemetry').download(analyzePath);
 
       let needsProcessing = !fileData || downloadError;
@@ -138,7 +138,8 @@ export async function GET(request: NextRequest) {
                 name: (typeof char === 'string' ? char : (char.name || char.characterName || char.itemId)),
                 accountId: char.accountId || char.playerId,
                 teamId: char.teamId,
-                location: normLoc(char.location)
+                location: normLoc(char.location),
+                vehicle: char.vehicle // [V16.0] 탈것 숙련도 계산을 위해 차량 정보 유지
               };
             }
           });
@@ -152,7 +153,7 @@ export async function GET(request: NextRequest) {
             }));
           }
 
-          const keepFields = ["damage", "damageReason", "damageTypeCategory", "damageCauserName", "damageCauser", "distance", "weapon", "weaponId", "dBNOId", "phase", "isGame", "attackId", "killerDamageInfo", "finishDamageInfo", "dBNODamageInfo", "reviveType"];
+          const keepFields = ["damage", "damageReason", "damageTypeCategory", "damageCauserName", "damageCauser", "distance", "weapon", "weaponId", "dBNOId", "phase", "isGame", "attackId", "killerDamageInfo", "finishDamageInfo", "dBNODamageInfo", "reviveType", "vehicle"];
           keepFields.forEach(f => { if (e[f] !== undefined) slim[f] = e[f]; });
           return slim;
         });

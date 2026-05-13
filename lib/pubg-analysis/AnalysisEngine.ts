@@ -112,6 +112,12 @@ export class AnalysisEngine {
       isolationData: { isolationIndex: 0, combatIsolation: 0, deathIsolation: 0, minDist: 0, heightDiff: 0, isCrossfire: false, teammateCount: 0 },
       timeline: [],
 
+      // [V16.0] 신규 지표 초기화
+      circleLuckSum: 0,
+      circleLuckCount: 0,
+      vehicleDistance: 0,
+      weaponMatchCount: new Set(),
+
       // [V26.0] 리플레이 데이터 초기화
       mapName: "",
       mapSize: 819200,
@@ -367,6 +373,7 @@ export class AnalysisEngine {
           totalDamage: this.state.combatPressure.utilityDamage,
           killCount: 0, // [V11.9.4] 유틸리티 킬 추적은 향후 고도화 예정
           accuracy: this.state.itemUseStats.lethalThrowCount > 0 ? Number(((this.state.combatPressure.utilityHits / this.state.itemUseStats.lethalThrowCount) * 100).toFixed(1)) : 0,
+          accuracyRaw: this.state.itemUseStats.lethalThrowCount > 0 ? (this.state.combatPressure.utilityHits / this.state.itemUseStats.lethalThrowCount) : 0,
           avgDamagePerThrow: this.state.itemUseStats.lethalThrowCount > 0 ? Number((this.state.combatPressure.utilityDamage / this.state.itemUseStats.lethalThrowCount).toFixed(1)) : 0
         },
         isClutched: false,
@@ -381,6 +388,12 @@ export class AnalysisEngine {
       deathDistance: this.state.deathDistance,
       edgePlay: this.state.zoneStrategy.edgePlayCount,
       bluezoneWaste: this.state.bluezoneWaste,
+
+      // [V16.0] 신규 지표 반영
+      avgCircleLuck: this.state.circleLuckCount > 0 ? Math.round((this.state.circleLuckSum / this.state.circleLuckCount) * 100) : 50,
+      avgVehicleMastery: Math.min(100, Math.round((this.state.vehicleDistance / 5000) * 100)), // 5km 이동 시 만점
+      weaponMatchCount: Array.from(this.state.weaponMatchCount),
+
       benchmark: getBenchmarkTier({
         rankPct: damageRank / Math.max(1, humanParticipants.length),
         survivalTime: myStats.timeSurvived || 0,
