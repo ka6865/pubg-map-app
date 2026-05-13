@@ -9,7 +9,6 @@ import { Shield, ChevronDown, Swords } from "lucide-react";
 
 const STORAGE_KEY_RECENT = "pubg_recent_searches_v2";
 const STORAGE_KEY_FAVORITES = "pubg_favorites_v2";
-const STORAGE_KEY_LAST_SEARCH = "pubg_last_search_v2";
 
 import type { UserProfile } from "../types/map";
 import { useAuth } from "./AuthProvider";
@@ -68,22 +67,6 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
   }, []);
 
   useEffect(() => {
-    // 🎯 React 19 대응: URL 파라미터가 없을 때만 localStorage에서 마지막 검색 기록을 가져옴
-    if (!initialNickname) {
-      const savedLast = localStorage.getItem(STORAGE_KEY_LAST_SEARCH);
-      if (savedLast) {
-        try {
-          const { nickname: lastNick, platform: lastPlat } = JSON.parse(savedLast);
-          if (lastNick) setNickname(lastNick);
-          if (lastPlat) setPlatform(lastPlat);
-        } catch (e) {
-          console.error("Failed to parse last search:", e);
-        }
-      }
-    }
-  }, [initialNickname]);
-
-  useEffect(() => {
     if (user) {
       supabase.from("profiles").select("*").eq("id", user.id).single().then(({ data }) => {
         if (data) setUserProfile(data as UserProfile);
@@ -130,10 +113,6 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
         localStorage.setItem(STORAGE_KEY_RECENT, JSON.stringify(updated));
         return updated;
       });
-
-      // 마지막 검색어 저장
-      localStorage.setItem(STORAGE_KEY_LAST_SEARCH, JSON.stringify({ nickname: actualName, platform: searchPlatform }));
-
       // URL 업데이트 (동적 라우팅)
       if (params.nickname !== actualName || params.platform !== searchPlatform) {
         router.push(`/stats/${searchPlatform}/${actualName}`);
@@ -144,7 +123,7 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
       setLoading(false);
       setTimeout(() => setCooldown(false), 3000);
     }
-  }, [selectedSeason, nickname, platform, cooldown]);
+  }, [selectedSeason, nickname, platform, cooldown, params.nickname, params.platform, router]);
 
   useEffect(() => {
     // URL 파라미터가 변경되면 이전 에러와 결과를 초기화하여 새로운 검색을 허용
