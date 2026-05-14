@@ -173,7 +173,25 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
       try {
         const res = await fetch(`/api/pubg/match?matchId=${matchId}&nickname=${nickname}&platform=${platform}`, { cache: 'no-store' });
         const data = await res.json();
-        if (!data.error) setMatchData(data);
+        
+        if (!data.error) {
+          // [V45.2] 정규 매치 필터링 (이벤트, 아케이드, 훈련소 등 제외)
+          const mode = (data.gameMode || "").toLowerCase();
+          const map = data.mapName || "";
+          const isStandardMatch = 
+            !mode.includes("event") &&
+            !mode.includes("arcade") &&
+            !mode.includes("custom") &&
+            !mode.includes("training") &&
+            !mode.includes("flare") &&
+            !mode.includes("ai-match") &&
+            !map.includes("SafeHouse") &&
+            !map.includes("Range_Main");
+
+          if (isStandardMatch) {
+            setMatchData(data);
+          }
+        }
       } catch (err) {
         console.error("Match Fetch Error:", err);
       } finally {

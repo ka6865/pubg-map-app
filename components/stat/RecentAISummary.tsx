@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { ShieldAlert, Clock, TrendingUp, TrendingDown, Minus, Flame, Wind, Heart, Skull, Target, HelpCircle, Zap, Brain, Car, Compass } from "lucide-react";
+import { ShieldAlert, Clock, TrendingUp, TrendingDown, Minus, Flame, Wind, Heart, Skull, Target, HelpCircle, Zap, Brain } from "lucide-react";
 
 import { IsolationRadar } from "./IsolationRadar";
 import { SpiderChart } from "./SpiderChart";
@@ -60,7 +60,6 @@ interface DebateData {
       signatureWeapon: string;
       signatureWeaponStats?: { kills: number; dbnos: number; consistency?: number; isReliable?: boolean };
       weakness?: string | null;
-      specialMetrics?: { circleLuck: number; vehicleMastery: number };
       scores: Record<string, number>;
     };
 
@@ -93,15 +92,11 @@ interface DebateData {
     trends?: {
       dmgTrend: number;
       winTrend: number;
-      luckTrend: number;
       status: string;
-      recent: { damage: number; winRate: number; luck: number };
-      older: { damage: number; winRate: number; luck: number };
+      recent: { damage: number; winRate: number };
+      older: { damage: number; winRate: number };
     } | null;
-    entertainment?: {
-      circleLuck: number;
-      vehicleMastery: number;
-    };
+
     tactical?: {
 
       suppRate: string;
@@ -288,7 +283,10 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
     if (!debateData?.debateIssues) return { kind: 0, spicy: 0, draw: 0 };
     const scoreMap = { kind: 0, spicy: 0, draw: 0 };
     debateData.debateIssues.forEach(issue => {
-      scoreMap[issue.winner as keyof typeof scoreMap]++;
+      const w = issue.winner?.toLowerCase() || "";
+      if (w.includes("spicy")) scoreMap.spicy++;
+      else if (w.includes("kind")) scoreMap.kind++;
+      else scoreMap.draw++;
     });
     return scoreMap;
   };
@@ -453,7 +451,6 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
           {[
             { label: "딜량 트렌드", current: debateData.visuals.trends.recent.damage, diff: debateData.visuals.trends.dmgTrend, unit: "", icon: Flame },
             { label: "교전 승률", current: debateData.visuals.trends.recent.winRate, diff: debateData.visuals.trends.winTrend, unit: "%", icon: Zap },
-            { label: "자기장 행운", current: debateData.visuals.trends.recent.luck, diff: debateData.visuals.trends.luckTrend, unit: "%", icon: Compass },
           ].map((item, idx) => (
             <div key={idx} className="bg-white/5 border border-white/10 rounded-2xl p-5 flex flex-col gap-3 relative overflow-hidden group">
               <div className="flex justify-between items-start">
@@ -628,27 +625,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
         </div>
       )}
 
-      {/* [V16.0] 취약점 진단 및 코칭 */}
-      {debateData?.weaknessDiagnostic && (
-        <div className="bg-red-500/5 border border-red-500/20 rounded-[32px] p-8 relative overflow-hidden group animate-in fade-in slide-in-from-bottom-4 duration-700">
-          <div className="absolute top-0 right-0 p-6 opacity-5 group-hover:scale-110 transition-transform">
-            <Brain size={80} className="text-red-500" />
-          </div>
-          <div className="relative z-10 space-y-4">
-            <div className="flex items-center gap-2">
-              <div className="px-3 py-1 bg-red-500/20 rounded-lg border border-red-500/30">
-                <span className="text-[10px] text-red-400 font-black uppercase tracking-widest flex items-center gap-2">
-                  <ShieldAlert size={12} /> Weakness Diagnostic
-                </span>
-              </div>
-              <span className="text-sm font-black text-white/80">실력 향상을 위한 치명적 약점 보완 가이드</span>
-            </div>
-            <p className="text-lg font-black text-white leading-relaxed italic">
-              &quot;{debateData.weaknessDiagnostic}&quot;
-            </p>
-          </div>
-        </div>
-      )}
+
 
 
       {debateData?.visuals?.goldenTime && (
@@ -776,27 +753,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
         </div>
       )}
 
-      {/* [V16.0] 재미 및 특수 지표 */}
-      {debateData?.visuals?.entertainment && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-in fade-in duration-1000">
-          <div className="bg-gradient-to-br from-yellow-500/10 to-orange-500/10 border border-white/10 rounded-3xl p-6 flex items-center gap-6 group">
-            <div className="w-16 h-16 bg-yellow-500/20 rounded-2xl flex items-center justify-center text-3xl group-hover:rotate-12 transition-transform">🎲</div>
-            <div className="flex-1">
-              <div className="text-[10px] text-yellow-400 font-black uppercase tracking-widest mb-1">자기장 축복 (Circle Luck)</div>
-              <div className="text-2xl font-black text-white mb-1">{debateData.visuals.entertainment.circleLuck}%</div>
-              <p className="text-[11px] text-gray-500 font-medium">자기장 중심부 진입 행운 지수 (높을수록 외곽 운영보다 중앙 선점 선호)</p>
-            </div>
-          </div>
-          <div className="bg-gradient-to-br from-blue-500/10 to-cyan-500/10 border border-white/10 rounded-3xl p-6 flex items-center gap-6 group">
-            <div className="w-16 h-16 bg-blue-500/20 rounded-2xl flex items-center justify-center text-3xl group-hover:-rotate-12 transition-transform">🏎️</div>
-            <div className="flex-1">
-              <div className="text-[10px] text-blue-400 font-black uppercase tracking-widest mb-1">기동력 마스터 (Vehicle Mastery)</div>
-              <div className="text-2xl font-black text-white mb-1">{debateData.visuals.entertainment.vehicleMastery}%</div>
-              <p className="text-[11px] text-gray-500 font-medium">탈것 활용도 및 이동 기동성 지수 (높을수록 적극적인 차량 운영 파악)</p>
-            </div>
-          </div>
-        </div>
-      )}
+
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
 
@@ -827,7 +784,23 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
 
         <div className="relative group p-6 bg-orange-500/10 border border-orange-500/20 rounded-[28px] text-center transition-all hover:bg-orange-500/15">
           <div className="text-[10px] text-orange-400 font-black uppercase mb-1 tracking-widest">대응 사격 속도</div>
-          <div className="text-3xl font-black text-white mb-1">{debateData?.visuals?.reactionLatency || "0.00s"}</div>
+          <div className="text-3xl font-black text-white mb-1 flex items-center justify-center gap-2">
+            {debateData?.visuals?.reactionLatency || "0.00s"}
+            {debateData?.visuals?.reactionLatency === "측정 불가" && (
+              <div className="group/react relative cursor-help text-orange-400/50 hover:text-orange-400 transition-colors">
+                <div className="w-4 h-4 rounded-full border border-orange-400/30 flex items-center justify-center text-[10px] font-black">?</div>
+                
+                {/* Tooltip Content */}
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 p-3 bg-[#111] border border-orange-500/20 rounded-xl shadow-2xl z-50 w-64 opacity-0 group-hover/react:opacity-100 transition-opacity pointer-events-none">
+                  <div className="text-[10px] font-black uppercase mb-1 text-orange-400 text-left">측정 불가 사유</div>
+                  <div className="text-[11px] text-orange-200/70 font-medium leading-relaxed text-left">
+                    피격 후 반격에 성공한 교전이 없을 때 표시됩니다. <span className="text-orange-400 font-bold">일방적으로 적을 제압했거나, 기습 당했을 때 반격 없이 즉사 또는 도주한 경우</span> 측정 조건에서 제외됩니다.
+                  </div>
+                  <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#111] border-r border-b border-orange-500/20 rotate-45" />
+                </div>
+              </div>
+            )}
+          </div>
           <div className="text-[9px] text-gray-500 font-medium">피격 시 교전 대응(반응) 시간</div>
         </div>
 
@@ -965,13 +938,21 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
                 <h4 className="text-lg font-black text-white group-hover:text-indigo-300 transition-colors">{issue?.question || "분석 내용 로드 중..."}</h4>
               </div>
               <div className="flex items-center gap-4">
-                <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter ${
-                  issue?.winner === "spicy" ? "bg-red-500/20 text-red-400 border border-red-500/30" : 
-                  issue?.winner === "kind" ? "bg-green-500/20 text-green-400 border border-green-500/30" : 
-                  "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30"
-                }`}>
-                  {issue?.winner === "spicy" ? "매운맛 승" : issue?.winner === "kind" ? "착한맛 승" : "무승부"}
-                </div>
+                {(() => {
+                  const w = issue?.winner?.toLowerCase() || "";
+                  const isSpicy = w.includes("spicy");
+                  const isKind = w.includes("kind");
+                  
+                  return (
+                    <div className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter ${
+                      isSpicy ? "bg-red-500/20 text-red-400 border border-red-500/30" : 
+                      isKind ? "bg-green-500/20 text-green-400 border border-green-500/30" : 
+                      "bg-yellow-500/20 text-yellow-400 border border-yellow-500/30"
+                    }`}>
+                      {isSpicy ? "매운맛 승" : isKind ? "착한맛 승" : "무승부"}
+                    </div>
+                  );
+                })()}
                 <svg className={`w-6 h-6 text-white/50 transition-transform ${openIssueIdx === idx ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
               </div>
             </button>
@@ -979,7 +960,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
             {openIssueIdx === idx && (
               <div className="px-6 pb-6 animate-in slide-in-from-top-4 duration-300">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className={`p-5 rounded-2xl border transition-all ${issue?.winner === "kind" ? "bg-green-500/5 border-green-500/30 ring-1 ring-green-500/20" : "bg-black/30 border-white/10"}`}>
+                  <div className={`p-5 rounded-2xl border transition-all ${(issue?.winner?.toLowerCase() || "").includes("kind") ? "bg-green-500/5 border-green-500/30 ring-1 ring-green-500/20" : "bg-black/30 border-white/10"}`}>
                     <div className="flex items-center gap-2 mb-3">
                       <span className="text-lg">😊</span>
                       <span className="text-xs font-black text-green-400 uppercase">KIND COACH</span>
@@ -987,7 +968,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
                     <p className="text-sm text-gray-300 leading-relaxed font-medium">&quot;{issue?.kindOpinion || "의견을 가져오는 중..."}&quot;</p>
                   </div>
  
-                  <div className={`p-5 rounded-2xl border transition-all ${issue?.winner === "spicy" ? "bg-red-500/5 border-red-500/30 ring-1 ring-red-500/20" : "bg-black/30 border-white/10"}`}>
+                  <div className={`p-5 rounded-2xl border transition-all ${(issue?.winner?.toLowerCase() || "").includes("spicy") ? "bg-red-500/5 border-red-500/30 ring-1 ring-red-500/20" : "bg-black/30 border-white/10"}`}>
                     <div className="flex items-center gap-2 mb-3">
                       <span className="text-lg">⚡</span>
                       <span className="text-xs font-black text-red-400 uppercase">SPICY BOMBER</span>
@@ -1036,7 +1017,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
           <span className="text-8xl">⚖️</span>
         </div>
         <div className="relative z-10">
-          <h4 className="text-xs font-black text-indigo-400 uppercase tracking-[0.2em] mb-4">Final Verdict</h4>
+          <h4 className="text-xs font-black text-indigo-400 uppercase tracking-[0.2em] mb-4">AI 종합 전술 판결</h4>
           <p className="text-xl md:text-2xl font-black text-white leading-tight mb-8">
             &quot;{debateData?.finalVerdict || (loading ? "전술 분석 데이터를 요약 중입니다..." : "분석 결과를 생성할 수 없습니다. 상세 지표를 확인해주세요.")}&quot;
           </p>

@@ -2,7 +2,7 @@
  * PUBG 전술 분석 엔진 상수 정의
  */
 
-export const RESULT_VERSION = 30.1; // [V30.1] 탈것 데이터 보존 수정 및 AI 폴백 로직 개선에 따른 캐시 갱신
+export const RESULT_VERSION = 45.3; // [V45.3] 확장된 매치 풀 기반 분석 적용
 export const TELEMETRY_VERSION = 41; // [V41.0] 탈것 숙련도(Vehicle Mastery) 계산을 위한 차량 정보 보존 및 캐시 갱신
 
 export const MAP_NAMES: Record<string, string> = {

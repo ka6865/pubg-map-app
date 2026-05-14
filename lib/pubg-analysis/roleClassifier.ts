@@ -31,10 +31,6 @@ export interface RoleInfo {
     isReliable?: boolean;
   };
   weakness: string | null;
-  specialMetrics?: {
-    circleLuck?: number;
-    vehicleMastery?: number;
-  };
   scores: RoleScore;
 }
 
@@ -281,12 +277,6 @@ export function classifyRole(stats: any, bench: any, overallTier: string): RoleI
   // [V16.0] 취약점 진단
   const weakness = ROLE_WEAKNESSES[primaryRole]?.(stats) || null;
 
-  // [V16.0] 재미 지표 (자기장 축복, 베스트 드라이버)
-  const specialMetrics = {
-    circleLuck: stats.avgCircleLuck || 0,
-    vehicleMastery: stats.avgVehicleMastery || 0
-  };
-
   return {
     primaryRole,
     secondaryRole,
@@ -302,7 +292,6 @@ export function classifyRole(stats: any, bench: any, overallTier: string): RoleI
       isReliable: weapon.stats.isReliable
     },
     weakness,
-    specialMetrics,
     scores
   };
 }
