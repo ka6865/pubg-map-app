@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { normalizeName } from "@/lib/pubg-analysis/utils";
+import { TIER_RANK, Tier } from "@/lib/pubg-analysis/constants";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -34,7 +35,6 @@ function calcAvg(data: any[], key: MetricKey): number {
   return Number(avg.toFixed(1));
 }
 
-const TIER_RANK: Record<string, number> = { S: 4, A: 3, B: 2, C: 1 };
 const MAX_COMPARE_MATCHES = 20;
 
 export async function GET(request: Request) {
@@ -118,11 +118,11 @@ export async function GET(request: Request) {
 
   // 최고 티어 계산
   const topTier1 = rows1.reduce((a: any, b: any) =>
-    (TIER_RANK[a.tier] ?? 0) > (TIER_RANK[b.tier] ?? 0) ? a : b
-  ).tier ?? "C";
+    (TIER_RANK[a.tier as Tier] ?? 0) > (TIER_RANK[b.tier as Tier] ?? 0) ? a : b
+  ).tier ?? "D-";
   const topTier2 = rows2.reduce((a: any, b: any) =>
-    (TIER_RANK[a.tier] ?? 0) > (TIER_RANK[b.tier] ?? 0) ? a : b
-  ).tier ?? "C";
+    (TIER_RANK[a.tier as Tier] ?? 0) > (TIER_RANK[b.tier as Tier] ?? 0) ? a : b
+  ).tier ?? "D-";
 
   const score = {
     nick1: comparisons.filter((c) => c.winner === "nick1").length,

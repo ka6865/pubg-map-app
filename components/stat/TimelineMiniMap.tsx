@@ -12,15 +12,16 @@ interface TimelineMiniMapProps {
 }
 
 const MAP_IMAGES: Record<string, string> = {
-  erangel: "/tiles/erangel",
-  miramar: "/tiles/miramar",
-  taego: "/tiles/taego",
-  rondo: "/tiles/rondo",
-  vikendi: "/tiles/vikendi",
-  deston: "/tiles/deston",
-  sanhok: "/tiles/sanhok",
-  karakin: "/tiles/karakin",
-  paramo: "/tiles/paramo",
+  Erangel: "/tiles/Erangel",
+  Miramar: "/tiles/Miramar",
+  Taego: "/tiles/Taego",
+  Rondo: "/tiles/Rondo",
+  Vikendi: "/tiles/Vikendi",
+  Deston: "/tiles/Deston",
+  Sanhok: "/tiles/Sanhok",
+  Karakin: "/tiles/Karakin",
+  Paramo: "/tiles/Paramo",
+  Haven: "/tiles/Haven",
 };
 
 // [V43.0] 고해상도 닉네임 마커 생성기
@@ -123,7 +124,7 @@ export const TimelineMiniMap = ({ selectedEvent, mapId, className = "" }: Timeli
         attributionControl={false}
       >
         <TileLayer
-          url={`${MAP_IMAGES[mapId] || MAP_IMAGES.erangel}/{z}/{x}/{y}.jpg`}
+          url={`${MAP_IMAGES[mapId] || MAP_IMAGES.Erangel}/{z}/{x}/{y}.jpg`}
           minZoom={-5}
           maxZoom={2}
           maxNativeZoom={0}

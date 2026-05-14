@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import { createClient } from "@supabase/supabase-js";
 import { RESULT_VERSION, WEAPON_NAMES } from "@/lib/pubg-analysis/constants";
-import { estimateUserTier } from "@/lib/pubg-analysis/benchmarkScore";
+import { estimateUserTier, getBaseTier } from "@/lib/pubg-analysis/benchmarkScore";
 import { classifyRole } from "@/lib/pubg-analysis/roleClassifier";
 import { normalizeName } from "@/lib/pubg-analysis/utils";
 import { adaptBenchmark } from "@/lib/pubg-analysis/benchmarkAdapter";
@@ -612,7 +612,7 @@ export async function POST(request: Request) {
         .select('*')
         .eq('game_mode', mode)
         .eq('match_type', dominantMatchType)
-        .eq('tier', userTier)
+        .eq('tier', getBaseTier(userTier))
         .maybeSingle();
 
       const bench = adaptBenchmark(rawTierStats);
@@ -673,7 +673,11 @@ export async function POST(request: Request) {
     };
 
     const genAI = new GoogleGenerativeAI(geminiApiKey);
-    const modelsToTry = ["gemini-3.1-flash-lite-preview", "gemini-3-flash-preview", "gemini-2.5-flash"];
+    const modelsToTry = [
+      "gemini-3.1-flash-lite-preview", 
+      "gemini-3-flash-preview", 
+      "gemini-2.5-flash"
+    ];
     let streamResult = null;
 
     const safetySettings = [

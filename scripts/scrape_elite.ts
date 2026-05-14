@@ -28,10 +28,10 @@ const HEADERS = {
   Accept: "application/vnd.api+json",
 };
 
-// [설정] 실행 모드에 따른 제한값 (기본값은 수동 실행용 Full 모드)
-const PLAYER_LIMIT = parseInt(process.env.ELITE_PLAYER_LIMIT || '10');
-const MATCH_LIMIT = parseInt(process.env.ELITE_MATCH_LIMIT || '10');
-const ENABLE_SAMPLING = process.env.ENABLE_SAMPLING === 'true' || !process.env.ELITE_PLAYER_LIMIT; 
+// [설정] 실행 모드에 따른 제한값 (기본값은 데이터 정밀도를 위해 샘플링 활성화)
+const PLAYER_LIMIT = parseInt(process.env.ELITE_PLAYER_LIMIT || '5');
+const MATCH_LIMIT = parseInt(process.env.ELITE_MATCH_LIMIT || '3');
+const ENABLE_SAMPLING = process.env.ENABLE_SAMPLING !== 'false'; // 명시적으로 false가 아니면 true
 
 console.log(`📊 실행 모드: ${process.env.ELITE_PLAYER_LIMIT ? 'DAILY (Light)' : 'MANUAL (Full)'}`);
 console.log(`👥 인원: ${PLAYER_LIMIT}, 🎮 매치: ${MATCH_LIMIT}, 🧪 샘플링: ${ENABLE_SAMPLING}`);

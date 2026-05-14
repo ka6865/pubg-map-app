@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { ShieldAlert, Clock, TrendingUp, TrendingDown, Minus, Flame, Wind, Heart, Skull, Target, HelpCircle, Zap, Brain } from "lucide-react";
+import { getNextTierInfo } from "@/lib/pubg-analysis/benchmarkScore";
 
 import { IsolationRadar } from "./IsolationRadar";
 import { SpiderChart } from "./SpiderChart";
@@ -509,16 +510,21 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
             {/* 왼쪽: 티어 및 역할 아이콘 */}
             <div className="flex flex-col items-center gap-4">
               <div className={`w-24 h-24 rounded-[32px] flex items-center justify-center text-4xl shadow-2xl transition-transform group-hover:scale-110 duration-500 ${
-                debateData.visuals.overallTier === 'S' ? 'bg-gradient-to-br from-blue-600 to-blue-400 shadow-blue-500/40' :
-                debateData.visuals.overallTier === 'A' ? 'bg-gradient-to-br from-emerald-600 to-emerald-400 shadow-emerald-500/40' :
-                debateData.visuals.overallTier === 'B' ? 'bg-gradient-to-br from-yellow-600 to-yellow-400 shadow-yellow-500/40' :
+                debateData.visuals.overallTier === 'S' ? 'bg-gradient-to-br from-amber-600 to-amber-400 shadow-amber-500/40' :
+                debateData.visuals.overallTier?.startsWith('A') ? 'bg-gradient-to-br from-indigo-600 to-indigo-400 shadow-indigo-500/40' :
+                debateData.visuals.overallTier?.startsWith('B') ? 'bg-gradient-to-br from-emerald-600 to-emerald-400 shadow-emerald-500/40' :
+                debateData.visuals.overallTier?.startsWith('C') ? 'bg-gradient-to-br from-blue-600 to-blue-400 shadow-blue-500/40' :
+                debateData.visuals.overallTier?.startsWith('D') ? 'bg-gradient-to-br from-slate-600 to-slate-400 shadow-slate-500/40' :
                 'bg-gradient-to-br from-gray-600 to-gray-400 shadow-gray-500/40'
               }`}>
-                {debateData.visuals.overallTier === 'S' ? '💎' : debateData.visuals.overallTier === 'A' ? '🔥' : '⚔️'}
+                {debateData.visuals.overallTier === 'S' ? '💎' : 
+                 debateData.visuals.overallTier?.startsWith('A') ? '🔥' : 
+                 debateData.visuals.overallTier?.startsWith('B') ? '⚔️' : 
+                 debateData.visuals.overallTier?.startsWith('C') ? '⚡' : '🛡️'}
               </div>
               <div className="flex items-center gap-2">
                 <div className="px-4 py-1.5 bg-white/10 rounded-full border border-white/10">
-                  <span className="text-[12px] font-black text-white tracking-widest uppercase">{debateData.visuals.overallTier} TIER</span>
+                  <span className="text-[12px] font-black text-white tracking-widest uppercase">{(debateData.visuals.overallTier || 'B')} TIER</span>
                 </div>
                 
                 {/* [V38.2] 티어 세부 점수 툴팁 */}
@@ -546,29 +552,33 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
                         </div>
                       </div>
 
-                      {/* [V38.2.6] 다음 티어 안내 */}
+                      {/* [V38.2.6] 다음 티어 안내 (13단계 세부 티어 반영) */}
                       <div className="mt-4 px-3 py-2 bg-white/5 rounded-xl border border-white/10">
                         <div className="text-[10px] text-gray-400 font-bold mb-1">Next Goal</div>
                         <div className="text-[11px] text-white leading-relaxed">
-                          {debateData.visuals.tierBreakdown.total >= 75 ? (
-                            <span className="text-yellow-400 font-bold">최상위 S 티어 달성! 현재 실력을 유지하세요.</span>
-                          ) : (
-                            <>
-                              <span className="text-indigo-400 font-bold">
-                                {debateData.visuals.tierBreakdown.total >= 55 ? "S" : "A"} TIER
-                              </span>
-                              {" "}까지 {" "}
-                              <span className="text-white font-black">
-                                {( (debateData.visuals.tierBreakdown.total >= 55 ? 75 : 55) - debateData.visuals.tierBreakdown.total ).toFixed(1)}점
-                              </span>
-                              {" "}더 필요합니다.
-                            </>
-                          )}
+                          {(() => {
+                            const nextInfo = getNextTierInfo(debateData.visuals.tierBreakdown.total);
+                            if (!nextInfo) {
+                              return <span className="text-yellow-400 font-bold">최상위 S 티어 달성! 현재 실력을 유지하세요.</span>;
+                            }
+                            return (
+                              <>
+                                <span className="text-indigo-400 font-bold">
+                                  {nextInfo.tier} TIER
+                                </span>
+                                {" "}까지 {" "}
+                                <span className="text-white font-black">
+                                  {nextInfo.needed}점
+                                </span>
+                                {" "}더 필요합니다.
+                              </>
+                            );
+                          })()}
                         </div>
                       </div>
 
                       <div className="mt-3 text-[9px] text-gray-500 leading-tight">
-                        * 55점 이상 A, 75점 이상 S 티어 부여
+                        * S(85), A+(78), A(71), B+(56), B(48) 등 13단계 세분화
                       </div>
                       <div className="absolute left-[-6px] top-1/2 -translate-y-1/2 w-0 h-0 border-t-[6px] border-t-transparent border-r-[6px] border-r-white/20 border-b-[6px] border-b-transparent" />
                     </div>

@@ -3,7 +3,7 @@
  */
 
 export const RESULT_VERSION = 54.0;
-export const TELEMETRY_VERSION = 47;
+export const TELEMETRY_VERSION = 54;
 
 export const MAP_NAMES: Record<string, string> = {
   "Baltic_Main": "에란겔", 
@@ -113,3 +113,16 @@ export const IGNORE_WEAPONS = [
  */
 export const STORAGE_KEY_RECENT = "pubg_recent_searches_v2";
 export const STORAGE_KEY_FAVORITES = "pubg_favorites_v2";
+
+/**
+ * 전술 분석 티어 순위 (높을수록 숙련도 높음)
+ */
+export const TIER_RANK = {
+  'S': 13,
+  'A+': 12, 'A': 11, 'A-': 10,
+  'B+': 9,  'B': 8,  'B-': 7,
+  'C+': 6,  'C': 5,  'C-': 4,
+  'D+': 3,  'D': 2,  'D-': 1
+} as const;
+
+export type Tier = keyof typeof TIER_RANK;
