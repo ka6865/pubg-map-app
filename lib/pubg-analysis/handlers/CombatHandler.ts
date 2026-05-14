@@ -364,13 +364,18 @@ export class CombatHandler extends BaseHandler {
 
     if (isTeammateReviver || isTeammateVictim) {
       this.state.totalReviveEvents.push(ts);
+      
+      const isSelfRevive = isMeReviver && isMeVictim;
+
       if (isMeReviver) {
         this.state.myActionTimestamps.push(ts);
         this.state.timeline.push({ 
           ts: ts - this.state.matchStartTime, 
           type: 'REVIVE', 
+          attacker: e.reviver?.name || "나",
           victim: e.victim?.name || victimName,
-          isMe: true
+          isMe: true,
+          isSelfRevive
         });
       } else {
         this.state.timeline.push({ 
@@ -379,7 +384,8 @@ export class CombatHandler extends BaseHandler {
           attacker: e.reviver?.name || "동료", 
           victim: e.victim?.name || victimName,
           isMe: isMeVictim,
-          isRecall: false
+          isRecall: false,
+          isSelfRevive: false
         });
       }
     }

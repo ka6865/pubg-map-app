@@ -234,9 +234,23 @@ const renderEventText = (event: TimelineEvent, lowerNickname: string) => {
         </div>
       );
     case 'REVIVE':
+      if (event.isSelfRevive) {
+        return (
+          <div className="flex items-center gap-1 min-w-0">
+            <Nickname name="나" isMe={true} />
+            <ArrowRight size={10} className="text-emerald-400 shrink-0" />
+            <Nickname name="나" isMe={true} />
+            <span className="text-emerald-400 font-black ml-1 shrink-0">자가 부활</span>
+          </div>
+        );
+      }
       return (
         <div className="flex items-center gap-1 min-w-0">
-          <Nickname name="나" isMe={true} />
+          <Nickname 
+            name={event.attacker || "나"} 
+            isMe={isAttackerMe || !event.attacker} 
+            className={isAttackerMe || !event.attacker ? "" : "text-emerald-500/80 font-medium"} 
+          />
           <ArrowRight size={10} className="text-emerald-400 shrink-0" />
           <Nickname name={event.victim || ""} isMe={isVictimMe} className="text-white" />
           <span className="text-emerald-400 font-black ml-1 shrink-0">부활</span>

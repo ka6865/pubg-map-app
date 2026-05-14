@@ -19,6 +19,7 @@ export interface TimelineEvent {
   phase?: number;       // 페이즈 번호
   isMe?: boolean;       // [V26.1] 본인 활동 여부 (UI 렌더링 최적화용)
   isRecall?: boolean;   // [V26.1] 블루칩 부활 여부
+  isSelfRevive?: boolean; // [V26.1] 자가 부활 여부
 }
 
 
