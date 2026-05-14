@@ -14,6 +14,7 @@ const METRICS = [
   { key: "kills",           label: "평균 킬",         icon: "🎯", unit: "킬", higherIsBetter: true },
   { key: "duel_win_rate",   label: "1:1 교전 승률",   icon: "⚔️", unit: "%",  higherIsBetter: true },
   { key: "initiative_rate", label: "선제 타격률",     icon: "🚀", unit: "%",  higherIsBetter: true },
+  { key: "reversal_rate",   label: "역전 성공률",     icon: "🔄", unit: "%",  higherIsBetter: true },
   { key: "counter_latency_ms", label: "반응 속도",    icon: "⚡", unit: "s",  higherIsBetter: false },
   { key: "revive_rate",     label: "부활 성공률",     icon: "💚", unit: "%",  higherIsBetter: true },
   { key: "trade_rate",      label: "복수 성공률",     icon: "🔄", unit: "%",  higherIsBetter: true },
@@ -23,11 +24,11 @@ const METRICS = [
 
 type MetricKey = typeof METRICS[number]["key"];
 
-function calcAvg(data: any[], key: MetricKey): number {
+function calcAvg(data: any[], key: MetricKey): number | null {
   const vals = data
     .map((d) => d[key])
     .filter((v) => v !== null && v !== undefined && v !== -1 && !isNaN(Number(v)));
-  if (vals.length === 0) return 0;
+  if (vals.length === 0) return null;
   const avg = vals.reduce((a, b) => a + Number(b), 0) / vals.length;
   if (key === "counter_latency_ms") {
     return Number((avg / 1000).toFixed(2));
@@ -43,6 +44,7 @@ export async function GET(request: Request) {
   const rawNick2 = searchParams.get("nick2")?.trim() || "";
   const nick1 = normalizeName(rawNick1);
   const nick2 = normalizeName(rawNick2);
+  const matchType = searchParams.get("matchType") || "all"; // all, official, competitive
 
   if (!nick1 || !nick2) {
     return NextResponse.json({ error: "두 닉네임이 필요합니다." }, { status: 400 });
@@ -52,27 +54,31 @@ export async function GET(request: Request) {
   }
 
   const SELECT_COLS = [
-    "damage", "kills", "initiative_rate", "counter_latency_ms", "revive_rate", "trade_rate",
+    "damage", "kills", "initiative_rate", "reversal_rate", "counter_latency_ms", "revive_rate", "trade_rate",
     "duel_win_rate", "solo_kill_rate", "death_phase", "tier", "game_mode", "created_at",
   ].join(", ");
 
+  const buildQuery = (nickname: string) => {
+    let q = supabase
+      .from("global_benchmarks")
+      .select(SELECT_COLS)
+      .eq("player_id", nickname)
+      .not("game_mode", "ilike", "%training%")
+      .not("game_mode", "ilike", "%tdm%")
+      .order("created_at", { ascending: false })
+      .limit(MAX_COMPARE_MATCHES);
+
+    if (matchType === "official") {
+      q = q.eq("match_type", "official");
+    } else if (matchType === "competitive") {
+      q = q.eq("match_type", "competitive");
+    }
+    return q;
+  };
+
   const [r1, r2] = await Promise.all([
-    supabase
-      .from("global_benchmarks")
-      .select(SELECT_COLS)
-      .eq("player_id", nick1)
-      .not("game_mode", "ilike", "%training%")
-      .not("game_mode", "ilike", "%tdm%")
-      .order("created_at", { ascending: false })
-      .limit(MAX_COMPARE_MATCHES),
-    supabase
-      .from("global_benchmarks")
-      .select(SELECT_COLS)
-      .eq("player_id", nick2)
-      .not("game_mode", "ilike", "%training%")
-      .not("game_mode", "ilike", "%tdm%")
-      .order("created_at", { ascending: false })
-      .limit(MAX_COMPARE_MATCHES),
+    buildQuery(nick1),
+    buildQuery(nick2),
   ]);
 
   if (!r1.data?.length) {
@@ -100,20 +106,26 @@ export async function GET(request: Request) {
 
   // 항목별 승/패 판정
   const comparisons = METRICS.map((m) => {
-    const v1 = avg1[m.key];
-    const v2 = avg2[m.key];
+    const v1 = avg1[m.key] as number | null;
+    const v2 = avg2[m.key] as number | null;
     
-    // 지표별 변별력을 위한 임계값 조정 (무승부 방지)
-    let threshold = 0.1; 
-    if (m.key === "damage") threshold = 20;
-    else if (m.key === "death_phase") threshold = 0.5;
-    else if (m.key === "kills") threshold = 0.1;
-    else if (m.key === "counter_latency_ms") threshold = 0.15;
-    
-    const diff = Math.abs(v1 - v2);
-    const winner: "nick1" | "nick2" | "draw" =
-      diff < threshold ? "draw" : m.higherIsBetter ? (v1 > v2 ? "nick1" : "nick2") : (v1 < v2 ? "nick1" : "nick2");
-    return { ...m, v1, v2, winner };
+    let winner: "nick1" | "nick2" | "draw" = "draw";
+
+    if (v1 === null || v2 === null) {
+      winner = "draw";
+    } else {
+      // 지표별 변별력을 위한 임계값 조정 (무승부 방지)
+      let threshold = 0.1; 
+      if (m.key === "damage") threshold = 20;
+      else if (m.key === "death_phase") threshold = 0.5;
+      else if (m.key === "kills") threshold = 0.1;
+      else if (m.key === "counter_latency_ms") threshold = 0.15;
+      
+      const diff = Math.abs(v1 - v2);
+      winner = diff < threshold ? "draw" : m.higherIsBetter ? (v1 > v2 ? "nick1" : "nick2") : (v1 < v2 ? "nick1" : "nick2");
+    }
+
+    return { ...m, v1: v1 ?? 0, v2: v2 ?? 0, winner };
   });
 
   // 티어 점수 평균 계산 로직 (수치화 -> 평균 -> 티어 환산)
