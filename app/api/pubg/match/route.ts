@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { AnalysisEngine } from "@/lib/pubg-analysis/AnalysisEngine";
+import { getBaseTier } from "@/lib/pubg-analysis/benchmarkScore";
 import { RESULT_VERSION, TELEMETRY_VERSION } from "@/lib/pubg-analysis/constants";
 import { normalizeName } from "@/lib/pubg-analysis/utils";
 import { adaptBenchmark } from "@/lib/pubg-analysis/benchmarkAdapter";
@@ -202,7 +203,7 @@ export async function GET(request: NextRequest) {
       .from('benchmark_stats_by_tier')
       .select('*')
       .eq('game_mode', matchAttr.gameMode)
-      .eq('tier', matchTier)
+      .eq('tier', getBaseTier(matchTier))
       .maybeSingle();
 
     const bench = adaptBenchmark(tierStats);

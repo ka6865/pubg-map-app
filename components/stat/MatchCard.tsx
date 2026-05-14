@@ -26,6 +26,7 @@ import { useRouter } from "next/navigation";
 import { MatchTimeline } from "./MatchTimeline";
 import dynamic from "next/dynamic";
 import type { MatchData } from "../../types/stat";
+import { estimateUserTier } from "@/lib/pubg-analysis/benchmarkScore";
 
 const TimelineMiniMap = dynamic(
   () => import("./TimelineMiniMap").then((mod) => mod.TimelineMiniMap),
@@ -35,14 +36,20 @@ const TimelineMiniMap = dynamic(
 const ScoreBar = ({ label, score, max, color }: { label: string, score: number, max: number, color: string }) => (
   <div className="flex flex-col gap-1.5">
     <div className="flex justify-between items-center text-[11px]">
-      <span className="text-gray-400 font-bold">{label}</span>
-      <span className="text-white font-black">{score} <span className="text-gray-600 font-medium">/ {max}</span></span>
+      <span className="text-gray-400 font-bold tracking-tight">{label}</span>
+      <span className="text-white font-black">{score} <span className="text-white/20 font-medium">/ {max}</span></span>
     </div>
-    <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/5">
+    <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden border border-white/10 relative">
       <div 
-        className={`h-full ${color} transition-all duration-1000 ease-out shadow-[0_0_8px_rgba(255,255,255,0.1)]`}
+        className={`h-full ${color} transition-all duration-1000 ease-out shadow-[0_0_12px_rgba(255,255,255,0.15)] relative z-10`}
         style={{ width: `${Math.min(100, (score / max) * 100)}%` }}
       />
+      {/* 배경 가이드라인 */}
+      <div className="absolute inset-0 flex justify-between px-1 pointer-events-none opacity-10">
+        <div className="w-px h-full bg-white" />
+        <div className="w-px h-full bg-white" />
+        <div className="w-px h-full bg-white" />
+      </div>
     </div>
   </div>
 );
@@ -142,28 +149,58 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
   const [selectedEvent, setSelectedEvent] = useState<any | null>(null);
   const router = useRouter();
 
+  const renderTierBadge = () => {
+    const score = matchData?.benchmark?.score || 0;
+    const tier = estimateUserTier(score);
+    
+    // 티어별 색상/스타일 정의
+    const getTierStyle = (t: string) => {
+      if (t === 'S') return "bg-amber-500/20 border-amber-500/50 text-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.2)]";
+      if (t.startsWith('A+')) return "bg-indigo-500/25 border-indigo-500/60 text-indigo-300 shadow-[0_0_12px_rgba(99,102,241,0.2)]";
+      if (t.startsWith('A')) return "bg-indigo-500/20 border-indigo-500/50 text-indigo-400 shadow-[0_0_10px_rgba(99,102,241,0.1)]";
+      if (t.startsWith('B+')) return "bg-emerald-500/25 border-emerald-500/60 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.2)]";
+      if (t.startsWith('B')) return "bg-emerald-500/20 border-emerald-500/50 text-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.1)]";
+      if (t.startsWith('C')) return "bg-blue-500/20 border-blue-500/50 text-blue-400";
+      if (t.startsWith('D')) return "bg-slate-500/20 border-slate-500/50 text-slate-400";
+      return "bg-white/5 border-white/10 text-gray-400";
+    };
+
+    return (
+      <div className={`px-4 py-1.5 rounded-xl border flex items-center gap-2 transition-all cursor-help ${getTierStyle(tier)}`}>
+        <span className="text-sm font-black italic tracking-tighter">{tier} Tier</span>
+        <div className="w-px h-3 bg-current opacity-20" />
+        <span className="text-[11px] font-black">{score}pt</span>
+      </div>
+    );
+  };
+
   // 맵 이름 매핑 (한글/영문 -> 내부 mapId)
   const getMapId = (name: string) => {
     const mapping: Record<string, string> = {
-      "에란겔": "erangel",
-      "미라마": "miramar",
-      "사녹": "sanhok",
-      "태이고": "taego",
-      "데스턴": "deston",
-      "론도": "rondo",
-      "비켄디": "vikendi",
-      "카라킨": "karakin",
-      "파라모": "paramo",
-      "헤이븐": "haven",
-      "Baltic_Main": "erangel",
-      "Desert_Main": "miramar",
-      "Savage_Main": "sanhok",
-      "Tiger_Main": "taego",
-      "Kiki_Main": "deston",
-      "Neon_Main": "rondo",
-      "Chimera_Main": "vikendi"
+      "에란겔": "Erangel",
+      "미라마": "Miramar",
+      "사녹": "Sanhok",
+      "태이고": "Taego",
+      "데스턴": "Deston",
+      "론도": "Rondo",
+      "비켄디": "Vikendi",
+      "카라킨": "Karakin",
+      "파라모": "Paramo",
+      "헤이븐": "Haven",
+      "Baltic_Main": "Erangel",
+      "Desert_Main": "Miramar",
+      "Savage_Main": "Sanhok",
+      "Tiger_Main": "Taego",
+      "Kiki_Main": "Deston",
+      "Neon_Main": "Rondo",
+      "Chimera_Main": "Vikendi"
     };
-    return mapping[name] || name.toLowerCase().replace(/_main/i, "");
+    const mapped = mapping[name];
+    if (mapped) return mapped;
+
+    // 폴백 로직: 첫 글자 대문자화 (예: erangel -> Erangel)
+    const fallback = name.toLowerCase().replace(/_main/i, "");
+    return fallback.charAt(0).toUpperCase() + fallback.slice(1);
   };
 
   const mapId = getMapId(matchData?.mapName || "");
@@ -302,7 +339,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
     : "bg-black/40 hover:bg-black/50";
 
   return (
-    <div className={`mb-4 rounded-[2rem] border transition-all duration-300 overflow-hidden shadow-2xl ${borderColor} ${bgGradient} ${isExpanded ? 'bg-black/80 ring-1 ring-white/5' : ''}`}>
+    <div className={`mb-4 rounded-[2rem] border transition-all duration-300 shadow-2xl relative ${borderColor} ${bgGradient} ${isExpanded ? 'bg-black/80 ring-1 ring-white/5 z-20' : 'z-10'} hover:z-30`}>
       {/* Header Area */}
       <div 
         onClick={() => setIsExpanded(!isExpanded)}
@@ -383,30 +420,60 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
 
         {/* V3 Tactical Badges & Tier */}
         <div className="flex items-center justify-between md:justify-end gap-3">
-          {matchData.benchmark && matchData.benchmark.tier && (
+          {matchData.benchmark && (
             <div className="relative group/tier">
-              <div className={`px-4 py-1.5 rounded-xl border flex items-center gap-2 transition-all cursor-help
-                ${matchData.benchmark.tier === 'S' ? 'bg-amber-500/20 border-amber-500/50 text-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.2)]' :
-                  matchData.benchmark.tier === 'A' ? 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400' :
-                  matchData.benchmark.tier === 'B' ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-500' :
-                  'bg-white/5 border-white/10 text-gray-400'}`}>
-                <span className="text-sm font-black italic tracking-tighter">{matchData.benchmark.tier} Tier</span>
-                <div className="w-px h-3 bg-current opacity-20" />
-                <span className="text-[11px] font-black">{matchData.benchmark.score}pt</span>
-              </div>
+              {renderTierBadge()}
               
               {/* Tooltip Breakdown */}
-              <div className="absolute bottom-full right-0 mb-3 w-52 bg-[#0a0a0a]/95 backdrop-blur-xl border border-white/10 p-4 rounded-2xl shadow-2xl opacity-0 group-hover/tier:opacity-100 transition-all duration-300 pointer-events-none z-50 transform translate-y-2 group-hover/tier:translate-y-0">
-                <div className="text-[10px] font-black text-gray-500 mb-3 uppercase tracking-widest flex justify-between items-center">
-                  <span>Score Breakdown</span>
-                  <span className="text-white/40">{matchData.benchmark.score} / 100</span>
+              <div className="absolute bottom-full right-0 mb-3 w-64 bg-black/98 backdrop-blur-2xl border border-white/20 p-5 rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.5)] opacity-0 group-hover/tier:opacity-100 transition-all duration-300 pointer-events-none z-50 transform translate-y-2 group-hover/tier:translate-y-0 border-t-white/40">
+                <div className="text-[12px] font-black text-indigo-400 mb-4 uppercase tracking-widest flex justify-between items-center border-b border-white/10 pb-2">
+                  <span>매치 상세 분석</span>
+                  <span className="text-white bg-indigo-500 px-2 py-0.5 rounded-full text-[10px] tabular-nums">{matchData.benchmark.score} / 100</span>
                 </div>
-                <div className="space-y-3">
-                  <ScoreBar label="전투 (Combat)" score={matchData.benchmark.breakdown.combat} max={isRanked ? 40 : 50} color="bg-red-500" />
-                  <ScoreBar label="전술 (Tactical)" score={matchData.benchmark.breakdown.tactical} max={isRanked ? 35 : 15} color="bg-indigo-500" />
-                  <ScoreBar label="생존 (Survival)" score={matchData.benchmark.breakdown.survival} max={isRanked ? 25 : 35} color="bg-green-500" />
+                
+                <div className="space-y-4">
+                  <ScoreBar label="전투 (Combat)" score={matchData.benchmark.breakdown.combat} max={isRanked ? 40 : 50} color="bg-gradient-to-r from-red-600 to-red-400" />
+                  <ScoreBar label="전술 (Tactical)" score={matchData.benchmark.breakdown.tactical} max={isRanked ? 35 : 15} color="bg-gradient-to-r from-indigo-600 to-indigo-400" />
+                  <ScoreBar label="생존 (Survival)" score={matchData.benchmark.breakdown.survival} max={isRanked ? 25 : 35} color="bg-gradient-to-r from-emerald-600 to-emerald-400" />
                 </div>
-                <div className="mt-4 pt-3 border-t border-white/5 text-[9px] text-gray-500 leading-relaxed font-medium">
+
+                {/* Key Logic Indicators */}
+                <div className="mt-5 grid grid-cols-2 gap-2 border-t border-white/10 pt-4">
+                  <div className="flex items-center gap-2 bg-white/5 p-2 rounded-xl border border-white/5">
+                    <Crosshair size={12} className="text-red-400" />
+                    <div className="flex flex-col">
+                      <span className="text-[8px] text-gray-500 font-bold">전투 영향력</span>
+                      <span className="text-[10px] text-white font-black">{Math.floor(matchData.stats.damageDealt)} dmg</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 bg-white/5 p-2 rounded-xl border border-white/5">
+                    <Zap size={12} className="text-amber-400" />
+                    <div className="flex flex-col">
+                      <span className="text-[8px] text-gray-500 font-bold">반응 속도</span>
+                      <span className="text-[10px] text-white font-black">
+                        {matchData.tradeStats?.reactionLatencyMs && matchData.tradeStats.reactionLatencyMs > 0 
+                          ? `${Math.floor(matchData.tradeStats.reactionLatencyMs)}ms` 
+                          : '측정 불가'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 bg-white/5 p-2 rounded-xl border border-white/5">
+                    <Shield size={12} className="text-indigo-400" />
+                    <div className="flex flex-col">
+                      <span className="text-[8px] text-gray-500 font-bold">전술 기여</span>
+                      <span className="text-[10px] text-white font-black">팀전멸 {matchData.tradeStats?.enemyTeamWipes || 0}회</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 bg-white/5 p-2 rounded-xl border border-white/5">
+                    <Clock size={12} className="text-emerald-400" />
+                    <div className="flex flex-col">
+                      <span className="text-[8px] text-gray-500 font-bold">생존력</span>
+                      <span className="text-[10px] text-white font-black">{Math.floor(matchData.stats.timeSurvived / 60)}분 생존</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-4 text-[9px] text-gray-400 leading-relaxed font-medium bg-white/5 p-2 rounded-lg border border-white/5 italic">
                   * 딜량, 선제공격, 반응속도, 팀기여, 생존시간 등을 종합 분석한 실력 점수입니다.
                 </div>
               </div>

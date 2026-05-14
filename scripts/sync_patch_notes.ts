@@ -22,11 +22,11 @@ async function fetchPatchNoteDetail(url: string, title: string) {
   try {
     const { data: html } = await axios.get(url);
     const root = parse(html);
-    
+
     // 공식 홈페이지 구조 분석 기반 선택자
     const contentElement = root.querySelector('.content-template__inner') || root.querySelector('#contentElement') || root.querySelector('article');
     const rawText = contentElement?.text || "";
-    
+
     // 텍스트 정제
     const cleanText = rawText
       .replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gim, "")
@@ -38,10 +38,16 @@ async function fetchPatchNoteDetail(url: string, title: string) {
     console.log(`📝 Extracted content length: ${cleanText.length}`);
 
     // [규칙 준수] 모델 풀백 순서: 3.1 flash lite -> 3 flash -> 1.5 flash
+    if (!GEMINI_API_KEY) {
+      console.warn('⚠️ GOOGLE_GEMINI_API_KEY가 설정되지 않아 AI 요약을 건너뜁니다.');
+      return null;
+    }
+
+    // [규칙 준수] 모델 풀백 순서: 최신 안정 모델 우선
     const geminiModels = [
       "gemini-3.1-flash-lite-preview",
       "gemini-3-flash-preview",
-      "gemini-1.5-flash",
+      "gemini-2.5-flash",
     ];
 
     const prompt = `
@@ -71,7 +77,7 @@ ${cleanText}`;
         const model = genAI.getGenerativeModel({ model: modelId });
         const result = await model.generateContent(prompt);
         const text = result.response.text();
-        
+
         if (text && text.length > 50 && !text.includes("본문을 입력")) {
           aiSummary = text;
           console.log(`✅ Summary generated with ${modelId}`);
@@ -120,14 +126,14 @@ function formatAiSummaryToHtml(summary: string): string {
   }
 
   const sections = summary.split(/(?=\[.*?\])/g);
-  
+
   const formatted = sections.map(section => {
     const titleMatch = section.match(/\[(.*?)\]/);
     if (!titleMatch) return "";
-    
+
     const title = titleMatch[1];
     const content = section.replace(`[${title}]`, "").trim();
-    
+
     let emoji = "🔹";
     if (title.includes("신규")) emoji = "🆕";
     else if (title.includes("밸런스")) emoji = "⚖️";
@@ -160,7 +166,7 @@ async function syncPatchNotes() {
   try {
     const targetUrl = 'https://pubg.com/ko/news';
     const { data: html } = await axios.get(targetUrl);
-    
+
     // 썸네일 이미지 URL 추출 로직 개선 (thumbUrl 추출)
     const nuxtRegex = /postId:(\d+),(?:(?!postId:).)*?title:"([^"]*?패치 노트[^"]*?)".*?thumbUrl:"([^"]+)"/g;
     let match;
@@ -178,7 +184,20 @@ async function syncPatchNotes() {
     const fullUrl = `https://pubg.com/ko/news/${latestPatch.id}`;
     const cleanTitle = latestPatch.title.normalize('NFC').trim();
     const thumbnailUrl = latestPatch.thumbnail;
-    
+
+    // 중복 체크: 이미 동기화된 URL인지 확인
+    const { data: history } = await supabase
+      .from('sync_history')
+      .select('last_url')
+      .eq('type', 'patch_notes')
+      .eq('last_url', fullUrl)
+      .single();
+
+    if (history) {
+      console.log('✅ 이미 최신 패치노트가 동기화되어 있습니다. 작업을 종료합니다.');
+      return;
+    }
+
     console.log(`🔍 New Patch Note found: ${cleanTitle} (ID: ${latestPatch.id})`);
     console.log(`🖼️ Thumbnail URL: ${thumbnailUrl}`);
 

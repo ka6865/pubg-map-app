@@ -87,7 +87,11 @@ export async function POST(request: Request) {
     ];
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const modelsToTry = ["gemini-3.1-flash-lite-preview", "gemini-3-flash-preview", "gemini-2.5-flash"];
+    const modelsToTry = [
+      "gemini-3.1-flash-lite-preview", 
+      "gemini-3-flash-preview", 
+      "gemini-2.5-flash"
+    ];
     const safetySettings = [
       { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
       { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE }
