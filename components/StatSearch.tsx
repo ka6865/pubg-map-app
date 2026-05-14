@@ -437,12 +437,12 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
 
           <div style={{ marginTop: "20px" }}>
             <h3 style={{ fontSize: "20px", fontWeight: "bold", marginBottom: "15px", borderBottom: "1px solid #333", paddingBottom: "10px" }}>
-              ⚔️ 최근 매치 (최대 10게임)
+              ⚔️ 최근 매치 (최대 20게임)
             </h3>
 
             {result.recentMatches && result.recentMatches.length > 0 ? (
               <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
-                {result.recentMatches.slice(0, 10).map((matchId: string, index: number) => (
+                {result.recentMatches.slice(0, 20).map((matchId: string, index: number) => (
                   <MatchCard
                     key={matchId}
                     matchId={matchId}

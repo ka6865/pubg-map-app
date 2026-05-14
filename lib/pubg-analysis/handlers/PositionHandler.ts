@@ -29,6 +29,10 @@ export class PositionHandler extends BaseHandler {
     if (!charLoc) return;
 
     this.state.playerLocations.set(pName, { x: charLoc.x, y: charLoc.y, z: charLoc.z || 0 });
+    
+    if (pName === this.state.lowerNickname) {
+      // console.log(`[DEBUG-POS] My Position Updated: ${charLoc.x}, ${charLoc.y}`);
+    }
 
     const isLanded = this.state.hasLanded;
     const isAfterStart = elapsed > 120 * 1000;
@@ -42,7 +46,7 @@ export class PositionHandler extends BaseHandler {
       if (isInVehicle) {
         const lastLoc = this.state.lastMyLoc;
         if (lastLoc) {
-          const d = calcDist3D(charLoc, lastLoc);
+          const d = calcDist3D(charLoc, lastLoc) / 100; // [V47.0] cm -> m 변환
           if (d > 0.1 && d < 1000) { // 비정상적인 도약(순간이동 등) 제외
             this.state.vehicleDistance = (this.state.vehicleDistance || 0) + d;
           }
@@ -128,7 +132,7 @@ export class PositionHandler extends BaseHandler {
       if (tName !== this.state.lowerNickname && status !== false && status !== "groggy") {
         const tLoc = (tAccountId ? this.state.playerLocations.get(tAccountId) : null) || this.state.playerLocations.get(tName);
         if (tLoc) {
-          const d = calcDist3D(charLoc, tLoc); // [V24] 이미 slim에서 미터(m) 단위로 정규화됨
+          const d = calcDist3D(charLoc, tLoc) / 100; // [V47.0] cm -> m 변환
           if (d > 0.01) {
             totalDistToTeammates += d;
             aliveTeammateCount++;
@@ -142,7 +146,7 @@ export class PositionHandler extends BaseHandler {
     this.state.playerLocations.forEach((loc, name) => {
       const rId = this.state.teamMapping.get(name);
       if (rId && rId !== this.state.myRosterId && this.state.playerAliveStatus.get(name) !== false) {
-        const d = calcDist3D(charLoc, loc);
+        const d = calcDist3D(charLoc, loc) / 100; // [V47.0] cm -> m 변환
         if (d > 0.01 && d < minEnemyDist) minEnemyDist = d;
       }
     });

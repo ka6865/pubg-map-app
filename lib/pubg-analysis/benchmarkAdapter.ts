@@ -5,6 +5,7 @@
 
 export interface RawTierBenchmark {
   game_mode: string;
+  match_type: string;
   tier: string;
   avg_damage: number;
   avg_kills: number;
@@ -17,6 +18,12 @@ export interface RawTierBenchmark {
   avg_pressure_index: number;
   avg_team_wipes: number;
   avg_reversal_rate: number;
+  avg_isolation_index: number;
+  avg_min_dist: number;
+  avg_counter_latency_ms: number;
+  avg_trade_latency_ms: number;
+  avg_solo_kill_rate: number;
+  avg_death_phase: number;
   sample_count?: number;
 }
 
@@ -97,8 +104,8 @@ export function adaptBenchmark(raw: any): NormalizedBenchmark {
     avgReversalRate: normalizeRate(raw.avg_reversal_rate, defaultValues.avgReversalRate),
     avgIsolationIndex: Number(normalizeValue(raw.avg_isolation_index, defaultValues.avgIsolationIndex).toFixed(2)),
     avgMinDist: Math.round(normalizeValue(raw.avg_min_dist, defaultValues.avgMinDist)),
-    avgCounterLatency: Number(normalizeValue(raw.avg_counter_latency_ms ? raw.avg_counter_latency_ms / 1000 : raw.avg_counter_latency, defaultValues.avgCounterLatency).toFixed(2)),
-    avgTradeLatency: Number(normalizeValue(raw.avg_trade_latency_ms ? raw.avg_trade_latency_ms / 1000 : raw.avg_trade_latency, defaultValues.avgTradeLatency).toFixed(2)),
+    avgCounterLatency: Number(normalizeValue((raw.avg_counter_latency_ms || raw.avg_counter_latency) / 1000, defaultValues.avgCounterLatency).toFixed(2)),
+    avgTradeLatency: Number(normalizeValue((raw.avg_trade_latency_ms || raw.avg_trade_latency) / 1000, defaultValues.avgTradeLatency).toFixed(2)),
     avgSoloKillRate: normalizeRate(raw.avg_solo_kill_rate, defaultValues.avgSoloKillRate),
     avgDeathPhase: Number(normalizeValue(raw.avg_death_phase, defaultValues.avgDeathPhase).toFixed(1)),
   };

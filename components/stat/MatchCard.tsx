@@ -20,13 +20,17 @@ import {
   ShieldAlert,
   TrendingUp,
   PlayCircle,
-  ExternalLink,
-  Map as MapIcon
+  ExternalLink
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { MatchTimeline } from "./MatchTimeline";
-import { PerformanceRadar } from "./PerformanceRadar";
+import dynamic from "next/dynamic";
 import type { MatchData } from "../../types/stat";
+
+const TimelineMiniMap = dynamic(
+  () => import("./TimelineMiniMap").then((mod) => mod.TimelineMiniMap),
+  { ssr: false, loading: () => <div className="w-full h-full bg-white/5 animate-pulse rounded-[2.5rem]" /> }
+);
 
 const ScoreBar = ({ label, score, max, color }: { label: string, score: number, max: number, color: string }) => (
   <div className="flex flex-col gap-1.5">
@@ -135,6 +139,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
   const [coachingStyle, setCoachingStyle] = useState<"mild" | "spicy">("spicy");
   const [analysis, setAnalysis] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [selectedEvent, setSelectedEvent] = useState<any | null>(null);
   const router = useRouter();
 
   // 맵 이름 매핑 (한글/영문 -> 내부 mapId)
@@ -173,7 +178,25 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
       try {
         const res = await fetch(`/api/pubg/match?matchId=${matchId}&nickname=${nickname}&platform=${platform}`, { cache: 'no-store' });
         const data = await res.json();
-        if (!data.error) setMatchData(data);
+        
+        if (!data.error) {
+          // [V45.2] 정규 매치 필터링 (이벤트, 아케이드, 훈련소 등 제외)
+          const mode = (data.gameMode || "").toLowerCase();
+          const map = data.mapName || "";
+          const isStandardMatch = 
+            !mode.includes("event") &&
+            !mode.includes("arcade") &&
+            !mode.includes("custom") &&
+            !mode.includes("training") &&
+            !mode.includes("flare") &&
+            !mode.includes("ai-match") &&
+            !map.includes("SafeHouse") &&
+            !map.includes("Range_Main");
+
+          if (isStandardMatch) {
+            setMatchData(data);
+          }
+        }
       } catch (err) {
         console.error("Match Fetch Error:", err);
       } finally {
@@ -445,39 +468,37 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                 <Target size={16} className="text-indigo-400" />
               </div>
               <div className="flex flex-col">
-                <span className="text-white font-black text-sm">전술 시각화 리포트</span>
-                <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Performance Radar & Match Timeline</span>
+                <span className="text-white font-black text-sm">전술 위치 분석</span>
+                <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Tactical Location & Match Timeline</span>
               </div>
             </div>
             
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-              {/* Left: Radar Chart */}
-              <div className="lg:col-span-4 bg-white/2 border border-white/5 rounded-[2.5rem] p-6 flex flex-col items-center justify-center">
-                <div className="text-[10px] text-gray-500 font-black uppercase tracking-widest mb-4">Tactical Balance</div>
-                <PerformanceRadar 
-                  data={{
-                    combat: Math.min(100, (matchData.teamImpact?.damageImpact || 0 + (matchData.teamImpact?.killImpact || 0)) / 2),
-                    survival: Math.min(100, (matchData.stats.timeSurvived / 1800) * 100),
-                    support: Math.min(100, ((matchData.tradeStats?.revCount || 0) * 30 + (matchData.tradeStats?.suppCount || 0) * 20 + (matchData.tradeStats?.smokeCount || 0) * 10)),
-                    precision: matchData.duelStats?.duelWinRate || 0,
-                    strategy: Math.min(100, ((matchData.edgePlay || 0) * 15 + (matchData.initiative_rate || 0) * 0.5))
-                  }} 
-                />
-                <div className="mt-4 grid grid-cols-2 gap-4 w-full">
-                   <div className="flex flex-col items-center p-3 bg-white/5 rounded-2xl border border-white/5">
-                      <span className="text-[9px] text-gray-500 font-bold uppercase">주도권</span>
-                      <span className="text-xs font-black text-indigo-400">{Number(matchData.initiative_rate || 0).toFixed(1)}%</span>
-                   </div>
-                   <div className="flex flex-col items-center p-3 bg-white/5 rounded-2xl border border-white/5">
-                      <span className="text-[9px] text-gray-500 font-bold uppercase">복수율</span>
-                      <span className="text-xs font-black text-emerald-400">{Number(matchData.tradeStats?.tradeRate || 0).toFixed(1)}%</span>
-                   </div>
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              {/* Left: Mini Map */}
+              <div className="lg:col-span-5 xl:col-span-4 bg-white/2 border border-white/5 rounded-[2.5rem] overflow-hidden min-h-[300px] lg:min-h-0 lg:h-[500px] relative group/map">
+                <div className="absolute top-4 left-4 z-10 px-3 py-1 bg-black/60 backdrop-blur-md border border-white/10 rounded-full text-[9px] text-gray-400 font-black uppercase tracking-widest opacity-0 group-hover/map:opacity-100 transition-opacity">
+                  Interactive Tactical Map
                 </div>
+                <TimelineMiniMap 
+                  selectedEvent={selectedEvent}
+                  mapId={mapId} 
+                />
+                {!selectedEvent && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-[2px] pointer-events-none z-20">
+                    <div className="bg-black/80 backdrop-blur-xl px-5 py-3 rounded-2xl border border-white/10 flex flex-col items-center gap-2 shadow-2xl scale-90 md:scale-100">
+                      <div className="w-10 h-10 bg-blue-500/20 rounded-full flex items-center justify-center mb-1">
+                        <MousePointer2 size={20} className="text-blue-400 animate-bounce" />
+                      </div>
+                      <span className="text-[11px] text-white font-black tracking-tight">타임라인 이벤트를 클릭하여 위치 확인</span>
+                      <span className="text-[9px] text-gray-500 font-bold">전술 상황이 일어난 지점을 지도에 표시합니다</span>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Right: Timeline */}
-              <div className="lg:col-span-8 bg-white/2 border border-white/5 rounded-[2.5rem] p-6">
-                <div className="flex items-center justify-between mb-6">
+              <div className="lg:col-span-7 xl:col-span-8 bg-white/2 border border-white/5 rounded-[2.5rem] p-6 lg:h-[500px] flex flex-col">
+                <div className="flex items-center justify-between mb-6 shrink-0">
                   <div className="text-[10px] text-gray-500 font-black uppercase tracking-widest">Match Timeline</div>
                   <div className="flex items-center gap-1.5 px-3 py-1 bg-white/5 rounded-full border border-white/10 text-[10px] text-gray-400 font-bold">
                     <Clock size={10} />
@@ -485,8 +506,15 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                   </div>
                 </div>
                 
-                <div className="max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
-                  <MatchTimeline events={matchData.timeline || []} nickname={nickname} />
+                <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+                  <MatchTimeline 
+                    events={matchData.timeline || []} 
+                    nickname={nickname}
+                    onEventClick={(event) => {
+                      console.log("Event Clicked:", event.type, "Coords:", event.x, event.y);
+                      setSelectedEvent(event);
+                    }}
+                  />
                 </div>
               </div>
             </div>
@@ -639,7 +667,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
               <button 
                 onClick={handleAnalyze}
                 disabled={isAnalyzing}
-                className={`w-full py-16 ${isRanked ? 'bg-amber-500/5 border-amber-500/20 hover:bg-amber-500/10' : 'bg-indigo-500/5 border-indigo-500/20 hover:bg-indigo-500/10'} border-2 border-dashed rounded-[2.5rem] flex flex-col items-center gap-4 group transition-all relative overflow-hidden`}
+                className={`w-full py-16 ${isRanked ? 'bg-amber-500/10 border-amber-500/20 hover:bg-amber-500/20' : 'bg-indigo-500/10 border-indigo-500/20 hover:bg-indigo-500/20'} border-2 border-dashed rounded-[2.5rem] flex flex-col items-center gap-4 group transition-all relative overflow-hidden`}
               >
                 <div className="absolute inset-0 bg-gradient-to-b from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                 {isAnalyzing ? (

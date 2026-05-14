@@ -19,6 +19,14 @@ export interface TimelineEvent {
   phase?: number;       // 페이즈 번호
   isMe?: boolean;       // [V26.1] 본인 활동 여부 (UI 렌더링 최적화용)
   isRecall?: boolean;   // [V26.1] 블루칩 부활 여부
+  isSelfRevive?: boolean; // [V26.1] 자가 부활 여부
+  x?: number;           // 이벤트 발생 X 좌표
+  y?: number;           // 이벤트 발생 Y 좌표
+  attackerX?: number;   // [V43.0] 가해자 X 좌표
+  attackerY?: number;   // [V43.0] 가해자 Y 좌표
+  victimX?: number;     // [V43.0] 피해자 X 좌표
+  victimY?: number;     // [V43.0] 피해자 Y 좌표
+  playerName?: string;  // [V43.0] 마커 표시용 닉네임
 }
 
 

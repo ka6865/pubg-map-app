@@ -155,6 +155,7 @@ export class AnalysisEngine {
     this.state.mapName = matchAttr.mapName || "Erangel";
     const mapKey = this.state.mapName.toLowerCase().split('_')[0];
     this.state.mapSize = MAP_SIZES[mapKey] || 819200;
+    console.log(`[DEBUG-ENGINE] MapName: ${this.state.mapName}, Key: ${mapKey}, Size: ${this.state.mapSize}`);
 
     this.buildMappings(rosters, participants);
 

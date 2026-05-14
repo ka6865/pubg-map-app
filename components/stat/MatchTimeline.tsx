@@ -15,10 +15,12 @@ import {
   Swords
 } from "lucide-react";
 import { TimelineEvent } from "../../lib/pubg-analysis/types";
+import { useState } from "react";
 
 interface MatchTimelineProps {
   events: TimelineEvent[];
-  nickname: string; // [V26.1] 본인 식별을 위한 닉네임 추가
+  nickname: string;
+  onEventClick?: (event: any) => void;
 }
 
 const formatTime = (ms: number) => {
@@ -49,9 +51,9 @@ const getEventLabel = (type: TimelineEvent['type']) => {
   }
 };
 
-export const MatchTimeline = ({ events, nickname }: MatchTimelineProps) => {
+export const MatchTimeline = ({ events, nickname, onEventClick }: MatchTimelineProps) => {
   const lowerNickname = nickname.toLowerCase().replace(/_/g, "");
-  
+
   // 회복/부스트 아이템 제외 및 빈 이름 유령 로그 필터링
   const filteredEvents = events.filter(e => {
     if (e.type === 'ITEM_USE') {
@@ -115,7 +117,6 @@ export const MatchTimeline = ({ events, nickname }: MatchTimelineProps) => {
             {group.events.map((event, idx) => {
               if (event.type === 'PHASE_START') return null;
 
-              // [V26.1] 본인 활동 여부 판정 로직 정밀화 (엔진에서 주입한 isMe 플래그 우선 사용)
               const isMe = event.isMe !== undefined ? event.isMe : (
                 (event.attacker?.toLowerCase().replace(/_/g, "") === lowerNickname) ||
                 (['DIED', 'DOWNED', 'RECALL', 'REDEPLOY'].includes(event.type) && event.victim?.toLowerCase().replace(/_/g, "") === lowerNickname) ||
@@ -124,19 +125,31 @@ export const MatchTimeline = ({ events, nickname }: MatchTimelineProps) => {
               const labelInfo = getEventLabel(event.type);
 
               return (
-                <div key={idx} className={`relative flex items-center gap-3 md:gap-6 group transition-all duration-300 ${isMe ? 'scale-[1.02]' : 'opacity-70 hover:opacity-100'}`}>
+                <div 
+                  key={idx} 
+                  onClick={() => {
+                    if (event.x !== undefined && event.y !== undefined) {
+                      onEventClick?.(event);
+                    }
+                  }}
+                  className={`relative flex items-center gap-3 md:gap-6 group transition-all duration-300 
+                    ${isMe ? 'scale-[1.02]' : 'opacity-70 hover:opacity-100'}
+                    ${event.x !== undefined && event.y !== undefined ? 'cursor-pointer' : ''}
+                  `}
+                >
                   <div className="absolute -left-[21px] md:-left-[37px] top-1/2 -translate-y-1/2 w-4 h-4 md:w-5 md:h-5 rounded-full bg-black border-2 border-white/10 flex items-center justify-center group-hover:border-blue-500 transition-colors">
                     <div className={`w-1.5 h-1.5 md:w-2 h-2 rounded-full ${isMe ? 'bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)]' : 'bg-white/20'}`} />
                   </div>
 
-                  <div className="w-10 md:w-16 shrink-0 text-center md:text-left">
-                    <span className="text-[9px] md:text-[11px] font-bold text-gray-600 tabular-nums">
+                  <div className="w-8 md:w-16 shrink-0 text-center md:text-left">
+                    <span className="text-[10px] md:text-[11px] font-bold text-gray-500 tabular-nums tracking-tighter">
                       {formatTime(event.ts)}
                     </span>
                   </div>
 
-                  <div className={`flex-1 flex items-center gap-2 md:gap-4 p-2 md:p-3 rounded-xl border bg-white/[0.03] overflow-hidden ${isMe ? 'border-white/15' : 'border-white/5'}`}>
-                    {/* 텍스트 배지(Badge) 추가 */}
+                  <div className={`flex-1 flex items-center gap-2 md:gap-4 p-2 md:p-3 rounded-xl border transition-colors overflow-hidden 
+                    ${isMe ? 'border-white/15 bg-white/[0.05]' : 'border-white/5 bg-white/[0.02]'}
+                  `}>
                     <div className={`px-1.5 py-0.5 rounded-md text-[8px] md:text-[10px] font-black shrink-0 ${labelInfo.color} ${labelInfo.textColor} whitespace-nowrap`}>
                       {labelInfo.text}
                     </div>
@@ -172,7 +185,7 @@ export const MatchTimeline = ({ events, nickname }: MatchTimelineProps) => {
 };
 
 const Nickname = ({ name, isMe, className = "" }: { name: string, isMe?: boolean, className?: string }) => (
-  <span className={`truncate max-w-[60px] xs:max-w-[100px] md:max-w-none inline-block align-bottom ${isMe ? 'text-blue-400 font-black' : className}`} title={name}>
+  <span className={`truncate max-w-[80px] xs:max-w-[120px] md:max-w-none inline-block align-bottom ${isMe ? 'text-blue-400 font-black' : className}`} title={name}>
     {isMe ? '나' : name}
   </span>
 );
@@ -234,9 +247,23 @@ const renderEventText = (event: TimelineEvent, lowerNickname: string) => {
         </div>
       );
     case 'REVIVE':
+      if (event.isSelfRevive) {
+        return (
+          <div className="flex items-center gap-1 min-w-0">
+            <Nickname name="나" isMe={true} />
+            <ArrowRight size={10} className="text-emerald-400 shrink-0" />
+            <Nickname name="나" isMe={true} />
+            <span className="text-emerald-400 font-black ml-1 shrink-0">자가 부활</span>
+          </div>
+        );
+      }
       return (
         <div className="flex items-center gap-1 min-w-0">
-          <Nickname name="나" isMe={true} />
+          <Nickname 
+            name={event.attacker || "나"} 
+            isMe={isAttackerMe || !event.attacker} 
+            className={isAttackerMe || !event.attacker ? "" : "text-emerald-500/80 font-medium"} 
+          />
           <ArrowRight size={10} className="text-emerald-400 shrink-0" />
           <Nickname name={event.victim || ""} isMe={isVictimMe} className="text-white" />
           <span className="text-emerald-400 font-black ml-1 shrink-0">부활</span>
