@@ -202,6 +202,7 @@ export interface AnalysisState {
   // 상황별 데이터 추적
   playerCombatData: Map<string, any>;
   victimDamage: Map<string, any>;
+  myVictimDamage: Map<string, number>; // [V55.2] 내가 각 유저에게 입힌 누적 데미지
   weaponStats: Map<string, any>;
   playerLocations: Map<string, Location>;
   playerAliveStatus: Map<string, string | boolean>;
@@ -230,6 +231,7 @@ export interface AnalysisState {
   currentPhase: number;
 
   totalTeammateKnocks: number;
+  myReviveCount: number; // [V55.2] 유저 본인이 직접 부활시킨 횟수
   totalSuppCount: number;
   totalTradeKills: number;
   totalSmokeCount: number;

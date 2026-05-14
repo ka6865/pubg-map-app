@@ -1,4 +1,4 @@
-import { AnalysisState, TimelineEvent } from "../types";
+import { AnalysisState } from "../types";
 import { normalizeName, calcDist3D, scaleCoordinate } from "../utils";
 import { WEAPON_NAMES } from "../constants";
 import { BaseHandler } from "./BaseHandler";
@@ -8,7 +8,7 @@ export class CombatHandler extends BaseHandler {
     super(state);
   }
 
-  public handleEvent(e: any, ts: number, elapsed: number) {
+  public handleEvent(e: any, ts: number, _elapsed: number) {
     switch (e._T) {
       case "LogPlayerTakeDamage":
         this.handleDamage(e, ts);
@@ -91,6 +91,9 @@ export class CombatHandler extends BaseHandler {
       this.state.victimDamage.set(victimName, currentVictimDamage + damage);
 
       if (isMeAttacker) {
+        const currentMyDmg = this.state.myVictimDamage.get(victimName) || 0;
+        this.state.myVictimDamage.set(victimName, currentMyDmg + damage);
+
         const wId = e.damageCauserName || (e.damageCauser && e.damageCauser.itemId) || e.weaponId || "Unknown";
         const cleanWId = wId.replace(/Item_Weapon_|Weap|_Projectile|_C/g, "");
         const wStat = this.state.weaponStats.get(cleanWId) || { kills: 0, dbnos: 0, damage: 0, hits: 0 };
@@ -104,8 +107,8 @@ export class CombatHandler extends BaseHandler {
         const attackerLoc = e.attacker?.location || e.attacker?.loc;
         const victimLoc = e.victim?.location || e.victim?.loc;
         const dist = calcDist3D(attackerLoc, victimLoc);
-        if (dist !== 9.99) {
-          const distM = Math.round(dist);
+        if (dist !== 999) {
+          const distM = Math.round(dist / 100);
           this.state.combatPressure.maxHitDistance = Math.max(this.state.combatPressure.maxHitDistance, distM);
           if (distM < 50) this.state.itemUseStats.distanceDamage.short += damage;
           else if (distM < 200) this.state.itemUseStats.distanceDamage.mid += damage;
@@ -138,6 +141,7 @@ export class CombatHandler extends BaseHandler {
           if (angleDiff > 180) angleDiff = 360 - angleDiff;
           if (angleDiff > 90) {
             this.state.itemUseStats.crossfireExposureCount++;
+            this.state.totalCrossfireCount++;
             break;
           }
         }
@@ -164,7 +168,7 @@ export class CombatHandler extends BaseHandler {
 
     if (isMeMaker) {
       this.state.myActionTimestamps.push(ts);
-      this.updateDuelOutcome(attacker, e.victim, true);
+      this.updateDuelOutcome(attacker, e.victim);
       const killerLoc = attacker?.location || attacker?.loc;
       const victimLoc = e.victim?.location || e.victim?.loc;
       const dist = Math.round(calcDist3D(killerLoc, victimLoc) / 100);
@@ -187,7 +191,7 @@ export class CombatHandler extends BaseHandler {
 
     if (isMeVictim) {
       this.state.myDownedIntervals.push({ start: ts, end: null });
-      this.updateDuelOutcome(attacker, e.victim, true);
+      this.updateDuelOutcome(attacker, e.victim);
       this.state.timeline.push({
         ts: ts - this.state.matchStartTime,
         type: 'DOWNED',
@@ -256,19 +260,26 @@ export class CombatHandler extends BaseHandler {
     const wId = getWeaponId(e);
     const attackerObj = e.killer || e.attacker || e.finisher;
 
-    if (isTeammateKiller && victimName && !isTeammateVictim) {
+    // [V55.2] 트레이드 킬: '내가' 팀원의 복수를 해준 경우 (isMeKiller)
+    if (isMeKiller && victimName && !isTeammateVictim) {
       const lastTeammateKnock = this.state.teammateKnockEvents.length > 0 ? this.state.teammateKnockEvents[this.state.teammateKnockEvents.length - 1] : 0;
       if (lastTeammateKnock > 0 && ts - lastTeammateKnock < 30000) {
         this.state.totalTradeKills++;
         this.state.tradeLatencies.push(ts - lastTeammateKnock);
       }
-      const totalDmgOnVictim = this.state.victimDamage.get(victimName) || 0;
-      if (totalDmgOnVictim > 100) this.state.totalSuppCount++;
+    }
+
+    // [V55.2] 지원 사격(Support): '내가' 데미지를 50 이상 입혔는데, '팀원'이 킬을 한 경우
+    if (isTeammateKiller && !isMeKiller && victimName && !isTeammateVictim) {
+      const myDmgOnVictim = this.state.myVictimDamage.get(victimName) || 0;
+      if (myDmgOnVictim >= 50) {
+        this.state.totalSuppCount++;
+      }
     }
 
     if (isMeKiller) {
       this.state.myActionTimestamps.push(ts);
-      this.updateDuelOutcome(e.killer, e.victim, false);
+      this.updateDuelOutcome(e.killer, e.victim);
       const killerLoc = attackerObj?.location || attackerObj?.loc;
       const victimLoc = e.victim?.location || e.victim?.loc;
       const dist = Math.round(calcDist3D(killerLoc, victimLoc) / 100);
@@ -359,7 +370,7 @@ export class CombatHandler extends BaseHandler {
       this.state.myDeathTime = ts;
       this.state.playerAliveStatus.set(this.state.lowerNickname, false);
       this.state.playerAliveStatus.set(this.state.myAccountId, false);
-      this.updateDuelOutcome(e.killer || e.finisher || e.dBNOMaker, e.victim, false);
+      this.updateDuelOutcome(e.killer || e.finisher || e.dBNOMaker, e.victim);
       const killerLoc = attackerObj?.location || attackerObj?.loc;
       const myLoc = this.state.playerLocations.get(this.state.lowerNickname);
       if (killerLoc && myLoc) this.state.deathDistance = Math.round(calcDist3D(killerLoc, myLoc) / 100);
@@ -404,6 +415,7 @@ export class CombatHandler extends BaseHandler {
       const reviverLoc = e.reviver?.location || e.reviver?.loc;
 
       if (isMeReviver) {
+        this.state.myReviveCount++;
         this.state.myActionTimestamps.push(ts);
         this.state.timeline.push({ 
           ts: ts - this.state.matchStartTime, 
@@ -433,7 +445,6 @@ export class CombatHandler extends BaseHandler {
 
   private handleRecall(e: any, ts: number, forceBr: boolean = false) {
     const recaller = e.recaller || e.reviver || e.attacker;
-    const recallerName = normalizeName(recaller?.name || "시스템");
     const isMeRecaller = this.isMe(recaller);
     const isTeammateRecaller = this.isTeammate(recaller);
 
@@ -517,7 +528,7 @@ export class CombatHandler extends BaseHandler {
             session.lastHitByUser = ts;
             if (!session.userStarted && session.lastHitByEnemy > 0 && pData.reversalAttempts > 0) {
               const latency = ts - session.lastHitByEnemy;
-              if (latency > 0 && latency < 10000) {
+              if (latency >= 0 && latency < 10000) {
                 this.state.reactLatSum += latency;
                 this.state.reactCount++;
               }
@@ -530,7 +541,7 @@ export class CombatHandler extends BaseHandler {
     });
   }
 
-  private updateDuelOutcome(attacker: any, victim: any, isKnock: boolean) {
+  private updateDuelOutcome(attacker: any, victim: any) {
     if (!attacker || !victim) return;
     const attackerName = normalizeName(attacker.name || "");
     const victimName = normalizeName(victim.name || "");

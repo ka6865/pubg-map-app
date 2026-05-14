@@ -8,7 +8,7 @@ export class UtilityHandler extends BaseHandler {
   private underCoverKnocks = new Set<number>(); // 연막 보호 중인 기절 이벤트
   private victimToKnockTs = new Map<string, number>(); // 피해자 이름 -> 기절 시점 매핑
 
-  handleEvent(e: any, ts: number, elapsed: number): void {
+  handleEvent(e: any, ts: number, _elapsed: number): void {
     switch (e._T) {
       case "LogPlayerTakeDamage":
         this.handleUtilityDamage(e);
@@ -32,11 +32,11 @@ export class UtilityHandler extends BaseHandler {
         this.handleWeaponFire(e, ts);
         break;
       case "LogPlayerRevive":
-        this.handleRevive(e, ts);
+        this.handleRevive(e);
         break;
       case "LogPlayerKill":
       case "LogPlayerKillV2":
-        this.handleKill(e, ts);
+        this.handleKill(e);
         break;
       case "LogPlayerMakeGroggy":
       case "LogPlayerMakeDBNO":
@@ -85,12 +85,12 @@ export class UtilityHandler extends BaseHandler {
           const lastKnock = this.state.teammateKnockEvents.find(kts => {
             if (ts >= kts && ts - kts < 20000) {
               const knockedTeammate = Array.from(this.victimToKnockTs.entries())
-                .find(([name, kTs]) => kTs === kts)?.[0];
+                .find(([, kTs]) => kTs === kts)?.[0];
               if (knockedTeammate && myLoc) {
                 const tLoc = this.state.playerLocations.get(knockedTeammate);
                 if (tLoc) {
                   const dist = calcDist3D(myLoc, tLoc) / 100; // [V47.0] cm -> m 변환
-                  return dist < 40; // [V38.3] 거리 판정 상향 (40m)
+                  return dist < 100; // [V55.2] 거리 판정 상향 (100m)
                 }
               }
             }
@@ -179,7 +179,7 @@ export class UtilityHandler extends BaseHandler {
     }
   }
 
-  private handleRevive(e: any, ts: number) {
+  private handleRevive(e: any) {
     const victimName = normalizeName(e.victim?.name || "");
     const knockTs = this.victimToKnockTs.get(victimName);
 
@@ -191,7 +191,7 @@ export class UtilityHandler extends BaseHandler {
     }
   }
 
-  private handleKill(e: any, ts: number) {
+  private handleKill(e: any) {
     const victimName = normalizeName(e.victim?.name || "");
     const knockTs = this.victimToKnockTs.get(victimName);
 
@@ -203,7 +203,6 @@ export class UtilityHandler extends BaseHandler {
   }
 
   private handleThrowable(e: any, ts: number) {
-    const attackerName = normalizeName(e.attacker?.name || e.character?.name || "");
     const isMe = this.isMe(e.attacker || e.character);
     const attackId = e.attackId;
 
@@ -219,13 +218,13 @@ export class UtilityHandler extends BaseHandler {
           if (ts >= kts && ts - kts < 20000) { // 긴박한 상황 고려 20초로 확장
             // 팀원 위치 확인
             const knockedTeammate = Array.from(this.victimToKnockTs.entries())
-              .find(([name, kTs]) => kTs === kts)?.[0];
+              .find(([, kTs]) => kTs === kts)?.[0];
 
             if (knockedTeammate && myLoc) {
               const tLoc = this.state.playerLocations.get(knockedTeammate);
               if (tLoc) {
-                const dist = calcDist3D(myLoc, tLoc) / 100; // [V47.0] cm -> m 변환
-                return dist < 40; // [V38.3] 거리 판정 상향 (20m -> 40m) 
+                const dist = calcDist3D(myLoc, tLoc) / 100; // cm -> m 변환
+                return dist < 100; // [V55.2] 거리 판정 대폭 상향 (40m -> 100m) 원거리 지원 고려
               }
             }
           }
@@ -271,13 +270,13 @@ export class UtilityHandler extends BaseHandler {
       const lastKnock = this.state.teammateKnockEvents.find(kts => {
         if (ts >= kts && ts - kts < 20000) {
           const knockedTeammate = Array.from(this.victimToKnockTs.entries())
-            .find(([name, kTs]) => kTs === kts)?.[0];
+            .find(([, kTs]) => kTs === kts)?.[0];
 
           if (knockedTeammate && myLoc) {
             const tLoc = this.state.playerLocations.get(knockedTeammate);
             if (tLoc) {
-              const dist = calcDist3D(myLoc, tLoc);
-              return dist < 40;
+              const dist = calcDist3D(myLoc, tLoc) / 100; // [V55.2] cm -> m 변환 누락 수정
+              return dist < 100; // [V55.2] 거리 판정 상향 (40m -> 100m)
             }
           }
         }

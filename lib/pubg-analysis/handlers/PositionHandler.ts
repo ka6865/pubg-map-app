@@ -136,7 +136,10 @@ export class PositionHandler extends BaseHandler {
           if (d > 0.01) {
             totalDistToTeammates += d;
             aliveTeammateCount++;
-            if (d < minDist) { minDist = d; hDiff = Math.abs(charLoc.z - tLoc.z); }
+            if (d < minDist) { 
+              minDist = d; 
+              hDiff = Math.abs(charLoc.z - tLoc.z) / 100; // [V55.2] cm -> m 변환
+            }
             if (d < 100) nearbyTeammates++; // [V21] 100m 이내만 근접 아군으로 판정
           }
         }

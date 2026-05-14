@@ -26,8 +26,7 @@ export function calcBenchmarkScore(input: MatchTierInput, isSolo: boolean): numb
   const safeReversal = input.reversalRate < 0 ? 10 : input.reversalRate;
   const safeSmoke = input.smokeRate < 0 ? 30 : input.smokeRate;
 
-  const latencyScoreBase = input.counterLatencyMs < 0 ? 5 
-    : input.counterLatencyMs === 0 ? 0
+  const latencyScoreBase = input.counterLatencyMs < 0 ? 5
     : Math.max(0, Math.min(10, ((3000 - input.counterLatencyMs) / 2000) * 10));
 
   let combatScore = 0;
@@ -85,9 +84,8 @@ export function calcBenchmarkScoreDetails(input: MatchTierInput, isSolo: boolean
   const safeReversal = input.reversalRate < 0 ? 10 : input.reversalRate;
   const safeSmoke = input.smokeRate < 0 ? 30 : input.smokeRate;
 
-  const latencyScoreBase = input.counterLatencyMs < 0 ? 5 
-    : input.counterLatencyMs === 0 ? 0
-    : Math.max(0, Math.min(10, ((3000 - input.counterLatencyMs) / 2000) * 10));
+  const latencyScoreBase = input.counterLatencyMs < 0 ? 5 :
+    (input.counterLatencyMs === 0 ? 0 : Math.max(0, Math.min(10, ((3000 - input.counterLatencyMs) / 2000) * 10)));
 
   let combatScore = 0;
   let tacticalScore = 0;
@@ -147,7 +145,7 @@ export function getBenchmarkTier(input: MatchTierInput, isSolo: boolean): Benchm
   else if (totalScore >= 24) tier = 'C';
   else if (totalScore >= 16) tier = 'C-';
   else if (totalScore >= 10) tier = 'D+';
-  else if (totalScore >= 5)  tier = 'D';
+  else if (totalScore >= 5) tier = 'D';
 
   return { tier, score: totalScore, breakdown };
 }

@@ -1,5 +1,4 @@
 import { BaseHandler } from './BaseHandler';
-import { normalizeName } from '../utils';
 
 export class ZoneHandler extends BaseHandler {
   handleEvent(e: any, ts: number, elapsed: number): void {
@@ -20,7 +19,7 @@ export class ZoneHandler extends BaseHandler {
     }
   }
 
-  private handlePhaseChange(e: any) {
+  private handlePhaseChange(_e: any) {
     if (!this.state.whiteZone || this.state.whiteZone.radius === 0) return;
     
     // 내 마지막 위치 확인
@@ -29,8 +28,8 @@ export class ZoneHandler extends BaseHandler {
     if (!myLoc) return;
 
     const distToCenter = Math.sqrt(
-      Math.pow(myLoc.x - this.state.whiteZone.x, 2) +
-      Math.pow(myLoc.y - this.state.whiteZone.y, 2)
+      Math.pow((myLoc.x / 100) - this.state.whiteZone.x, 2) +
+      Math.pow((myLoc.y / 100) - this.state.whiteZone.y, 2)
     );
 
     // 다음 안전 구역 안에 있으면 운 좋음 (+1), 밖에 있으면 (+0)

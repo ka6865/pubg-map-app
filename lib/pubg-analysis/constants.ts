@@ -2,8 +2,8 @@
  * PUBG 전술 분석 엔진 상수 정의
  */
 
-export const RESULT_VERSION = 54.0;
-export const TELEMETRY_VERSION = 54;
+export const RESULT_VERSION = 56.0; // [V56.0] 거리 단위 표준화 (cm -> m) 및 지표 정밀도 향상
+export const TELEMETRY_VERSION = 55;
 
 export const MAP_NAMES: Record<string, string> = {
   "Baltic_Main": "에란겔", 

@@ -21,7 +21,7 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
 });
 
 // 환경 변수에 따라 삭제 강도 조절 (Daily Action용)
-const TARGET_VERSION = parseInt(process.env.CLEANUP_TARGET_VERSION || '54');
+const TARGET_VERSION = parseInt(process.env.CLEANUP_TARGET_VERSION || '56');
 const RETENTION_DAYS = parseInt(process.env.CLEANUP_RETENTION_DAYS || '1');
 
 async function smartCleanup() {
