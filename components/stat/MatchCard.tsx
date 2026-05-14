@@ -153,16 +153,19 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
   const tierRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const isAnalyzingRef = useRef(false); // [V46.0] 클로저 세이프 로딩 추적
   const { isAnalyzing: isGlobalAnalyzing, activeId } = useAIStatus();
   const router = useRouter();
 
-  // [V45.8] 언마운트 시 진행 중인 분석 강제 중단 (토큰 낭비 방지)
+  // [V46.8] 언마운트 시 진행 중인 분석 강제 중단
   useEffect(() => {
     return () => {
       if (abortControllerRef.current) {
         console.log(`[AI-CLEANUP] Unmounting MatchCard ${matchId}, aborting analysis...`);
         abortControllerRef.current.abort();
         aiManager.stopAnalysis(matchId);
+        setIsAnalyzing(false);
+        isAnalyzingRef.current = false;
       }
     };
   }, [matchId]);
@@ -310,10 +313,23 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
     if (!aiManager.startAnalysis(matchId)) return;
     
     setIsAnalyzing(true);
+    isAnalyzingRef.current = true;
     setAnalysis("");
     
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
+
+    // [V46.1] 클라이언트 측 세이프티 타임아웃 (45초)
+    const safetyTimeout = setTimeout(() => {
+      if (isAnalyzingRef.current) {
+        console.warn(`[AI-MATCH] Safety timeout triggered for ${matchId}. Forced cleanup.`);
+        abortController.abort();
+        setIsAnalyzing(false);
+        isAnalyzingRef.current = false;
+        aiManager.stopAnalysis(matchId);
+      }
+    }, 45000);
+    
     let lineBuffer = "";
     
     try {
@@ -362,7 +378,9 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
         console.error("Analysis Error:", err);
       }
     } finally {
+      clearTimeout(safetyTimeout);
       setIsAnalyzing(false);
+      isAnalyzingRef.current = false;
       aiManager.stopAnalysis(matchId);
       abortControllerRef.current = null;
     }
@@ -812,13 +830,13 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
             ) : (
               <button 
                 onClick={handleAnalyze}
-                disabled={isGlobalAnalyzing || isAnalyzing}
+                disabled={isGlobalAnalyzing || isAnalyzing || isAnalyzingRef.current}
                 className={`w-full py-16 ${isRanked ? 'bg-amber-500/10 border-amber-500/20 hover:bg-amber-500/20' : 'bg-indigo-500/10 border-indigo-500/20 hover:bg-indigo-500/20'} border-2 border-dashed rounded-[2.5rem] flex flex-col items-center gap-4 group transition-all relative overflow-hidden ${
-                  isGlobalAnalyzing && !isAnalyzing ? 'opacity-50 cursor-not-allowed grayscale' : ''
+                  (isGlobalAnalyzing || isAnalyzing || isAnalyzingRef.current) && !isAnalyzing ? 'opacity-50 cursor-not-allowed grayscale' : ''
                 }`}
               >
                 <div className="absolute inset-0 bg-gradient-to-b from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                {isAnalyzing ? (
+                {(isAnalyzing || isAnalyzingRef.current) ? (
                   <div className={`w-8 h-8 border-3 border-white/10 ${isRanked ? 'border-t-amber-500' : 'border-t-indigo-500'} rounded-full animate-spin`} />
                 ) : isGlobalAnalyzing ? (
                   <div className="w-14 h-14 rounded-2xl bg-white/5 flex items-center justify-center">

@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense, useRef, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Camera, Copy, Download, ImageDown, Share2, Star, Clock, User } from "lucide-react";
+import { Camera, Copy, Download, ImageDown, Share2, Star, Clock, User, X } from "lucide-react";
 import { STORAGE_KEY_RECENT, STORAGE_KEY_FAVORITES } from "../../../lib/pubg-analysis/constants";
 
 interface Comparison {
@@ -77,6 +77,27 @@ function BattleContent() {
     if (savedRecent) setRecentSearches(JSON.parse(savedRecent));
     if (savedFavorites) setFavorites(JSON.parse(savedFavorites));
   }, []);
+  
+  // 즐겨찾기 데이터 저장
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY_FAVORITES, JSON.stringify(favorites));
+  }, [favorites]);
+
+  const toggleFavorite = (name: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setFavorites((prev) =>
+      prev.includes(name) ? prev.filter((n) => n !== name) : [name, ...prev]
+    );
+  };
+
+  const removeRecentSearch = (name: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRecentSearches((prev) => {
+      const updated = prev.filter((n) => n !== name);
+      localStorage.setItem(STORAGE_KEY_RECENT, JSON.stringify(updated));
+      return updated;
+    });
+  };
 
   // 검색 기록 업데이트 함수
   const updateRecentSearches = useCallback((nick: string) => {
@@ -162,7 +183,7 @@ function BattleContent() {
       lastAutoBattleKeyRef.current = battleKey;
       void runBattle(n1, n2, m);
     }
-  }, [searchParams, runBattle, nick1, nick2, matchType]);
+  }, [searchParams, runBattle]);
 
   // 필터(matchType) 변경 시 즉시 대결 트리거
   const handleFilterChange = (newMode: string) => {
@@ -433,8 +454,11 @@ function BattleContent() {
                   suggestions={suggestions1}
                   isSuggesting={isSuggesting1}
                   recentSearches={recentSearches}
+                  favorites={favorites}
                   items={getDropdownItems()} 
                   onSelect={(val) => { setNick1(val); setShowDropdown1(false); }} 
+                  onToggleFavorite={toggleFavorite}
+                  onRemoveRecent={removeRecentSearch}
                   onClose={() => setShowDropdown1(false)}
                 />
               )}
@@ -458,8 +482,11 @@ function BattleContent() {
                   suggestions={suggestions2}
                   isSuggesting={isSuggesting2}
                   recentSearches={recentSearches}
+                  favorites={favorites}
                   items={getDropdownItems()} 
                   onSelect={(val) => { setNick2(val); setShowDropdown2(false); }} 
+                  onToggleFavorite={toggleFavorite}
+                  onRemoveRecent={removeRecentSearch}
                   onClose={() => setShowDropdown2(false)}
                 />
               )}
@@ -681,16 +708,22 @@ function NicknameDropdown({
   suggestions,
   isSuggesting,
   recentSearches,
+  favorites,
   items, 
   onSelect, 
+  onToggleFavorite,
+  onRemoveRecent,
   onClose 
 }: { 
   nickname: string;
   suggestions: { nickname: string; platform: string }[];
   isSuggesting: boolean;
   recentSearches: string[];
+  favorites: string[];
   items: { name: string; type: "favorite" | "recent" }[];
   onSelect: (val: string) => void;
+  onToggleFavorite: (name: string, e: React.MouseEvent) => void;
+  onRemoveRecent: (name: string, e: React.MouseEvent) => void;
   onClose: () => void;
 }) {
   return (
@@ -702,14 +735,15 @@ function NicknameDropdown({
             <div className="px-4 py-2 text-[10px] font-black text-amber-500/50 uppercase tracking-widest border-b border-white/5 bg-white/2">추천 플레이어</div>
             {suggestions.map((s, i) => {
               const isRecent = recentSearches.includes(s.nickname);
+              const isFav = favorites.includes(s.nickname);
               return (
-                <button
+                <div
                   key={`suggest-${s.nickname}-${i}`}
                   onClick={() => {
                     onSelect(s.nickname);
                     onClose();
                   }}
-                  className="w-full px-4 py-3 flex items-center gap-3 hover:bg-amber-500/10 transition-colors text-left border-b border-white/5 last:border-0 group"
+                  className="w-full px-4 py-3 flex items-center gap-3 hover:bg-amber-500/10 transition-colors text-left border-b border-white/5 last:border-0 group cursor-pointer"
                 >
                   <div className="relative">
                     <User size={14} className={`${isRecent ? 'text-blue-400' : 'text-amber-500'} shrink-0`} />
@@ -724,7 +758,15 @@ function NicknameDropdown({
                     </div>
                     <span className="text-[10px] text-gray-500 uppercase">{s.platform}</span>
                   </div>
-                </button>
+                  <div className="ml-auto flex items-center gap-2">
+                    <button
+                      onClick={(e) => onToggleFavorite(s.nickname, e)}
+                      className={`p-1.5 rounded-lg transition-all ${isFav ? "text-yellow-400 bg-yellow-400/10" : "text-gray-600 hover:text-yellow-400 hover:bg-yellow-400/10"}`}
+                    >
+                      <Star size={14} fill={isFav ? "currentColor" : "none"} />
+                    </button>
+                  </div>
+                </div>
               );
             })}
           </div>
@@ -736,24 +778,45 @@ function NicknameDropdown({
             {nickname.length >= 2 && suggestions.length === 0 && !isSuggesting && (
               <div className="px-4 py-4 text-center text-xs text-gray-500 italic border-b border-white/5">검색 결과가 없습니다.</div>
             )}
-            {items.map((item, i) => (
-              <button
-                key={`${item.name}-${i}`}
-                onClick={() => {
-                  onSelect(item.name);
-                  onClose();
-                }}
-                className="w-full px-4 py-3 flex items-center gap-3 hover:bg-white/5 transition-colors text-left border-b border-white/5 last:border-0 group"
-              >
-                {item.type === "favorite" ? (
-                  <Star size={14} className="text-yellow-400 fill-yellow-400 shrink-0" />
-                ) : (
-                  <Clock size={14} className="text-gray-500 shrink-0" />
-                )}
-                <span className="text-sm font-bold text-gray-300 group-hover:text-white truncate">{item.name}</span>
-                <User size={12} className="ml-auto text-gray-700 opacity-0 group-hover:opacity-100 transition-opacity" />
-              </button>
-            ))}
+            {items.map((item, i) => {
+              const isFav = favorites.includes(item.name);
+              return (
+                <div
+                  key={`${item.name}-${i}`}
+                  onClick={() => {
+                    onSelect(item.name);
+                    onClose();
+                  }}
+                  className="w-full px-4 py-3 flex items-center gap-3 hover:bg-white/5 transition-colors text-left border-b border-white/5 last:border-0 group cursor-pointer"
+                >
+                  {item.type === "favorite" ? (
+                    <Star size={14} className="text-yellow-400 fill-yellow-400 shrink-0" />
+                  ) : (
+                    <Clock size={14} className="text-gray-500 shrink-0" />
+                  )}
+                  <span className="text-sm font-bold text-gray-300 group-hover:text-white truncate">{item.name}</span>
+                  
+                  <div className="ml-auto flex items-center gap-2">
+                    <button
+                      onClick={(e) => onToggleFavorite(item.name, e)}
+                      className={`p-1.5 rounded-lg transition-all ${isFav ? "text-yellow-400 bg-yellow-400/10" : "text-gray-600 hover:text-yellow-400 hover:bg-yellow-400/10"}`}
+                    >
+                      <Star size={14} fill={isFav ? "currentColor" : "none"} />
+                    </button>
+                    {item.type === "recent" && (
+                      <button
+                        onClick={(e) => onRemoveRecent(item.name, e)}
+                        className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all"
+                      >
+                        <X size={14} />
+                      </button>
+                    ) || (
+                      <User size={12} className="text-gray-700 opacity-0 group-hover:opacity-100 transition-opacity" />
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </>
         )}
       </div>

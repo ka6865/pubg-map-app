@@ -42,18 +42,16 @@ function notify() {
   listeners.forEach(l => l(currentStatus));
 }
 
-// React Hook for easy use
 import { useState, useEffect } from 'react';
 
 export function useAIStatus() {
-  const [status, setStatus] = useState<AIStatus>(aiManager.getStatus());
-
+  const [status, setStatus] = useState(aiManager.getStatus());
+  
   useEffect(() => {
-    const unsubscribe = aiManager.subscribe(setStatus);
-    return () => {
-      unsubscribe();
-    };
+    return aiManager.subscribe((newStatus) => {
+      setStatus(newStatus);
+    });
   }, []);
-
+  
   return status;
 }
