@@ -70,8 +70,8 @@ export class UtilityHandler extends BaseHandler {
         ts: ts - this.state.matchStartTime,
         type: 'ITEM_USE',
         weapon: mappedName,
-        attacker: isMeAttacker ? undefined : attackerName,
-        playerName: attackerName,
+        attacker: isMeAttacker ? undefined : (e.attacker?.name || e.character?.name || attackerName),
+        playerName: isMeAttacker ? this.state.canonicalNickname : (e.attacker?.name || e.character?.name || attackerName),
         x: scaleCoordinate(this.state.playerLocations.get(attackerName)?.x || (e.attacker || e.character)?.location?.x || 0, this.state.mapSize),
         y: scaleCoordinate(this.state.playerLocations.get(attackerName)?.y || (e.attacker || e.character)?.location?.y || 0, this.state.mapSize)
       });
@@ -165,7 +165,8 @@ export class UtilityHandler extends BaseHandler {
         ts: ts - this.state.matchStartTime,
         type: 'ITEM_USE',
         weapon: mappedName,
-        attacker: isMe ? undefined : characterName,
+        attacker: isMe ? undefined : (e.character?.name || characterName),
+        playerName: isMe ? this.state.canonicalNickname : (e.character?.name || characterName),
         x: scaleCoordinate(this.state.playerLocations.get(characterName)?.x || e.character?.location?.x || 0, this.state.mapSize),
         y: scaleCoordinate(this.state.playerLocations.get(characterName)?.y || e.character?.location?.y || 0, this.state.mapSize)
       });

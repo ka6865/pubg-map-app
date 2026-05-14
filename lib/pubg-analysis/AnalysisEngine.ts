@@ -32,6 +32,7 @@ export class AnalysisEngine {
   ) {
     this.state = {
       lowerNickname: normalizeName(nickname),
+      canonicalNickname: nickname, // [V55.0] 정식 닉네임 저장
       myAccountId,
       teamNames,
       teamAccountIds,
@@ -155,7 +156,7 @@ export class AnalysisEngine {
     this.state.mapName = matchAttr.mapName || "Erangel";
     const mapKey = this.state.mapName.toLowerCase().split('_')[0];
     this.state.mapSize = MAP_SIZES[mapKey] || 819200;
-    console.log(`[DEBUG-ENGINE] MapName: ${this.state.mapName}, Key: ${mapKey}, Size: ${this.state.mapSize}`);
+    // Map coordinates normalization logic
 
     this.buildMappings(rosters, participants);
 

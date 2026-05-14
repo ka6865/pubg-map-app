@@ -187,6 +187,7 @@ export interface AnalysisResult {
 // 텔레메트리 이벤트 처리를 위한 내부 상태 타입
 export interface AnalysisState {
   lowerNickname: string;
+  canonicalNickname: string; // [V55.0] UI 출력용 정식 닉네임 (DB 캐시 기반)
   myAccountId: string; // [V41.0] 고유 ID 매칭 도입
   teamNames: Set<string>;
   teamAccountIds: Set<string>; // [V41.0] 팀원 고유 ID 매칭

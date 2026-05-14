@@ -15,6 +15,7 @@ import {
   Swords
 } from "lucide-react";
 import { TimelineEvent } from "../../lib/pubg-analysis/types";
+import { normalizeName } from "../../lib/pubg-analysis/utils";
 import { useState } from "react";
 
 interface MatchTimelineProps {
@@ -52,7 +53,7 @@ const getEventLabel = (type: TimelineEvent['type']) => {
 };
 
 export const MatchTimeline = ({ events, nickname, onEventClick }: MatchTimelineProps) => {
-  const lowerNickname = nickname.toLowerCase().replace(/_/g, "");
+  const lowerNickname = nickname.toLowerCase().trim();
 
   // 회복/부스트 아이템 제외 및 빈 이름 유령 로그 필터링
   const filteredEvents = events.filter(e => {
@@ -118,8 +119,8 @@ export const MatchTimeline = ({ events, nickname, onEventClick }: MatchTimelineP
               if (event.type === 'PHASE_START') return null;
 
               const isMe = event.isMe !== undefined ? event.isMe : (
-                (event.attacker?.toLowerCase().replace(/_/g, "") === lowerNickname) ||
-                (['DIED', 'DOWNED', 'RECALL', 'REDEPLOY'].includes(event.type) && event.victim?.toLowerCase().replace(/_/g, "") === lowerNickname) ||
+                (event.attacker?.toLowerCase().trim() === lowerNickname) ||
+                (['DIED', 'DOWNED', 'RECALL', 'REDEPLOY'].includes(event.type) && event.victim?.toLowerCase().trim() === lowerNickname) ||
                 (event.type === 'VICTORY')
               );
               const labelInfo = getEventLabel(event.type);
@@ -195,8 +196,8 @@ const renderEventText = (event: TimelineEvent, lowerNickname: string) => {
   const isThrowable = ["수류탄", "연막", "화염병", "섬광", "C4"].some(k => event.weapon?.includes(k));
   const distStr = (!isThrowable && event.distance !== undefined) ? ` [${event.distance}m]` : "";
 
-  const isAttackerMe = event.attacker?.toLowerCase().replace(/_/g, "") === lowerNickname;
-  const isVictimMe = event.victim?.toLowerCase().replace(/_/g, "") === lowerNickname;
+  const isAttackerMe = normalizeName(event.attacker || "") === lowerNickname;
+  const isVictimMe = normalizeName(event.victim || "") === lowerNickname;
 
   switch (event.type) {
     case 'FINISH':

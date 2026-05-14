@@ -179,7 +179,7 @@ export class CombatHandler extends BaseHandler {
         isMe: true,
         x: scaleCoordinate(this.state.playerLocations.get(makerName)?.x || attacker?.location?.x || 0, this.state.mapSize),
         y: scaleCoordinate(this.state.playerLocations.get(makerName)?.y || attacker?.location?.y || 0, this.state.mapSize),
-        playerName: this.state.lowerNickname,
+        playerName: this.state.canonicalNickname,
         victimX: scaleCoordinate(this.state.playerLocations.get(victimName)?.x || e.victim?.location?.x || 0, this.state.mapSize),
         victimY: scaleCoordinate(this.state.playerLocations.get(victimName)?.y || e.victim?.location?.y || 0, this.state.mapSize)
       });
@@ -196,7 +196,7 @@ export class CombatHandler extends BaseHandler {
         isMe: true,
         x: scaleCoordinate(this.state.playerLocations.get(this.state.lowerNickname)?.x || e.victim?.location?.x || 0, this.state.mapSize),
         y: scaleCoordinate(this.state.playerLocations.get(this.state.lowerNickname)?.y || e.victim?.location?.y || 0, this.state.mapSize),
-        playerName: this.state.lowerNickname,
+        playerName: this.state.canonicalNickname,
         attackerX: scaleCoordinate(this.state.playerLocations.get(makerName)?.x || attacker?.location?.x || 0, this.state.mapSize),
         attackerY: scaleCoordinate(this.state.playerLocations.get(makerName)?.y || attacker?.location?.y || 0, this.state.mapSize)
       });
@@ -217,7 +217,7 @@ export class CombatHandler extends BaseHandler {
         isMe: false,
         x: scaleCoordinate(this.state.playerLocations.get(victimName)?.x || e.victim?.location?.x || 0, this.state.mapSize),
         y: scaleCoordinate(this.state.playerLocations.get(victimName)?.y || e.victim?.location?.y || 0, this.state.mapSize),
-        playerName: victimName,
+        playerName: e.victim?.name || victimName,
         attackerX: scaleCoordinate(this.state.playerLocations.get(attacker?.name || makerName)?.x || attacker?.location?.x || 0, this.state.mapSize),
         attackerY: scaleCoordinate(this.state.playerLocations.get(attacker?.name || makerName)?.y || attacker?.location?.y || 0, this.state.mapSize)
       });
@@ -283,7 +283,7 @@ export class CombatHandler extends BaseHandler {
         isMe: true,
         x: scaleCoordinate(this.state.playerLocations.get(this.state.lowerNickname)?.x || killerLoc?.x || 0, this.state.mapSize),
         y: scaleCoordinate(this.state.playerLocations.get(this.state.lowerNickname)?.y || killerLoc?.y || 0, this.state.mapSize),
-        playerName: this.state.lowerNickname,
+        playerName: this.state.canonicalNickname,
         victimX: scaleCoordinate(this.state.playerLocations.get(victimName)?.x || victimLoc?.x || 0, this.state.mapSize),
         victimY: scaleCoordinate(this.state.playerLocations.get(victimName)?.y || victimLoc?.y || 0, this.state.mapSize)
       });
@@ -303,7 +303,7 @@ export class CombatHandler extends BaseHandler {
         isMe: true,
         x: scaleCoordinate(attackerObj?.location?.x ?? (this.state.playerLocations.get(this.state.lowerNickname)?.x || 0), this.state.mapSize),
         y: scaleCoordinate(attackerObj?.location?.y ?? (this.state.playerLocations.get(this.state.lowerNickname)?.y || 0), this.state.mapSize),
-        playerName: this.state.lowerNickname
+        playerName: this.state.canonicalNickname
       });
     } else if (isTeammateKiller) {
       this.state.timeline.push({
@@ -315,15 +315,13 @@ export class CombatHandler extends BaseHandler {
         isMe: false,
         x: scaleCoordinate(this.state.playerLocations.get(killerName)?.x || attackerObj?.location?.x || 0, this.state.mapSize),
         y: scaleCoordinate(this.state.playerLocations.get(killerName)?.y || attackerObj?.location?.y || 0, this.state.mapSize),
-        playerName: killerName || "Teammate",
+        playerName: e.killer?.name || killerName || "Teammate",
         victimX: scaleCoordinate(this.state.playerLocations.get(victimName)?.x || e.victim?.location?.x || 0, this.state.mapSize),
         victimY: scaleCoordinate(this.state.playerLocations.get(victimName)?.y || e.victim?.location?.y || 0, this.state.mapSize)
       });
     }
 
     if (victimName) {
-      const cleanVictim = victimName.replace(/_/g, "");
-      this.state.playerAliveStatus.set(cleanVictim, false);
       this.state.playerAliveStatus.set(victimName, false);
 
       const vRosterId = this.state.teamMapping.get(victimName);
@@ -350,7 +348,7 @@ export class CombatHandler extends BaseHandler {
           isMe: false,
           x: scaleCoordinate(this.state.playerLocations.get(victimName)?.x || e.victim?.location?.x || 0, this.state.mapSize),
           y: scaleCoordinate(this.state.playerLocations.get(victimName)?.y || e.victim?.location?.y || 0, this.state.mapSize),
-          playerName: victimName,
+          playerName: e.victim?.name || victimName,
           attackerX: scaleCoordinate(this.state.playerLocations.get(killerName)?.x || (typeof e.killer !== 'string' ? e.killer?.location?.x : 0) || 0, this.state.mapSize),
           attackerY: scaleCoordinate(this.state.playerLocations.get(killerName)?.y || (typeof e.killer !== 'string' ? e.killer?.location?.y : 0) || 0, this.state.mapSize)
         });
@@ -373,7 +371,7 @@ export class CombatHandler extends BaseHandler {
         isMe: true,
         x: scaleCoordinate(myLoc?.x ?? 0, this.state.mapSize),
         y: scaleCoordinate(myLoc?.y ?? 0, this.state.mapSize),
-        playerName: this.state.lowerNickname,
+        playerName: this.state.canonicalNickname,
         attackerX: scaleCoordinate(this.state.playerLocations.get(killerName)?.x || attackerObj?.location?.x || 0, this.state.mapSize),
         attackerY: scaleCoordinate(this.state.playerLocations.get(killerName)?.y || attackerObj?.location?.y || 0, this.state.mapSize)
       });
@@ -410,7 +408,7 @@ export class CombatHandler extends BaseHandler {
         this.state.timeline.push({ 
           ts: ts - this.state.matchStartTime, 
           type: 'REVIVE', 
-          attacker: e.reviver?.name || "나",
+          attacker: e.reviver?.name || this.state.canonicalNickname,
           victim: e.victim?.name || victimName,
           isMe: true,
           isSelfRevive,
