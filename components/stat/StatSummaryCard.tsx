@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { HelpCircle, Trophy, Target, Swords, Shield, Clock, Crosshair, Users } from "lucide-react";
 
 const getKDA = (k: number, a: number, d: number) => ((k + a) / (d || 1)).toFixed(2);
@@ -12,8 +12,22 @@ const getSurvivalTime = (time: number, p: number) => {
   return `${Math.floor(avgSec / 60)}분 ${avgSec % 60}초`;
 };
 
-export const StatSummaryCard = ({ title, data, isRanked }: { title: string; data: any; isRanked: boolean }) => {
+export const StatSummaryCard = ({ title, data, isRanked, isMobile }: { title: string; data: any; isRanked: boolean; isMobile: boolean }) => {
   const [showTooltip, setShowTooltip] = useState(false);
+  const tooltipRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showTooltip || !isMobile) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (tooltipRef.current && !tooltipRef.current.contains(event.target as Node)) {
+        setShowTooltip(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showTooltip, isMobile]);
 
   if (!data || data.roundsPlayed === 0) {
     return (
@@ -91,11 +105,16 @@ export const StatSummaryCard = ({ title, data, isRanked }: { title: string; data
           <div className="text-xl font-black text-amber-500">{data.wins} <span className="text-[10px] text-white/20">회</span></div>
         </div>
 
-        <div className="flex flex-col gap-1 relative">
+        <div className="flex flex-col gap-1 relative" ref={tooltipRef}>
           <div className="flex items-center gap-2 text-white/30">
             <Swords size={12} />
             <span className="text-[10px] font-black uppercase tracking-wider">평균 DBNO</span>
-            <button onMouseEnter={() => setShowTooltip(true)} onMouseLeave={() => setShowTooltip(false)} className="text-amber-500/50 hover:text-amber-500 transition-colors">
+            <button 
+              onMouseEnter={() => !isMobile && setShowTooltip(true)} 
+              onMouseLeave={() => !isMobile && setShowTooltip(false)} 
+              onClick={() => isMobile && setShowTooltip(!showTooltip)}
+              className={`transition-colors ${showTooltip ? 'text-amber-500' : 'text-amber-500/50 hover:text-amber-500'}`}
+            >
               <HelpCircle size={10} />
             </button>
           </div>
@@ -103,7 +122,7 @@ export const StatSummaryCard = ({ title, data, isRanked }: { title: string; data
             {getAvgKnockouts(data.dBNOs, data.roundsPlayed)}
           </div>
           {showTooltip && (
-            <div className="absolute bottom-full left-0 mb-2 p-3 bg-black border border-amber-500/50 rounded-xl text-[10px] text-white/80 font-bold z-50 w-48 shadow-2xl animate-in fade-in slide-in-from-bottom-1">
+            <div className={`absolute left-0 mb-2 p-3 bg-black border border-amber-500/50 rounded-xl text-[10px] text-white/80 font-bold z-50 w-48 shadow-2xl animate-in fade-in slide-in-from-bottom-1 ${isMobile ? 'bottom-full mb-4' : 'bottom-full'}`}>
               DBNO: 적을 기절시킨 횟수를 의미합니다.
             </div>
           )}

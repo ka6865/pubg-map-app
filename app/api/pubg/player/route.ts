@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { createClient } from "@/utils/supabase/server";
 
 // [V12.1] 네트워크 불안정 대응을 위한 재시도 헬퍼 함수
 async function withRetry<T>(fn: () => Promise<T>, retries = 3, delay = 1000): Promise<T> {
@@ -37,15 +38,46 @@ export async function GET(request: Request) {
     Accept: "application/vnd.api+json",
   };
 
+  const supabase = await createClient();
+
+  // 1. 캐시에서 정확한 닉네임 조회 시도 (소문자 기반)
+  let targetNickname = nickname;
+  const { data: cacheData } = await supabase
+    .from('pubg_player_cache')
+    .select('nickname')
+    .eq('lower_nickname', nickname.toLowerCase())
+    .eq('platform', platform)
+    .maybeSingle();
+
+  if (cacheData) {
+    targetNickname = cacheData.nickname;
+    console.log(`[CACHE HIT] ${nickname} -> ${targetNickname}`);
+  }
+
   try {
-    const playerRes = await withRetry(() => fetch(
-      `https://api.pubg.com/shards/${platform}/players?filter[playerNames]=${nickname}`,
+    // 2. PUBG API 호출 (캐시된 닉네임 우선 사용)
+    let playerRes = await withRetry(() => fetch(
+      `https://api.pubg.com/shards/${platform}/players?filter[playerNames]=${targetNickname}`,
       { 
         headers, 
         next: { revalidate: 60 },
         signal: AbortSignal.timeout(15000)
       }
     ));
+
+    // 3. 캐시된 이름으로 실패 시 원본 입력으로 재시도 (Fallback)
+    if (!playerRes.ok && playerRes.status === 404 && targetNickname !== nickname) {
+      console.log(`[CACHE STALE] ${targetNickname} 404. Falling back to original: ${nickname}`);
+      playerRes = await withRetry(() => fetch(
+        `https://api.pubg.com/shards/${platform}/players?filter[playerNames]=${nickname}`,
+        { 
+          headers, 
+          next: { revalidate: 60 },
+          signal: AbortSignal.timeout(15000)
+        }
+      ));
+    }
+
     if (!playerRes.ok) {
       if (playerRes.status === 404) {
         return NextResponse.json(
@@ -58,6 +90,18 @@ export async function GET(request: Request) {
     const playerData = await playerRes.json();
     const accountId = playerData.data[0].id;
     const actualNickname = playerData.data[0].attributes.name;
+
+    // 4. 캐시 업데이트 (비동기)
+    supabase.from('pubg_player_cache').upsert({
+      id: accountId,
+      platform,
+      nickname: actualNickname,
+      lower_nickname: actualNickname.toLowerCase(),
+      updated_at: new Date().toISOString()
+    }).then(({ error }) => {
+      if (error) console.error('[CACHE UPDATE ERROR]', error);
+    });
+
     const recentMatches = playerData.data[0].relationships.matches.data.map(
       (m: any) => m.id
     );

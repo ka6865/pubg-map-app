@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { ShieldAlert, Clock, TrendingUp, TrendingDown, Minus, Flame, Wind, Heart, Skull, Target, HelpCircle, Zap, Brain } from "lucide-react";
+import { ShieldAlert, Clock, TrendingUp, TrendingDown, Minus, Flame, Wind, Heart, Skull, Target, HelpCircle, Zap, Brain, X } from "lucide-react";
 import { getNextTierInfo } from "@/lib/pubg-analysis/benchmarkScore";
 
 import { IsolationRadar } from "./IsolationRadar";
@@ -140,12 +140,16 @@ const getRelativeTime = (dateStr: string) => {
   return "방금 전";
 };
 
-export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: string[]; nickname: string; platform: string }) => {
+export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { matchIds: string[]; nickname: string; platform: string; isMobile?: boolean }) => {
   const [debateData, setDebateData] = useState<DebateData | null>(null);
   const [loading, setLoading] = useState(false);
   const [streamingText, setStreamingText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [openIssueIdx, setOpenIssueIdx] = useState<number | null>(null);
+  const [showTierTooltip, setShowTierTooltip] = useState(false);
+  const [activeStatTooltip, setActiveStatTooltip] = useState<string | null>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
+  const statTooltipRef = useRef<HTMLDivElement>(null);
   
   const textBufferRef = useRef("");
   const lineBufferRef = useRef("");
@@ -295,6 +299,20 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
   const score = getScore();
   
   useEffect(() => {
+    if (!showTierTooltip && !activeStatTooltip) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (tooltipRef.current && !tooltipRef.current.contains(event.target as Node)) {
+        setShowTierTooltip(false);
+      }
+      if (statTooltipRef.current && !statTooltipRef.current.contains(event.target as Node)) {
+        setActiveStatTooltip(null);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showTierTooltip, activeStatTooltip, isMobile]);
+
+  useEffect(() => {
     // [V40.9] 닉네임이 바뀌면 기존 데이터를 초기화하여 데이터 전이 방지
     setDebateData(null);
     setStreamingText("");
@@ -373,7 +391,11 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
       {(debateData?.visuals?.tactical?.isolation || (loading && !debateData)) && (
         <div className="min-h-[380px] w-full">
           {debateData?.visuals?.tactical?.isolation ? (
-            <IsolationRadar data={debateData?.visuals?.tactical?.isolation} loading={loading} />
+            <IsolationRadar 
+              data={debateData?.visuals?.tactical?.isolation} 
+              loading={loading} 
+              isMobile={isMobile}
+            />
           ) : (
             <div className="w-full h-[380px] bg-white/5 rounded-[32px] border border-white/10 flex flex-col items-center justify-center gap-4 animate-pulse">
               <div className="w-20 h-20 border-4 border-emerald-500/10 border-t-emerald-500/40 rounded-full animate-spin" />
@@ -529,59 +551,83 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
                 
                 {/* [V38.2] 티어 세부 점수 툴팁 */}
                 {debateData.visuals.tierBreakdown && (
-                  <div className="relative group/tooltip">
-                    <HelpCircle size={16} className="text-white/30 hover:text-white/60 cursor-help transition-colors" />
-                    <div className="absolute left-full ml-3 top-1/2 -translate-y-1/2 w-48 p-4 bg-black/90 border border-white/20 rounded-2xl backdrop-blur-xl shadow-2xl opacity-0 group-hover/tooltip:opacity-100 pointer-events-none transition-all z-50">
-                      <div className="text-[11px] text-white/50 font-black uppercase tracking-wider mb-3 pb-2 border-block border-white/10">Tier Analysis</div>
-                      <div className="space-y-2.5">
-                        <div className="flex justify-between items-center">
-                          <span className="text-[11px] text-gray-400 font-bold">교전 점수</span>
-                          <span className="text-[12px] text-indigo-400 font-black">{debateData.visuals.tierBreakdown.combat}</span>
+                  <div className="relative" ref={tooltipRef}>
+                    <button
+                      onClick={() => isMobile && setShowTierTooltip(!showTierTooltip)}
+                      onMouseEnter={() => !isMobile && setShowTierTooltip(true)}
+                      onMouseLeave={() => !isMobile && setShowTierTooltip(false)}
+                      className="flex items-center justify-center p-1 focus:outline-none"
+                    >
+                      <HelpCircle size={16} className={`${showTierTooltip ? 'text-white' : 'text-white/30'} hover:text-white/60 cursor-help transition-colors`} />
+                    </button>
+                    
+                    {showTierTooltip && (
+                      <div 
+                        ref={tooltipRef}
+                        className={`${
+                          isMobile 
+                          ? 'fixed inset-x-4 bottom-20 animate-in slide-in-from-bottom-5' 
+                          : 'absolute left-full ml-3 top-1/2 -translate-y-1/2 w-48 animate-in fade-in zoom-in-95'
+                        } p-4 bg-black/95 border border-white/20 rounded-2xl backdrop-blur-xl shadow-[0_20px_50px_rgba(0,0,0,0.8)] z-[100] duration-200`}
+                      >
+                        <div className="flex justify-between items-center mb-3 pb-2 border-b border-white/10">
+                          <div className="text-[11px] text-white/50 font-black uppercase tracking-wider">Tier Analysis</div>
+                          {isMobile && (
+                            <button onClick={() => setShowTierTooltip(false)} className="text-white/40">
+                              <X size={14} />
+                            </button>
+                          )}
                         </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-[11px] text-gray-400 font-bold">전술 점수</span>
-                          <span className="text-[12px] text-emerald-400 font-black">{debateData.visuals.tierBreakdown.tactical}</span>
+                        <div className="space-y-2.5">
+                          <div className="flex justify-between items-center">
+                            <span className="text-[11px] text-gray-400 font-bold">교전 점수</span>
+                            <span className="text-[12px] text-indigo-400 font-black">{debateData.visuals.tierBreakdown.combat}</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-[11px] text-gray-400 font-bold">전술 점수</span>
+                            <span className="text-[12px] text-emerald-400 font-black">{debateData.visuals.tierBreakdown.tactical}</span>
+                          </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-[11px] text-gray-400 font-bold">생존 점수</span>
+                            <span className="text-[12px] text-yellow-400 font-black">{debateData.visuals.tierBreakdown.survival}</span>
+                          </div>
+                          <div className="pt-2 mt-2 border-t border-white/10 flex justify-between items-center">
+                            <span className="text-[11px] text-white font-black uppercase">종합 점수</span>
+                            <span className="text-[14px] text-white font-black">{debateData.visuals.tierBreakdown.total}</span>
+                          </div>
                         </div>
-                        <div className="flex justify-between items-center">
-                          <span className="text-[11px] text-gray-400 font-bold">생존 점수</span>
-                          <span className="text-[12px] text-yellow-400 font-black">{debateData.visuals.tierBreakdown.survival}</span>
-                        </div>
-                        <div className="pt-2 mt-2 border-t border-white/10 flex justify-between items-center">
-                          <span className="text-[11px] text-white font-black uppercase">종합 점수</span>
-                          <span className="text-[14px] text-white font-black">{debateData.visuals.tierBreakdown.total}</span>
-                        </div>
-                      </div>
 
-                      {/* [V38.2.6] 다음 티어 안내 (13단계 세부 티어 반영) */}
-                      <div className="mt-4 px-3 py-2 bg-white/5 rounded-xl border border-white/10">
-                        <div className="text-[10px] text-gray-400 font-bold mb-1">Next Goal</div>
-                        <div className="text-[11px] text-white leading-relaxed">
-                          {(() => {
-                            const nextInfo = getNextTierInfo(debateData.visuals.tierBreakdown.total);
-                            if (!nextInfo) {
-                              return <span className="text-yellow-400 font-bold">최상위 S 티어 달성! 현재 실력을 유지하세요.</span>;
-                            }
-                            return (
-                              <>
-                                <span className="text-indigo-400 font-bold">
-                                  {nextInfo.tier} TIER
-                                </span>
-                                {" "}까지 {" "}
-                                <span className="text-white font-black">
-                                  {nextInfo.needed}점
-                                </span>
-                                {" "}더 필요합니다.
-                              </>
-                            );
-                          })()}
+                        {/* [V38.2.6] 다음 티어 안내 (13단계 세부 티어 반영) */}
+                        <div className="mt-4 px-3 py-2 bg-white/5 rounded-xl border border-white/10">
+                          <div className="text-[10px] text-gray-400 font-bold mb-1">Next Goal</div>
+                          <div className="text-[11px] text-white leading-relaxed">
+                            {(() => {
+                              const nextInfo = getNextTierInfo(debateData.visuals.tierBreakdown.total);
+                              if (!nextInfo) {
+                                return <span className="text-yellow-400 font-bold">최상위 S 티어 달성! 현재 실력을 유지하세요.</span>;
+                              }
+                              return (
+                                <>
+                                  <span className="text-indigo-400 font-bold">
+                                    {nextInfo.tier} TIER
+                                  </span>
+                                  {" "}까지 {" "}
+                                  <span className="text-white font-black">
+                                    {nextInfo.needed}점
+                                  </span>
+                                  {" "}더 필요합니다.
+                                </>
+                              );
+                            })()}
+                          </div>
                         </div>
-                      </div>
 
-                      <div className="mt-3 text-[9px] text-gray-500 leading-tight">
-                        * S(85), A+(78), A(71), B+(56), B(48) 등 13단계 세분화
+                        <div className="mt-3 text-[9px] text-gray-500 leading-tight">
+                          * S(85), A+(78), A(71), B+(56), B(48) 등 13단계 세분화
+                        </div>
+                        {!isMobile && <div className="absolute left-[-6px] top-1/2 -translate-y-1/2 w-0 h-0 border-t-[6px] border-t-transparent border-r-[6px] border-r-white/20 border-b-[6px] border-b-transparent" />}
                       </div>
-                      <div className="absolute left-[-6px] top-1/2 -translate-y-1/2 w-0 h-0 border-t-[6px] border-t-transparent border-r-[6px] border-r-white/20 border-b-[6px] border-b-transparent" />
-                    </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -797,17 +843,29 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
           <div className="text-3xl font-black text-white mb-1 flex items-center justify-center gap-2">
             {debateData?.visuals?.reactionLatency || "0.00s"}
             {debateData?.visuals?.reactionLatency === "측정 불가" && (
-              <div className="group/react relative cursor-help text-orange-400/50 hover:text-orange-400 transition-colors">
-                <div className="w-4 h-4 rounded-full border border-orange-400/30 flex items-center justify-center text-[10px] font-black">?</div>
+              <div className="relative" ref={activeStatTooltip === 'reaction' ? statTooltipRef : null}>
+                <button
+                  onMouseEnter={() => !isMobile && setActiveStatTooltip('reaction')}
+                  onMouseLeave={() => !isMobile && setActiveStatTooltip(null)}
+                  onClick={() => isMobile && setActiveStatTooltip(activeStatTooltip === 'reaction' ? null : 'reaction')}
+                  className="w-4 h-4 rounded-full border border-orange-400/30 flex items-center justify-center text-[10px] font-black text-orange-400/50 hover:text-orange-400 transition-colors"
+                >
+                  ?
+                </button>
                 
                 {/* Tooltip Content */}
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 p-3 bg-[#111] border border-orange-500/20 rounded-xl shadow-2xl z-50 w-64 opacity-0 group-hover/react:opacity-100 transition-opacity pointer-events-none">
-                  <div className="text-[10px] font-black uppercase mb-1 text-orange-400 text-left">측정 불가 사유</div>
-                  <div className="text-[11px] text-orange-200/70 font-medium leading-relaxed text-left">
-                    피격 후 반격에 성공한 교전이 없을 때 표시됩니다. <span className="text-orange-400 font-bold">일방적으로 적을 제압했거나, 기습 당했을 때 반격 없이 즉사 또는 도주한 경우</span> 측정 조건에서 제외됩니다.
+                {activeStatTooltip === 'reaction' && (
+                  <div className={`${isMobile ? 'fixed inset-x-4 bottom-20' : 'absolute bottom-full left-1/2 -translate-x-1/2 mb-3'} p-4 bg-[#111] border border-orange-500/20 rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.8)] z-[100] w-64 animate-in fade-in zoom-in-95 duration-200`}>
+                    <div className="flex justify-between items-start mb-2">
+                      <div className="text-[10px] font-black uppercase text-orange-400 text-left">측정 불가 사유</div>
+                      {isMobile && <button onClick={() => setActiveStatTooltip(null)} className="text-white/40"><X size={14} /></button>}
+                    </div>
+                    <div className="text-[11px] text-orange-200/70 font-medium leading-relaxed text-left">
+                      피격 후 반격에 성공한 교전이 없을 때 표시됩니다. <span className="text-orange-400 font-bold">일방적으로 적을 제압했거나, 기습 당했을 때 반격 없이 즉사 또는 도주한 경우</span> 측정 조건에서 제외됩니다.
+                    </div>
+                    {!isMobile && <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#111] border-r border-b border-orange-500/20 rotate-45" />}
                   </div>
-                  <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#111] border-r border-b border-orange-500/20 rotate-45" />
-                </div>
+                )}
               </div>
             )}
           </div>
@@ -819,17 +877,29 @@ export const RecentAISummary = ({ matchIds, nickname, platform }: { matchIds: st
           <div className="text-3xl font-black text-white mb-1 flex items-center justify-center gap-2">
             {debateData?.visuals?.counterLatency || "0.00s"}
             {debateData?.visuals?.counterLatency === "측정 불가" && (
-              <div className="group relative cursor-help text-cyan-400/50 hover:text-cyan-400 transition-colors">
-                <div className="w-4 h-4 rounded-full border border-cyan-400/30 flex items-center justify-center text-[10px] font-black">?</div>
+              <div className="relative" ref={activeStatTooltip === 'counter' ? statTooltipRef : null}>
+                <button
+                  onMouseEnter={() => !isMobile && setActiveStatTooltip('counter')}
+                  onMouseLeave={() => !isMobile && setActiveStatTooltip(null)}
+                  onClick={() => isMobile && setActiveStatTooltip(activeStatTooltip === 'counter' ? null : 'counter')}
+                  className="w-4 h-4 rounded-full border border-cyan-400/30 flex items-center justify-center text-[10px] font-black text-cyan-400/50 hover:text-cyan-400 transition-colors"
+                >
+                  ?
+                </button>
                 
                 {/* Tooltip Content */}
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-3 p-3 bg-[#111] border border-cyan-500/20 rounded-xl shadow-2xl z-50 w-64 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                  <div className="text-[10px] font-black uppercase mb-1 text-cyan-400 text-left">측정 불가 사유</div>
-                  <div className="text-[11px] text-cyan-200/70 font-medium leading-relaxed text-left">
-                    최근 분석된 경기 중 <span className="text-cyan-400 font-bold">아군이 기절(DBNO)하거나 교전에 참여하여 백업이 필요한 상황</span>이 발생하지 않았습니다. 샘플 데이터가 부족하여 지표 산출이 불가능합니다.
+                {activeStatTooltip === 'counter' && (
+                  <div className={`${isMobile ? 'fixed inset-x-4 bottom-20' : 'absolute bottom-full left-1/2 -translate-x-1/2 mb-3'} p-4 bg-[#111] border border-cyan-500/20 rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.8)] z-[100] w-64 animate-in fade-in zoom-in-95 duration-200`}>
+                    <div className="flex justify-between items-start mb-2">
+                      <div className="text-[10px] font-black uppercase text-cyan-400 text-left">측정 불가 사유</div>
+                      {isMobile && <button onClick={() => setActiveStatTooltip(null)} className="text-white/40"><X size={14} /></button>}
+                    </div>
+                    <div className="text-[11px] text-cyan-200/70 font-medium leading-relaxed text-left">
+                      최근 분석된 경기 중 <span className="text-cyan-400 font-bold">아군이 기절(DBNO)하거나 교전에 참여하여 백업이 필요한 상황</span>이 발생하지 않았습니다. 샘플 데이터가 부족하여 지표 산출이 불가능합니다.
+                    </div>
+                    {!isMobile && <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#111] border-r border-bottom border-cyan-500/20 rotate-45" />}
                   </div>
-                  <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-[#111] border-r border-bottom border-cyan-500/20 rotate-45" />
-                </div>
+                )}
               </div>
             )}
           </div>

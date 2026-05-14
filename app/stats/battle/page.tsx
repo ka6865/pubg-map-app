@@ -31,11 +31,15 @@ interface BattleResult {
   overallWinner: string;
 }
 
-const TIER_STYLES: Record<string, { bg: string; text: string; label: string }> = {
-  S: { bg: "bg-blue-500/20",   text: "text-blue-400",   label: "S 티어" },
-  A: { bg: "bg-emerald-500/20",text: "text-emerald-400", label: "A 티어" },
-  B: { bg: "bg-yellow-500/20", text: "text-yellow-400",  label: "B 티어" },
-  C: { bg: "bg-gray-500/20",   text: "text-gray-400",    label: "C 티어" },
+const getTierStyle = (t: string) => {
+  if (t === 'S') return "bg-amber-500/20 border-amber-500/50 text-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.2)]";
+  if (t.startsWith('A+')) return "bg-indigo-500/25 border-indigo-500/60 text-indigo-300 shadow-[0_0_12px_rgba(99,102,241,0.2)]";
+  if (t.startsWith('A')) return "bg-indigo-500/20 border-indigo-500/50 text-indigo-400 shadow-[0_0_10px_rgba(99,102,241,0.1)]";
+  if (t.startsWith('B+')) return "bg-emerald-500/25 border-emerald-500/60 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.2)]";
+  if (t.startsWith('B')) return "bg-emerald-500/20 border-emerald-500/50 text-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.1)]";
+  if (t.startsWith('C')) return "bg-blue-500/20 border-blue-500/50 text-blue-400";
+  if (t.startsWith('D')) return "bg-slate-500/20 border-slate-500/50 text-slate-400";
+  return "bg-white/5 border-white/10 text-gray-400";
 };
 
 function BattleContent() {
@@ -47,6 +51,7 @@ function BattleContent() {
   // URL 파라미터로 초기 상태 설정 (린트 에러 방지: useEffect 내 동기 setState 제거)
   const [nick1, setNick1] = useState(() => searchParams.get("nick1") || "");
   const [nick2, setNick2] = useState(() => searchParams.get("nick2") || "");
+  const [matchType, setMatchType] = useState<"all" | "official" | "competitive">(() => (searchParams.get("matchType") as any) || "all");
   
   const [result, setResult] = useState<BattleResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -79,11 +84,12 @@ function BattleContent() {
     });
   }, []);
 
-  const buildShareUrl = (player1: string, player2: string) => {
+  const buildShareUrl = (player1: string, player2: string, mode: string) => {
     if (typeof window === "undefined") return "";
     const url = new URL("/stats/battle", window.location.origin);
     url.searchParams.set("nick1", player1);
     url.searchParams.set("nick2", player2);
+    url.searchParams.set("matchType", mode);
     return url.toString();
   };
 
@@ -91,10 +97,10 @@ function BattleContent() {
     window.setTimeout(() => setShareMessage(null), 2500);
   };
 
-  const buildBattlePath = (player1: string, player2: string) =>
-    `/stats/battle?nick1=${encodeURIComponent(player1)}&nick2=${encodeURIComponent(player2)}`;
+  const buildBattlePath = (player1: string, player2: string, mode: string) =>
+    `/stats/battle?nick1=${encodeURIComponent(player1)}&nick2=${encodeURIComponent(player2)}&matchType=${mode}`;
 
-  const runBattle = useCallback(async (player1: string, player2: string) => {
+  const runBattle = useCallback(async (player1: string, player2: string, mode: string) => {
     const n1 = player1.trim();
     const n2 = player2.trim();
     if (!n1 || !n2) return;
@@ -105,47 +111,68 @@ function BattleContent() {
     setShareMessage(null);
 
     try {
-      const res = await fetch(`/api/pubg/battle?nick1=${encodeURIComponent(n1)}&nick2=${encodeURIComponent(n2)}`);
+      const res = await fetch(`/api/pubg/battle?nick1=${encodeURIComponent(n1)}&nick2=${encodeURIComponent(n2)}&matchType=${mode}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "알 수 없는 오류");
       setResult(data);
       
-      // 검색 기록 업데이트 (두 명 모두 추가)
-      updateRecentSearches(n1);
-      updateRecentSearches(n2);
+      // [NEW] 정확한 대소문자 닉네임으로 UI 동기화
+      if (data.nick1 && data.nick1 !== n1) setNick1(data.nick1);
+      if (data.nick2 && data.nick2 !== n2) setNick2(data.nick2);
 
-      const battlePath = buildBattlePath(n1, n2);
-      const currentPath = `${window.location.pathname}${window.location.search}`;
-      lastAutoBattleKeyRef.current = `${n1}::${n2}`;
-      if (currentPath !== battlePath) {
-        router.replace(battlePath);
-      }
+      updateRecentSearches(data.nick1 || n1);
+      updateRecentSearches(data.nick2 || n2);
+
+      lastAutoBattleKeyRef.current = `${n1}::${n2}::${mode}`;
     } catch (e: any) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
-  }, [router]);
+  }, [updateRecentSearches]);
 
   const handleBattle = useCallback(() => {
-    void runBattle(nick1, nick2);
-  }, [nick1, nick2, runBattle]);
+    void runBattle(nick1, nick2, matchType);
+  }, [nick1, nick2, matchType, runBattle]);
 
-  // 자동 검색 로직
+  // 자동 검색 로직 (초기 로드 및 뒤로가기 대응)
   useEffect(() => {
     const n1 = searchParams.get("nick1");
     const n2 = searchParams.get("nick2");
+    const m = searchParams.get("matchType") || "all";
+    
     if (n1 && n2) {
-      setNick1(n1);
-      setNick2(n2);
-      const battleKey = `${n1}::${n2}`;
-      if (lastAutoBattleKeyRef.current === battleKey) {
-        return;
-      }
+      // 현재 상태와 URL이 다를 때만 상태 업데이트
+      if (n1 !== nick1) setNick1(n1);
+      if (n2 !== nick2) setNick2(n2);
+      if (m !== matchType) setMatchType(m as any);
+
+      const battleKey = `${n1}::${n2}::${m}`;
+      if (lastAutoBattleKeyRef.current === battleKey) return;
+      
       lastAutoBattleKeyRef.current = battleKey;
-      void runBattle(n1, n2);
+      void runBattle(n1, n2, m);
     }
-  }, [searchParams, runBattle]);
+  }, [searchParams, runBattle, nick1, nick2, matchType]);
+
+  // 필터(matchType) 변경 시 즉시 대결 트리거
+  const handleFilterChange = (newMode: string) => {
+    if (newMode === matchType) return;
+    setMatchType(newMode as any);
+    
+    // 닉네임이 입력되어 있다면 즉시 대결 시작
+    const n1 = nick1.trim();
+    const n2 = nick2.trim();
+    
+    if (n1 && n2) {
+      // URL 업데이트
+      const newPath = buildBattlePath(n1, n2, newMode);
+      router.replace(newPath, { scroll: false });
+      
+      // API 호출 (상태 업데이트 기다리지 않고 새 모드 주입)
+      void runBattle(n1, n2, newMode);
+    }
+  };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter") {
@@ -171,7 +198,7 @@ function BattleContent() {
     if (!result) return;
     try {
       setShareBusy("copy");
-      await navigator.clipboard.writeText(buildShareUrl(result.nick1, result.nick2));
+      await navigator.clipboard.writeText(buildShareUrl(result.nick1, result.nick2, matchType));
       setShareMessage("공유 링크를 복사했어요.");
       clearShareMessageLater();
     } catch {
@@ -183,7 +210,7 @@ function BattleContent() {
 
   const handleShareLink = async () => {
     if (!result) return;
-    const shareUrl = buildShareUrl(result.nick1, result.nick2);
+    const shareUrl = buildShareUrl(result.nick1, result.nick2, matchType);
     const shareText = `${result.nick1} vs ${result.nick2} 전적 비교 결과`;
 
     try {
@@ -338,7 +365,10 @@ function BattleContent() {
           <div className="text-5xl mb-4">⚔️</div>
           <h1 className="text-3xl font-black tracking-tight mb-2">전적 비교 배틀</h1>
           <p className="text-gray-500 text-sm">두 플레이어의 BGMS 분석 데이터를 항목별로 대결시킵니다</p>
-          <p className="text-gray-600 text-xs mt-1">※ 최근 최대 20경기 중 더 적은 플레이어의 경기 수에 맞춰 비교합니다</p>
+          <div className="mt-2 flex flex-col gap-0.5">
+            <p className="text-gray-600 text-[10px]">※ 최근 최대 20경기 중 더 적은 플레이어의 경기 수에 맞춰 비교합니다</p>
+            <p className="text-gray-600 text-[10px]">※ 벤치마커 수집 조건: 5분 이상 생존한 경기만 포함됩니다</p>
+          </div>
         </div>
 
         {/* 입력폼 */}
@@ -384,6 +414,27 @@ function BattleContent() {
               )}
             </div>
           </div>
+          {/* 게임 모드 필터 */}
+          <div className="flex bg-black/40 p-1 rounded-xl border border-white/5">
+            {[
+              { id: "all", label: "전체" },
+              { id: "competitive", label: "랭크" },
+              { id: "official", label: "일반" },
+            ].map((m) => (
+              <button
+                key={m.id}
+                onClick={() => handleFilterChange(m.id)}
+                className={`flex-1 py-2 text-xs font-black rounded-lg transition-all ${
+                  matchType === m.id
+                    ? "bg-white/10 text-white shadow-lg"
+                    : "text-gray-500 hover:text-gray-300"
+                }`}
+              >
+                {m.label}
+              </button>
+            ))}
+          </div>
+
           <button
             onClick={() => {
               handleBattle();
@@ -416,8 +467,8 @@ function BattleContent() {
                 <div className="flex items-center justify-between mb-6">
                   {/* 플레이어 1 */}
                   <div className="text-center flex-1 min-w-0 flex flex-col items-center">
-                    <div className={`inline-block px-3 py-1 rounded-full text-[10px] md:text-xs font-black mb-2 shrink-0 ${TIER_STYLES[result.tier1]?.bg ?? ""} ${TIER_STYLES[result.tier1]?.text ?? ""}`}>
-                      {TIER_STYLES[result.tier1]?.label ?? result.tier1}
+                    <div className={`inline-block px-3 py-1 rounded-xl border text-[10px] md:text-xs font-black italic tracking-tighter mb-2 shrink-0 ${getTierStyle(result.tier1)}`}>
+                      {result.tier1} Tier
                     </div>
                     <div className="font-black text-base md:text-xl text-indigo-300 truncate w-full max-w-[80px] xs:max-w-[120px] md:max-w-none px-1" title={result.nick1}>
                       {result.nick1}
@@ -434,8 +485,8 @@ function BattleContent() {
 
                   {/* 플레이어 2 */}
                   <div className="text-center flex-1 min-w-0 flex flex-col items-center">
-                    <div className={`inline-block px-3 py-1 rounded-full text-[10px] md:text-xs font-black mb-2 shrink-0 ${TIER_STYLES[result.tier2]?.bg ?? ""} ${TIER_STYLES[result.tier2]?.text ?? ""}`}>
-                      {TIER_STYLES[result.tier2]?.label ?? result.tier2}
+                    <div className={`inline-block px-3 py-1 rounded-xl border text-[10px] md:text-xs font-black italic tracking-tighter mb-2 shrink-0 ${getTierStyle(result.tier2)}`}>
+                      {result.tier2} Tier
                     </div>
                     <div className="font-black text-base md:text-xl text-rose-300 truncate w-full max-w-[80px] xs:max-w-[120px] md:max-w-none px-1" title={result.nick2}>
                       {result.nick2}

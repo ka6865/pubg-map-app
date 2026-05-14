@@ -52,6 +52,24 @@ export async function GET(request: NextRequest) {
 
     const participants = matchData.included.filter((it: any) => it.type === "participant");
     const rosters = matchData.included.filter((it: any) => it.type === "roster");
+
+    // [NEW] 닉네임 캐시 대량 수집 (봇 제외)
+    const cacheEntries = participants
+      .filter((p: any) => !p.attributes.stats.playerId?.startsWith("ai."))
+      .map((p: any) => ({
+        id: p.attributes.stats.playerId,
+        platform,
+        nickname: p.attributes.stats.name,
+        lower_nickname: p.attributes.stats.name.toLowerCase(),
+        updated_at: new Date().toISOString()
+      }));
+
+    if (cacheEntries.length > 0) {
+      supabase.from('pubg_player_cache').upsert(cacheEntries, { onConflict: 'id' })
+        .then(({ error }) => {
+          if (error) console.warn('[BATCH CACHE UPDATE ERROR]', error.message);
+        });
+    }
     
     const myParticipant = participants.find((p: any) => normalizeName(p.attributes.stats.name) === lowerNickname);
     if (!myParticipant) throw new Error(`Player ${nickname} not found in match participants`);
@@ -107,12 +125,6 @@ export async function GET(request: NextRequest) {
         const telRes = await fetch(telemetryAsset.attributes.URL);
         const rawTel = await telRes.json();
 
-        // [DEBUG] 원본 데이터 좌표 샘플 확인
-        const sampleEv = rawTel.find((e: any) => e._T === "LogPlayerPosition");
-        if (sampleEv) {
-          const loc = sampleEv.character?.location || sampleEv.character?.loc;
-          console.log(`[DEBUG-RAW-TEL] First Pos X: ${loc?.x}, Y: ${loc?.y}`);
-        }
 
         let posCount = 0;
         telData = rawTel.filter((e: any) => {
@@ -135,7 +147,7 @@ export async function GET(request: NextRequest) {
             if (!loc) return null;
             const res = { x: Math.round(loc.x), y: Math.round(loc.y), z: Math.round(loc.z || 0) };
             if (e._T === "LogPlayerPosition" && Math.abs(res.x) < 10000 && Math.abs(res.x) > 0) {
-              console.warn(`[WARN-COORD] Very small coordinate detected in route.ts: ${res.x} (type: ${e._T})`);
+              // Valid small coordinate case
             }
             return res;
           };

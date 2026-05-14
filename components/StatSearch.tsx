@@ -334,16 +334,16 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
           <div>
             <h3 style={{ fontSize: "18px", color: "#F2A900", marginBottom: "15px" }}>🏆 경쟁전 (Ranked)</h3>
             <div style={{ display: "flex", gap: "20px", flexWrap: "wrap" }}>
-              <StatSummaryCard title="듀오" data={result.stats?.ranked?.duo} isRanked={true} />
-              <StatSummaryCard title="스쿼드" data={result.stats?.ranked?.squad} isRanked={true} />
+              <StatSummaryCard title="듀오" data={result.stats?.ranked?.duo} isRanked={true} isMobile={isMobile} />
+              <StatSummaryCard title="스쿼드" data={result.stats?.ranked?.squad} isRanked={true} isMobile={isMobile} />
             </div>
           </div>
           <div>
             <h3 style={{ fontSize: "18px", color: "#aaa", marginBottom: "15px" }}>🎮 일반전 (Normal)</h3>
             <div style={{ display: "flex", gap: "20px", flexWrap: "wrap" }}>
-              <StatSummaryCard title="솔로" data={result.stats?.normal?.solo} isRanked={false} />
-              <StatSummaryCard title="듀오" data={result.stats?.normal?.duo} isRanked={false} />
-              <StatSummaryCard title="스쿼드" data={result.stats?.normal?.squad} isRanked={false} />
+              <StatSummaryCard title="솔로" data={result.stats?.normal?.solo} isRanked={false} isMobile={isMobile} />
+              <StatSummaryCard title="듀오" data={result.stats?.normal?.duo} isRanked={false} isMobile={isMobile} />
+              <StatSummaryCard title="스쿼드" data={result.stats?.normal?.squad} isRanked={false} isMobile={isMobile} />
             </div>
           </div>
 
@@ -432,6 +432,7 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
               matchIds={result.recentMatches} 
               nickname={result.nickname} 
               platform={result.platform} 
+              isMobile={isMobile}
             />
           )}
 

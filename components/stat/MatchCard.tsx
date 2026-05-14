@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { 
   ChevronDown, 
   Target, 
@@ -20,7 +20,8 @@ import {
   ShieldAlert,
   TrendingUp,
   PlayCircle,
-  ExternalLink
+  ExternalLink,
+  X
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { MatchTimeline } from "./MatchTimeline";
@@ -147,7 +148,37 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
   const [analysis, setAnalysis] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<any | null>(null);
+  const [showTierTooltip, setShowTierTooltip] = useState(false);
+  const tierRef = useRef<HTMLDivElement>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+
+  useEffect(() => {
+    if (!showTierTooltip || !isMobile) return;
+
+    const initialScrollY = window.scrollY;
+
+    const handleScroll = () => {
+      const currentScrollY = window.scrollY;
+      if (Math.abs(currentScrollY - initialScrollY) > 50) {
+        setShowTierTooltip(false);
+      }
+    };
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (tierRef.current && !tierRef.current.contains(event.target as Node)) {
+        setShowTierTooltip(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    window.addEventListener("scroll", handleScroll, { passive: true });
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      window.removeEventListener("scroll", handleScroll);
+    };
+  }, [showTierTooltip, isMobile]);
 
   const renderTierBadge = () => {
     const score = matchData?.benchmark?.score || 0;
@@ -166,11 +197,19 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
     };
 
     return (
-      <div className={`px-4 py-1.5 rounded-xl border flex items-center gap-2 transition-all cursor-help ${getTierStyle(tier)}`}>
+      <button 
+        onMouseEnter={() => !isMobile && setShowTierTooltip(true)}
+        onMouseLeave={() => !isMobile && setShowTierTooltip(false)}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (isMobile) setShowTierTooltip(!showTierTooltip);
+        }}
+        className={`px-4 py-1.5 rounded-xl border flex items-center gap-2 transition-all cursor-help hover:scale-105 active:scale-95 ${getTierStyle(tier)}`}
+      >
         <span className="text-sm font-black italic tracking-tighter">{tier} Tier</span>
         <div className="w-px h-3 bg-current opacity-20" />
         <span className="text-[11px] font-black">{score}pt</span>
-      </div>
+      </button>
     );
   };
 
@@ -421,62 +460,83 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
         {/* V3 Tactical Badges & Tier */}
         <div className="flex items-center justify-between md:justify-end gap-3">
           {matchData.benchmark && (
-            <div className="relative group/tier">
+            <div className="relative" ref={tierRef}>
               {renderTierBadge()}
               
               {/* Tooltip Breakdown */}
-              <div className="absolute bottom-full right-0 mb-3 w-64 bg-black/98 backdrop-blur-2xl border border-white/20 p-5 rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.5)] opacity-0 group-hover/tier:opacity-100 transition-all duration-300 pointer-events-none z-50 transform translate-y-2 group-hover/tier:translate-y-0 border-t-white/40">
-                <div className="text-[12px] font-black text-indigo-400 mb-4 uppercase tracking-widest flex justify-between items-center border-b border-white/10 pb-2">
-                  <span>매치 상세 분석</span>
-                  <span className="text-white bg-indigo-500 px-2 py-0.5 rounded-full text-[10px] tabular-nums">{matchData.benchmark.score} / 100</span>
-                </div>
-                
-                <div className="space-y-4">
-                  <ScoreBar label="전투 (Combat)" score={matchData.benchmark.breakdown.combat} max={isRanked ? 40 : 50} color="bg-gradient-to-r from-red-600 to-red-400" />
-                  <ScoreBar label="전술 (Tactical)" score={matchData.benchmark.breakdown.tactical} max={isRanked ? 35 : 15} color="bg-gradient-to-r from-indigo-600 to-indigo-400" />
-                  <ScoreBar label="생존 (Survival)" score={matchData.benchmark.breakdown.survival} max={isRanked ? 25 : 35} color="bg-gradient-to-r from-emerald-600 to-emerald-400" />
-                </div>
-
-                {/* Key Logic Indicators */}
-                <div className="mt-5 grid grid-cols-2 gap-2 border-t border-white/10 pt-4">
-                  <div className="flex items-center gap-2 bg-white/5 p-2 rounded-xl border border-white/5">
-                    <Crosshair size={12} className="text-red-400" />
-                    <div className="flex flex-col">
-                      <span className="text-[8px] text-gray-500 font-bold">전투 영향력</span>
-                      <span className="text-[10px] text-white font-black">{Math.floor(matchData.stats.damageDealt)} dmg</span>
+              {showTierTooltip && (
+                <div 
+                  ref={tooltipRef}
+                  onClick={(e) => e.stopPropagation()}
+                  className={`${
+                    isMobile 
+                    ? 'fixed inset-x-4 bottom-20 animate-in slide-in-from-bottom-5' 
+                    : 'absolute bottom-full right-0 mb-3 w-64 animate-in fade-in zoom-in-95'
+                  } bg-black/98 backdrop-blur-2xl border border-white/20 p-5 rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.8)] transition-all duration-300 z-[100] border-t-white/40`}
+                >
+                  <div className="flex justify-between items-center border-b border-white/10 pb-2 mb-4">
+                    <div className="text-[12px] font-black text-indigo-400 uppercase tracking-widest">
+                      매치 상세 분석
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2 bg-white/5 p-2 rounded-xl border border-white/5">
-                    <Zap size={12} className="text-amber-400" />
-                    <div className="flex flex-col">
-                      <span className="text-[8px] text-gray-500 font-bold">반응 속도</span>
-                      <span className="text-[10px] text-white font-black">
-                        {matchData.tradeStats?.reactionLatencyMs && matchData.tradeStats.reactionLatencyMs > 0 
-                          ? `${Math.floor(matchData.tradeStats.reactionLatencyMs)}ms` 
-                          : '측정 불가'}
+                    <div className="flex items-center gap-2">
+                      <span className="text-white bg-indigo-500 px-2 py-0.5 rounded-full text-[10px] tabular-nums">
+                        {matchData.benchmark.score} / 100
                       </span>
+                      {isMobile && (
+                        <button onClick={() => setShowTierTooltip(false)} className="text-white/40">
+                          <X size={16} />
+                        </button>
+                      )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 bg-white/5 p-2 rounded-xl border border-white/5">
-                    <Shield size={12} className="text-indigo-400" />
-                    <div className="flex flex-col">
-                      <span className="text-[8px] text-gray-500 font-bold">전술 기여</span>
-                      <span className="text-[10px] text-white font-black">팀전멸 {matchData.tradeStats?.enemyTeamWipes || 0}회</span>
-                    </div>
+                  
+                  <div className="space-y-4">
+                    <ScoreBar label="전투 (Combat)" score={matchData.benchmark.breakdown.combat} max={isRanked ? 40 : 50} color="bg-gradient-to-r from-red-600 to-red-400" />
+                    <ScoreBar label="전술 (Tactical)" score={matchData.benchmark.breakdown.tactical} max={isRanked ? 35 : 15} color="bg-gradient-to-r from-indigo-600 to-indigo-400" />
+                    <ScoreBar label="생존 (Survival)" score={matchData.benchmark.breakdown.survival} max={isRanked ? 25 : 35} color="bg-gradient-to-r from-emerald-600 to-emerald-400" />
                   </div>
-                  <div className="flex items-center gap-2 bg-white/5 p-2 rounded-xl border border-white/5">
-                    <Clock size={12} className="text-emerald-400" />
-                    <div className="flex flex-col">
-                      <span className="text-[8px] text-gray-500 font-bold">생존력</span>
-                      <span className="text-[10px] text-white font-black">{Math.floor(matchData.stats.timeSurvived / 60)}분 생존</span>
-                    </div>
-                  </div>
-                </div>
 
-                <div className="mt-4 text-[9px] text-gray-400 leading-relaxed font-medium bg-white/5 p-2 rounded-lg border border-white/5 italic">
-                  * 딜량, 선제공격, 반응속도, 팀기여, 생존시간 등을 종합 분석한 실력 점수입니다.
+                  {/* Key Logic Indicators */}
+                  <div className="mt-5 grid grid-cols-2 gap-2 border-t border-white/10 pt-4">
+                    <div className="flex items-center gap-2 bg-white/5 p-2 rounded-xl border border-white/5">
+                      <Crosshair size={12} className="text-red-400" />
+                      <div className="flex flex-col">
+                        <span className="text-[8px] text-gray-500 font-bold">전투 영향력</span>
+                        <span className="text-[10px] text-white font-black">{Math.floor(matchData.stats.damageDealt)} dmg</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 bg-white/5 p-2 rounded-xl border border-white/5">
+                      <Zap size={12} className="text-amber-400" />
+                      <div className="flex flex-col">
+                        <span className="text-[8px] text-gray-500 font-bold">반응 속도</span>
+                        <span className="text-[10px] text-white font-black">
+                          {matchData.tradeStats?.reactionLatencyMs && matchData.tradeStats.reactionLatencyMs > 0 
+                            ? `${Math.floor(matchData.tradeStats.reactionLatencyMs)}ms` 
+                            : '측정 불가'}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 bg-white/5 p-2 rounded-xl border border-white/5">
+                      <Shield size={12} className="text-indigo-400" />
+                      <div className="flex flex-col">
+                        <span className="text-[8px] text-gray-500 font-bold">전술 기여</span>
+                        <span className="text-[10px] text-white font-black">팀전멸 {matchData.tradeStats?.enemyTeamWipes || 0}회</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 bg-white/5 p-2 rounded-xl border border-white/5">
+                      <Clock size={12} className="text-emerald-400" />
+                      <div className="flex flex-col">
+                        <span className="text-[8px] text-gray-500 font-bold">생존력</span>
+                        <span className="text-[10px] text-white font-black">{Math.floor(matchData.stats.timeSurvived / 60)}분 생존</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 text-[9px] text-gray-400 leading-relaxed font-medium bg-white/5 p-2 rounded-lg border border-white/5 italic">
+                    * 딜량, 선제공격, 반응속도, 팀기여, 생존시간 등을 종합 분석한 실력 점수입니다.
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
 
@@ -519,13 +579,13 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
 
       {/* Expanded Content */}
       {isExpanded && (
-        <div className="p-6 pt-0 border-t border-white/5 animate-in slide-in-from-top-4 duration-500">
+        <div className="p-3 md:p-6 pt-0 border-t border-white/5 animate-in slide-in-from-top-4 duration-500">
           {/* Detailed Stats Grid */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
-            <StatBox icon={<Crosshair size={16} />} label="헤드샷" value={Number(matchData.stats.headshotKills) || 0} color="text-red-400" />
-            <StatBox icon={<Zap size={16} />} label="어시스트" value={Number(matchData.stats.assists) || 0} color="text-indigo-400" />
-            <StatBox icon={<Shield size={16} />} label="기절시킴" value={Number(matchData.stats.DBNOs) || 0} color="text-yellow-400" />
-            <StatBox icon={<Clock size={16} />} label="생존시간" value={`${Math.floor((Number(matchData.stats.timeSurvived) || 0) / 60)}분`} color="text-green-400" />
+            <StatBox icon={<Crosshair size={16} />} label="헤드샷" value={Number(matchData!.stats.headshotKills) || 0} color="text-red-400" />
+            <StatBox icon={<Zap size={16} />} label="어시스트" value={Number(matchData!.stats.assists) || 0} color="text-indigo-400" />
+            <StatBox icon={<Shield size={16} />} label="기절시킴" value={Number(matchData!.stats.DBNOs) || 0} color="text-yellow-400" />
+            <StatBox icon={<Clock size={16} />} label="생존시간" value={`${Math.floor((Number(matchData!.stats.timeSurvived) || 0) / 60)}분`} color="text-green-400" />
           </div>
 
           {/* [V12.5] New Tactical Dashboard (Radar + Timeline) */}
@@ -540,7 +600,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
               </div>
             </div>
             
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 md:gap-6">
               {/* Left: Mini Map */}
               <div className="lg:col-span-5 xl:col-span-4 bg-white/2 border border-white/5 rounded-[2.5rem] overflow-hidden min-h-[300px] lg:min-h-0 lg:h-[500px] relative group/map">
                 <div className="absolute top-4 left-4 z-10 px-3 py-1 bg-black/60 backdrop-blur-md border border-white/10 rounded-full text-[9px] text-gray-400 font-black uppercase tracking-widest opacity-0 group-hover/map:opacity-100 transition-opacity">
@@ -564,20 +624,20 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
               </div>
 
               {/* Right: Timeline */}
-              <div className="lg:col-span-7 xl:col-span-8 bg-white/2 border border-white/5 rounded-[2.5rem] p-6 lg:h-[500px] flex flex-col">
+              <div className="lg:col-span-7 xl:col-span-8 bg-white/2 border border-white/5 rounded-[2.5rem] p-2 md:p-6 lg:h-[500px] flex flex-col">
                 <div className="flex items-center justify-between mb-6 shrink-0">
                   <div className="text-[10px] text-gray-500 font-black uppercase tracking-widest">Match Timeline</div>
                   <div className="flex items-center gap-1.5 px-3 py-1 bg-white/5 rounded-full border border-white/10 text-[10px] text-gray-400 font-bold">
                     <Clock size={10} />
-                    <span>{Math.floor(matchData.stats.timeSurvived / 60)}m {matchData.stats.timeSurvived % 60}s Survived</span>
+                    <span>{Math.floor(matchData!.stats.timeSurvived / 60)}m {matchData!.stats.timeSurvived % 60}s Survived</span>
                   </div>
                 </div>
                 
                 <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
                   <MatchTimeline 
-                    events={matchData.timeline || []} 
+                    events={matchData!.timeline || []} 
                     nickname={nickname}
-                    onEventClick={(event) => {
+                    onEventClick={(event: any) => {
                       console.log("Event Clicked:", event.type, "Coords:", event.x, event.y);
                       setSelectedEvent(event);
                     }}
@@ -628,11 +688,11 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
               <div className="flex flex-col gap-6 animate-in fade-in zoom-in duration-500">
                 {(() => {
                   try {
-                    const cleanAnalysis = analysis.trim();
+                    const cleanAnalysis = analysis!.trim();
                     const isJson = cleanAnalysis.startsWith('{') || cleanAnalysis.startsWith('```json');
                     if (!isJson) return (
                       <div className="p-8 bg-black/40 rounded-[2.5rem] border border-white/10 prose prose-invert max-w-none">
-                        {renderMarkdown(analysis)}
+                        {renderMarkdown(analysis!)}
                       </div>
                     );
                     
@@ -724,7 +784,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                   } catch (e) {
                     return (
                       <div className="p-8 bg-black/40 rounded-[2.5rem] border border-white/10 prose prose-invert max-w-none">
-                        {renderMarkdown(analysis)}
+                        {renderMarkdown(analysis!)}
                       </div>
                     );
                   }
@@ -764,7 +824,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {matchData.team?.map((member, idx) => {
+              {matchData!.team?.map((member, idx) => {
                 const isMe = member.name === nickname;
                 return (
                   <div 
@@ -836,26 +896,51 @@ const StatBox = ({ icon, label, value, color }: { icon: React.ReactNode, label: 
   </div>
 );
 
-const TacticalBox = ({ icon, label, value, subLabel, color, bgColor, tooltip }: { icon: React.ReactNode, label: string, value: number | string, subLabel: string, color: string, bgColor: string, tooltip?: string }) => (
-  <div className={`p-4 rounded-3xl border border-white/5 ${bgColor} flex flex-col gap-3 group/box hover:border-white/20 transition-all relative overflow-visible`}>
-    <div className="flex items-center justify-between">
-      <div className={`${color} group-hover/box:scale-110 transition-transform`}>{icon}</div>
-      <div className="flex items-center gap-1">
-        <span className="text-xl font-black text-white">{value}</span>
-        {tooltip && (
-          <div className="relative group/tooltip">
-            <div className="w-3 h-3 rounded-full border border-white/20 flex items-center justify-center text-[8px] text-gray-500 cursor-help hover:border-white/40 hover:text-gray-300">?</div>
-            <div className="absolute bottom-full right-0 mb-2 w-48 p-2 bg-black/90 border border-white/10 rounded-xl text-[9px] text-gray-400 font-medium leading-normal opacity-0 pointer-events-none group-hover/tooltip:opacity-100 transition-opacity z-50 shadow-2xl">
-              {tooltip}
-              <div className="absolute top-full right-1 w-2 h-2 bg-black border-r border-b border-white/10 rotate-45 -translate-y-1" />
+const TacticalBox = ({ icon, label, value, subLabel, color, bgColor, tooltip, isMobile }: { icon: React.ReactNode, label: string, value: number | string, subLabel: string, color: string, bgColor: string, tooltip?: string, isMobile?: boolean }) => {
+  const [showTooltip, setShowTooltip] = useState(false);
+  const tooltipRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showTooltip || !isMobile) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (tooltipRef.current && !tooltipRef.current.contains(event.target as Node)) {
+        setShowTooltip(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showTooltip, isMobile]);
+
+  return (
+    <div className={`p-4 rounded-3xl border border-white/5 ${bgColor} flex flex-col gap-3 group/box hover:border-white/20 transition-all relative overflow-visible`} ref={tooltipRef}>
+      <div className="flex items-center justify-between">
+        <div className={`${color} group-hover/box:scale-110 transition-transform`}>{icon}</div>
+        <div className="flex items-center gap-1">
+          <span className="text-xl font-black text-white">{value}</span>
+          {tooltip && (
+            <div className="relative">
+              <button 
+                onMouseEnter={() => !isMobile && setShowTooltip(true)}
+                onMouseLeave={() => !isMobile && setShowTooltip(false)}
+                onClick={() => isMobile && setShowTooltip(!showTooltip)}
+                className={`w-3 h-3 rounded-full border flex items-center justify-center text-[8px] font-bold transition-colors ${showTooltip ? 'bg-white/10 border-white/40 text-white' : 'border-white/20 text-gray-500 hover:border-white/40 hover:text-gray-300'}`}
+              >
+                ?
+              </button>
+              <div className={`absolute bottom-full right-0 mb-2 w-48 p-2 bg-black/90 border border-white/10 rounded-xl text-[9px] text-gray-400 font-medium leading-normal transition-opacity z-50 shadow-2xl ${
+                showTooltip ? 'opacity-100' : 'opacity-0 pointer-events-none'
+              }`}>
+                {tooltip}
+                <div className="absolute top-full right-1 w-2 h-2 bg-black border-r border-b border-white/10 rotate-45 -translate-y-1" />
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
+      </div>
+      <div>
+        <p className="text-[11px] text-white font-black uppercase tracking-tight">{label}</p>
+        <p className="text-[9px] text-gray-500 font-bold leading-tight mt-1">{subLabel}</p>
       </div>
     </div>
-    <div>
-      <p className="text-[11px] text-white font-black uppercase tracking-tight">{label}</p>
-      <p className="text-[9px] text-gray-500 font-bold leading-tight mt-1">{subLabel}</p>
-    </div>
-  </div>
-);
+  );
+};

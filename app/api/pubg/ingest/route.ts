@@ -26,7 +26,7 @@ export async function POST(request: Request) {
     if (rawParticipants && matchAttr) {
       const rawInserts = rawParticipants.map((p: any) => ({
         match_id: matchId,
-        player_id: p.attributes.stats.name.toLowerCase().trim(),
+        player_id: normalizeName(p.attributes.stats.name),
         damage: Math.floor(p.attributes.stats.damageDealt),
         kills: p.attributes.stats.kills,
         win_place: p.attributes.stats.winPlace,

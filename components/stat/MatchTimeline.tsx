@@ -1,13 +1,13 @@
 "use client";
 
 import React from "react";
-import { 
-  Skull, 
-  Target, 
-  Heart, 
-  Zap, 
-  ShieldAlert, 
-  Trophy, 
+import {
+  Skull,
+  Target,
+  Heart,
+  Zap,
+  ShieldAlert,
+  Trophy,
   Briefcase,
   Crosshair,
   ArrowRight,
@@ -15,6 +15,7 @@ import {
   Swords
 } from "lucide-react";
 import { TimelineEvent } from "../../lib/pubg-analysis/types";
+import { normalizeName } from "../../lib/pubg-analysis/utils";
 import { useState } from "react";
 
 interface MatchTimelineProps {
@@ -52,7 +53,7 @@ const getEventLabel = (type: TimelineEvent['type']) => {
 };
 
 export const MatchTimeline = ({ events, nickname, onEventClick }: MatchTimelineProps) => {
-  const lowerNickname = nickname.toLowerCase().replace(/_/g, "");
+  const lowerNickname = nickname.toLowerCase().trim();
 
   // 회복/부스트 아이템 제외 및 빈 이름 유령 로그 필터링
   const filteredEvents = events.filter(e => {
@@ -60,7 +61,7 @@ export const MatchTimeline = ({ events, nickname, onEventClick }: MatchTimelineP
       const w = (e.weapon || "").trim().toLowerCase();
       // 이름이 없으면 필터링
       if (!w) return false;
-      
+
       // 회복/부스트 키워드 제외
       const healBoostKeywords = [
         "firstaid", "medkit", "bandage", "energydrink", "painkiller", "adrenaline",
@@ -118,15 +119,15 @@ export const MatchTimeline = ({ events, nickname, onEventClick }: MatchTimelineP
               if (event.type === 'PHASE_START') return null;
 
               const isMe = event.isMe !== undefined ? event.isMe : (
-                (event.attacker?.toLowerCase().replace(/_/g, "") === lowerNickname) ||
-                (['DIED', 'DOWNED', 'RECALL', 'REDEPLOY'].includes(event.type) && event.victim?.toLowerCase().replace(/_/g, "") === lowerNickname) ||
+                (event.attacker?.toLowerCase().trim() === lowerNickname) ||
+                (['DIED', 'DOWNED', 'RECALL', 'REDEPLOY'].includes(event.type) && event.victim?.toLowerCase().trim() === lowerNickname) ||
                 (event.type === 'VICTORY')
               );
               const labelInfo = getEventLabel(event.type);
 
               return (
-                <div 
-                  key={idx} 
+                <div
+                  key={idx}
                   onClick={() => {
                     if (event.x !== undefined && event.y !== undefined) {
                       onEventClick?.(event);
@@ -170,7 +171,7 @@ export const MatchTimeline = ({ events, nickname, onEventClick }: MatchTimelineP
                           </span>
                         )}
                       </div>
-                      
+
                       {event.type === 'VICTORY' && <Trophy size={18} className="text-yellow-400 animate-bounce" />}
                     </div>
                   </div>
@@ -185,7 +186,7 @@ export const MatchTimeline = ({ events, nickname, onEventClick }: MatchTimelineP
 };
 
 const Nickname = ({ name, isMe, className = "" }: { name: string, isMe?: boolean, className?: string }) => (
-  <span className={`truncate max-w-[80px] xs:max-w-[120px] md:max-w-none inline-block align-bottom ${isMe ? 'text-blue-400 font-black' : className}`} title={name}>
+  <span className={`truncate max-w-[120px] xs:max-w-[170px] md:max-w-none inline-block align-bottom ${isMe ? 'text-blue-400 font-black' : className}`} title={name}>
     {isMe ? '나' : name}
   </span>
 );
@@ -195,8 +196,8 @@ const renderEventText = (event: TimelineEvent, lowerNickname: string) => {
   const isThrowable = ["수류탄", "연막", "화염병", "섬광", "C4"].some(k => event.weapon?.includes(k));
   const distStr = (!isThrowable && event.distance !== undefined) ? ` [${event.distance}m]` : "";
 
-  const isAttackerMe = event.attacker?.toLowerCase().replace(/_/g, "") === lowerNickname;
-  const isVictimMe = event.victim?.toLowerCase().replace(/_/g, "") === lowerNickname;
+  const isAttackerMe = normalizeName(event.attacker || "") === lowerNickname;
+  const isVictimMe = normalizeName(event.victim || "") === lowerNickname;
 
   switch (event.type) {
     case 'FINISH':
@@ -208,41 +209,41 @@ const renderEventText = (event: TimelineEvent, lowerNickname: string) => {
           </span>
         </div>
       );
-    case 'KILL': 
+    case 'KILL':
       return (
-        <div className="flex items-center gap-1 min-w-0">
+        <div className="flex items-center gap-0.5 md:gap-1 min-w-0 flex-nowrap">
           <Nickname name="나" isMe={true} />
-          <span className="text-[9px] md:text-[10px] text-gray-500 truncate shrink min-w-0 max-w-[50px] md:max-w-none">{weaponStr}</span>
-          <ArrowRight size={10} className="text-gray-600 shrink-0" />
+          <span className="text-[8px] md:text-[10px] text-gray-500 truncate shrink min-w-0 max-w-[20px] xs:max-w-[40px] md:max-w-none opacity-60">{weaponStr}</span>
+          <ArrowRight size={10} className="text-gray-600 shrink-0 mx-0.5" />
           <Nickname name={event.victim || ""} isMe={isVictimMe} className="text-white font-black" />
-          {distStr && <span className="text-[9px] md:text-[10px] text-gray-500 ml-1 shrink-0">{distStr}</span>}
+          {distStr && <span className="text-[9px] md:text-[10px] text-blue-400/80 ml-1 shrink-0 font-bold whitespace-nowrap tracking-tighter">{distStr}</span>}
         </div>
       );
     case 'KNOCK':
       return (
-        <div className="flex items-center gap-1 min-w-0">
+        <div className="flex items-center gap-0.5 md:gap-1 min-w-0 flex-nowrap">
           <Nickname name="나" isMe={true} />
-          <span className="text-[9px] md:text-[10px] text-gray-500 truncate shrink min-w-0 max-w-[50px] md:max-w-none">{weaponStr}</span>
-          <ArrowRight size={10} className="text-gray-600 shrink-0" />
+          <span className="text-[8px] md:text-[10px] text-gray-500 truncate shrink min-w-0 max-w-[20px] xs:max-w-[40px] md:max-w-none opacity-60">{weaponStr}</span>
+          <ArrowRight size={10} className="text-gray-600 shrink-0 mx-0.5" />
           <Nickname name={event.victim || ""} isMe={isVictimMe} className="text-white" />
-          {distStr && <span className="text-[9px] md:text-[10px] text-gray-500 ml-1 shrink-0">{distStr}</span>}
+          {distStr && <span className="text-[9px] md:text-[10px] text-orange-400/80 ml-1 shrink-0 font-bold whitespace-nowrap tracking-tighter">{distStr}</span>}
         </div>
       );
     case 'TEAM_KILL':
       return (
-        <div className="flex items-center gap-1 min-w-0">
+        <div className="flex items-center gap-0.5 md:gap-1 min-w-0 flex-nowrap">
           <Nickname name={event.attacker || ""} isMe={isAttackerMe} className="text-orange-300 font-bold" />
-          <span className="text-[9px] md:text-[10px] text-gray-500 truncate shrink min-w-0 max-w-[50px] md:max-w-none">{weaponStr}</span>
-          <ArrowRight size={10} className="text-gray-600 shrink-0" />
+          <span className="text-[8px] md:text-[10px] text-gray-500 truncate shrink min-w-0 max-w-[20px] xs:max-w-[40px] md:max-w-none opacity-60">{weaponStr}</span>
+          <ArrowRight size={10} className="text-gray-600 shrink-0 mx-0.5" />
           <Nickname name={event.victim || ""} isMe={isVictimMe} className="text-white/90" />
         </div>
       );
     case 'TEAM_KNOCK':
       return (
-        <div className="flex items-center gap-1 min-w-0">
+        <div className="flex items-center gap-0.5 md:gap-1 min-w-0 flex-nowrap">
           <Nickname name={event.attacker || ""} isMe={isAttackerMe} className="text-orange-400 font-bold" />
-          <span className="text-[9px] md:text-[10px] text-gray-500 truncate shrink min-w-0 max-w-[50px] md:max-w-none">{weaponStr}</span>
-          <ArrowRight size={10} className="text-gray-600 shrink-0" />
+          <span className="text-[8px] md:text-[10px] text-gray-500 truncate shrink min-w-0 max-w-[20px] xs:max-w-[40px] md:max-w-none opacity-60">{weaponStr}</span>
+          <ArrowRight size={10} className="text-gray-600 shrink-0 mx-0.5" />
           <Nickname name={event.victim || ""} isMe={isVictimMe} className="text-white/80" />
         </div>
       );
@@ -259,10 +260,10 @@ const renderEventText = (event: TimelineEvent, lowerNickname: string) => {
       }
       return (
         <div className="flex items-center gap-1 min-w-0">
-          <Nickname 
-            name={event.attacker || "나"} 
-            isMe={isAttackerMe || !event.attacker} 
-            className={isAttackerMe || !event.attacker ? "" : "text-emerald-500/80 font-medium"} 
+          <Nickname
+            name={event.attacker || "나"}
+            isMe={isAttackerMe || !event.attacker}
+            className={isAttackerMe || !event.attacker ? "" : "text-emerald-500/80 font-medium"}
           />
           <ArrowRight size={10} className="text-emerald-400 shrink-0" />
           <Nickname name={event.victim || ""} isMe={isVictimMe} className="text-white" />
@@ -323,13 +324,13 @@ const renderEventText = (event: TimelineEvent, lowerNickname: string) => {
       );
     case 'DOWNED':
       return (
-        <div className="flex items-center gap-1 min-w-0">
+        <div className="flex items-center gap-0.5 md:gap-1 min-w-0 flex-nowrap">
           <Nickname name={event.attacker || ""} isMe={isAttackerMe} className="text-red-400 font-medium" />
-          <span className="text-[9px] md:text-[10px] text-gray-500 truncate shrink min-w-0 max-w-[50px] md:max-w-none">{weaponStr}</span>
-          <ArrowRight size={10} className="text-gray-600 shrink-0" />
+          <span className="text-[8px] md:text-[10px] text-gray-500 truncate shrink min-w-0 max-w-[20px] xs:max-w-[40px] md:max-w-none opacity-60">{weaponStr}</span>
+          <ArrowRight size={10} className="text-gray-600 shrink-0 mx-0.5" />
           <Nickname name="나" isMe={true} />
           <span className="text-blue-400 font-black ml-1 shrink-0">기절</span>
-          {distStr && <span className="text-[9px] md:text-[10px] text-gray-500 ml-1 shrink-0">{distStr}</span>}
+          {distStr && <span className="text-[9px] md:text-[10px] text-red-400/80 ml-1 shrink-0 font-bold whitespace-nowrap tracking-tighter">{distStr}</span>}
         </div>
       );
     case 'DIED':
