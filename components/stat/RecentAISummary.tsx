@@ -155,15 +155,17 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
   const textBufferRef = useRef("");
   const lineBufferRef = useRef("");
   const abortControllerRef = useRef<AbortController | null>(null);
+  const isLoadingRef = useRef(false); // [V46.0] 클로저 세이프 로딩 추적
   const { isAnalyzing: isGlobalAnalyzing, activeId } = useAIStatus();
 
   const handleFetchSummary = async (force = false) => {
-    // [V45.1] 전역 락 체크
-    if (isGlobalAnalyzing || loading || (!force && debateData)) return;
+    // [V46.1] 전역 락 체크 및 중복 실행 방지
+    if (isGlobalAnalyzing || loading || isLoadingRef.current || (!force && debateData)) return;
     
     if (!aiManager.startAnalysis("summary")) return;
 
     setLoading(true);
+    isLoadingRef.current = true;
     setError(null);
     setStreamingText("");
     
@@ -176,13 +178,15 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
 
-    // [V45.2] 클라이언트 측 세이프티 타임아웃 (45초)
+    // [V46.2] 클라이언트 측 세이프티 타임아웃 (45초) - useRef를 사용하여 클로저 이슈 해결
     const safetyTimeout = setTimeout(() => {
-      if (loading) {
-        console.warn("[AI-SUMMARY] Safety timeout triggered. Aborting stream.");
+      if (isLoadingRef.current) {
+        console.warn("[AI-SUMMARY] Safety timeout triggered. Forced cleanup.");
         abortController.abort();
-        setError("분석 시간이 너무 오래 소요되어 중단되었습니다. 잠시 후 다시 시도해주세요.");
+        setError("네트워크 지연으로 인해 분석이 중단되었습니다. (Safety Timeout)");
         setLoading(false);
+        isLoadingRef.current = false;
+        aiManager.stopAnalysis("summary");
       }
     }, 45000);
     
@@ -280,7 +284,8 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
         } finally {
           clearInterval(updateInterval);
           setStreamingText(textBufferRef.current);
-          setLoading(false); // 스트림이 완전히 끝나면 다시 한 번 확실히 로딩 해제
+          setLoading(false); 
+          isLoadingRef.current = false;
         }
       }
 
@@ -292,6 +297,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
     } finally {
       clearTimeout(safetyTimeout);
       setLoading(false);
+      isLoadingRef.current = false;
       aiManager.stopAnalysis("summary");
       abortControllerRef.current = null;
     }
@@ -354,9 +360,9 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
     return (
       <button
         onClick={() => handleFetchSummary(true)}
-        disabled={isGlobalAnalyzing}
+        disabled={isGlobalAnalyzing || loading}
         className={`w-full p-8 rounded-3xl font-bold flex flex-col items-center gap-4 transition-all active:scale-[0.98] ${
-          isGlobalAnalyzing 
+          (isGlobalAnalyzing || loading) 
             ? "bg-white/5 border border-white/10 text-gray-500 cursor-not-allowed grayscale" 
             : "bg-indigo-500/5 border-2 border-dashed border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/10"
         }`}
@@ -382,7 +388,8 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
     );
   }
 
-  if (loading) {
+  // [V46.5] 로딩 중이지만 이미 데이터가 있는 경우(갱신 중)에는 전체 화면 스피너를 보여주지 않음 (Partial Loading)
+  if (loading && !debateData) {
     return (
       <div className="p-12 bg-white/5 rounded-3xl border border-white/10 text-center">
         <div className="w-12 h-12 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin mx-auto mb-6" />
@@ -402,9 +409,9 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
       <div className="flex justify-end">
         <button 
           onClick={() => handleFetchSummary(true)}
-          disabled={loading}
+          disabled={loading || isGlobalAnalyzing}
           className={`px-4 py-2 border rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
-            loading 
+            (loading || isGlobalAnalyzing)
               ? "bg-white/5 border-white/5 text-gray-600 cursor-not-allowed" 
               : "bg-white/5 hover:bg-white/10 border-white/10 text-gray-400"
           }`}

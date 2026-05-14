@@ -17,21 +17,21 @@ const listeners = new Set<(status: AIStatus) => void>();
 
 export const aiManager = {
   getStatus: () => currentStatus,
-  
+
   startAnalysis: (id: string) => {
     if (currentStatus.isAnalyzing) return false;
     currentStatus = { isAnalyzing: true, activeId: id };
     notify();
     return true;
   },
-  
+
   stopAnalysis: (id: string) => {
     if (currentStatus.activeId === id) {
       currentStatus = { isAnalyzing: false, activeId: null };
       notify();
     }
   },
-  
+
   subscribe: (listener: (status: AIStatus) => void) => {
     listeners.add(listener);
     return () => listeners.delete(listener);
