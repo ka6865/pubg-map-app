@@ -167,7 +167,7 @@ export class CombatHandler extends BaseHandler {
       this.updateDuelOutcome(attacker, e.victim, true);
       const killerLoc = attacker?.location || attacker?.loc;
       const victimLoc = e.victim?.location || e.victim?.loc;
-      const dist = Math.round(calcDist3D(killerLoc, victimLoc));
+      const dist = Math.round(calcDist3D(killerLoc, victimLoc) / 100);
 
       this.state.timeline.push({
         ts: ts - this.state.matchStartTime,
@@ -271,7 +271,7 @@ export class CombatHandler extends BaseHandler {
       this.updateDuelOutcome(e.killer, e.victim, false);
       const killerLoc = attackerObj?.location || attackerObj?.loc;
       const victimLoc = e.victim?.location || e.victim?.loc;
-      const dist = Math.round(calcDist3D(killerLoc, victimLoc));
+      const dist = Math.round(calcDist3D(killerLoc, victimLoc) / 100);
 
       this.state.timeline.push({
         ts: ts - this.state.matchStartTime,
@@ -364,7 +364,7 @@ export class CombatHandler extends BaseHandler {
       this.updateDuelOutcome(e.killer || e.finisher || e.dBNOMaker, e.victim, false);
       const killerLoc = attackerObj?.location || attackerObj?.loc;
       const myLoc = this.state.playerLocations.get(this.state.lowerNickname);
-      if (killerLoc && myLoc) this.state.deathDistance = Math.round(calcDist3D(killerLoc, myLoc));
+      if (killerLoc && myLoc) this.state.deathDistance = Math.round(calcDist3D(killerLoc, myLoc) / 100);
       this.state.timeline.push({
         ts: ts - this.state.matchStartTime,
         type: 'DIED',

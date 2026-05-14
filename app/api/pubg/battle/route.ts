@@ -116,13 +116,32 @@ export async function GET(request: Request) {
     return { ...m, v1, v2, winner };
   });
 
-  // 최고 티어 계산
-  const topTier1 = rows1.reduce((a: any, b: any) =>
-    (TIER_RANK[a.tier as Tier] ?? 0) > (TIER_RANK[b.tier as Tier] ?? 0) ? a : b
-  ).tier ?? "D-";
-  const topTier2 = rows2.reduce((a: any, b: any) =>
-    (TIER_RANK[a.tier as Tier] ?? 0) > (TIER_RANK[b.tier as Tier] ?? 0) ? a : b
-  ).tier ?? "D-";
+  // 티어 점수 평균 계산 로직 (수치화 -> 평균 -> 티어 환산)
+  const getAvgTier = (rows: any[]) => {
+    if (!rows.length) return "D-";
+    const tierScores: Record<string, number> = {
+      'S': 90, 'A+': 80, 'A': 75, 'A-': 68, 'B+': 60, 'B': 52, 'B-': 44, 'C+': 36, 'C': 28, 'C-': 20, 'D+': 12, 'D': 6, 'D-': 0
+    };
+    const avgScore = rows.reduce((acc, row) => acc + (tierScores[row.tier as string] ?? 0), 0) / rows.length;
+    
+    // 다시 문자로 변환
+    if (avgScore >= 85) return 'S';
+    if (avgScore >= 78) return 'A+';
+    if (avgScore >= 71) return 'A';
+    if (avgScore >= 64) return 'A-';
+    if (avgScore >= 56) return 'B+';
+    if (avgScore >= 48) return 'B';
+    if (avgScore >= 40) return 'B-';
+    if (avgScore >= 32) return 'C+';
+    if (avgScore >= 24) return 'C';
+    if (avgScore >= 16) return 'C-';
+    if (avgScore >= 10) return 'D+';
+    if (avgScore >= 5)  return 'D';
+    return 'D-';
+  };
+
+  const tier1 = getAvgTier(rows1);
+  const tier2 = getAvgTier(rows2);
 
   const score = {
     nick1: comparisons.filter((c) => c.winner === "nick1").length,
@@ -137,7 +156,7 @@ export async function GET(request: Request) {
   return NextResponse.json({
     nick1: rawNick1,
     nick2: rawNick2,
-    tier1: topTier1, tier2: topTier2,
+    tier1, tier2,
     matchCount1: rows1.length,
     matchCount2: rows2.length,
     availableMatchCount1: availableRows1.length,
