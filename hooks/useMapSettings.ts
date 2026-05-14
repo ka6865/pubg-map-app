@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { MAP_CATEGORIES, CATEGORY_INFO, ICON_LIBRARY } from "../lib/map_config";
-import { getMapSettings, getCategories } from "../app/actions/map-settings";
+import { getMapSettings, getCategories, getAllCategories } from "../app/actions/map-settings";
 import type { CategoryRow } from "../app/actions/map-settings";
 
 // CATEGORY_INFO와 동일한 형태로 변환하기 위한 타입
@@ -34,8 +34,10 @@ function convertCategoryRowsToCategoryInfo(rows: CategoryRow[]): CategoryInfoMap
 /**
  * 맵별 활성 카테고리 설정 + 카테고리 마스터 정보를 관리하는 훅입니다.
  * DB 설정을 우선하며, 데이터가 없을 경우 lib/map_config.ts의 기본값을 사용합니다.
+ * @param activeMapId 현재 활성화된 맵 ID
+ * @param showAll 비활성화된 카테고리를 포함한 전체 카테고리를 로드할지 여부 (기본값: false)
  */
-export function useMapSettings(activeMapId: string) {
+export function useMapSettings(activeMapId: string, showAll = false) {
   // 맵별 활성 카테고리 ID 배열 (map_settings 테이블)
   const [mapSettings, setMapSettings] = useState<Record<string, string[]>>(MAP_CATEGORIES);
   // 카테고리 마스터 정보 (categories 테이블)
@@ -47,7 +49,7 @@ export function useMapSettings(activeMapId: string) {
       // 병렬로 두 데이터를 모두 가져옴
       const [mapSettingsData, categoriesData] = await Promise.all([
         getMapSettings(),
-        getCategories(),
+        showAll ? getAllCategories() : getCategories(),
       ]);
 
       // 맵별 설정 처리
@@ -70,7 +72,7 @@ export function useMapSettings(activeMapId: string) {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [showAll]);
 
   useEffect(() => {
     loadSettings();

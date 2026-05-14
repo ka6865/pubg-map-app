@@ -8,6 +8,7 @@ import { IsolationRadar } from "./IsolationRadar";
 import { SpiderChart } from "./SpiderChart";
 import { MapKingCard } from "./MapKingCard";
 import { useEffect, useRef } from "react";
+import { useAIStatus, aiManager } from "@/lib/ai-management";
 
 interface DebateStat {
   label: string;
@@ -154,11 +155,14 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
   const textBufferRef = useRef("");
   const lineBufferRef = useRef("");
   const abortControllerRef = useRef<AbortController | null>(null);
+  const { isAnalyzing: isGlobalAnalyzing, activeId } = useAIStatus();
 
   const handleFetchSummary = async (force = false) => {
-    if (loading || (!force && debateData)) return;
+    // [V45.1] 전역 락 체크
+    if (isGlobalAnalyzing || loading || (!force && debateData)) return;
     
-    // [V45.1] 초기 상태 설정
+    if (!aiManager.startAnalysis("summary")) return;
+
     setLoading(true);
     setError(null);
     setStreamingText("");
@@ -237,21 +241,28 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
                 } else if (parsed.type === "chunk") {
                   textBufferRef.current += parsed.data;
                   fullText += parsed.data;
+                } else if (parsed.type === "final") {
+                  // [V54.3] 서버에서 보내준 최종 정제된 JSON으로 교체 (중복 방지)
+                  fullText = parsed.data;
                 } else if (parsed.type === "done") {
-                  try {
-                    let cleanJson = fullText.trim();
-                    const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
-                    if (jsonMatch) cleanJson = jsonMatch[0];
-                    
-                    const finalJson = JSON.parse(cleanJson);
-                    setDebateData(prev => ({ 
-                      ...finalJson, 
-                      visuals: prev?.visuals || finalJson.visuals 
-                    }));
-                  } catch (e) {
-                    console.error("[AI-SUMMARY] Final result parse failed:", e);
-                    // 실패 시 에러 상태로 전환하여 무한 대기 방지
-                    setError("분석 결과 데이터 처리에 실패했습니다.");
+                  if (parsed.valid === false) {
+                    console.error("[AI-SUMMARY] Server reported failure:", parsed.error);
+                    setError(parsed.error || "서버 분석 도중 오류가 발생했습니다.");
+                  } else {
+                    try {
+                      let cleanJson = fullText.trim();
+                      const jsonMatch = cleanJson.match(/\{[\s\S]*\}/);
+                      if (jsonMatch) cleanJson = jsonMatch[0];
+                      
+                      const finalJson = JSON.parse(cleanJson);
+                      setDebateData(prev => ({ 
+                        ...finalJson, 
+                        visuals: prev?.visuals || finalJson.visuals 
+                      }));
+                    } catch (e) {
+                      console.error("[AI-SUMMARY] Final result parse failed:", e);
+                      setError("분석 결과 데이터 처리에 실패했습니다.");
+                    }
                   }
                 }
               } catch (e) {
@@ -281,6 +292,8 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
     } finally {
       clearTimeout(safetyTimeout);
       setLoading(false);
+      aiManager.stopAnalysis("summary");
+      abortControllerRef.current = null;
     }
   };
 
@@ -321,10 +334,12 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
     
     return () => {
       if (abortControllerRef.current) {
+        console.log("[AI-CLEANUP] Unmounting RecentAISummary, aborting analysis...");
         abortControllerRef.current.abort();
+        aiManager.stopAnalysis("summary");
       }
     };
-  }, [nickname]); // nickname 변경 시 실행
+  }, [nickname]); 
 
   if (error) {
     return (
@@ -339,13 +354,30 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
     return (
       <button
         onClick={() => handleFetchSummary(true)}
-        className="w-full p-8 bg-indigo-500/5 border-2 border-dashed border-indigo-500/30 rounded-3xl text-indigo-400 font-bold flex flex-col items-center gap-4 hover:bg-indigo-500/10 transition-all active:scale-[0.98]"
+        disabled={isGlobalAnalyzing}
+        className={`w-full p-8 rounded-3xl font-bold flex flex-col items-center gap-4 transition-all active:scale-[0.98] ${
+          isGlobalAnalyzing 
+            ? "bg-white/5 border border-white/10 text-gray-500 cursor-not-allowed grayscale" 
+            : "bg-indigo-500/5 border-2 border-dashed border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/10"
+        }`}
       >
-        <span className="text-4xl">🔥</span>
-        <div className="flex flex-col items-center gap-2">
-          <span>최근 10경기 AI 끝장 토론 시작</span>
-          <span className="text-xs font-normal opacity-60">(기본지표는 10판이지만 10판중 잘한5판 티어높은5판 기준으로 상위권과 비교합니다)</span>
-        </div>
+        {isGlobalAnalyzing ? (
+          <>
+            <Clock size={40} className="text-gray-600" />
+            <div className="flex flex-col items-center gap-2">
+              <span className="italic">다른 AI 분석이 이미 진행 중입니다</span>
+              <span className="text-xs font-normal opacity-40">이전 분석이 완료되거나 취소된 후 시도할 수 있습니다.</span>
+            </div>
+          </>
+        ) : (
+          <>
+            <span className="text-4xl">🔥</span>
+            <div className="flex flex-col items-center gap-2">
+              <span>최근 10경기 AI 끝장 토론 시작</span>
+              <span className="text-xs font-normal opacity-60">(기본지표는 10판이지만 10판중 잘한5판 티어높은5판 기준으로 상위권과 비교합니다)</span>
+            </div>
+          </>
+        )}
       </button>
     );
   }
