@@ -49,6 +49,7 @@ export interface MatchData {
   matchId: string;
   stats: MatchStats;
   mapName: string;
+  mapId: string;
   createdAt: string;
   gameMode: string;
   matchType?: string;

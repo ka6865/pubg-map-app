@@ -20,3 +20,11 @@ export const calcDist3D = (l1: Location | any, l2: Location | any): number => {
 
 export const getElapsedMinutes = (ts: number, startTime: number): number =>
   (ts - startTime) / 1000 / 60;
+
+/**
+ * 텔레메트리 좌표를 0~8192 지도 좌표로 변환
+ */
+export const scaleCoordinate = (val: number, mapSize: number): number => {
+  if (!val || !mapSize) return 0;
+  return (val / mapSize) * 8192;
+};

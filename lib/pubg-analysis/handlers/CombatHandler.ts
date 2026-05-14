@@ -1,5 +1,5 @@
 import { AnalysisState, TimelineEvent } from "../types";
-import { normalizeName, calcDist3D } from "../utils";
+import { normalizeName, calcDist3D, scaleCoordinate } from "../utils";
 import { WEAPON_NAMES } from "../constants";
 import { BaseHandler } from "./BaseHandler";
 
@@ -176,7 +176,12 @@ export class CombatHandler extends BaseHandler {
         victim: e.victim?.name || victimName,
         distance: dist !== 10 ? dist : undefined,
         isHeadshot: e.damageReason === "HeadShot" || e.isHeadshot,
-        isMe: true
+        isMe: true,
+        x: scaleCoordinate(this.state.playerLocations.get(makerName)?.x || attacker?.location?.x || 0, this.state.mapSize),
+        y: scaleCoordinate(this.state.playerLocations.get(makerName)?.y || attacker?.location?.y || 0, this.state.mapSize),
+        playerName: this.state.lowerNickname,
+        victimX: scaleCoordinate(this.state.playerLocations.get(victimName)?.x || e.victim?.location?.x || 0, this.state.mapSize),
+        victimY: scaleCoordinate(this.state.playerLocations.get(victimName)?.y || e.victim?.location?.y || 0, this.state.mapSize)
       });
     }
 
@@ -188,7 +193,12 @@ export class CombatHandler extends BaseHandler {
         type: 'DOWNED',
         attacker: makerName,
         weapon: WEAPON_NAMES[weaponId] || weaponId.replace(/Item_Weapon_|Weap|_Projectile|_C/g, ""),
-        isMe: true // [V26.1] 내가 기절함
+        isMe: true,
+        x: scaleCoordinate(this.state.playerLocations.get(this.state.lowerNickname)?.x || e.victim?.location?.x || 0, this.state.mapSize),
+        y: scaleCoordinate(this.state.playerLocations.get(this.state.lowerNickname)?.y || e.victim?.location?.y || 0, this.state.mapSize),
+        playerName: this.state.lowerNickname,
+        attackerX: scaleCoordinate(this.state.playerLocations.get(makerName)?.x || attacker?.location?.x || 0, this.state.mapSize),
+        attackerY: scaleCoordinate(this.state.playerLocations.get(makerName)?.y || attacker?.location?.y || 0, this.state.mapSize)
       });
     }
 
@@ -204,7 +214,12 @@ export class CombatHandler extends BaseHandler {
         attacker: attacker?.name || makerName,
         victim: e.victim?.name || victimName,
         weapon: WEAPON_NAMES[weaponId] || weaponId.replace(/Item_Weapon_|Weap|_Projectile|_C/g, ""),
-        isMe: false
+        isMe: false,
+        x: scaleCoordinate(this.state.playerLocations.get(victimName)?.x || e.victim?.location?.x || 0, this.state.mapSize),
+        y: scaleCoordinate(this.state.playerLocations.get(victimName)?.y || e.victim?.location?.y || 0, this.state.mapSize),
+        playerName: victimName,
+        attackerX: scaleCoordinate(this.state.playerLocations.get(attacker?.name || makerName)?.x || attacker?.location?.x || 0, this.state.mapSize),
+        attackerY: scaleCoordinate(this.state.playerLocations.get(attacker?.name || makerName)?.y || attacker?.location?.y || 0, this.state.mapSize)
       });
     }
 
@@ -239,7 +254,8 @@ export class CombatHandler extends BaseHandler {
     };
 
     const wId = getWeaponId(e);
-    
+    const attackerObj = e.killer || e.attacker || e.finisher;
+
     if (isTeammateKiller && victimName && !isTeammateVictim) {
       const lastTeammateKnock = this.state.teammateKnockEvents.length > 0 ? this.state.teammateKnockEvents[this.state.teammateKnockEvents.length - 1] : 0;
       if (lastTeammateKnock > 0 && ts - lastTeammateKnock < 30000) {
@@ -253,7 +269,6 @@ export class CombatHandler extends BaseHandler {
     if (isMeKiller) {
       this.state.myActionTimestamps.push(ts);
       this.updateDuelOutcome(e.killer, e.victim, false);
-      const attackerObj = e.killer || e.attacker || e.finisher;
       const killerLoc = attackerObj?.location || attackerObj?.loc;
       const victimLoc = e.victim?.location || e.victim?.loc;
       const dist = Math.round(calcDist3D(killerLoc, victimLoc));
@@ -265,7 +280,12 @@ export class CombatHandler extends BaseHandler {
         victim: e.victim?.name || victimName,
         distance: dist !== 10 ? dist : undefined,
         isHeadshot: e.damageReason === "HeadShot" || e.killer?.damageReason === "HeadShot",
-        isMe: true
+        isMe: true,
+        x: scaleCoordinate(this.state.playerLocations.get(this.state.lowerNickname)?.x || killerLoc?.x || 0, this.state.mapSize),
+        y: scaleCoordinate(this.state.playerLocations.get(this.state.lowerNickname)?.y || killerLoc?.y || 0, this.state.mapSize),
+        playerName: this.state.lowerNickname,
+        victimX: scaleCoordinate(this.state.playerLocations.get(victimName)?.x || victimLoc?.x || 0, this.state.mapSize),
+        victimY: scaleCoordinate(this.state.playerLocations.get(victimName)?.y || victimLoc?.y || 0, this.state.mapSize)
       });
 
       if (victimName && !this.state.teamNames.has(victimName)) {
@@ -280,7 +300,10 @@ export class CombatHandler extends BaseHandler {
         weapon: WEAPON_NAMES[wId] || wId.replace(/Item_Weapon_|Weap|Vehicle_|BP_|_Projectile|_C/g, ""),
         victim: e.victim?.name || victimName,
         attacker: e.killer?.name || e.finisher?.name || killerName || dBNOMakerName || "Unknown",
-        isMe: true
+        isMe: true,
+        x: scaleCoordinate(attackerObj?.location?.x ?? (this.state.playerLocations.get(this.state.lowerNickname)?.x || 0), this.state.mapSize),
+        y: scaleCoordinate(attackerObj?.location?.y ?? (this.state.playerLocations.get(this.state.lowerNickname)?.y || 0), this.state.mapSize),
+        playerName: this.state.lowerNickname
       });
     } else if (isTeammateKiller) {
       this.state.timeline.push({
@@ -289,7 +312,12 @@ export class CombatHandler extends BaseHandler {
         attacker: e.killer?.name || killerName,
         victim: e.victim?.name || victimName,
         weapon: WEAPON_NAMES[wId] || wId.replace(/Item_Weapon_|Weap|Vehicle_|BP_|_Projectile|_C/g, ""),
-        isMe: false
+        isMe: false,
+        x: scaleCoordinate(this.state.playerLocations.get(killerName)?.x || attackerObj?.location?.x || 0, this.state.mapSize),
+        y: scaleCoordinate(this.state.playerLocations.get(killerName)?.y || attackerObj?.location?.y || 0, this.state.mapSize),
+        playerName: killerName || "Teammate",
+        victimX: scaleCoordinate(this.state.playerLocations.get(victimName)?.x || e.victim?.location?.x || 0, this.state.mapSize),
+        victimY: scaleCoordinate(this.state.playerLocations.get(victimName)?.y || e.victim?.location?.y || 0, this.state.mapSize)
       });
     }
 
@@ -319,7 +347,12 @@ export class CombatHandler extends BaseHandler {
           attacker: e.killer?.name || e.finisher?.name || killerName || finisherName || "Unknown",
           victim: e.victim?.name || victimName,
           weapon: WEAPON_NAMES[wId] || wId.replace(/Item_Weapon_|Weap|Vehicle_|BP_|_Projectile|_C/g, ""),
-          isMe: false
+          isMe: false,
+          x: scaleCoordinate(this.state.playerLocations.get(victimName)?.x || e.victim?.location?.x || 0, this.state.mapSize),
+          y: scaleCoordinate(this.state.playerLocations.get(victimName)?.y || e.victim?.location?.y || 0, this.state.mapSize),
+          playerName: victimName,
+          attackerX: scaleCoordinate(this.state.playerLocations.get(killerName)?.x || (typeof e.killer !== 'string' ? e.killer?.location?.x : 0) || 0, this.state.mapSize),
+          attackerY: scaleCoordinate(this.state.playerLocations.get(killerName)?.y || (typeof e.killer !== 'string' ? e.killer?.location?.y : 0) || 0, this.state.mapSize)
         });
       }
     }
@@ -329,7 +362,6 @@ export class CombatHandler extends BaseHandler {
       this.state.playerAliveStatus.set(this.state.lowerNickname, false);
       this.state.playerAliveStatus.set(this.state.myAccountId, false);
       this.updateDuelOutcome(e.killer || e.finisher || e.dBNOMaker, e.victim, false);
-      const attackerObj = e.killer || e.finisher || e.attacker;
       const killerLoc = attackerObj?.location || attackerObj?.loc;
       const myLoc = this.state.playerLocations.get(this.state.lowerNickname);
       if (killerLoc && myLoc) this.state.deathDistance = Math.round(calcDist3D(killerLoc, myLoc));
@@ -338,7 +370,12 @@ export class CombatHandler extends BaseHandler {
         type: 'DIED',
         attacker: e.killer?.name || e.finisher?.name || killerName || finisherName || "Unknown",
         weapon: WEAPON_NAMES[wId] || wId.replace(/Item_Weapon_|Weap|Vehicle_|BP_|_Projectile|_C/g, ""),
-        isMe: true
+        isMe: true,
+        x: scaleCoordinate(myLoc?.x ?? 0, this.state.mapSize),
+        y: scaleCoordinate(myLoc?.y ?? 0, this.state.mapSize),
+        playerName: this.state.lowerNickname,
+        attackerX: scaleCoordinate(this.state.playerLocations.get(killerName)?.x || attackerObj?.location?.x || 0, this.state.mapSize),
+        attackerY: scaleCoordinate(this.state.playerLocations.get(killerName)?.y || attackerObj?.location?.y || 0, this.state.mapSize)
       });
     }
   }
@@ -366,6 +403,7 @@ export class CombatHandler extends BaseHandler {
       this.state.totalReviveEvents.push(ts);
       
       const isSelfRevive = isMeReviver && isMeVictim;
+      const reviverLoc = e.reviver?.location || e.reviver?.loc;
 
       if (isMeReviver) {
         this.state.myActionTimestamps.push(ts);
@@ -375,7 +413,9 @@ export class CombatHandler extends BaseHandler {
           attacker: e.reviver?.name || "나",
           victim: e.victim?.name || victimName,
           isMe: true,
-          isSelfRevive
+          isSelfRevive,
+          x: scaleCoordinate(reviverLoc?.x ?? (this.state.playerLocations.get(this.state.lowerNickname)?.x || 0), this.state.mapSize),
+          y: scaleCoordinate(reviverLoc?.y ?? (this.state.playerLocations.get(this.state.lowerNickname)?.y || 0), this.state.mapSize)
         });
       } else {
         this.state.timeline.push({ 
@@ -385,7 +425,9 @@ export class CombatHandler extends BaseHandler {
           victim: e.victim?.name || victimName,
           isMe: isMeVictim,
           isRecall: false,
-          isSelfRevive: false
+          isSelfRevive: false,
+          x: scaleCoordinate(reviverLoc?.x ?? (this.state.playerLocations.get(normalizeName(e.reviver?.name || ""))?.x || 0), this.state.mapSize),
+          y: scaleCoordinate(reviverLoc?.y ?? (this.state.playerLocations.get(normalizeName(e.reviver?.name || ""))?.y || 0), this.state.mapSize)
         });
       }
     }
@@ -427,7 +469,9 @@ export class CombatHandler extends BaseHandler {
             attacker: recaller?.name || "시스템", // 원본 이름 보존
             victim: displayName,
             isMe: isMeVictim || isMeRecaller,
-            isRecall: !isRedeploy
+            isRecall: !isRedeploy,
+            x: scaleCoordinate(v.location?.x ?? (this.state.playerLocations.get(vName)?.x || 0), this.state.mapSize),
+            y: scaleCoordinate(v.location?.y ?? (this.state.playerLocations.get(vName)?.y || 0), this.state.mapSize)
           });
         }
         this.state.playerAliveStatus.set(vName, true);

@@ -1,5 +1,5 @@
 import { BaseHandler } from './BaseHandler';
-import { normalizeName, calcDist3D } from '../utils';
+import { normalizeName, calcDist3D, scaleCoordinate } from '../utils';
 import { WEAPON_NAMES } from '../constants';
 
 export class UtilityHandler extends BaseHandler {
@@ -70,7 +70,10 @@ export class UtilityHandler extends BaseHandler {
         ts: ts - this.state.matchStartTime,
         type: 'ITEM_USE',
         weapon: mappedName,
-        attacker: isMeAttacker ? undefined : attackerName
+        attacker: isMeAttacker ? undefined : attackerName,
+        playerName: attackerName,
+        x: scaleCoordinate(this.state.playerLocations.get(attackerName)?.x || (e.attacker || e.character)?.location?.x || 0, this.state.mapSize),
+        y: scaleCoordinate(this.state.playerLocations.get(attackerName)?.y || (e.attacker || e.character)?.location?.y || 0, this.state.mapSize)
       });
 
       if (itemId.includes("smoke") || itemId.includes("m79")) {
@@ -86,7 +89,7 @@ export class UtilityHandler extends BaseHandler {
               if (knockedTeammate && myLoc) {
                 const tLoc = this.state.playerLocations.get(knockedTeammate);
                 if (tLoc) {
-                  const dist = calcDist3D(myLoc, tLoc); // 이미 m 단위
+                  const dist = calcDist3D(myLoc, tLoc) / 100; // [V47.0] cm -> m 변환
                   return dist < 40; // [V38.3] 거리 판정 상향 (40m)
                 }
               }
@@ -162,7 +165,9 @@ export class UtilityHandler extends BaseHandler {
         ts: ts - this.state.matchStartTime,
         type: 'ITEM_USE',
         weapon: mappedName,
-        attacker: isMe ? undefined : characterName
+        attacker: isMe ? undefined : characterName,
+        x: scaleCoordinate(this.state.playerLocations.get(characterName)?.x || e.character?.location?.x || 0, this.state.mapSize),
+        y: scaleCoordinate(this.state.playerLocations.get(characterName)?.y || e.character?.location?.y || 0, this.state.mapSize)
       });
 
       if (itemId.includes("firstaid") || itemId.includes("medkit") || itemId.includes("bandage")) {
@@ -218,7 +223,7 @@ export class UtilityHandler extends BaseHandler {
             if (knockedTeammate && myLoc) {
               const tLoc = this.state.playerLocations.get(knockedTeammate);
               if (tLoc) {
-                const dist = calcDist3D(myLoc, tLoc);
+                const dist = calcDist3D(myLoc, tLoc) / 100; // [V47.0] cm -> m 변환
                 return dist < 40; // [V38.3] 거리 판정 상향 (20m -> 40m) 
               }
             }
