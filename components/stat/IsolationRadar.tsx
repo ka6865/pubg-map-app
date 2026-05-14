@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
-import { ShieldAlert, Zap, ArrowUpCircle, Users, HelpCircle } from "lucide-react";
+import React, { useState, useRef, useEffect } from "react";
+import { ShieldAlert, Zap, ArrowUpCircle, Users, HelpCircle, X } from "lucide-react";
 
 interface IsolationData {
   isolationIndex: number;
@@ -17,10 +17,27 @@ interface IsolationData {
 interface IsolationRadarProps {
   data: IsolationData | null;
   loading?: boolean;
+  isMobile?: boolean;
 }
 
-export const IsolationRadar = ({ data, loading }: IsolationRadarProps) => {
+export const IsolationRadar = ({ data, loading, isMobile }: IsolationRadarProps) => {
   const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (tooltipRef.current && !tooltipRef.current.contains(event.target as Node)) {
+        setActiveTooltip(null);
+      }
+    };
+
+    if (activeTooltip) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [activeTooltip]);
 
   if (loading) return null; // 부모에서 Skeleton 처리
 
@@ -106,11 +123,12 @@ export const IsolationRadar = ({ data, loading }: IsolationRadarProps) => {
               <div className={`flex items-center gap-2 text-[10px] sm:text-[11px] font-black uppercase tracking-tight ${s.color}`}>
                 {s.icon} {s.label}
                 <button 
-                  onMouseEnter={() => setActiveTooltip(s.label)}
-                  onMouseLeave={() => setActiveTooltip(null)}
-                  className="opacity-40 hover:opacity-100 transition-opacity cursor-help"
+                  onMouseEnter={() => !isMobile && setActiveTooltip(s.label)}
+                  onMouseLeave={() => !isMobile && setActiveTooltip(null)}
+                  onClick={() => isMobile && setActiveTooltip(activeTooltip === s.label ? null : s.label)}
+                  className="opacity-40 hover:opacity-100 transition-opacity cursor-help p-1"
                 >
-                  <HelpCircle size={12} />
+                  <HelpCircle size={14} />
                 </button>
               </div>
               <div className="text-lg font-black text-white/90">{Math.round(s.value)}</div>
@@ -118,10 +136,25 @@ export const IsolationRadar = ({ data, loading }: IsolationRadarProps) => {
 
             {/* Tooltip Content */}
             {activeTooltip === s.label && (
-              <div className="absolute bottom-full left-0 mb-2 p-4 bg-[#111] border border-white/10 rounded-2xl shadow-2xl z-50 w-64 animate-in fade-in zoom-in-95 duration-200">
-                <div className={`text-[10px] font-black uppercase mb-1 ${s.color}`}>{s.formula}</div>
+              <div 
+                ref={tooltipRef}
+                className={`${
+                  isMobile 
+                  ? "fixed inset-x-4 bottom-10 animate-in slide-in-from-bottom-5" 
+                  : "absolute bottom-full left-0 mb-2 animate-in fade-in zoom-in-95"
+                } p-4 bg-[#111] border border-white/20 rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.8)] z-[100] ${isMobile ? "w-auto" : "w-64"} duration-200`}
+              >
+                <div className="flex justify-between items-start mb-2">
+                  <div className={`text-[10px] font-black uppercase ${s.color}`}>{s.formula}</div>
+                  {isMobile && (
+                    <button onClick={() => setActiveTooltip(null)} className="text-white/40">
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+                <div className="text-[12px] text-white font-bold mb-1">{s.label} 분석</div>
                 <div className="text-[11px] text-white/70 font-medium leading-relaxed">{s.detail}</div>
-                <div className="absolute -bottom-1 left-6 w-2 h-2 bg-[#111] border-r border-b border-white/10 rotate-45" />
+                {!isMobile && <div className="absolute -bottom-1 left-6 w-2 h-2 bg-[#111] border-r border-b border-white/10 rotate-45" />}
               </div>
             )}
 
@@ -140,17 +173,40 @@ export const IsolationRadar = ({ data, loading }: IsolationRadarProps) => {
         <div className="flex flex-col relative group/iso">
           <div className="flex items-center gap-1 text-[10px] text-gray-500 font-bold uppercase tracking-widest">
             공간 고립 지수
-            <HelpCircle size={10} className="opacity-50 group-hover/iso:opacity-100 transition-opacity cursor-help" />
+            <button
+              onMouseEnter={() => !isMobile && setActiveTooltip("iso_mastery")}
+              onMouseLeave={() => !isMobile && setActiveTooltip(null)}
+              onClick={() => isMobile && setActiveTooltip(activeTooltip === "iso_mastery" ? null : "iso_mastery")}
+              className="opacity-50 hover:opacity-100 transition-opacity cursor-help"
+            >
+              <HelpCircle size={12} />
+            </button>
           </div>
           
           {/* Tooltip Content */}
-          <div className="absolute bottom-full left-0 mb-2 p-3 bg-[#111] border border-white/10 rounded-xl shadow-2xl z-50 w-56 opacity-0 group-hover/iso:opacity-100 transition-opacity pointer-events-none">
-            <div className="text-[9px] font-black uppercase mb-1 text-emerald-400">계산 방식</div>
-            <div className="text-[10px] text-white/70 font-medium leading-relaxed">
-              교전 시 아군과의 거리 및 고도차를 분석한 고립도입니다. <span className="text-emerald-400">0.5 미만</span>이 우수하며, 수치가 낮을수록 백업 받기 유리한 포지셔닝을 의미합니다.
+          {activeTooltip === "iso_mastery" && (
+            <div 
+              ref={tooltipRef}
+              className={`${
+                isMobile 
+                ? "fixed inset-x-4 bottom-10 animate-in slide-in-from-bottom-5" 
+                : "absolute bottom-full left-0 mb-2 animate-in fade-in zoom-in-95"
+              } p-4 bg-[#111] border border-white/20 rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.8)] z-[100] ${isMobile ? "w-auto" : "w-64"} duration-200`}
+            >
+              <div className="flex justify-between items-start mb-2">
+                <div className="text-[9px] font-black uppercase text-emerald-400">계산 방식</div>
+                {isMobile && (
+                  <button onClick={() => setActiveTooltip(null)} className="text-white/40">
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+              <div className="text-[10px] text-white/70 font-medium leading-relaxed">
+                교전 시 아군과의 거리 및 고도차를 분석한 고립도입니다. <span className="text-emerald-400">0.5 미만</span>이 우수하며, 수치가 낮을수록 백업 받기 유리한 포지셔닝을 의미합니다.
+              </div>
+              {!isMobile && <div className="absolute -bottom-1 left-4 w-2 h-2 bg-[#111] border-r border-b border-white/10 rotate-45" />}
             </div>
-            <div className="absolute -bottom-1 left-4 w-2 h-2 bg-[#111] border-r border-b border-white/10 rotate-45" />
-          </div>
+          )}
 
           <div className="text-2xl sm:text-4xl font-black text-white flex items-baseline gap-1">
             {Number(data.isolationIndex).toFixed(1)} 

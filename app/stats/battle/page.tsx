@@ -31,11 +31,15 @@ interface BattleResult {
   overallWinner: string;
 }
 
-const TIER_STYLES: Record<string, { bg: string; text: string; label: string }> = {
-  S: { bg: "bg-blue-500/20",   text: "text-blue-400",   label: "S 티어" },
-  A: { bg: "bg-emerald-500/20",text: "text-emerald-400", label: "A 티어" },
-  B: { bg: "bg-yellow-500/20", text: "text-yellow-400",  label: "B 티어" },
-  C: { bg: "bg-gray-500/20",   text: "text-gray-400",    label: "C 티어" },
+const getTierStyle = (t: string) => {
+  if (t === 'S') return "bg-amber-500/20 border-amber-500/50 text-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.2)]";
+  if (t.startsWith('A+')) return "bg-indigo-500/25 border-indigo-500/60 text-indigo-300 shadow-[0_0_12px_rgba(99,102,241,0.2)]";
+  if (t.startsWith('A')) return "bg-indigo-500/20 border-indigo-500/50 text-indigo-400 shadow-[0_0_10px_rgba(99,102,241,0.1)]";
+  if (t.startsWith('B+')) return "bg-emerald-500/25 border-emerald-500/60 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.2)]";
+  if (t.startsWith('B')) return "bg-emerald-500/20 border-emerald-500/50 text-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.1)]";
+  if (t.startsWith('C')) return "bg-blue-500/20 border-blue-500/50 text-blue-400";
+  if (t.startsWith('D')) return "bg-slate-500/20 border-slate-500/50 text-slate-400";
+  return "bg-white/5 border-white/10 text-gray-400";
 };
 
 function BattleContent() {
@@ -416,8 +420,8 @@ function BattleContent() {
                 <div className="flex items-center justify-between mb-6">
                   {/* 플레이어 1 */}
                   <div className="text-center flex-1 min-w-0 flex flex-col items-center">
-                    <div className={`inline-block px-3 py-1 rounded-full text-[10px] md:text-xs font-black mb-2 shrink-0 ${TIER_STYLES[result.tier1]?.bg ?? ""} ${TIER_STYLES[result.tier1]?.text ?? ""}`}>
-                      {TIER_STYLES[result.tier1]?.label ?? result.tier1}
+                    <div className={`inline-block px-3 py-1 rounded-xl border text-[10px] md:text-xs font-black italic tracking-tighter mb-2 shrink-0 ${getTierStyle(result.tier1)}`}>
+                      {result.tier1} Tier
                     </div>
                     <div className="font-black text-base md:text-xl text-indigo-300 truncate w-full max-w-[80px] xs:max-w-[120px] md:max-w-none px-1" title={result.nick1}>
                       {result.nick1}
@@ -434,8 +438,8 @@ function BattleContent() {
 
                   {/* 플레이어 2 */}
                   <div className="text-center flex-1 min-w-0 flex flex-col items-center">
-                    <div className={`inline-block px-3 py-1 rounded-full text-[10px] md:text-xs font-black mb-2 shrink-0 ${TIER_STYLES[result.tier2]?.bg ?? ""} ${TIER_STYLES[result.tier2]?.text ?? ""}`}>
-                      {TIER_STYLES[result.tier2]?.label ?? result.tier2}
+                    <div className={`inline-block px-3 py-1 rounded-xl border text-[10px] md:text-xs font-black italic tracking-tighter mb-2 shrink-0 ${getTierStyle(result.tier2)}`}>
+                      {result.tier2} Tier
                     </div>
                     <div className="font-black text-base md:text-xl text-rose-300 truncate w-full max-w-[80px] xs:max-w-[120px] md:max-w-none px-1" title={result.nick2}>
                       {result.nick2}
