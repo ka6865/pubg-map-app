@@ -830,13 +830,13 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
             ) : (
               <button 
                 onClick={handleAnalyze}
-                disabled={isGlobalAnalyzing || isAnalyzing || isAnalyzingRef.current}
+                disabled={isGlobalAnalyzing || isAnalyzing}
                 className={`w-full py-16 ${isRanked ? 'bg-amber-500/10 border-amber-500/20 hover:bg-amber-500/20' : 'bg-indigo-500/10 border-indigo-500/20 hover:bg-indigo-500/20'} border-2 border-dashed rounded-[2.5rem] flex flex-col items-center gap-4 group transition-all relative overflow-hidden ${
-                  (isGlobalAnalyzing || isAnalyzing || isAnalyzingRef.current) && !isAnalyzing ? 'opacity-50 cursor-not-allowed grayscale' : ''
+                  (isGlobalAnalyzing || isAnalyzing) && !isAnalyzing ? 'opacity-50 cursor-not-allowed grayscale' : ''
                 }`}
               >
                 <div className="absolute inset-0 bg-gradient-to-b from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
-                {(isAnalyzing || isAnalyzingRef.current) ? (
+                {isAnalyzing ? (
                   <div className={`w-8 h-8 border-3 border-white/10 ${isRanked ? 'border-t-amber-500' : 'border-t-indigo-500'} rounded-full animate-spin`} />
                 ) : isGlobalAnalyzing ? (
                   <div className="w-14 h-14 rounded-2xl bg-white/5 flex items-center justify-center">

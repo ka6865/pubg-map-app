@@ -360,9 +360,9 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
     return (
       <button
         onClick={() => handleFetchSummary(true)}
-        disabled={isGlobalAnalyzing || loading || isLoadingRef.current}
+        disabled={isGlobalAnalyzing || loading}
         className={`w-full p-8 rounded-3xl font-bold flex flex-col items-center gap-4 transition-all active:scale-[0.98] ${
-          (isGlobalAnalyzing || loading || isLoadingRef.current) 
+          (isGlobalAnalyzing || loading) 
             ? "bg-white/5 border border-white/10 text-gray-500 cursor-not-allowed grayscale" 
             : "bg-indigo-500/5 border-2 border-dashed border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/10"
         }`}
@@ -409,14 +409,14 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
       <div className="flex justify-end">
         <button 
           onClick={() => handleFetchSummary(true)}
-          disabled={loading || isLoadingRef.current || isGlobalAnalyzing}
+          disabled={loading || isGlobalAnalyzing}
           className={`px-4 py-2 border rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${
-            (loading || isLoadingRef.current || isGlobalAnalyzing)
+            (loading || isGlobalAnalyzing)
               ? "bg-white/5 border-white/5 text-gray-600 cursor-not-allowed" 
               : "bg-white/5 hover:bg-white/10 border-white/10 text-gray-400"
           }`}
         >
-          {(loading || isLoadingRef.current) ? (
+          {loading ? (
             <>
               <div className="w-3 h-3 border-2 border-gray-600 border-t-gray-400 rounded-full animate-spin" />
               분석 중...

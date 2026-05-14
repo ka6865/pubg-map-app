@@ -17,21 +17,21 @@ const listeners = new Set<(status: AIStatus) => void>();
 
 export const aiManager = {
   getStatus: () => currentStatus,
-  
+
   startAnalysis: (id: string) => {
     if (currentStatus.isAnalyzing) return false;
     currentStatus = { isAnalyzing: true, activeId: id };
     notify();
     return true;
   },
-  
+
   stopAnalysis: (id: string) => {
     if (currentStatus.activeId === id) {
       currentStatus = { isAnalyzing: false, activeId: null };
       notify();
     }
   },
-  
+
   subscribe: (listener: (status: AIStatus) => void) => {
     listeners.add(listener);
     return () => listeners.delete(listener);
@@ -42,16 +42,18 @@ function notify() {
   listeners.forEach(l => l(currentStatus));
 }
 
+// React Hook for easy use
 import { useState, useEffect } from 'react';
 
 export function useAIStatus() {
-  const [status, setStatus] = useState(aiManager.getStatus());
-  
+  const [status, setStatus] = useState<AIStatus>(aiManager.getStatus());
+
   useEffect(() => {
-    return aiManager.subscribe((newStatus) => {
-      setStatus(newStatus);
-    });
+    const unsubscribe = aiManager.subscribe(setStatus);
+    return () => {
+      unsubscribe();
+    };
   }, []);
-  
+
   return status;
 }
