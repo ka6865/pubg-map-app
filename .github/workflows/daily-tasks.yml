@@ -26,6 +26,7 @@ jobs:
         env:
           NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          CLEANUP_TARGET_VERSION: ${{ secrets.CLEANUP_TARGET_VERSION }}
           CLEANUP_RETENTION_DAYS: 1 # 자동화 시에는 더 짧게 유지하여 용량 확보
         run: npx tsx scripts/cleanup_telemetry.ts
 
