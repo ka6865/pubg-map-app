@@ -116,8 +116,12 @@ function BattleContent() {
       if (!res.ok) throw new Error(data.error ?? "알 수 없는 오류");
       setResult(data);
       
-      updateRecentSearches(n1);
-      updateRecentSearches(n2);
+      // [NEW] 정확한 대소문자 닉네임으로 UI 동기화
+      if (data.nick1 && data.nick1 !== n1) setNick1(data.nick1);
+      if (data.nick2 && data.nick2 !== n2) setNick2(data.nick2);
+
+      updateRecentSearches(data.nick1 || n1);
+      updateRecentSearches(data.nick2 || n2);
 
       lastAutoBattleKeyRef.current = `${n1}::${n2}::${mode}`;
     } catch (e: any) {

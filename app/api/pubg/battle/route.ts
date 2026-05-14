@@ -42,13 +42,30 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const rawNick1 = searchParams.get("nick1")?.trim() || "";
   const rawNick2 = searchParams.get("nick2")?.trim() || "";
-  const nick1 = normalizeName(rawNick1);
-  const nick2 = normalizeName(rawNick2);
-  const matchType = searchParams.get("matchType") || "all"; // all, official, competitive
+  const matchType = searchParams.get("matchType") || "all";
 
-  if (!nick1 || !nick2) {
+  if (!rawNick1 || !rawNick2) {
     return NextResponse.json({ error: "두 닉네임이 필요합니다." }, { status: 400 });
   }
+
+  // 1. 캐시에서 정확한 닉네임 및 플랫폼 조회 시도
+  const getCorrectNickname = async (input: string) => {
+    const { data } = await supabase
+      .from('pubg_player_cache')
+      .select('nickname')
+      .eq('lower_nickname', input.toLowerCase())
+      .maybeSingle();
+    return data?.nickname || input;
+  };
+
+  const [actualNick1, actualNick2] = await Promise.all([
+    getCorrectNickname(rawNick1),
+    getCorrectNickname(rawNick2)
+  ]);
+
+  const nick1 = normalizeName(actualNick1);
+  const nick2 = normalizeName(actualNick2);
+
   if (nick1 === nick2) {
     return NextResponse.json({ error: "서로 다른 닉네임을 입력해 주세요." }, { status: 400 });
   }
@@ -162,12 +179,12 @@ export async function GET(request: Request) {
   };
 
   const overallWinner =
-    score.nick1 > score.nick2 ? rawNick1 :
-    score.nick2 > score.nick1 ? rawNick2 : "draw";
+    score.nick1 > score.nick2 ? actualNick1 :
+    score.nick2 > score.nick1 ? actualNick2 : "draw";
 
   return NextResponse.json({
-    nick1: rawNick1,
-    nick2: rawNick2,
+    nick1: actualNick1,
+    nick2: actualNick2,
     tier1, tier2,
     matchCount1: rows1.length,
     matchCount2: rows2.length,
