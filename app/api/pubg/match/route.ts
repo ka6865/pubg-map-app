@@ -20,6 +20,12 @@ const MAP_NAMES: Record<string, string> = {
   "Kiki_Main": "데스턴", "Neon_Main": "론도", "DihorOtok_Main": "비켄디"
 };
 
+const MAP_IDS: Record<string, string> = {
+  "Baltic_Main": "erangel", "Savage_Main": "sanhok", "Desert_Main": "miramar",
+  "Summerland_Main": "karakin", "Chimera_Main": "paramo", "Tiger_Main": "taego",
+  "Kiki_Main": "deston", "Neon_Main": "rondo", "DihorOtok_Main": "vikendi"
+};
+
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const matchId = searchParams.get("matchId");
@@ -100,6 +106,13 @@ export async function GET(request: NextRequest) {
         const telRes = await fetch(telemetryAsset.attributes.URL);
         const rawTel = await telRes.json();
 
+        // [DEBUG] 원본 데이터 좌표 샘플 확인
+        const sampleEv = rawTel.find((e: any) => e._T === "LogPlayerPosition");
+        if (sampleEv) {
+          const loc = sampleEv.character?.location || sampleEv.character?.loc;
+          console.log(`[DEBUG-RAW-TEL] First Pos X: ${loc?.x}, Y: ${loc?.y}`);
+        }
+
         let posCount = 0;
         telData = rawTel.filter((e: any) => {
           if (e._T === "LogPlayerPosition") {
@@ -117,15 +130,22 @@ export async function GET(request: NextRequest) {
           ].includes(e._T);
         }).map((e: any) => {
           const slim: any = { _T: e._T, _D: e._D };
-          const normLoc = (loc: any) => loc ? { x: Math.round(loc.x/100), y: Math.round(loc.y/100), z: Math.round((loc.z||0)/100) } : null;
+          const normLoc = (loc: any) => {
+            if (!loc) return null;
+            const res = { x: Math.round(loc.x), y: Math.round(loc.y), z: Math.round(loc.z || 0) };
+            if (e._T === "LogPlayerPosition" && Math.abs(res.x) < 10000 && Math.abs(res.x) > 0) {
+              console.warn(`[WARN-COORD] Very small coordinate detected in route.ts: ${res.x} (type: ${e._T})`);
+            }
+            return res;
+          };
 
           if (e._T === "LogGameStatePeriodic") {
             const gs = e.gameState;
             slim.gameState = {
               safetyZonePosition: normLoc(gs.safetyZonePosition),
-              safetyZoneRadius: Math.round(gs.safetyZoneRadius / 100),
+              safetyZoneRadius: Math.round(gs.safetyZoneRadius),
               poisonGasWarningPosition: normLoc(gs.poisonGasWarningPosition),
-              poisonGasWarningRadius: gs.poisonGasWarningRadius != null ? Math.round(gs.poisonGasWarningRadius / 100) : null
+              poisonGasWarningRadius: gs.poisonGasWarningRadius != null ? Math.round(gs.poisonGasWarningRadius) : null
             };
             return slim;
           }
@@ -220,6 +240,7 @@ export async function GET(request: NextRequest) {
       platform,
       matchInfo: {
         map: MAP_NAMES[matchAttr.mapId] || matchAttr.mapId,
+        mapId: MAP_IDS[matchAttr.mapId] || 'erangel', // [V47.0] UI 맵 이미지 매핑용 ID 변환
         date: matchAttr.createdAt,
         mode: matchAttr.gameMode,
         duration: matchAttr.duration,
