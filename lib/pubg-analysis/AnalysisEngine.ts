@@ -14,7 +14,7 @@ import { ZoneHandler } from './handlers/ZoneHandler';
 import { UtilityHandler } from './handlers/UtilityHandler';
 import { PositionHandler } from './handlers/PositionHandler';
 import { MapReplayHandler } from './handlers/MapReplayHandler';
-import { getBenchmarkTier, MatchTierInput } from './benchmarkScore';
+import { getBenchmarkTier } from './benchmarkScore';
 import { MAP_SIZES } from './constants';
 
 export class AnalysisEngine {
@@ -43,6 +43,7 @@ export class AnalysisEngine {
       gameMode: "",
       playerCombatData: new Map(),
       victimDamage: new Map(),
+      myVictimDamage: new Map(),
       weaponStats: new Map(),
       playerLocations: new Map(),
       playerAliveStatus: new Map(),
@@ -66,6 +67,7 @@ export class AnalysisEngine {
       hasLanded: false,
       currentPhase: 0,
       totalTeammateKnocks: 0,
+      myReviveCount: 0,
       totalSuppCount: 0,
       totalTradeKills: 0,
       totalSmokeCount: 0,
@@ -173,15 +175,15 @@ export class AnalysisEngine {
 
       // 타임라인 기록 제한: 나 또는 아군 중 한 명이라도 살아있으면 계속 기록
       const isMyTeamAlive = Array.from(this.state.teamNames).some(name => this.state.playerAliveStatus.get(name) !== false);
-      
+
       // [V26.1] 부활/복귀전 관련 이벤트는 전멸 상태라도 무조건 처리해야 함
       const eventType = e._T || "";
       const isRecallEvent = [
-        "LogPlayerRevive", "LogPlayerRecall", "LogPlayerRecallShip", 
+        "LogPlayerRevive", "LogPlayerRecall", "LogPlayerRecallShip",
         "LogPlayerRedeploy", "LogPlayerRedeployBRStart", "LogPlayerRedeployBrStart",
         "LogPlayerCreate"
       ].some(t => t.toLowerCase() === eventType.toLowerCase());
-      
+
       const isAfterTeamWipe = !isMyTeamAlive && this.state.myDeathTime && ts > (this.state.myDeathTime + 30000);
       const isWin = e._T === "LogMatchEnd" && this.state.playerAliveStatus.get(this.state.lowerNickname) !== false;
 
@@ -258,14 +260,14 @@ export class AnalysisEngine {
     // [V12.5] 승리 이벤트 추가
     if (myStats.winPlace === 1) {
       // 타임라인의 마지막 이벤트 시간 확인
-      const lastEventTs = this.state.timeline.length > 0 
-        ? Math.max(...this.state.timeline.map(e => e.ts)) 
+      const lastEventTs = this.state.timeline.length > 0
+        ? Math.max(...this.state.timeline.map(e => e.ts))
         : 0;
 
-      const victoryTs = this.state.matchEndRelativeTime !== null 
-        ? this.state.matchEndRelativeTime 
+      const victoryTs = this.state.matchEndRelativeTime !== null
+        ? this.state.matchEndRelativeTime
         : Math.max(myStats.timeSurvived * 1000, lastEventTs + 1000);
-        
+
       this.state.timeline.push({
         ts: victoryTs,
         type: 'VICTORY'
@@ -315,7 +317,7 @@ export class AnalysisEngine {
         timeSurvived: myStats.timeSurvived ?? 0
       },
       team: teamStats,
-      deathPhase: this.calculateDeathPhase(myStats.winPlace ?? 100),
+      deathPhase: this.state.currentPhase,
       mapName: MAP_NAMES[matchAttr.mapName] || matchAttr.mapName,
       gameMode: matchAttr.gameMode,
       matchType: matchAttr.matchType || "Official",
@@ -344,7 +346,7 @@ export class AnalysisEngine {
         tradeKills: this.state.totalTradeKills,
         smokeCount: this.state.totalSmokeCount,
         smokeRescues: this.state.totalSmokeRescues,
-        revCount: this.state.totalReviveEvents.length,
+        revCount: this.state.myReviveCount,
         baitCount: this.state.totalBaitCount,
         tradeLatencyMs: avgTradeLat,
         counterLatencyMs: avgReactLat,
@@ -404,11 +406,11 @@ export class AnalysisEngine {
         pressureIndex: Number((this.state.combatPressure.totalHits / Math.max(5, (this.state.myActionTimestamps.length / 10))).toFixed(2)),
         smokeRate: this.state.totalTeammateKnocks > 0 ? (this.state.totalSmokeRescues / this.state.totalTeammateKnocks) * 100 : 0,
         suppCount: this.state.totalSuppCount,
-        reviveRate: this.state.totalTeammateKnocks > 0 ? (this.state.totalReviveEvents.length / this.state.totalTeammateKnocks) * 100 : 0,
+        reviveRate: this.state.totalTeammateKnocks > 0 ? (this.state.myReviveCount / this.state.totalTeammateKnocks) * 100 : 0,
         tradeRate: this.state.totalTeammateKnocks > 0 ? (this.state.totalTradeKills / this.state.totalTeammateKnocks) * 100 : 0,
         teamWipes: this.state.wipedTeamsByUserParticipation.size,
         reversalRate: reversalRate,
-        deathPhase: this.calculateDeathPhase(myStats.winPlace || 100),
+        deathPhase: this.state.currentPhase,
         suppRate: this.state.totalTeammateKnocks > 0 ? (this.state.totalSuppCount / this.state.totalTeammateKnocks) * 100 : 0
       }, (this.state.gameMode || "").includes("solo")),
       isValidBenchmark: (myStats.timeSurvived || 0) >= 300,

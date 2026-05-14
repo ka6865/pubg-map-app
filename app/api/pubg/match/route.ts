@@ -53,28 +53,24 @@ export async function GET(request: NextRequest) {
     const participants = matchData.included.filter((it: any) => it.type === "participant");
     const rosters = matchData.included.filter((it: any) => it.type === "roster");
 
-    // [NEW] 닉네임 캐시 대량 수집 (봇 제외)
-    const cacheEntries = participants
-      .filter((p: any) => !p.attributes.stats.playerId?.startsWith("ai."))
-      .map((p: any) => ({
-        id: p.attributes.stats.playerId,
-        platform,
-        nickname: p.attributes.stats.name,
-        lower_nickname: p.attributes.stats.name.toLowerCase(),
-        updated_at: new Date().toISOString()
-      }));
-
-    if (cacheEntries.length > 0) {
-      supabase.from('pubg_player_cache').upsert(cacheEntries, { onConflict: 'id' })
-        .then(({ error }) => {
-          if (error) console.warn('[BATCH CACHE UPDATE ERROR]', error.message);
-        });
-    }
-    
     const myParticipant = participants.find((p: any) => normalizeName(p.attributes.stats.name) === lowerNickname);
     if (!myParticipant) throw new Error(`Player ${nickname} not found in match participants`);
 
     const myAccountId = myParticipant.attributes.stats.playerId || myParticipant.attributes.accountId;
+
+    // [V55.0] 닉네임 캐시 최적화: 분석 대상 플레이어 1명만 즉시 업데이트 (데드락 방지)
+    const myCacheEntry = {
+      id: myAccountId,
+      platform,
+      nickname: myParticipant.attributes.stats.name,
+      lower_nickname: myParticipant.attributes.stats.name.toLowerCase(),
+      updated_at: new Date().toISOString()
+    };
+
+    supabase.from('pubg_player_cache').upsert(myCacheEntry, { onConflict: 'id' })
+      .then(({ error }) => {
+        if (error) console.warn('[CACHE-UPDATE-ERROR]', error.message);
+      });
     const myRoster = rosters.find((r: any) => r.relationships.participants.data.some((p: any) => p.id === myParticipant.id));
     const myRosterId = myRoster?.id || "";
 
@@ -191,13 +187,8 @@ export async function GET(request: NextRequest) {
           return slim;
         });
 
-        await Promise.all([
-          supabase.storage.from('telemetry').upload(analyzePath, JSON.stringify(telData), { contentType: 'application/json', upsert: true }),
-          supabase.from("match_master_telemetry").upsert({
-            match_id: matchId, map_name: matchAttr.mapName, game_mode: matchAttr.gameMode,
-            telemetry_events: [], storage_path: analyzePath, telemetry_version: TELEMETRY_VERSION
-          })
-        ]);
+        // [V55.0] telemetry 저장은 하되, master 레코드는 마지막에 한 번만 통합 업데이트
+        await supabase.storage.from('telemetry').upload(analyzePath, JSON.stringify(telData), { contentType: 'application/json', upsert: true });
       }
     }
 
@@ -277,14 +268,13 @@ export async function GET(request: NextRequest) {
         contentType: 'application/json',
         upsert: true
       }),
-      // 2. 전술 통계 및 요약 데이터는 DB로
+      // 2. 전술 통계, 요약 데이터 및 마스터 레코드 통합 저장 (Transaction 최적화)
       supabase.from("processed_match_telemetry").upsert({
         match_id: matchId,
         player_id: lowerNickname,
         data: { fullResult: tacticalResult },
         updated_at: new Date().toISOString()
       }),
-      // 3. 마스터 레코드 업데이트 (버전 관리용)
       supabase.from("match_master_telemetry").upsert({
         match_id: matchId,
         map_name: matchAttr.mapId,

@@ -28,6 +28,7 @@ import { MatchTimeline } from "./MatchTimeline";
 import dynamic from "next/dynamic";
 import type { MatchData } from "../../types/stat";
 import { estimateUserTier } from "@/lib/pubg-analysis/benchmarkScore";
+import { useAIStatus, aiManager } from "@/lib/ai-management";
 
 const TimelineMiniMap = dynamic(
   () => import("./TimelineMiniMap").then((mod) => mod.TimelineMiniMap),
@@ -151,7 +152,20 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
   const [showTierTooltip, setShowTierTooltip] = useState(false);
   const tierRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const { isAnalyzing: isGlobalAnalyzing, activeId } = useAIStatus();
   const router = useRouter();
+
+  // [V45.8] 언마운트 시 진행 중인 분석 강제 중단 (토큰 낭비 방지)
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        console.log(`[AI-CLEANUP] Unmounting MatchCard ${matchId}, aborting analysis...`);
+        abortControllerRef.current.abort();
+        aiManager.stopAnalysis(matchId);
+      }
+    };
+  }, [matchId]);
 
   useEffect(() => {
     if (!showTierTooltip || !isMobile) return;
@@ -186,13 +200,12 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
     
     // 티어별 색상/스타일 정의
     const getTierStyle = (t: string) => {
-      if (t === 'S') return "bg-amber-500/20 border-amber-500/50 text-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.2)]";
-      if (t.startsWith('A+')) return "bg-indigo-500/25 border-indigo-500/60 text-indigo-300 shadow-[0_0_12px_rgba(99,102,241,0.2)]";
-      if (t.startsWith('A')) return "bg-indigo-500/20 border-indigo-500/50 text-indigo-400 shadow-[0_0_10px_rgba(99,102,241,0.1)]";
-      if (t.startsWith('B+')) return "bg-emerald-500/25 border-emerald-500/60 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.2)]";
-      if (t.startsWith('B')) return "bg-emerald-500/20 border-emerald-500/50 text-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.1)]";
-      if (t.startsWith('C')) return "bg-blue-500/20 border-blue-500/50 text-blue-400";
-      if (t.startsWith('D')) return "bg-slate-500/20 border-slate-500/50 text-slate-400";
+      const tier = t.toUpperCase();
+      if (tier.startsWith('S')) return "bg-amber-500/20 border-amber-500/50 text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.3)] font-black";
+      if (tier.startsWith('A')) return "bg-indigo-500/20 border-indigo-500/50 text-indigo-400 shadow-[0_0_10px_rgba(99,102,241,0.15)]";
+      if (tier.startsWith('B')) return "bg-emerald-500/20 border-emerald-500/50 text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.15)]";
+      if (tier.startsWith('C')) return "bg-blue-500/20 border-blue-500/50 text-blue-400";
+      if (tier.startsWith('D')) return "bg-slate-500/20 border-slate-500/50 text-slate-400";
       return "bg-white/5 border-white/10 text-gray-400";
     };
 
@@ -291,12 +304,16 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
 
   const handleAnalyze = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (isAnalyzing || analysis) return;
+    // [V45.9] 전역 락 체크: 내가 분석 중인 게 아니면 다른 분석 시작 금지
+    if (isGlobalAnalyzing || isAnalyzing || analysis) return;
 
+    if (!aiManager.startAnalysis(matchId)) return;
+    
     setIsAnalyzing(true);
     setAnalysis("");
     
     const abortController = new AbortController();
+    abortControllerRef.current = abortController;
     let lineBuffer = "";
     
     try {
@@ -321,7 +338,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
 
             lineBuffer += decoder.decode(value, { stream: true });
             const lines = lineBuffer.split("\n");
-            lineBuffer = lines.pop() || ""; // 마지막 미완성 라인 유지
+            lineBuffer = lines.pop() || ""; 
 
             for (const line of lines) {
               if (!line.trim()) continue;
@@ -330,8 +347,6 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                 if (parsed.type === "chunk") {
                   accumulatedAnalysis += parsed.data;
                   setAnalysis(accumulatedAnalysis);
-                } else if (parsed.type === "done") {
-                  // 분석 완료
                 }
               } catch (e) {
                 console.error("NDJSON Parse Error in MatchCard:", e, line);
@@ -343,9 +358,13 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
         }
       }
     } catch (err: any) {
-      if (err.name !== 'AbortError') console.error("Analysis Error:", err);
+      if (err.name !== 'AbortError') {
+        console.error("Analysis Error:", err);
+      }
     } finally {
       setIsAnalyzing(false);
+      aiManager.stopAnalysis(matchId);
+      abortControllerRef.current = null;
     }
   };
 
@@ -378,7 +397,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
     : "bg-black/40 hover:bg-black/50";
 
   return (
-    <div className={`mb-4 rounded-[2rem] border transition-all duration-300 shadow-2xl relative ${borderColor} ${bgGradient} ${isExpanded ? 'bg-black/80 ring-1 ring-white/5 z-20' : 'z-10'} hover:z-30`}>
+    <div className={`mb-4 rounded-[2rem] border transition-all duration-300 shadow-2xl relative ${borderColor} ${bgGradient} ${(isExpanded || showTierTooltip) ? 'bg-[#0c0c0c] ring-1 ring-white/20 z-[999] isolation-isolate' : 'z-10'} hover:z-[70]`}>
       {/* Header Area */}
       <div 
         onClick={() => setIsExpanded(!isExpanded)}
@@ -472,7 +491,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                     isMobile 
                     ? 'fixed inset-x-4 bottom-20 animate-in slide-in-from-bottom-5' 
                     : 'absolute bottom-full right-0 mb-3 w-64 animate-in fade-in zoom-in-95'
-                  } bg-black/98 backdrop-blur-2xl border border-white/20 p-5 rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.8)] transition-all duration-300 z-[100] border-t-white/40`}
+                  } bg-[#0a0a0a] border border-white/20 p-5 rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.9)] transition-all duration-300 z-[1001] border-t-white/40`}
                 >
                   <div className="flex justify-between items-center border-b border-white/10 pb-2 mb-4">
                     <div className="text-[12px] font-black text-indigo-400 uppercase tracking-widest">
@@ -579,7 +598,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
 
       {/* Expanded Content */}
       {isExpanded && (
-        <div className="p-3 md:p-6 pt-0 border-t border-white/5 animate-in slide-in-from-top-4 duration-500">
+        <div className="p-3 md:p-6 pt-0 border-t border-white/5 animate-in slide-in-from-top-4 duration-500 bg-[#0c0c0c] rounded-b-[2rem] isolation-isolate relative z-10">
           {/* Detailed Stats Grid */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
             <StatBox icon={<Crosshair size={16} />} label="헤드샷" value={Number(matchData!.stats.headshotKills) || 0} color="text-red-400" />
@@ -793,12 +812,18 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
             ) : (
               <button 
                 onClick={handleAnalyze}
-                disabled={isAnalyzing}
-                className={`w-full py-16 ${isRanked ? 'bg-amber-500/10 border-amber-500/20 hover:bg-amber-500/20' : 'bg-indigo-500/10 border-indigo-500/20 hover:bg-indigo-500/20'} border-2 border-dashed rounded-[2.5rem] flex flex-col items-center gap-4 group transition-all relative overflow-hidden`}
+                disabled={isGlobalAnalyzing || isAnalyzing}
+                className={`w-full py-16 ${isRanked ? 'bg-amber-500/10 border-amber-500/20 hover:bg-amber-500/20' : 'bg-indigo-500/10 border-indigo-500/20 hover:bg-indigo-500/20'} border-2 border-dashed rounded-[2.5rem] flex flex-col items-center gap-4 group transition-all relative overflow-hidden ${
+                  isGlobalAnalyzing && !isAnalyzing ? 'opacity-50 cursor-not-allowed grayscale' : ''
+                }`}
               >
                 <div className="absolute inset-0 bg-gradient-to-b from-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
                 {isAnalyzing ? (
                   <div className={`w-8 h-8 border-3 border-white/10 ${isRanked ? 'border-t-amber-500' : 'border-t-indigo-500'} rounded-full animate-spin`} />
+                ) : isGlobalAnalyzing ? (
+                  <div className="w-14 h-14 rounded-2xl bg-white/5 flex items-center justify-center">
+                    <Clock size={28} className="text-gray-500" />
+                  </div>
                 ) : (
                   <div className={`w-14 h-14 rounded-2xl ${isRanked ? 'bg-amber-500/20' : 'bg-indigo-500/20'} flex items-center justify-center group-hover:scale-110 transition-transform`}>
                     <MousePointer2 className={isRanked ? 'text-amber-500' : 'text-indigo-400'} size={28} />
@@ -927,7 +952,7 @@ const TacticalBox = ({ icon, label, value, subLabel, color, bgColor, tooltip, is
               >
                 ?
               </button>
-              <div className={`absolute bottom-full right-0 mb-2 w-48 p-2 bg-black/90 border border-white/10 rounded-xl text-[9px] text-gray-400 font-medium leading-normal transition-opacity z-50 shadow-2xl ${
+              <div className={`absolute bottom-full right-0 mb-2 w-56 p-3 bg-[#0a0a0a] backdrop-blur-xl border border-white/20 rounded-2xl text-[10px] text-gray-300 font-medium leading-relaxed transition-opacity z-[100] shadow-[0_10px_40px_rgba(0,0,0,0.8)] ${
                 showTooltip ? 'opacity-100' : 'opacity-0 pointer-events-none'
               }`}>
                 {tooltip}

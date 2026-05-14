@@ -32,13 +32,12 @@ interface BattleResult {
 }
 
 const getTierStyle = (t: string) => {
-  if (t === 'S') return "bg-amber-500/20 border-amber-500/50 text-amber-500 shadow-[0_0_15px_rgba(245,158,11,0.2)]";
-  if (t.startsWith('A+')) return "bg-indigo-500/25 border-indigo-500/60 text-indigo-300 shadow-[0_0_12px_rgba(99,102,241,0.2)]";
-  if (t.startsWith('A')) return "bg-indigo-500/20 border-indigo-500/50 text-indigo-400 shadow-[0_0_10px_rgba(99,102,241,0.1)]";
-  if (t.startsWith('B+')) return "bg-emerald-500/25 border-emerald-500/60 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.2)]";
-  if (t.startsWith('B')) return "bg-emerald-500/20 border-emerald-500/50 text-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.1)]";
-  if (t.startsWith('C')) return "bg-blue-500/20 border-blue-500/50 text-blue-400";
-  if (t.startsWith('D')) return "bg-slate-500/20 border-slate-500/50 text-slate-400";
+  const tier = t.toUpperCase();
+  if (tier.startsWith('S')) return "bg-amber-500/20 border-amber-500/50 text-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.3)] font-black";
+  if (tier.startsWith('A')) return "bg-indigo-500/20 border-indigo-500/50 text-indigo-400 shadow-[0_0_10px_rgba(99,102,241,0.15)]";
+  if (tier.startsWith('B')) return "bg-emerald-500/20 border-emerald-500/50 text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.15)]";
+  if (tier.startsWith('C')) return "bg-blue-500/20 border-blue-500/50 text-blue-400";
+  if (tier.startsWith('D')) return "bg-slate-500/20 border-slate-500/50 text-slate-400";
   return "bg-white/5 border-white/10 text-gray-400";
 };
 
@@ -64,6 +63,12 @@ function BattleContent() {
   const [favorites, setFavorites] = useState<string[]>([]);
   const [showDropdown1, setShowDropdown1] = useState(false);
   const [showDropdown2, setShowDropdown2] = useState(false);
+
+  // [V54.7] 자동완성 상태 추가
+  const [suggestions1, setSuggestions1] = useState<{ nickname: string; platform: string }[]>([]);
+  const [suggestions2, setSuggestions2] = useState<{ nickname: string; platform: string }[]>([]);
+  const [isSuggesting1, setIsSuggesting1] = useState(false);
+  const [isSuggesting2, setIsSuggesting2] = useState(false);
 
   // 초기 데이터 로드
   useEffect(() => {
@@ -124,12 +129,16 @@ function BattleContent() {
       updateRecentSearches(data.nick2 || n2);
 
       lastAutoBattleKeyRef.current = `${n1}::${n2}::${mode}`;
+
+      // [V54.7] URL 업데이트 (새로고침/공유 대응)
+      const newPath = buildBattlePath(data.nick1 || n1, data.nick2 || n2, mode);
+      router.replace(newPath, { scroll: false });
     } catch (e: any) {
       setError(e.message);
     } finally {
       setLoading(false);
     }
-  }, [updateRecentSearches]);
+  }, [updateRecentSearches, router]);
 
   const handleBattle = useCallback(() => {
     void runBattle(nick1, nick2, matchType);
@@ -353,6 +362,40 @@ function BattleContent() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  // [V54.7] 자동완성 Fetch (Debounced) - Nick1
+  useEffect(() => {
+    if (!nick1 || nick1.length < 2) {
+      setSuggestions1([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setIsSuggesting1(true);
+      try {
+        const res = await fetch(`/api/pubg/suggest?q=${encodeURIComponent(nick1)}`);
+        const data = await res.json();
+        setSuggestions1(data.suggestions || []);
+      } catch (err) { console.error(err); } finally { setIsSuggesting1(false); }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [nick1]);
+
+  // [V54.7] 자동완성 Fetch (Debounced) - Nick2
+  useEffect(() => {
+    if (!nick2 || nick2.length < 2) {
+      setSuggestions2([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setIsSuggesting2(true);
+      try {
+        const res = await fetch(`/api/pubg/suggest?q=${encodeURIComponent(nick2)}`);
+        const data = await res.json();
+        setSuggestions2(data.suggestions || []);
+      } catch (err) { console.error(err); } finally { setIsSuggesting2(false); }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [nick2]);
+
   return (
     <main className="min-h-screen bg-[#080810] text-white px-4 py-12">
       <div className="max-w-2xl mx-auto flex flex-col gap-8">
@@ -384,8 +427,12 @@ function BattleContent() {
                 placeholder="내 닉네임"
                 className="w-full p-4 bg-black/40 border border-indigo-500/30 rounded-2xl text-white placeholder:text-gray-600 font-bold focus:outline-none focus:border-indigo-500/70 transition-colors"
               />
-              {showDropdown1 && (recentSearches.length > 0 || favorites.length > 0) && (
+              {showDropdown1 && (recentSearches.length > 0 || favorites.length > 0 || suggestions1.length > 0) && (
                 <NicknameDropdown 
+                  nickname={nick1}
+                  suggestions={suggestions1}
+                  isSuggesting={isSuggesting1}
+                  recentSearches={recentSearches}
                   items={getDropdownItems()} 
                   onSelect={(val) => { setNick1(val); setShowDropdown1(false); }} 
                   onClose={() => setShowDropdown1(false)}
@@ -405,8 +452,12 @@ function BattleContent() {
                 placeholder="상대 닉네임"
                 className="w-full p-4 bg-black/40 border border-rose-500/30 rounded-2xl text-white placeholder:text-gray-600 font-bold focus:outline-none focus:border-rose-500/70 transition-colors"
               />
-              {showDropdown2 && (recentSearches.length > 0 || favorites.length > 0) && (
+              {showDropdown2 && (recentSearches.length > 0 || favorites.length > 0 || suggestions2.length > 0) && (
                 <NicknameDropdown 
+                  nickname={nick2}
+                  suggestions={suggestions2}
+                  isSuggesting={isSuggesting2}
+                  recentSearches={recentSearches}
                   items={getDropdownItems()} 
                   onSelect={(val) => { setNick2(val); setShowDropdown2(false); }} 
                   onClose={() => setShowDropdown2(false)}
@@ -625,32 +676,86 @@ function BattleContent() {
   );
 }
 
-function NicknameDropdown({ items, onSelect, onClose }: { 
+function NicknameDropdown({ 
+  nickname,
+  suggestions,
+  isSuggesting,
+  recentSearches,
+  items, 
+  onSelect, 
+  onClose 
+}: { 
+  nickname: string;
+  suggestions: { nickname: string; platform: string }[];
+  isSuggesting: boolean;
+  recentSearches: string[];
   items: { name: string; type: "favorite" | "recent" }[];
   onSelect: (val: string) => void;
   onClose: () => void;
 }) {
   return (
     <div className="absolute top-full left-0 right-0 mt-2 bg-[#0a0a1a]/95 border border-white/10 rounded-2xl overflow-hidden shadow-[0_10px_40px_rgba(0,0,0,0.5)] backdrop-blur-xl z-50 animate-in fade-in slide-in-from-top-2 duration-200">
-      <div className="max-h-[240px] overflow-y-auto custom-scrollbar">
-        {items.map((item, i) => (
-          <button
-            key={`${item.name}-${i}`}
-            onClick={() => {
-              onSelect(item.name);
-              onClose();
-            }}
-            className="w-full px-4 py-3 flex items-center gap-3 hover:bg-white/5 transition-colors text-left border-b border-white/5 last:border-0 group"
-          >
-            {item.type === "favorite" ? (
-              <Star size={14} className="text-yellow-400 fill-yellow-400 shrink-0" />
-            ) : (
-              <Clock size={14} className="text-gray-500 shrink-0" />
+      <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
+        {/* 자동완성 결과 */}
+        {nickname.length >= 2 && suggestions.length > 0 && (
+          <div className="pb-2">
+            <div className="px-4 py-2 text-[10px] font-black text-amber-500/50 uppercase tracking-widest border-b border-white/5 bg-white/2">추천 플레이어</div>
+            {suggestions.map((s, i) => {
+              const isRecent = recentSearches.includes(s.nickname);
+              return (
+                <button
+                  key={`suggest-${s.nickname}-${i}`}
+                  onClick={() => {
+                    onSelect(s.nickname);
+                    onClose();
+                  }}
+                  className="w-full px-4 py-3 flex items-center gap-3 hover:bg-amber-500/10 transition-colors text-left border-b border-white/5 last:border-0 group"
+                >
+                  <div className="relative">
+                    <User size={14} className={`${isRecent ? 'text-blue-400' : 'text-amber-500'} shrink-0`} />
+                    {isRecent && <div className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full border border-[#0a0a1a]" />}
+                  </div>
+                  <div className="flex flex-col">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-bold text-gray-200 group-hover:text-white truncate">{s.nickname}</span>
+                      {isRecent && (
+                        <span className="px-1 py-0.5 bg-blue-500/20 text-blue-400 text-[8px] font-black rounded uppercase tracking-tighter border border-blue-500/30">최근</span>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-gray-500 uppercase">{s.platform}</span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {/* 최근 검색 및 즐겨찾기 */}
+        {(nickname.length < 2 || suggestions.length === 0) && (
+          <>
+            {nickname.length >= 2 && suggestions.length === 0 && !isSuggesting && (
+              <div className="px-4 py-4 text-center text-xs text-gray-500 italic border-b border-white/5">검색 결과가 없습니다.</div>
             )}
-            <span className="text-sm font-bold text-gray-300 group-hover:text-white truncate">{item.name}</span>
-            <User size={12} className="ml-auto text-gray-700 opacity-0 group-hover:opacity-100 transition-opacity" />
-          </button>
-        ))}
+            {items.map((item, i) => (
+              <button
+                key={`${item.name}-${i}`}
+                onClick={() => {
+                  onSelect(item.name);
+                  onClose();
+                }}
+                className="w-full px-4 py-3 flex items-center gap-3 hover:bg-white/5 transition-colors text-left border-b border-white/5 last:border-0 group"
+              >
+                {item.type === "favorite" ? (
+                  <Star size={14} className="text-yellow-400 fill-yellow-400 shrink-0" />
+                ) : (
+                  <Clock size={14} className="text-gray-500 shrink-0" />
+                )}
+                <span className="text-sm font-bold text-gray-300 group-hover:text-white truncate">{item.name}</span>
+                <User size={12} className="ml-auto text-gray-700 opacity-0 group-hover:opacity-100 transition-opacity" />
+              </button>
+            ))}
+          </>
+        )}
       </div>
     </div>
   );

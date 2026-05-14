@@ -129,8 +129,16 @@ export async function POST(request: Request) {
       async start(controller) {
         try {
           if (streamResult) {
-            for await (const chunk of streamResult.stream) { controller.enqueue(encoder.encode(JSON.stringify({ type: "chunk", data: chunk.text() }) + "\n")); }
-          } else if (fallbackText) { controller.enqueue(encoder.encode(JSON.stringify({ type: "chunk", data: fallbackText }) + "\n")); }
+            for await (const chunk of streamResult.stream) {
+              if (request.signal.aborted) {
+                console.log("[AI-STOP] Client aborted ai-analyze request, stopping Gemini stream.");
+                break;
+              }
+              controller.enqueue(encoder.encode(JSON.stringify({ type: "chunk", data: chunk.text() }) + "\n")); 
+            }
+          } else if (fallbackText) { 
+            controller.enqueue(encoder.encode(JSON.stringify({ type: "chunk", data: fallbackText }) + "\n")); 
+          }
           controller.enqueue(encoder.encode(JSON.stringify({ type: "done" }) + "\n"));
         } catch (e) { controller.error(e); } finally { controller.close(); }
       }

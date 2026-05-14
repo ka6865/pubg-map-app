@@ -13,7 +13,7 @@ export const svgPaths = {
     key: "M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z",
     home: "M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z",
     star: "M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z",
-    gas: "M19 10c.55 0 1-.45 1-1s-.45-1-1-1-1 .45-1 1 .45 1 1 1zm-7-1.5c.55 0 1-.45 1-1s-.45-1-1-1-1 .45-1 1 .45 1 1 1zm7 4.5c.55 0 1-.45 1-1s-.45-1-1-1-1 .45-1 1 .45 1 1 1zm-7 0c.55 0 1-.45 1-1s-.45-1-1-1-1 .45-1 1 .45 1 1 1zM18 3c-1.1 0-2 .9-2 2v9c0 .55-.45 1-1 1s-1-.45-1-1V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v16h10v-3.5h1V21h7c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zM6 13h5V6H6v7z",
+    gas: "M19 10h-2V6h2v4m2-4v4a2 2 0 0 1-2 2h-2v9h-6V12H9c-1.11 0-2-.9-2-2V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2m-14 15H5V12h2v9m-4-9H1v9h2v-9z",
   };
 
 /**
@@ -40,7 +40,6 @@ export const CATEGORY_INFO: Record<string, { label: string; color: string; path:
     Boat: { label: '보트', color: '#3b82f6', path: svgPaths.boat, iconType: '🚤' },
     EsportsBoat: { label: '고정 보트', color: '#8b5cf6', path: svgPaths.boat, iconType: '🏆' },
     Glider: { label: '글라이더', color: '#f97316', path: svgPaths.glider, iconType: '🪂' },
-    Key: { label: '비밀 열쇠', color: '#10b981', path: svgPaths.key, iconType: '🔑' },
     
     GoldenMirado: { label: '황금 미라도', color: '#eab308', path: svgPaths.car, iconType: '👑' }, // 노란색
     EsportsMirado: { label: 'e스포츠 미라도', color: '#a855f7', path: svgPaths.car, iconType: '🏆' }, // 진보라색
@@ -51,7 +50,7 @@ export const CATEGORY_INFO: Record<string, { label: string; color: string; path:
     PoliceCar: { label: '경찰차', color: '#3b82f6', path: svgPaths.car, iconType: '🚓' },
     // Airboat: { label: '에어보트', color: '#06b6d4', path: svgPaths.boat, iconType: '🚁' },
     SecurityCard: { label: '보안 키카드', color: '#10b981', path: svgPaths.key, iconType: '💳' },
-    GasPump: { label: '주유기', color: '#84cc16', path: svgPaths.gas, iconType: '⛽' },
+    GasPump: { label: '주유소', color: '#84cc16', path: svgPaths.gas, iconType: '⛽' },
     Snowmobile: { label: '스노우모빌', color: '#0ea5e9', path: svgPaths.car, iconType: '🏂' },
   };
   
@@ -75,10 +74,10 @@ export const MAP_DIMENSIONS: Record<string, number> = {
 };
 
 export const MAP_CATEGORIES: Record<string, string[]> = {
-    Erangel: ['Garage', 'Esports', 'EsportsBoat', 'Glider', 'Key'],
+    Erangel: ['Garage', 'Esports', 'EsportsBoat', 'Glider', 'SecretRoom'],
     Miramar: ['GoldenMirado', 'EsportsMirado', 'EsportsPickup', 'EsportsBoat', 'Glider'], 
     Taego: ['Garage', 'Porter', 'Boat', 'SecretRoom'],
     Deston: ['Garage', 'PoliceCar', 'Boat', 'Glider'],
-    Vikendi: ['Garage', 'Snowmobile', 'Esports', 'Boat', 'Key'],
-    Rondo: ['Garage','Esports', 'Boat', 'Glider','Key', 'GasPump']
+    Vikendi: ['Garage', 'Snowmobile', 'Esports', 'Boat', 'SecretRoom'],
+    Rondo: ['Garage','Esports', 'Boat', 'Glider','SecretRoom', 'GasPump']
   };

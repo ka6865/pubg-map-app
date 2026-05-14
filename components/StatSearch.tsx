@@ -58,6 +58,10 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
   const dropdownRef = useRef<HTMLDivElement>(null);
   const [isMobile, setIsMobile] = useState(false);
 
+  // [V54.6] 자동완성 상태 추가
+  const [suggestions, setSuggestions] = useState<{ nickname: string; platform: string }[]>([]);
+  const [isSuggesting, setIsSuggesting] = useState(false);
+
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);
     const handleClickOutside = (event: MouseEvent) => {
@@ -162,6 +166,33 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
     localStorage.setItem(STORAGE_KEY_FAVORITES, JSON.stringify(favorites));
   }, [favorites]);
 
+  // [V54.6] 자동완성 Fetch 로직 (Debounced)
+  useEffect(() => {
+    if (!nickname || nickname.length < 2) {
+      setSuggestions([]);
+      return;
+    }
+
+    // 이미 결과가 있거나 로딩 중이면 추천을 띄우지 않음 (선택 사항)
+    // if (result || loading) return;
+
+    const timer = setTimeout(async () => {
+      setIsSuggesting(true);
+      try {
+        const res = await fetch(`/api/pubg/suggest?q=${encodeURIComponent(nickname)}`);
+        const data = await res.json();
+        // 현재 입력값과 결과가 일치하는지 확인 (Race Condition 방지)
+        setSuggestions(data.suggestions || []);
+      } catch (err) {
+        console.error("[SUGGEST FETCH ERROR]", err);
+      } finally {
+        setIsSuggesting(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [nickname]);
+
   const toggleFavorite = (name: string, e: React.MouseEvent) => {
     e.stopPropagation();
     setFavorites((prev) =>
@@ -197,7 +228,7 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
       
       {/* 하이드레이션 오류 방지를 위해 마운트 후에만 인터랙티브 요소 렌더링 활성화 */}
       <div 
-        className="flex flex-col md:flex-row gap-3 max-w-3xl mx-auto mb-8 relative"
+        className={`flex flex-col md:flex-row gap-3 max-w-3xl mx-auto mb-8 relative ${showDropdown ? 'z-[1000]' : 'z-30'}`}
         style={{ opacity: mounted ? 1 : 0.5 }}
       >
         <select
@@ -225,48 +256,94 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
             onFocus={() => setShowDropdown(true)}
             className="w-full p-3 bg-[#252525] text-white border border-[#444] rounded-md text-base focus:outline-none focus:border-[#F2A900] transition-colors"
           />
-          {showDropdown && (recentSearches.length > 0 || favorites.length > 0) && (
+          {showDropdown && (recentSearches.length > 0 || favorites.length > 0 || suggestions.length > 0) && (
             <div className="absolute top-full left-0 right-0 mt-2 bg-[#0a0a1a]/95 border border-white/10 rounded-xl overflow-hidden shadow-[0_10px_40px_rgba(0,0,0,0.5)] backdrop-blur-xl z-50 animate-in fade-in slide-in-from-top-2 duration-200">
-              <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
-                {getDropdownItems().map((item, i) => {
-                  const isFav = favorites.includes(item.name);
-                  return (
-                    <div
-                      key={`${item.name}-${i}`}
-                      onClick={() => {
-                        setNickname(item.name);
-                        handleSearch(selectedSeason, item.name);
-                        setShowDropdown(false);
-                      }}
-                      className="w-full px-4 py-3 flex items-center gap-3 hover:bg-white/5 transition-colors cursor-pointer border-b border-white/5 last:border-0 group"
-                    >
-                      {item.type === "favorite" ? (
-                        <Star size={14} className="text-yellow-400 fill-yellow-400 shrink-0" />
-                      ) : (
-                        <Clock size={14} className="text-gray-500 shrink-0" />
-                      )}
-                      <span className="text-sm font-bold text-gray-300 group-hover:text-white truncate">{item.name}</span>
-                      
-                      <div className="ml-auto flex items-center gap-2">
-                        <button
-                          onClick={(e) => toggleFavorite(item.name, e)}
-                          className={`p-1.5 rounded-lg transition-all ${isFav ? "text-yellow-400 bg-yellow-400/10" : "text-gray-600 hover:text-yellow-400 hover:bg-yellow-400/10"}`}
+              <div className="max-h-[350px] overflow-y-auto custom-scrollbar">
+                {/* [V54.6] 자동완성 추천 결과 우선 표시 */}
+                {nickname.length >= 2 && suggestions.length > 0 && (
+                  <div className="pb-2">
+                    <div className="px-4 py-2 text-[10px] font-black text-amber-500/50 uppercase tracking-widest border-b border-white/5 bg-white/2">추천 플레이어</div>
+                    {suggestions.map((s, i) => {
+                      const isRecent = recentSearches.includes(s.nickname);
+                      return (
+                        <div
+                          key={`suggest-${s.nickname}-${i}`}
+                          onClick={() => {
+                            setNickname(s.nickname);
+                            setPlatform(s.platform);
+                            handleSearch(selectedSeason, s.nickname, s.platform);
+                            setShowDropdown(false);
+                          }}
+                          className="w-full px-4 py-3 flex items-center gap-3 hover:bg-amber-500/10 transition-colors cursor-pointer border-b border-white/5 last:border-0 group"
                         >
-                          <Star size={14} fill={isFav ? "currentColor" : "none"} />
-                        </button>
-                        {item.type === "recent" && (
-                          <button
-                            onClick={(e) => removeRecentSearch(item.name, e)}
-                            className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all"
-                          >
-                            <X size={14} />
-                          </button>
-                        )}
-                        <User size={12} className="text-gray-700 opacity-0 group-hover:opacity-100 transition-opacity" />
-                      </div>
-                    </div>
-                  );
-                })}
+                          <div className="relative">
+                            <User size={14} className={`${isRecent ? 'text-blue-400' : 'text-amber-500'} shrink-0`} />
+                            {isRecent && <div className="absolute -top-1 -right-1 w-2 h-2 bg-blue-500 rounded-full border border-[#0a0a1a]" title="최근 검색함" />}
+                          </div>
+                          <div className="flex flex-col">
+                            <div className="flex items-center gap-2">
+                              <span className="text-sm font-bold text-gray-200 group-hover:text-white truncate">{s.nickname}</span>
+                              {isRecent && (
+                                <span className="px-1 py-0.5 bg-blue-500/20 text-blue-400 text-[8px] font-black rounded uppercase tracking-tighter border border-blue-500/30">최근</span>
+                              )}
+                            </div>
+                            <span className="text-[10px] text-gray-500 uppercase">{s.platform}</span>
+                          </div>
+                          <div className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity">
+                            <Star size={12} className="text-amber-500/30" />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* 최근 검색 및 즐겨찾기 (검색어가 짧거나 결과가 없을 때 보완) */}
+                {(nickname.length < 2 || suggestions.length === 0) && (
+                  <>
+                    {nickname.length >= 2 && suggestions.length === 0 && !isSuggesting && (
+                      <div className="px-4 py-4 text-center text-xs text-gray-500 italic">검색 결과가 없습니다.</div>
+                    )}
+                    {getDropdownItems().map((item, i) => {
+                      const isFav = favorites.includes(item.name);
+                      return (
+                        <div
+                          key={`${item.name}-${i}`}
+                          onClick={() => {
+                            setNickname(item.name);
+                            handleSearch(selectedSeason, item.name);
+                            setShowDropdown(false);
+                          }}
+                          className="w-full px-4 py-3 flex items-center gap-3 hover:bg-white/5 transition-colors cursor-pointer border-b border-white/5 last:border-0 group"
+                        >
+                          {item.type === "favorite" ? (
+                            <Star size={14} className="text-yellow-400 fill-yellow-400 shrink-0" />
+                          ) : (
+                            <Clock size={14} className="text-gray-500 shrink-0" />
+                          )}
+                          <span className="text-sm font-bold text-gray-300 group-hover:text-white truncate">{item.name}</span>
+                          
+                          <div className="ml-auto flex items-center gap-2">
+                            <button
+                              onClick={(e) => toggleFavorite(item.name, e)}
+                              className={`p-1.5 rounded-lg transition-all ${isFav ? "text-yellow-400 bg-yellow-400/10" : "text-gray-600 hover:text-yellow-400 hover:bg-yellow-400/10"}`}
+                            >
+                              <Star size={14} fill={isFav ? "currentColor" : "none"} />
+                            </button>
+                            {item.type === "recent" && (
+                              <button
+                                onClick={(e) => removeRecentSearch(item.name, e)}
+                                className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-400/10 rounded-lg transition-all"
+                              >
+                                <X size={14} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </>
+                )}
               </div>
             </div>
           )}

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
-import { useRouter, useSearchParams } from "next/navigation"; // 🌟 useSearchParams 추가
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   MapContainer,
   TileLayer,
@@ -13,11 +13,26 @@ import {
 } from "react-leaflet";
 import L, { CRS } from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { 
+  Eye, 
+  EyeOff, 
+  Save, 
+  Trash2, 
+  Upload, 
+  LogOut, 
+  Map as MapIcon, 
+  CheckCircle2, 
+  ChevronRight,
+  PlusCircle,
+  XCircle,
+  FileJson,
+  Search,
+  X
+} from "lucide-react";
 import { supabase } from "../lib/supabase";
 import { CATEGORY_INFO } from "../lib/map_config";
 import { toast } from "sonner";
 import { useMapSettings } from "@/hooks/useMapSettings";
-
 
 // SVG 경로와 색상을 조합해 커스텀 지도 마커 아이콘 객체 생성
 const createPinIcon = (colorCode: string, pathData: string) => {
@@ -49,9 +64,6 @@ const MAP_LIST = [
   { id: "Deston", label: "데스턴", imageUrl: "/Deston.jpg" },
 ];
 
-/**
- * 🌟 [추가] 맵/카테고리별 ID 생성 규칙 매핑 테이블 (M CC III 방식)
- */
 const MAP_INDEX_MAP: Record<string, number> = {
   Erangel: 1,
   Miramar: 2,
@@ -88,7 +100,6 @@ const MapEvents = ({
   return null;
 };
 
-// 🌟 [추가] 초기 로딩 시 URL 좌표로 화면을 이동시켜주는 내부 컴포넌트
 const MapController = ({
   center,
   zoom,
@@ -105,7 +116,7 @@ const MapController = ({
 
 const MapEditorComponent = () => {
   const router = useRouter();
-  const searchParams = useSearchParams(); // 🌟 URL 파라미터 읽기
+  const searchParams = useSearchParams();
 
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [activeMapId, setActiveMapId] = useState("Erangel");
@@ -122,11 +133,9 @@ const MapEditorComponent = () => {
     [imageHeight, imageWidth],
   ];
 
-  // 🌟 URL 쿼리에 넘어온 디스코드 제보 좌표 파싱
   const latParam = searchParams?.get("lat");
   const lngParam = searchParams?.get("lng");
 
-  // 🌟 useMemo를 사용하여 리렌더링 시 배열 참조가 바뀌지 않도록 보정 (줌 초기화 방지)
   const initialCenter = useMemo<[number, number]>(() => {
     return latParam && lngParam
       ? [Number(latParam), Number(lngParam)]
@@ -141,8 +150,7 @@ const MapEditorComponent = () => {
   const [vehicles, setVehicles] = useState<any[]>([]);
   const [pendingVehicles, setPendingVehicles] = useState<any[]>([]);
 
-  // DB 기반 동적 카테고리 로드
-  const { activeCategories: allowedCategories, categoryInfoMap } = useMapSettings(activeMapId);
+  const { activeCategories: allowedCategories, categoryInfoMap } = useMapSettings(activeMapId, true);
 
   const icons = useMemo(() => {
     const res: Record<string, L.DivIcon> = {};
@@ -156,21 +164,26 @@ const MapEditorComponent = () => {
   }, [categoryInfoMap]);
 
   const [activeType, setActiveType] = useState<string>("Esports");
-  const [filters, setFilters] = useState<Record<string, boolean>>(
-    Object.keys(CATEGORY_INFO).reduce((acc, key) => ({ ...acc, [key]: true }), {})
-  );
+  const [filters, setFilters] = useState<Record<string, boolean>>({});
+  const [searchTerm, setSearchTerm] = useState("");
 
-  // 🎯 React 19 대응: 파생 상태를 사용하여 렌더링 중 setState 호출 방지
-  const effectiveActiveType = allowedCategories.includes(activeType) 
-    ? activeType 
-    : (allowedCategories[0] || "Esports");
-
-  // 만약 activeType이 현재 허용된 카테고리에 없다면, 다음 렌더링 시 보정되도록 함 (동기적 setState 피함)
+  // categoryInfoMap 로드 시 필터 초기화
   useEffect(() => {
-    if (allowedCategories.length > 0 && !allowedCategories.includes(activeType)) {
-      setActiveType(allowedCategories[0]);
+    if (Object.keys(categoryInfoMap).length > 0) {
+      setFilters(prev => {
+        const next = { ...prev };
+        Object.keys(categoryInfoMap).forEach(key => {
+          if (next[key] === undefined) next[key] = true;
+        });
+        return next;
+      });
     }
-  }, [allowedCategories, activeType]);
+  }, [categoryInfoMap]);
+
+  const effectiveActiveType = useMemo(() => {
+    if (Object.keys(categoryInfoMap).includes(activeType)) return activeType;
+    return Object.keys(categoryInfoMap)[0] || "Esports";
+  }, [activeType, categoryInfoMap]);
 
   useEffect(() => {
     const checkAdmin = async () => {
@@ -197,11 +210,10 @@ const MapEditorComponent = () => {
 
       setIsAuthorized(true);
 
-      // 현재 활성화된 맵의 마커만 DB에서 가져옵니다.
       const { data: dbMarkers, error: fetchError } = await supabase
         .from("map_markers")
         .select("*")
-        .eq("map_id", activeMapId); // 현재 맵 ID로 필터링
+        .eq("map_id", activeMapId);
 
       if (fetchError) {
         console.error("Error fetching map markers:", fetchError);
@@ -222,10 +234,10 @@ const MapEditorComponent = () => {
         
       setPendingVehicles(pendingData || []);
 
-      setIsLoaded(true); // 데이터 로드 완료
+      setIsLoaded(true);
     };
     checkAdmin();
-  }, [router, activeMapId]); // activeMapId가 변경될 때마다 다시 로드
+  }, [router, activeMapId]);
 
   useEffect(() => {
     if (isLoaded)
@@ -347,19 +359,20 @@ const MapEditorComponent = () => {
   const handleMapClick = (e: L.LeafletMouseEvent) => {
     const newVehicle = {
       id: Date.now(),
-      name: categoryInfoMap[activeType]?.label || "마커",
+      name: categoryInfoMap[effectiveActiveType]?.label || "마커",
       x: e.latlng.lng,
       y: e.latlng.lat,
       mapId: activeMapId,
-      type: activeType,
+      type: effectiveActiveType,
     };
     setVehicles((prev) => [...prev, newVehicle]);
+    
+    // 마커 추가 시 가시성 필터가 꺼져있으면 켜줌
+    if (!filters[effectiveActiveType]) {
+      setFilters(prev => ({ ...prev, [effectiveActiveType]: true }));
+    }
   };
 
-  /**
-   * 🌟 [추가] 로컬 JSON 파일을 읽어 현재 마커 리스트에 추가합니다.
-   * 사용자 요청에 따라 M CC III 규칙으로 ID를 자동 생성합니다.
-   */
   const handleImportJSON = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -375,12 +388,10 @@ const MapEditorComponent = () => {
           throw new Error("올바른 JSON 배열 형식이 아닙니다.");
         }
 
-        const mapIdx = MAP_INDEX_MAP[activeMapId] || 9; // 알 수 없는 맵은 9번대 사용
+        const mapIdx = MAP_INDEX_MAP[activeMapId] || 9;
         const newMarkers = importedData.map((item: any, index: number) => {
-          const catCode = CATEGORY_CODE_MAP[item.type] || 99; // 알 수 없는 타입은 99번대 사용
+          const catCode = CATEGORY_CODE_MAP[item.type] || 99;
           
-          // M CC III 조합 (예: 6 14 001)
-          // 현재 리스트에 있는 마커들 중 해당 타입의 최대 ID를 찾아 그 다음 번호부터 부여
           const prefix = mapIdx * 100000 + catCode * 1000;
           const sameTypeMarkers = vehicles.filter(v => 
             v.mapId === activeMapId && 
@@ -402,9 +413,7 @@ const MapEditorComponent = () => {
         });
 
         setVehicles((prev) => [...prev, ...newMarkers]);
-        toast.success(`${newMarkers.length}개의 마커를 성공적으로 추가했습니다!`, {
-          description: "변경사항을 서버에 저장하려면 '서버에 저장' 버튼을 눌러주세요."
-        });
+        toast.success(`${newMarkers.length}개의 마커를 성공적으로 추가했습니다!`);
       } catch (err: any) {
         toast.error("파일 로드 실패: " + err.message);
       } finally {
@@ -417,116 +426,228 @@ const MapEditorComponent = () => {
 
   if (!isAuthorized)
     return (
-      <div className="w-full h-screen bg-[#0f172a] flex items-center justify-center text-white font-bold">
+      <div className="w-full h-screen bg-[#0b0f19] flex items-center justify-center text-white font-bold">
         권한 확인 중...
       </div>
     );
 
   return (
-    <div className="flex flex-col w-full h-screen bg-[#0f172a]">
-      <header className="flex items-center justify-between h-[50px] px-4 bg-[#F2A900] border-b-2 border-[#cc8b00] z-[6000] shrink-0">
-        <div className="flex items-center gap-4">
-          <div className="text-xl font-black italic text-black select-none cursor-default">
-            PUBG<span className="text-white">EDITOR</span>
+    <div className="flex w-full h-screen bg-[#0b0f19] overflow-hidden">
+      {/* 🌟 사이드바 개편 */}
+      <aside className="w-[340px] flex flex-col bg-[#111827]/95 backdrop-blur-xl border-r border-white/5 z-[5000] shadow-2xl">
+        {/* 사이드바 헤더 */}
+        <div className="p-6 border-b border-white/5">
+          <div className="flex items-center justify-between mb-6">
+            <div className="text-2xl font-black italic text-[#F2A900] tracking-tighter">
+              PUBG<span className="text-white">EDITOR</span>
+            </div>
+            <button 
+              onClick={() => router.push("/")}
+              className="p-2 text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-all"
+              title="나가기"
+            >
+              <LogOut size={20} />
+            </button>
           </div>
-          <nav className="flex gap-1">
-            {MAP_LIST.map((m) => (
-              <button
-                key={m.id}
-                onClick={() => setActiveMapId(m.id)}
-                className={`h-[30px] px-3 rounded font-bold text-xs transition-colors ${
-                  activeMapId === m.id
-                    ? "bg-[#1a1a1a] text-white"
-                    : "bg-transparent text-black hover:bg-black/10"
-                }`}
+          
+          {/* 검색창 추가 */}
+          <div className="relative mb-6">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" size={14} />
+            <input 
+              type="text"
+              placeholder="카테고리 검색..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full bg-white/5 border border-white/5 focus:border-[#F2A900]/50 focus:bg-white/10 rounded-xl py-2 pl-9 pr-4 text-xs text-white placeholder-gray-600 outline-none transition-all"
+            />
+            {searchTerm && (
+              <button 
+                onClick={() => setSearchTerm("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300"
               >
-                {m.label}
+                <X size={12} />
               </button>
-            ))}
-          </nav>
-        </div>
-        <button
-          onClick={() => router.push("/")}
-          className="flex items-center gap-1 text-black hover:text-white px-3 py-1 transition-colors rounded hover:bg-black/20 font-bold text-xs"
-        >
-          나가기
-        </button>
-      </header>
+            )}
+          </div>
 
-      <div className="flex-1 relative w-full h-full overflow-hidden">
-        <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-[1000] flex flex-wrap gap-2 bg-[#1e293b] border border-[#334155] p-3 rounded-xl shadow-2xl items-center justify-center max-w-[90vw]">
-          {allowedCategories.map((id) => {
-            const info = CATEGORY_INFO[id];
-            if (!info) return null; // 방어 로직 추가
+          {/* 맵 선택 섹션 */}
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 flex items-center gap-2 mb-3">
+              <MapIcon size={12} /> Select Active Map
+            </label>
+            <div className="grid grid-cols-2 gap-2">
+              {MAP_LIST.map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => setActiveMapId(m.id)}
+                  className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-all border ${
+                    activeMapId === m.id
+                      ? "bg-[#F2A900] text-black border-[#F2A900] shadow-[0_0_15px_rgba(242,169,0,0.3)]"
+                      : "bg-white/5 text-gray-400 border-white/5 hover:border-white/20 hover:bg-white/10"
+                  }`}
+                >
+                  {m.label}
+                  {activeMapId === m.id && <CheckCircle2 size={12} />}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* 카테고리 리스트 섹션 */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-4 space-y-1">
+          <div className="flex items-center justify-between px-2 mb-4">
+            <label className="text-[10px] font-black uppercase tracking-widest text-gray-500 flex items-center gap-2">
+              <PlusCircle size={12} /> Marker Categories
+            </label>
+            <div className="flex gap-1">
+              <button 
+                onClick={() => {
+                  const newFilters: Record<string, boolean> = {};
+                  Object.keys(categoryInfoMap).forEach(id => newFilters[id] = true);
+                  setFilters(newFilters);
+                }}
+                className="text-[9px] font-bold text-gray-500 hover:text-[#F2A900] transition-colors"
+              >
+                전체 켜기
+              </button>
+              <span className="text-gray-700 text-[9px]">/</span>
+              <button 
+                onClick={() => setFilters({})}
+                className="text-[9px] font-bold text-gray-500 hover:text-red-400 transition-colors"
+              >
+                끄기
+              </button>
+            </div>
+          </div>
+          
+          {Object.keys(categoryInfoMap)
+            .filter(id => {
+              const info = categoryInfoMap[id];
+              return info.label.toLowerCase().includes(searchTerm.toLowerCase()) || id.toLowerCase().includes(searchTerm.toLowerCase());
+            })
+            .sort((a, b) => {
+              const aRec = allowedCategories.includes(a);
+              const bRec = allowedCategories.includes(b);
+              if (aRec && !bRec) return -1;
+              if (!aRec && bRec) return 1;
+              return categoryInfoMap[a].label.localeCompare(categoryInfoMap[b].label);
+            })
+            .map((id) => {
+            const info = categoryInfoMap[id];
             const isActive = effectiveActiveType === id;
             const isFiltered = filters[id];
+            const isMapRecommended = allowedCategories.includes(id);
+            const count = getCount(id);
+
             return (
-              <button
+              <div
                 key={id}
-                onClick={() => {
-                  setActiveType(id);
-                  if (isActive) toggleFilter(id);
-                }}
-                className={`flex items-center gap-1 px-3 py-2 rounded-lg font-bold text-sm transition-all border ${
-                  isFiltered ? "" : "opacity-40 grayscale"
-                } ${
-                  isActive
-                    ? "ring-2 ring-offset-2 ring-offset-[#1e293b] ring-[#F2A900]"
-                    : ""
+                className={`group flex items-center gap-2 p-1.5 rounded-xl transition-all border ${
+                  isActive 
+                    ? "bg-[#F2A900]/10 border-[#F2A900]/30 shadow-[inset_0_1px_1px_rgba(255,255,255,0.05)]" 
+                    : "bg-transparent border-transparent hover:bg-white/5"
                 }`}
-                style={{
-                  backgroundColor: isFiltered ? `${info.color}20` : "#334155",
-                  color: isFiltered ? info.color : "#94a3b8",
-                  borderColor: isFiltered ? info.color : "#475569",
-                }}
               >
-                {info.label} ({getCount(id)})
-              </button>
+                {/* 가시성 토글 */}
+                <button
+                  onClick={() => toggleFilter(id)}
+                  className={`p-2 rounded-lg transition-all ${
+                    isFiltered ? "text-[#F2A900] bg-[#F2A900]/10" : "text-gray-600 bg-white/5 hover:text-gray-400"
+                  }`}
+                  title={isFiltered ? "지도에서 숨기기" : "지도에 표시하기"}
+                >
+                  {isFiltered ? <Eye size={18} /> : <EyeOff size={18} />}
+                </button>
+
+                {/* 카테고리 선택 영역 */}
+                <div
+                  onClick={() => {
+                    setActiveType(id);
+                    if (!isFiltered) toggleFilter(id); // 선택 시 자동으로 켬
+                  }}
+                  className="flex-1 flex items-center gap-3 cursor-pointer py-1"
+                >
+                  <div 
+                    className="w-10 h-10 rounded-xl flex items-center justify-center text-xl shadow-lg relative"
+                    style={{ 
+                      backgroundColor: isFiltered ? `${info.color}20` : "#1f2937", 
+                      color: isFiltered ? info.color : "#4b5563" 
+                    }}
+                  >
+                    {info.iconType}
+                    {isMapRecommended && (
+                      <div className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-blue-500 rounded-full border-2 border-[#111827]" title="추천 카테고리" />
+                    )}
+                  </div>
+                  <div className="flex flex-col">
+                    <span className={`text-sm font-bold tracking-tight ${isActive ? "text-white" : "text-gray-400 group-hover:text-gray-300"}`}>
+                      {info.label}
+                    </span>
+                    <span className="text-[9px] font-mono text-gray-500 uppercase tracking-tighter">
+                      {id} • {count}
+                    </span>
+                  </div>
+                </div>
+
+                {/* 선택 표시 */}
+                {isActive && (
+                  <div className="pr-2 text-[#F2A900] animate-pulse">
+                    <ChevronRight size={16} />
+                  </div>
+                )}
+              </div>
             );
           })}
+        </div>
 
-          <div className="w-px h-6 bg-[#475569] mx-1"></div>
-
-          <button
-            onClick={clearAllVehicles}
-            className="flex items-center gap-1 text-gray-400 hover:text-red-500 px-2 py-1 transition-colors rounded hover:bg-white/10"
-            title="전체 삭제"
-          >
-            삭제{" "}
-            <span className="text-xs font-medium text-white">
-              ({totalCount})
-            </span>
-          </button>
+        {/* 사이드바 하단 액션 */}
+        <div className="p-6 bg-black/20 border-t border-white/5 space-y-3">
+          <div className="flex gap-2">
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isImporting}
+              className="flex-1 flex items-center justify-center gap-2 py-3 bg-white/5 hover:bg-white/10 text-gray-300 rounded-xl font-bold text-xs transition-all border border-white/5"
+            >
+              {isImporting ? <div className="w-4 h-4 border-2 border-white/20 border-t-white rounded-full animate-spin" /> : <FileJson size={14} />}
+              JSON 불러오기
+            </button>
+            <button
+              onClick={clearAllVehicles}
+              className="px-4 flex items-center justify-center text-gray-500 hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-all border border-transparent hover:border-red-500/20"
+              title="현재 맵 마커 전체 삭제"
+            >
+              <Trash2 size={16} />
+            </button>
+          </div>
 
           <button
             onClick={handleSaveToDB}
             disabled={isSaving}
-            className={`flex items-center gap-1 px-3 py-1 transition-colors rounded font-bold text-xs ${
+            className={`w-full flex items-center justify-center gap-2 py-4 rounded-2xl font-black text-sm transition-all shadow-xl ${
               isSaving
-                ? "bg-gray-600 text-gray-400"
-                : "bg-[#34A853] text-white hover:bg-[#2a9040]"
+                ? "bg-gray-800 text-gray-600 cursor-not-allowed"
+                : "bg-emerald-500 text-black hover:bg-emerald-400 active:scale-[0.98] shadow-emerald-500/20"
             }`}
           >
-            {isSaving ? "저장 중..." : "서버에 저장"}
+            {isSaving ? "처리 중..." : <><Save size={18} /> 서버에 최종 저장</>}
           </button>
-
-          <div className="w-px h-6 bg-[#475569] mx-1"></div>
-
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            disabled={isImporting}
-            className="flex items-center gap-1 px-3 py-1 bg-blue-600 text-white hover:bg-blue-700 transition-colors rounded font-bold text-xs"
-          >
-            {isImporting ? "로드 중..." : "📂 로컬 JSON 추가"}
-          </button>
-          <input
-            type="file"
-            ref={fileInputRef}
-            onChange={handleImportJSON}
-            accept=".json"
-            className="hidden"
-          />
+          
+          <div className="text-[10px] text-center text-gray-600 font-medium">
+            현재 맵 마커 총 <span className="text-gray-400">{totalCount}</span>개
+          </div>
         </div>
+      </aside>
+
+      {/* 메인 맵 영역 */}
+      <main className="flex-1 relative w-full h-full">
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleImportJSON}
+          accept=".json"
+          className="hidden"
+        />
 
         <MapContainer
           center={initialCenter}
@@ -536,9 +657,8 @@ const MapEditorComponent = () => {
           crs={CRS.Simple}
           maxBounds={bounds}
           maxBoundsViscosity={1.0}
-          style={{ height: "100%", width: "100%", background: "transparent" }}
+          style={{ height: "100%", width: "100%", background: "#0b0f19" }}
         >
-          {/* 🌟 URL 변경 시 화면을 이동시켜주는 컴포넌트 삽입 */}
           <MapController center={initialCenter} zoom={initialZoom} />
 
           <TileLayer
@@ -573,7 +693,13 @@ const MapEditorComponent = () => {
                   e.originalEvent.stopPropagation();
                 },
               }}
-            />
+            >
+              <Tooltip direction="top" offset={[0, -30]} opacity={1}>
+                <div className="bg-[#1a1a1a] text-white p-1 rounded font-bold text-[10px]">
+                  {categoryInfoMap[vehicle.type]?.label || vehicle.type}
+                </div>
+              </Tooltip>
+            </Marker>
           ))}
 
           {pendingVehicles.map((v) => {
@@ -598,7 +724,43 @@ const MapEditorComponent = () => {
             );
           })}
         </MapContainer>
-      </div>
+
+        {/* 맵 좌표 가이드 (우측 하단) */}
+        <div className="absolute bottom-6 right-6 z-[1000] bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10 text-[10px] font-mono text-gray-400 pointer-events-none">
+          8192 x 8192 PX • CRS.Simple
+        </div>
+      </main>
+
+      <style jsx global>{`
+        .custom-scrollbar::-webkit-scrollbar {
+          width: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+          background: rgba(255, 255, 255, 0.1);
+          border-radius: 10px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+          background: rgba(255, 255, 255, 0.2);
+        }
+        .leaflet-container {
+          cursor: crosshair !important;
+        }
+        .leaflet-tooltip {
+          background: #1a1a1a !important;
+          border: 1px solid rgba(255,255,255,0.1) !important;
+          color: white !important;
+          padding: 2px 8px !important;
+          border-radius: 4px !important;
+          font-weight: bold !important;
+          box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06) !important;
+        }
+        .leaflet-tooltip-top:before {
+          border-top-color: #1a1a1a !important;
+        }
+      `}</style>
     </div>
   );
 };

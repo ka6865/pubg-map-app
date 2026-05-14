@@ -93,10 +93,7 @@ function aggregateMatches(matches: any[], lowerNickname: string, myAccountId?: s
   const allBadges: any[] = [];
 
   matches.forEach((m: any) => {
-    // [V41.0] Account ID 우선 매칭
-    const playerData = myAccountId && m.playerCombatData?.[myAccountId]
-      ? m.playerCombatData[myAccountId]
-      : (m.playerCombatData?.[lowerNickname] || {});
+    // [V41.0] Account ID 우선 매칭 (매칭 검증용)
 
     // 무기 통계 합산 (DB weaponStats 0 이슈 해결을 위해 타임라인 전수조사 병행)
     if (m.weaponStats) {
@@ -133,7 +130,8 @@ function aggregateMatches(matches: any[], lowerNickname: string, myAccountId?: s
     }
 
     totalRescueSmokes += m.tradeStats?.smokeCount || 0;
-    totalSmokes += (m.itemUseStats?.smokeCount || m.tradeStats?.smokeCount || 0);
+    // [V55.1 FIX] m.itemUseStats 대신 m.itemUseSummary.smokes를 참조하여 M79 포함 전체 연막 사용량 정확히 집계
+    totalSmokes += (m.itemUseSummary?.smokes || m.tradeStats?.smokeCount || 0);
     totalSmokeRescues += m.tradeStats?.smokeRescues || 0;
 
     if (m.initiativeSampleCount !== undefined) {
@@ -257,14 +255,13 @@ function aggregateMatches(matches: any[], lowerNickname: string, myAccountId?: s
     mLen, avgDamage, avgKills, avgDamageImpact, avgTeamDamageShare, avgTeamKillShare, topBadges,
     userInitiativeRate, userReversalRate, avgBackupLatency, avgReactionLatency, avgCoverRate, avgDuelWinRate,
     totalDuelWins, totalDuelLosses, totalReversalWins, totalReversalAttempts, avgDeathPhase,
-    avgPressureIndex, totalLethalThrows, avgUtilityEfficiency, avgMinDistStr, avgHeightDiffStr,
+    avgPressureIndex, totalLethalThrows, totalUtilityThrows, avgUtilityEfficiency, avgMinDistStr, avgHeightDiffStr,
     avgIsolationStr, goldenTimeAvg, soloKillRate, latestMatchTime, killContribFinal,
     rankedCount, normalCount, totalTeammateKnocks, totalSuppCount, totalTradeKills, totalRevCount,
-    totalBaitCount, totalSmokeCount: totalRescueSmokes,
-    totalEdgePlay, totalFatalDelay,
+    totalBaitCount, totalSmokeCount: totalRescueSmokes, totalEdgePlay, totalFatalDelay,
     totalMaxHitDist, totalTeamWipes, isolationCountFinal, totalIsolationIndexFinal, totalCombatIso,
     totalDeathIso, totalMinDist, totalHeightDiff, totalCrossfireCount, totalTeammateCountFinal,
-    totalUtilityThrows, totalUtilityHits, totalUtilityDamage, totalUtilityKills, totalBluezoneWaste,
+    totalUtilityHits, totalUtilityDamage, totalUtilityKills, totalBluezoneWaste,
     weaponStatsFinal, totalInitiativeAttempts, totalInitiativeSuccess, totalSmokeRescues,
     totalFocusFireCount, totalCrossfireExposureCount, totalDistanceDamage,
     avgDistanceDamage: {
@@ -312,16 +309,19 @@ export async function POST(request: Request) {
     if (cachedMatches) {
       cachedMatches.forEach(m => {
         const fullResult = (m.data as any)?.fullResult;
-          // [V30.1] RESULT_VERSION 체크 도입 - 버전이 낮으면 캐시 무시하고 재분석 유도
-          const version = (m.data as any)?.fullResult?.v || 0;
-          if (!force && version >= RESULT_VERSION) {
-            const pureId = m.match_id.includes(':') ? m.match_id.split(':').pop()! : m.match_id;
-            const normalizedData = { ...fullResult, matchId: pureId };
-            cachedMap.set(pureId, normalizedData);
-            cachedMap.set(m.match_id, normalizedData);
-          } else {
-            console.log(`[AI-SUMMARY] Cache version mismatch for ${m.match_id}: ${version} < ${RESULT_VERSION}`);
-          }
+        // [V30.1] RESULT_VERSION 체크 도입 - 버전이 낮으면 캐시 무시하고 재분석 유도
+        const version = Number((m.data as any)?.fullResult?.v || 0);
+        const currentVersion = Number(RESULT_VERSION);
+
+        if (!force && version >= currentVersion) {
+          const pureId = m.match_id.includes(':') ? m.match_id.split(':').pop()! : m.match_id;
+          const normalizedData = { ...fullResult, matchId: pureId };
+          cachedMap.set(pureId, normalizedData);
+          cachedMap.set(m.match_id, normalizedData);
+        } else {
+          const reason = force ? 'Force Refresh' : `Version Mismatch (${version} < ${currentVersion})`;
+          console.log(`[AI-SUMMARY] Skipping cache for ${m.match_id}: Reason=${reason}`);
+        }
       });
     }
 
@@ -332,8 +332,8 @@ export async function POST(request: Request) {
       const protocol = process.env.NODE_ENV === 'development' ? 'http' : 'https';
       const host = request.headers.get('host') || 'localhost:3000';
       const baseUrl = `${protocol}://${host}`;
-      for (let i = 0; i < missingMatchIds.length; i += 3) {
-        const batch = missingMatchIds.slice(i, i + 3);
+      for (let i = 0; i < missingMatchIds.length; i += 2) {
+        const batch = missingMatchIds.slice(i, i + 2);
         await Promise.all(batch.map(async (id: string) => {
           try {
             const res = await fetch(`${baseUrl}/api/pubg/match?matchId=${id}&nickname=${nickname}&platform=${platform}`, { cache: 'no-store' });
@@ -350,18 +350,18 @@ export async function POST(request: Request) {
 
     const allMatches = [...cachedMap.values(), ...newResultsMap.values()];
     const rawMatches = Array.from(new Map(allMatches.map(m => [m.matchId, m])).values());
-    
+
     // [V45.2] 전술 분석 부적합 매치 필터링 (이벤트, 아케이드, 훈련장 등)
     const detailedMatches = rawMatches.filter((m: any) => {
       const mode = m.gameMode || "";
       const map = m.mapName || "";
-      
+
       // 1. 제외 모드: 이벤트, 아케이드, 커스텀, 훈련장, AI 매치
       if (mode.includes("event") || mode.includes("arcade") || mode.includes("custom") || mode.includes("training")) return false;
-      
+
       // 2. 제외 맵: 세이프하우스, 훈련장 등 (SafeHouse_Main, Range_Main)
       if (map.includes("SafeHouse") || map.includes("Range_Main") || map.includes("Training")) return false;
-      
+
       return true;
     });
 
@@ -392,10 +392,10 @@ export async function POST(request: Request) {
       latestMatchTime, avgBackupLatency, avgReactionLatency, userInitiativeRate, avgPressureIndex,
       totalReversalAttempts, totalReversalWins, avgDuelWinRate, totalDuelWins, totalDuelLosses,
       avgDamageImpact, topBadges, goldenTimeAvg, killContribFinal, avgDeathPhase, totalBluezoneWaste, mLen,
-      totalTeammateKnocks, totalSuppCount, totalTradeKills, totalSmokeCount, totalRevCount,
+      totalTeammateKnocks, totalSuppCount, totalTradeKills, totalRevCount,
       totalBaitCount,
       isolationCountFinal, totalIsolationIndexFinal, totalMinDist, totalHeightDiff, totalCrossfireCount, totalTeammateCountFinal,
-      totalUtilityThrows, rankedCount, normalCount,
+      rankedCount, normalCount,
       totalInitiativeAttempts, totalInitiativeSuccess, totalSmokeRescues,
       totalSmokes
     } = masteryStats; // UI(마스터리 카드)에는 10경기 전체 데이터를 사용
@@ -461,7 +461,7 @@ export async function POST(request: Request) {
       "- [STRICT KOREAN] 모든 응답에서 'DUO', 'SQUAD', 'SOLO', 'Benchmark'와 같은 영문 용어를 절대 사용하지 마십시오. 반드시 '듀오', '스쿼드', '솔로', '상위권 지표' 또는 '벤치마크'와 같은 한글 용어로 대체하여 출력하십시오.",
       "- [INTELLIGENT ANALYSIS] 유저의 승률이나 딜량이 상위권 지표를 압도한다면, SPICY BOMBER조차도 \"피지컬은 괴물이지만...\" 이라는 식으로 실력 자체는 인정하며 시작해야 합니다. 무조건적인 비난은 '멍청한 AI'처럼 보입니다.",
       "- [ZERO HALLUCINATION] 데이터에 명시된 숫자를 1%의 오차도 없이 그대로 인용하십시오. 상위권 지표를 인용할 때는 반드시 정확한 소수점까지 포함하십시오.",
-      "- [UTILITY LOGIC] 연막탄은 '전체 사용량(포지셔닝/엄폐)'과 '전술적 구출(아군 기절 시)'을 엄격히 구분하십시오. 구출 시도가 0회더라도 전체 사용량이 있다면 '연막탄 미사용자'가 아닌 '개인 생존 중심' 혹은 '구출 기회 부족'으로 분석하십시오.",
+      "- [UTILITY LOGIC] 연막 지표는 '투척형 연막탄'과 '연막 권총(M79)' 사용량을 모두 포함합니다. 연막탄은 '전체 사용량(포지셔닝/엄폐)'과 '전술적 구출(아군 기절 시)'을 엄격히 구분하십시오. 구출 시도가 0회더라도 전체 사용량이 있다면 '연막 미사용자'가 아닌 '개인 생존 중심' 혹은 '구출 기회 부족'으로 분석하십시오.",
       "- [DATA COMPARISON] 모든 피드백 항목에서 (내 수치 vs 상위권 수치) 형식을 사용하여 유저가 객관적인 실력 차이를 체감하게 하십시오.",
       "- debateIssues는 반드시 3개를 작성하고, 각 issue의 userStats/benchmarkStats는 항목명(label)과 값의 단위(%, 회, m 등)가 완벽히 대칭되어야 합니다.",
       "반드시 아래 구조의 JSON 객체로만 응답하세요.",
@@ -623,7 +623,7 @@ export async function POST(request: Request) {
         mainBench = bench;
         finalTierBreakdown = avgBreakdown;
       }
-      const isLow = gMatches.length <= 2;
+
       const gStats = summaryStats; // AI 프롬프트 분석에는 '잘한 5판' 데이터 사용
       userPrompt += `### [${mode.toUpperCase()} 모드 분석] (선별된 상위 ${bestMatches.length}판 분석)\n`;
       userPrompt += `- 유저 티어: ${userTier}\n- 평균 화력: ${gStats.avgDamage} (동일 티어 Benchmark: ${bench.avgDamage}), 평균 ${gStats.avgKills}킬\n- [선제 공격] 주도권 성공률: ${gStats.userInitiativeRate}% (Benchmark: ${bench.avgInitiativeRate}%)\n`;
@@ -648,7 +648,7 @@ export async function POST(request: Request) {
 
     // [V43.0] AI 실패 시 사용할 시스템 템플릿 요약 (UX 보험)
     const generateFallbackContent = () => {
-      const { duelStats, tactical, overallTier } = precomputedVisuals;
+      const { duelStats } = precomputedVisuals;
       return JSON.stringify({
         signature: roleInfo.title || "미확인 전술가",
         signatureSub: roleInfo.roleLabel || "분석 대기 중",
@@ -674,8 +674,8 @@ export async function POST(request: Request) {
 
     const genAI = new GoogleGenerativeAI(geminiApiKey);
     const modelsToTry = [
-      "gemini-3.1-flash-lite-preview", 
-      "gemini-3-flash-preview", 
+      "gemini-3.1-flash-lite-preview",
+      "gemini-3-flash-preview",
       "gemini-2.5-flash"
     ];
     let streamResult = null;
@@ -773,35 +773,49 @@ export async function POST(request: Request) {
           // 1. 비주얼 데이터 우선 전송
           controller.enqueue(encoder.encode(JSON.stringify({ type: "visuals", data: precomputedVisuals }) + "\n"));
 
+          // 4. Gemini 스트리밍 결과 처리
           if (streamResult) {
             for await (const chunk of streamResult.stream) {
-              const text = chunk.text();
-              aiResponseText += text;
-              // UI 로딩바를 위해 공백 chunk 전송 (JSON 버퍼 오염 방지)
-              controller.enqueue(encoder.encode(JSON.stringify({ type: "chunk", data: " " }) + "\n"));
+              // [V54.2] 클라이언트가 연결을 끊었는지 체크 (토큰 낭비 방지 핵심)
+              if (request.signal.aborted) {
+                console.log("[AI-STOP] Client aborted ai-summary request, stopping Gemini stream.");
+                break;
+              }
+
+              const chunkText = chunk.text();
+              aiResponseText += chunkText;
+              controller.enqueue(encoder.encode(JSON.stringify({ type: "chunk", data: chunkText }) + "\n"));
             }
           } else {
             aiResponseText = generateFallbackContent();
           }
 
-          // 2. 최종 데이터 정제 및 단일 chunk 전송
-          const validJsonString = extractValidJson(aiResponseText || generateFallbackContent());
+          // [V54.4] 최종 데이터 정제 및 단일 chunk 전송
+          const finalResult = aiResponseText || generateFallbackContent();
+          const validJsonString = extractValidJson(finalResult);
 
-          // UI의 regex가 찾을 수 있도록 { ... } 형태의 데이터를 chunk로 전송
-          controller.enqueue(encoder.encode(JSON.stringify({
-            type: "chunk",
-            data: "\n" + validJsonString + "\n"
-          }) + "\n"));
+          if (validJsonString) {
+            // [V54.3] 'chunk' 대신 'final' 타입을 사용하여 데이터 중복 방지
+            controller.enqueue(encoder.encode(JSON.stringify({
+              type: "final",
+              data: validJsonString
+            }) + "\n"));
 
-          // 3. 완료 신호
-          controller.enqueue(encoder.encode(JSON.stringify({ type: "done", valid: true }) + "\n"));
-        } catch (e: any) {
-          console.error("[AI-SUMMARY-STREAM-ERROR]", e);
-          try {
-            const fallback = generateFallbackContent();
-            controller.enqueue(encoder.encode(JSON.stringify({ type: "chunk", data: "\n" + fallback + "\n" }) + "\n"));
+            // 3. 완료 신호
             controller.enqueue(encoder.encode(JSON.stringify({ type: "done", valid: true }) + "\n"));
-          } catch { }
+          } else {
+            throw new Error("No valid JSON extracted from AI response");
+          }
+        } catch (e: any) {
+          console.error("[AI-SUMMARY-STREAM-ERROR] Critical failure during stream generation:", e?.message || e);
+          try {
+            // 실패 시 Fallback 데이터를 전송하여 UI 무한 대기 방지
+            const fallback = generateFallbackContent();
+            controller.enqueue(encoder.encode(JSON.stringify({ type: "final", data: fallback }) + "\n"));
+            controller.enqueue(encoder.encode(JSON.stringify({ type: "done", valid: false, error: e?.message }) + "\n"));
+          } catch (innerError) {
+            console.error("[AI-SUMMARY-STREAM-ERROR] Critical failure even in fallback:", innerError);
+          }
         } finally {
           controller.close();
         }
