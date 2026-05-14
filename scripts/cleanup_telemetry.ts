@@ -21,8 +21,8 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
 });
 
 // 환경 변수에 따라 삭제 강도 조절 (Daily Action용)
-const TARGET_VERSION = parseInt(process.env.CLEANUP_TARGET_VERSION || '37');
-const RETENTION_DAYS = parseInt(process.env.CLEANUP_RETENTION_DAYS || '3');
+const TARGET_VERSION = parseInt(process.env.CLEANUP_TARGET_VERSION || '54');
+const RETENTION_DAYS = parseInt(process.env.CLEANUP_RETENTION_DAYS || '1');
 
 async function smartCleanup() {
   console.log('🚀 [BGMS Smart Cleaner] 작업을 시작합니다...');
@@ -100,8 +100,31 @@ async function smartCleanup() {
     console.log(`⏳ 현재까지 총 ${totalDeleted}개 데이터(파일+DB) 완전 삭제 완료...`);
   }
 
-  // 4. [보너스] match_stats_raw 고립 데이터 강제 정리 (연결고리 끊긴 데이터들)
-  console.log('🧹 남은 고립된 match_stats_raw 데이터 최종 정리 중...');
+  // 4. [보너스] 고립된 스토리지 파일 강제 정리 (DB에 없는 파일들)
+  console.log('🧹 고립된 스토리지 파일 최종 정리 중...');
+  
+  const { data: bucketFiles, error: listError } = await supabase.storage
+    .from('telemetry')
+    .list('', { limit: 1000 });
+
+  if (!listError && bucketFiles && bucketFiles.length > 0) {
+    // DB에 존재하는 storage_path 목록 조회
+    const { data: activeRecords } = await supabase
+      .from('match_master_telemetry')
+      .select('storage_path');
+    
+    const activePaths = new Set(activeRecords?.map(r => r.storage_path) || []);
+    const orphanedFiles = bucketFiles
+      .map(f => f.name)
+      .filter(name => !activePaths.has(name));
+
+    if (orphanedFiles.length > 0) {
+      console.log(`🗑️ DB와 연결되지 않은 고립된 파일 ${orphanedFiles.length}개 삭제 중...`);
+      await supabase.storage.from('telemetry').remove(orphanedFiles);
+    }
+  }
+
+  // 5. match_stats_raw 고립 데이터 강제 정리
   const { error: finalOrphanError } = await supabase.rpc('delete_orphaned_stats');
   if (finalOrphanError) {
     console.warn('⚠️ 고립 데이터 정리 RPC 호출 실패 (수동 정리가 필요할 수 있음)');
