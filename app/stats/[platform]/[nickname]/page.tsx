@@ -10,15 +10,23 @@ interface Props {
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
-  const { nickname } = await params;
+  const { platform, nickname } = await params;
   const decodedNickname = decodeURIComponent(nickname);
   const seo = await getTabSeo("Stats");
+  
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://bgms.kr";
+  const canonicalUrl = `${baseUrl}/stats/${platform}/${nickname}`;
+
   return {
     ...seo,
     title: `${decodedNickname} 전적 분석 | BGMS`,
     description: `${decodedNickname}님의 PUBG AI 정밀 전술 분석 리포트를 확인하세요.`,
+    alternates: {
+      canonical: canonicalUrl,
+    },
   };
 }
+
 
 export default async function PlayerStatsPage({ params }: Props) {
   const { platform, nickname } = await params;

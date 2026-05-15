@@ -1,7 +1,8 @@
 import { MetadataRoute } from 'next';
+import { createClient } from '@/utils/supabase/server';
 
 /**
- * [V2] 사이트맵 최적화: 빌드 타임아웃 방지를 위해 정적 경로 위주로 구성
+ * [V3] 사이트맵 고도화: 정적 경로 + 동적 커뮤니티 게시글 포함
  */
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // 사이트맵용 베이스 URL 설정
@@ -49,5 +50,28 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     },
   ];
 
-  return [...staticEntries, ...mapEntries];
+  // 동적 게시글 경로 추가 (최신 100개)
+  let postEntries: MetadataRoute.Sitemap = [];
+  try {
+    const supabase = await createClient();
+    const { data: posts } = await supabase
+      .from('posts')
+      .select('id, created_at')
+      .order('created_at', { ascending: false })
+      .limit(100);
+
+    if (posts) {
+      postEntries = posts.map((post) => ({
+        url: `${siteUrl}/board/${post.id}`,
+        lastModified: new Date(post.created_at),
+        changeFrequency: 'weekly',
+        priority: 0.6,
+      }));
+    }
+  } catch (error) {
+    console.error('[Sitemap] Failed to fetch posts:', error);
+  }
+
+  return [...staticEntries, ...mapEntries, ...postEntries];
 }
+

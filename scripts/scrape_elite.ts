@@ -40,23 +40,6 @@ async function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function sampleParticipants(rawStats: any[], excludeName: string): string[] {
-  // rawStats는 이미 damage 내림차순 정렬된 상태로 가정
-  const n = rawStats.length;
-  if (n === 0) return [];
-
-  const sIndex = Math.floor(n * 0.05); // S티어 후보
-  const bIndex = Math.floor(n * 0.40); // B티어 후보
-  const cIndex = Math.floor(n * 0.70); // C티어 후보
-
-  const reps = new Set<string>();
-  
-  if (rawStats[sIndex] && rawStats[sIndex].player_id !== excludeName) reps.add(rawStats[sIndex].player_id);
-  if (rawStats[bIndex] && rawStats[bIndex].player_id !== excludeName) reps.add(rawStats[bIndex].player_id);
-  if (rawStats[cIndex] && rawStats[cIndex].player_id !== excludeName) reps.add(rawStats[cIndex].player_id);
-
-  return Array.from(reps).slice(0, 3);
-}
 
 async function scrapeEliteData() {
   console.log("🚀 [BGMS Smart Scraper] 작업을 시작합니다...");
@@ -129,17 +112,10 @@ async function scrapeEliteData() {
             const d = res.data;
             console.log(`     ✅ 성공: (딜량: ${Math.round(d.stats.damageDealt)}, 생존: ${d.deathPhase}Ph)`);
 
-            // [Phase 4] 매치 참가자 샘플링 추가 (S, B 대표)
-            const { data: rawStats } = await supabase
-              .from("match_stats_raw")
-              .select("player_id, damage")
-              .eq("match_id", matchId)
-              .order("damage", { ascending: false });
+            // [Phase 4] 매치 참가자 샘플링 추가 (API에서 반환된 랜덤 샘플 활용)
+            const samples = d.sampleParticipants || [];
 
-            if (ENABLE_SAMPLING && rawStats && rawStats.length > 0) {
-              const excludeName = nickname.toLowerCase().trim();
-              const samples = sampleParticipants(rawStats, excludeName);
-
+            if (ENABLE_SAMPLING && samples.length > 0) {
               for (const sampleName of samples) {
                 console.log(`       -> [샘플링] ${sampleName} 분석 요청 중...`);
                 try {

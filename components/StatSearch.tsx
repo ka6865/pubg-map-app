@@ -222,9 +222,9 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
 
   return (
     <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "20px", color: "white" }}>
-      <h2 style={{ color: "#F2A900", fontSize: "24px", fontWeight: "bold", marginBottom: "20px", textAlign: "center" }}>
+      <h1 style={{ color: "#F2A900", fontSize: "24px", fontWeight: "bold", marginBottom: "20px", textAlign: "center" }}>
         📊 AI 전적 검색
-      </h2>
+      </h1>
       
       {/* 하이드레이션 오류 방지를 위해 마운트 후에만 인터랙티브 요소 렌더링 활성화 */}
       <div 
