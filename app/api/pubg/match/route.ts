@@ -184,6 +184,11 @@ export async function GET(request: NextRequest) {
 
           const keepFields = ["damage", "damageReason", "damageTypeCategory", "damageCauserName", "damageCauser", "distance", "weapon", "weaponId", "dBNOId", "phase", "isGame", "attackId", "killerDamageInfo", "finishDamageInfo", "dBNODamageInfo", "reviveType", "vehicle"];
           keepFields.forEach(f => { if (e[f] !== undefined) slim[f] = e[f]; });
+
+          // [V58.0] 페이즈 추적을 위한 common.isGame 필드 보존
+          if (e.common?.isGame !== undefined) slim.common = { isGame: e.common.isGame };
+          else if (e.Common?.IsGame !== undefined) slim.Common = { IsGame: e.Common.IsGame };
+
           return slim;
         });
 

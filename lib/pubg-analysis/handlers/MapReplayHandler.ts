@@ -10,6 +10,18 @@ export class MapReplayHandler extends BaseHandler {
   handleEvent(e: any, ts: number, elapsed: number): void {
     const type = e._T || e.Type || e.event || "UNKNOWN";
     const lowerType = type.toLowerCase();
+    
+    // 0. 페이즈 전환 추적 (common.isGame 우선 활용)
+    const commonIsGame = e.common?.isGame ?? e.Common?.IsGame;
+    if (commonIsGame !== undefined) {
+      const phaseFromCommon = Math.floor(commonIsGame);
+      if (phaseFromCommon > 0) this.state.currentPhase = phaseFromCommon;
+    }
+    
+    if (lowerType === "logphasechange" || lowerType === "logphasestart") {
+      if (e.phase !== undefined && e.phase > 0) this.state.currentPhase = e.phase;
+      return;
+    }
 
     // 1. 자기장 및 게임 상태 (주기적 데이터)
     if (type === "LogGameStatePeriodic" && e.gameState) {
@@ -17,8 +29,8 @@ export class MapReplayHandler extends BaseHandler {
       return;
     }
 
-    // 2. 캐릭터 생성 및 이동
-    if (lowerType === "logplayercreate") {
+    // 2. 캐릭터 생성 및 부활(복귀)
+    if (lowerType === "logplayercreate" || lowerType.includes("redeploy") || lowerType.includes("recall")) {
       this.handlePlayerCreate(e, elapsed);
       return;
     }
@@ -80,12 +92,16 @@ export class MapReplayHandler extends BaseHandler {
     this.state.mapZoneEvents.push({
       time: e._D,
       relativeTimeMs: elapsed,
-      whiteX: gs.safetyZonePosition?.x != null ? this.scaleX(gs.safetyZonePosition.x) : null,
-      whiteY: gs.safetyZonePosition?.y != null ? this.scaleY(gs.safetyZonePosition.y) : null,
-      whiteRadius: gs.safetyZoneRadius != null ? this.scaleX(gs.safetyZoneRadius) : null,
-      blueX: gs.poisonGasWarningPosition?.x != null ? this.scaleX(gs.poisonGasWarningPosition.x) : null,
-      blueY: gs.poisonGasWarningPosition?.y != null ? this.scaleY(gs.poisonGasWarningPosition.y) : null,
-      blueRadius: gs.poisonGasWarningRadius != null ? this.scaleX(gs.poisonGasWarningRadius) : null,
+      // [V58.3] 🚨 텔레메트리 팩트 체크: 필드명과 실제 역할이 반대입니다 (가이드 준수)
+      // poisonGasWarningRadius: White Zone (정적인 다음 안전구역)
+      // safetyZoneRadius: Blue Zone (연속적으로 줄어드는 현재 자기장)
+      whiteX: gs.poisonGasWarningPosition?.x != null ? this.scaleX(gs.poisonGasWarningPosition.x) : null,
+      whiteY: gs.poisonGasWarningPosition?.y != null ? this.scaleY(gs.poisonGasWarningPosition.y) : null,
+      whiteRadius: gs.poisonGasWarningRadius != null ? this.scaleX(gs.poisonGasWarningRadius) : null,
+      blueX: gs.safetyZonePosition?.x != null ? this.scaleX(gs.safetyZonePosition.x) : null,
+      blueY: gs.safetyZonePosition?.y != null ? this.scaleY(gs.safetyZonePosition.y) : null,
+      blueRadius: gs.safetyZoneRadius != null ? this.scaleX(gs.safetyZoneRadius) : null,
+      phase: this.state.currentPhase || 0
     });
   }
 
@@ -109,8 +125,8 @@ export class MapReplayHandler extends BaseHandler {
 
     const isTeam = this.isTeammate(char);
     
-    // Lite 모드 유사 최적화: 적군은 10번에 한 번만 기록
-    if (!isTeam) {
+    // Lite 모드 유사 최적화: 적군은 10번에 한 번만 기록 (full 모드가 아닐 때만)
+    if (!isTeam && this.state.mode !== "full") {
       this.state.positionEventCount++;
       if (this.state.positionEventCount % 10 !== 0) return;
     }
@@ -252,7 +268,7 @@ export class MapReplayHandler extends BaseHandler {
     if (!char) return;
 
     const itemId = (e.item?.itemId || e.weapon?.itemId || "").toLowerCase();
-    const throwableKeywords = ["smokebomb", "grenade", "flashbang", "molotov", "bluezone", "shield", "c4"];
+    const throwableKeywords = ["smokebomb", "grenade", "flashbang", "molotov", "bluezone", "shield", "c4", "m79"];
     
     if (throwableKeywords.some(k => itemId.includes(k))) {
       // 폭발 이벤트가 따로 없는 경우를 위한 예측 위치 계산 로직 (기존 telemetry/route.ts 준수)
@@ -263,7 +279,7 @@ export class MapReplayHandler extends BaseHandler {
         const estY = (char.location?.y ?? 0) - Math.cos(rot) * 2000;
 
         let vfxType = "grenade";
-        if (itemId.includes("smokebomb") || itemId.includes("smoke")) vfxType = "smoke";
+        if (itemId.includes("smokebomb") || itemId.includes("smoke") || itemId.includes("m79")) vfxType = "smoke";
         else if (itemId.includes("flashbang")) vfxType = "flash";
 
         this.state.mapEvents.push({
@@ -297,7 +313,7 @@ export class MapReplayHandler extends BaseHandler {
       const explosiveId = (e.explosiveItem?.itemId || e.explosiveId || "").toLowerCase();
       
       let vfxType = "grenade";
-      if (explosiveId.includes("smoke")) vfxType = "smoke";
+      if (explosiveId.includes("smoke") || explosiveId.includes("m79")) vfxType = "smoke";
       else if (explosiveId.includes("flash")) vfxType = "flash";
 
       this.state.mapEvents.push({

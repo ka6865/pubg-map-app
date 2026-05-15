@@ -55,7 +55,7 @@ export async function GET(request: Request) {
     if (!myInfo) throw new Error("플레이어 데이터를 찾을 수 없습니다.");
 
     // 1-1. 캐시 확인 (DB/Storage) - V26.0 버전 기반 무효화 적용
-    const mapCachePath = `${matchId}_${lowerNickname}_v${TELEMETRY_VERSION}_map.json`;
+    const mapCachePath = `${matchId}_${lowerNickname}_v${TELEMETRY_VERSION}_map_${mode}.json`;
     const { data: fileData, error: downloadError } = await supabase.storage
       .from('telemetry')
       .download(mapCachePath);
@@ -74,15 +74,15 @@ export async function GET(request: Request) {
 
     // [V26.0] 엔진을 통한 통합 분석 실행
     const { AnalysisEngine } = await import("@/lib/pubg-analysis/AnalysisEngine");
-    const engine = new AnalysisEngine(nickname, myInfo.attributes.stats.playerId, new Set(), new Set(), new Set(), new Set(), "");
+    const engine = new AnalysisEngine(nickname, myInfo.attributes.stats.playerId, new Set(), new Set(), new Set(), new Set(), "", mode);
     const result = engine.run(events, matchData.data.attributes, rosters, participants, myInfo.attributes.stats, [], { avg_damage: 200 });
 
     const finalData = {
       matchId,
       startTime: matchData.data.attributes.createdAt,
       teammates: result.mapData?.teammates || [],
-      teamNames: [nickname],
-      events: result.timeline || [],
+      teamNames: result.mapData?.teamNames || [nickname],
+      events: result.mapData?.events || [],
       zoneEvents: result.mapData?.zoneEvents || [],
     };
 
