@@ -297,7 +297,22 @@ export async function GET(request: NextRequest) {
       })
     }).catch(e => console.error("[MATCH-API] Ingest trigger failed:", e));
 
-    return NextResponse.json(fullResult);
+    // [V56.1] 샘플링을 위한 무작위 참가자 추출 (엘리트 외 일반 데이터 확보용)
+    const allParticipantNames = participants
+      .filter((p: any) => !p.attributes.stats.playerId?.startsWith("ai."))
+      .map((p: any) => p.attributes.stats.name)
+      .filter((name: string) => normalizeName(name) !== lowerNickname);
+
+    const sampleParticipants = allParticipantNames
+      .sort(() => 0.5 - Math.random())
+      .slice(0, 5);
+
+    const finalResponse = {
+      ...fullResult,
+      sampleParticipants
+    };
+
+    return NextResponse.json(finalResponse);
 
   } catch (err: any) {
     console.error(`[CRITICAL-FAILURE]`, err);
