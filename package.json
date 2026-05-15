@@ -10,7 +10,9 @@
     "lint": "eslint",
     "test": "jest",
     "test:unit": "vitest run",
-    "build:app": "bash scripts/build-app.sh"
+    "build:app": "bash scripts/build-app.sh",
+    "db:cleanup": "tsx scripts/cleanup_telemetry.ts",
+    "db:scrape": "tsx scripts/scrape_elite.ts"
   },
   "dependencies": {
     "@ai-sdk/google": "^3.0.64",
