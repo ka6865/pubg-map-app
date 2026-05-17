@@ -101,7 +101,9 @@ export function useTelemetry(matchId: string | null, nickname: string | null, ma
       teamColorMapRef.current = teamColorMap;
 
       if (evs.length > 0) {
-        setMaxTimeMs(evs[evs.length - 1].relativeTimeMs || 0);
+        // 배열이 완벽히 정렬되지 않았을 수 있으므로 reduce로 안전하게 최대값 탐색
+        const maxMs = evs.reduce((max: number, e: any) => Math.max(max, e.relativeTimeMs || 0), 0);
+        setMaxTimeMs(maxMs);
       } else {
         setMaxTimeMs(0);
       }

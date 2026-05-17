@@ -87,6 +87,7 @@ const MapShell = memo(({
     const [showShotDots, setShowShotDots] = useState(true);
     const [hiddenPlayers, setHiddenPlayers] = useState<string[]>([]);
     const [showPlayerNames, setShowPlayerNames] = useState(true);
+    const [showFlightPath, setShowFlightPath] = useState(true);
     const [showSmokeNotice, setShowSmokeNotice] = useState(false); // 🎯 연막탄 공지 상태
 
     // 🎯 "오늘 하루 보지 않기" 체크 로직
@@ -230,7 +231,7 @@ const MapShell = memo(({
               isHighPrecision={isFullMode}
               telemetryData={{
                 isActive: !!playbackId, mapName: activeMapId || "Erangel", events: telemetryEvents, currentTimeMs, currentStates,
-                teamNames, zoneEvents, showZone, showCombatDots, showShotDots, hiddenPlayers, showPlayerNames,
+                teamNames, zoneEvents, showZone, showCombatDots, showShotDots, hiddenPlayers, showPlayerNames, showFlightPath,
               }}
               simulatorStep={simulatorStep}
               simulatorPhases={simulatorPhases}
@@ -321,6 +322,7 @@ const MapShell = memo(({
                     onToggleShotDots={() => setShowShotDots(!showShotDots)} hiddenPlayers={hiddenPlayers}
                     onTogglePlayer={(n) => setHiddenPlayers(prev => prev.includes(n) ? prev.filter(x => x !== n) : [...prev, n])}
                     showPlayerNames={showPlayerNames} onTogglePlayerNames={() => setShowPlayerNames(!showPlayerNames)}
+                    showFlightPath={showFlightPath} onToggleFlightPath={() => setShowFlightPath(!showFlightPath)}
                     onClose={() => { const p = new URLSearchParams(searchParams?.toString() || ""); p.delete("playback"); p.delete("nickname"); router.push(`/?${p.toString()}`); }}
                   />
                 </div>
@@ -358,20 +360,84 @@ const MapShell = memo(({
 MapShell.displayName = "MapShell";
 
 const ZoneStatus = ({ currentTimeMs, zoneEvents }: { currentTimeMs: number, zoneEvents: any[] }) => {
-  const currentZone = zoneEvents.find(z => z.relativeTimeMs > currentTimeMs) || zoneEvents[zoneEvents.length - 1];
-  if (!currentZone) return null;
+  if (!zoneEvents || zoneEvents.length === 0) return null;
+
+  let currentZone = zoneEvents[0];
+  let isMoving = false;
+
+  for (let i = 0; i < zoneEvents.length; i++) {
+    if (zoneEvents[i].relativeTimeMs <= currentTimeMs) {
+      currentZone = zoneEvents[i];
+      if (i > 0) {
+        const prev = zoneEvents[i - 1];
+        if (currentZone.blueRadius < prev.blueRadius - 1) {
+          isMoving = true;
+        } else {
+          isMoving = false;
+        }
+      }
+    } else {
+      break;
+    }
+  }
+
+  let phaseEndTime = currentZone.relativeTimeMs;
+  // [V58.0] 현재 시간까지의 데이터 중 가장 높은 페이즈를 선택 (명시적 필드 + 폴백)
+  let phase = zoneEvents.length > 0 ? 1 : 0;
+  let lastWhite = zoneEvents[0]?.whiteRadius || 0;
+
+  for (const z of zoneEvents) {
+    if (z.relativeTimeMs <= currentTimeMs) {
+      // 1. 명시적 페이즈 필드(V58.0) 우선 활용
+      if (z.phase && z.phase > phase) {
+        phase = z.phase;
+      } 
+      // 2. 명시적 데이터가 없거나 0인 경우 화이트존 반경 축소를 통해 페이즈 전환 감지 (폴백)
+      else if (!z.phase || z.phase === 0) {
+        if (z.whiteRadius != null && lastWhite > 0 && z.whiteRadius < lastWhite - 100) {
+          phase++;
+          lastWhite = z.whiteRadius;
+        }
+      }
+      
+      if (z.whiteRadius != null) lastWhite = z.whiteRadius;
+    } else {
+      break;
+    }
+  }
   
-  const isMoving = currentZone.isMoving;
-  const remainingSec = Math.max(0, Math.floor((currentZone.relativeTimeMs - currentTimeMs) / 1000));
+  for (let i = 0; i < zoneEvents.length; i++) {
+    const z = zoneEvents[i];
+    if (z.relativeTimeMs > currentTimeMs) {
+      if (!isMoving) {
+        if (z.blueRadius < currentZone.blueRadius - 1) {
+          phaseEndTime = z.relativeTimeMs;
+          break;
+        }
+      } else {
+        if (z.blueRadius - z.whiteRadius < 1 || (i > 0 && z.blueRadius >= zoneEvents[i - 1].blueRadius)) {
+          phaseEndTime = z.relativeTimeMs;
+          break;
+        }
+      }
+    }
+  }
+
+  // 페이즈 종료 시간을 찾지 못한 경우 (마지막 자기장 등) 처리
+  if (phaseEndTime <= currentTimeMs) {
+    phaseEndTime = currentTimeMs; 
+  }
+
+  const remainingSec = Math.max(0, Math.floor((phaseEndTime - currentTimeMs) / 1000));
   const m = Math.floor(remainingSec / 60);
   const s = remainingSec % 60;
-  const timeStr = `${m}:${s.toString().padStart(2, "0")}`;
+  const timeStr = remainingSec > 0 ? `${m}:${s.toString().padStart(2, "0")}` : "--:--";
 
   return (
     <div className="flex items-center gap-2">
       <div className={`w-2 h-2 rounded-full ${isMoving ? "bg-blue-500 animate-pulse" : "bg-white/40"}`} />
       <span className="text-[11px] font-bold text-gray-300">
-        {isMoving ? "자기장 이동 중" : `자기장 대기 (${currentZone.phase}단계)`}
+        {phase}단계 {isMoving ? "축소 중" : "대기"}
       </span>
       <span className="text-[11px] font-mono font-bold text-[#F2A900] ml-1">
         {timeStr}

@@ -41,18 +41,19 @@ export class ZoneHandler extends BaseHandler {
 
   private handleGameState(e: any) {
     const gs = e.gameState;
-    if (gs.safetyZonePosition) {
-      this.state.whiteZone = {
-        x: gs.safetyZonePosition.x / 100,
-        y: gs.safetyZonePosition.y / 100,
-        radius: gs.safetyZoneRadius / 100
-      };
-    }
+    // [V58.3] 🚨 텔레메트리 팩트 체크: 필드명과 실제 역할이 반대입니다 (가이드 준수)
     if (gs.poisonGasWarningPosition) {
-      this.state.blueZone = {
+      this.state.whiteZone = {
         x: gs.poisonGasWarningPosition.x / 100,
         y: gs.poisonGasWarningPosition.y / 100,
         radius: gs.poisonGasWarningRadius / 100
+      };
+    }
+    if (gs.safetyZonePosition) {
+      this.state.blueZone = {
+        x: gs.safetyZonePosition.x / 100,
+        y: gs.safetyZonePosition.y / 100,
+        radius: gs.safetyZoneRadius / 100
       };
     }
 

@@ -28,7 +28,8 @@ export class AnalysisEngine {
     teamAccountIds: Set<string>,
     eliteNames: Set<string>,
     eliteAccountIds: Set<string>,
-    myRosterId: string
+    myRosterId: string,
+    mode: string = "lite"
   ) {
     this.state = {
       lowerNickname: normalizeName(nickname),
@@ -39,6 +40,7 @@ export class AnalysisEngine {
       eliteNames,
       eliteAccountIds,
       myRosterId,
+      mode,
       matchStartTime: 0,
       gameMode: "",
       playerCombatData: new Map(),
@@ -189,9 +191,18 @@ export class AnalysisEngine {
 
       if (!isAfterTeamWipe || isWin || isRecallEvent) {
         // 엔진 공통 상태 관리 (타임라인 기록 포함)
+        // [V58.0] 모든 이벤트에 포함된 common.isGame을 통해 실시간 페이즈 동기화 (가장 정확한 방식)
+        const commonIsGame = e.common?.isGame ?? e.Common?.IsGame;
+        if (commonIsGame !== undefined) {
+          const phaseFromCommon = Math.floor(commonIsGame);
+          if (phaseFromCommon > 0) {
+            this.state.currentPhase = phaseFromCommon;
+          }
+        }
+
         if (e._T === "LogPhaseStart" || e._T === "LogPhaseChange") {
           const phaseNum = e.phase !== undefined ? e.phase : 0;
-          if (this.state.currentPhase !== phaseNum) {
+          if (this.state.currentPhase !== phaseNum && phaseNum > 0) {
             this.state.currentPhase = phaseNum;
             this.state.timeline.push({
               ts: ts - startTime,
@@ -419,7 +430,8 @@ export class AnalysisEngine {
       mapData: {
         events: this.state.mapEvents,
         zoneEvents: this.state.mapZoneEvents,
-        teammates: Array.from(this.state.teamAccountIds)
+        teammates: Array.from(this.state.teamAccountIds),
+        teamNames: Array.from(this.state.teamNames)
       }
     };
   }
