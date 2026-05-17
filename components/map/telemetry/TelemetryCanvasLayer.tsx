@@ -8,35 +8,39 @@ interface TelemetryCanvasLayerProps {
   telemetryData: any;
   showZones?: boolean;
   isHighPrecision?: boolean;
+  showPlayerNames?: boolean;
+  showFlightPath?: boolean;
 }
 
 export const TelemetryCanvasLayer = ({ 
   telemetryData, 
   showZones = true, 
-  isHighPrecision = false 
+  isHighPrecision = false,
+  showFlightPath = true
 }: TelemetryCanvasLayerProps): React.ReactElement | null => {
   const map = useMap();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const animationRef = useRef<number | null>(null);
   const dataRef = useRef(telemetryData);
+  const posLogsRef = useRef<Record<string, { x: number, y: number, t: number, rotation: number }[]>>({});
+  const flightPathRef = useRef<{ start: {x: number, y: number}, end: {x: number, y: number} } | null>(null);
+
   useEffect(() => {
     dataRef.current = telemetryData;
   }, [telemetryData]);
 
-  const posLogsRef = useRef<Record<string, any[]>>({});
-
   useEffect(() => {
-    const { events } = telemetryData;
-    if (!events) return;
-    const logs: Record<string, any[]> = {};
-    events.forEach((ev: any) => {
+    const evs = telemetryData.events;
+    if (!evs) return;
+    const newLogs: Record<string, any[]> = {};
+    evs.forEach((ev: any) => {
       const type = (ev._T || ev.type || "").toString();
       if (type === "position" || type === "enemy_position" || type === "LogPlayerPosition") {
         const name = (ev.name || ev.character?.name || "").trim().toLowerCase();
         if (!name) return;
-        if (!logs[name]) logs[name] = [];
+        if (!newLogs[name]) newLogs[name] = [];
         const loc = ev.location || ev;
-        logs[name].push({ 
+        newLogs[name].push({ 
           t: ev.relativeTimeMs, 
           x: loc.x, 
           y: loc.y, 
@@ -44,8 +48,29 @@ export const TelemetryCanvasLayer = ({
         });
       }
     });
-    Object.keys(logs).forEach(name => logs[name].sort((a, b) => a.t - b.t));
-    posLogsRef.current = logs;
+    Object.keys(newLogs).forEach(name => newLogs[name].sort((a, b) => a.t - b.t));
+    posLogsRef.current = newLogs;
+
+    let startPt: {x: number, y: number} | null = null;
+    let endPt: {x: number, y: number} | null = null;
+    for (const ev of evs) {
+      // 대기섬 ride 이벤트를 배제하고 실제 낙하(leave) 궤적만 추출 (초반 3분 이내 본 비행기만)
+      if (ev.type === "leave" && ev.vehicle && ev.vehicle.toLowerCase().includes("aircraft") && (ev.relativeTimeMs || 0) < 180000) {
+        if (!startPt) startPt = { x: ev.x, y: ev.y };
+        endPt = { x: ev.x, y: ev.y };
+      }
+    }
+    if (startPt && endPt && (startPt.x !== endPt.x || startPt.y !== endPt.y)) {
+      const dx = endPt.x - startPt.x;
+      const dy = endPt.y - startPt.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      flightPathRef.current = {
+        start: { x: startPt.x - (dx/dist)*8000, y: startPt.y - (dy/dist)*8000 },
+        end: { x: endPt.x + (dx/dist)*8000, y: endPt.y + (dy/dist)*8000 }
+      };
+    } else {
+      flightPathRef.current = null;
+    }
   }, [telemetryData.events]);
 
   useEffect(() => {
@@ -144,6 +169,14 @@ export const TelemetryCanvasLayer = ({
           const startRadius = prevZone.blueRadius ?? nextZone.blueRadius;
           const endRadius = nextZone.blueRadius ?? prevZone.blueRadius;
 
+          // White zone interpolation
+          const startWhiteX = prevZone.whiteX ?? nextZone.whiteX;
+          const endWhiteX = nextZone.whiteX ?? prevZone.whiteX;
+          const startWhiteY = prevZone.whiteY ?? nextZone.whiteY;
+          const endWhiteY = nextZone.whiteY ?? prevZone.whiteY;
+          const startWhiteRadius = prevZone.whiteRadius ?? nextZone.whiteRadius;
+          const endWhiteRadius = nextZone.whiteRadius ?? prevZone.whiteRadius;
+
           if (
             typeof startX !== "number" || typeof endX !== "number" ||
             typeof startY !== "number" || typeof endY !== "number" ||
@@ -158,21 +191,28 @@ export const TelemetryCanvasLayer = ({
           const interpY = startY + (endY - startY) * ratio;
           const interpRadius = startRadius + (endRadius - startRadius) * ratio;
 
+          // 자기장(파란색) 원 영역 그리기
           if (typeof interpRadius === "number" && interpRadius > 0) {
             const center = getPoint(interpY, interpX);
             if (center.x !== -9999) {
-              // 🎯 팩트: Leaflet의 픽셀 거리를 정확하게 구하기 위해 중심점과 반지름 끝점을 변환하여 차이를 구함
               const edgePoint = getPoint(interpY, interpX + interpRadius);
               const radiusPx = Math.abs(edgePoint.x - center.x);
 
               ctx.save();
               ctx.beginPath();
-              // 전체 화면 영역 사각형
-              ctx.rect(0, 0, size.x, size.y);
+              // 전체 화면 영역 사각형 (시계 방향)
+              ctx.moveTo(0, 0);
+              ctx.lineTo(size.x, 0);
+              ctx.lineTo(size.x, size.y);
+              ctx.lineTo(0, size.y);
+              ctx.closePath();
+              
               // 자기장 원 (반시계 방향으로 그려서 내부를 비움)
               ctx.arc(center.x, center.y, radiusPx, 0, Math.PI * 2, true);
+              ctx.closePath();
+              
               ctx.fillStyle = "rgba(0, 50, 255, 0.22)"; // 투명도 조정
-              ctx.fill();
+              ctx.fill("nonzero"); // nonzero 규칙 사용 시 외부만 칠해짐
 
               // 자기장 경계선
               ctx.beginPath();
@@ -183,6 +223,38 @@ export const TelemetryCanvasLayer = ({
               ctx.restore();
             }
           }
+        }
+      }
+
+      // [A-2] 비행기 경로 (Flight Path)
+      if (dataRef.current.showFlightPath && flightPathRef.current) {
+        const p1 = getPoint(flightPathRef.current.start.y, flightPathRef.current.start.x);
+        const p2 = getPoint(flightPathRef.current.end.y, flightPathRef.current.end.x);
+        if (p1.x !== -9999 && p2.x !== -9999) {
+          ctx.save();
+          ctx.beginPath();
+          ctx.moveTo(p1.x, p1.y);
+          ctx.lineTo(p2.x, p2.y);
+          ctx.setLineDash([15, 10]);
+          ctx.strokeStyle = "rgba(255, 255, 255, 0.8)";
+          ctx.lineWidth = Math.max(2, 4 * zoomScale);
+          ctx.stroke();
+          
+          // 경로 양끝 화살표 (방향 표시)
+          const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x);
+          ctx.setLineDash([]);
+          const drawArrow = (x: number, y: number, dir: number) => {
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+            ctx.lineTo(x - Math.cos(dir - Math.PI/6) * 15, y - Math.sin(dir - Math.PI/6) * 15);
+            ctx.lineTo(x - Math.cos(dir + Math.PI/6) * 15, y - Math.sin(dir + Math.PI/6) * 15);
+            ctx.closePath();
+            ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+            ctx.fill();
+          };
+          drawArrow(p1.x + Math.cos(angle)*100, p1.y + Math.sin(angle)*100, angle);
+          drawArrow(p2.x - Math.cos(angle)*100, p2.y - Math.sin(angle)*100, angle);
+          ctx.restore();
         }
       }
 
@@ -386,28 +458,42 @@ export const TelemetryCanvasLayer = ({
           handledVehicles.add(p.vehicleId);
           const occupants = Object.values(states).filter((o: any) => !o.isDead && o.vehicleId === p.vehicleId) as any[];
           
+          const isAirplane = p.vehicleId.toLowerCase().includes("aircraft") || p.vehicleId.toLowerCase().includes("c130");
+
           ctx.save();
           ctx.translate(pt.x, pt.y);
           if (pos.rotation) ctx.rotate((pos.rotation * Math.PI) / 180);
-          ctx.fillStyle = "rgba(40,40,40,0.9)";
-          ctx.strokeStyle = "#ffffff";
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          if ((ctx as any).roundRect) (ctx as any).roundRect(-22, -14, 44, 28, 6);
-          else ctx.rect(-22, -14, 44, 28);
-          ctx.fill(); ctx.stroke();
-          ctx.font = "16px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-          ctx.fillText("🚗", 0, -1);
+          
+          if (isAirplane) {
+             ctx.font = `${Math.max(24, 36 * zoomScale)}px serif`; 
+             ctx.textAlign = "center"; 
+             ctx.textBaseline = "middle";
+             // 비행기는 방향을 위쪽으로 맞추기 위해 추가 회전
+             ctx.rotate(Math.PI / 4);
+             ctx.fillText("✈️", 0, 0);
+          } else {
+            ctx.fillStyle = "rgba(40,40,40,0.9)";
+            ctx.strokeStyle = "#ffffff";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            if ((ctx as any).roundRect) (ctx as any).roundRect(-22, -14, 44, 28, 6);
+            else ctx.rect(-22, -14, 44, 28);
+            ctx.fill(); ctx.stroke();
+            ctx.font = "16px serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+            ctx.fillText("🚗", 0, -1);
+          }
           ctx.restore();
 
-          occupants.forEach((m, i) => {
-            if (telemetryData.showPlayerNames || m.name === telemetryData.nickname) {
-              ctx.font = "bold 10px Pretendard";
-              ctx.fillStyle = m.isGroggy ? "#ff4444" : "#ffffff";
-              ctx.textAlign = "center";
-              ctx.fillText(m.name, pt.x, pt.y - 20 - (i * 12));
-            }
-          });
+          if (!isAirplane) {
+            occupants.forEach((m, i) => {
+              if (telemetryData.showPlayerNames || m.name === telemetryData.nickname) {
+                ctx.font = "bold 10px Pretendard";
+                ctx.fillStyle = m.isGroggy ? "#ff4444" : "#ffffff";
+                ctx.textAlign = "center";
+                ctx.fillText(m.name, pt.x, pt.y - 20 - (i * 12));
+              }
+            });
+          }
           return;
         }
 

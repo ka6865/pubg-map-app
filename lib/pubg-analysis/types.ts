@@ -177,6 +177,7 @@ export interface AnalysisResult {
     events: any[];
     zoneEvents: any[];
     teammates: string[];
+    teamNames: string[];
   };
   // [V16.0] 신규 엔터테인먼트 지표
   avgCircleLuck?: number;
@@ -194,6 +195,7 @@ export interface AnalysisState {
   eliteNames: Set<string>;
   eliteAccountIds: Set<string>; // [V41.0] 엘리트 고유 ID 매칭
   myRosterId: string;
+  mode: string; // [V26.0] 텔레메트리 모드 (lite/full)
   matchStartTime: number;
   gameMode: string; // [V16] 솔로 모드 판정용
   mapName: string;   // [V26.0] 지도 리플레이용 맵 이름

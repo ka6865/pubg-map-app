@@ -62,6 +62,7 @@ async function smartCleanup() {
     const matchIds = targets.map(t => t.match_id);
     const storagePaths = targets.map(t => t.storage_path).filter(Boolean);
 
+    // 1. Storage 삭제
     if (storagePaths.length > 0) {
       const { data: deletedFiles, error: storageError } = await supabase.storage
         .from('telemetry')
@@ -72,6 +73,11 @@ async function smartCleanup() {
       }
     }
 
+    // 2. 관련 통계 데이터 삭제 (Cascade 역할)
+    await supabase.from('match_stats_raw').delete().in('match_id', matchIds);
+    await supabase.from('processed_match_telemetry').delete().in('match_id', matchIds);
+
+    // 3. 메인 매치 데이터 삭제
     const { error: dbError } = await supabase
       .from('match_master_telemetry')
       .delete()
@@ -81,11 +87,36 @@ async function smartCleanup() {
       totalMatchesDeleted += targets.length;
     }
     
-    console.log(`⏳ 처리 중... (DB: ${totalMatchesDeleted}개, Storage: ${totalFilesDeleted}개 삭제됨)`);
+    console.log(`⏳ 처리 중... (DB: ${totalMatchesDeleted}개 매치 및 관련 데이터 삭제됨)`);
   }
 
-  // 4. 고립된 스토리지 파일 정리
-  console.log('🧹 고립된 스토리지 파일 최종 정리 중...');
+  // 4. 고립된 데이터 최종 확인 (혹시 모를 누락 방지)
+  console.log('🧹 고립된 상세 데이터 최종 정리 중...');
+  // match_master_telemetry에 없는 match_id를 가진 데이터들 삭제
+  const { data: activeMatches } = await supabase.from('match_master_telemetry').select('match_id');
+  const activeMatchIds = new Set(activeMatches?.map(m => m.match_id) || []);
+  
+  // 5. 벤치마크 데이터 정리 (filter_version 및 티어별 캡핑)
+  console.log('📊 벤치마크 데이터 정리 중...');
+  await supabase.from('global_benchmarks').delete().lt('filter_version', 8);
+
+  const tiers = ['S', 'A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D+', 'D', 'D-'];
+  const MAX_SAMPLES_PER_TIER = 500;
+
+  for (const tier of tiers) {
+    const { data: samples } = await supabase
+      .from('global_benchmarks')
+      .select('id')
+      .eq('tier', tier)
+      .order('created_at', { ascending: false });
+
+    if (samples && samples.length > MAX_SAMPLES_PER_TIER) {
+      const toDelete = samples.slice(MAX_SAMPLES_PER_TIER).map(s => s.id);
+      await supabase.from('global_benchmarks').delete().in('id', toDelete);
+    }
+  }
+  console.log(`✅ 벤치마크 최신화 및 캡핑 완료 (티어별 최대 ${MAX_SAMPLES_PER_TIER}개)`);
+
   const { data: bucketFiles } = await supabase.storage.from('telemetry').list('', { limit: 1000 });
   if (bucketFiles && bucketFiles.length > 0) {
     const { data: activeRecords } = await supabase.from('match_master_telemetry').select('storage_path');
@@ -121,7 +152,7 @@ async function smartCleanup() {
   const totalSizeGB = (totalSizeBytes / (1024 * 1024 * 1024)).toFixed(2);
 
   console.log(`──────────────────────────────────────`);
-  console.log(`🗑️  삭제된 데이터: DB ${totalMatchesDeleted}개 / Storage ${totalFilesDeleted}개`);
+  console.log(`🗑️  삭제된 데이터: DB ${totalMatchesDeleted}개 매치 / Storage ${totalFilesDeleted}개`);
   console.log(`📉 남은 데이터: DB ${finalMatches?.[0]?.count || 0}개 / Storage ${totalFileCount}개`);
   console.log(`💾 현재 스토리지 사용량: ${totalSizeMB} MB (${totalSizeGB} GB)`);
   console.log(`──────────────────────────────────────`);

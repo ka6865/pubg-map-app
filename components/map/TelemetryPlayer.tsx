@@ -23,6 +23,8 @@ interface TelemetryPlayerProps {
   onTogglePlayer: (name: string) => void;
   showPlayerNames: boolean;
   onTogglePlayerNames: () => void;
+  showFlightPath: boolean;
+  onToggleFlightPath: () => void;
   onClose: () => void;
 }
 
@@ -48,6 +50,8 @@ export default function TelemetryPlayer({
   onTogglePlayer,
   showPlayerNames,
   onTogglePlayerNames,
+  showFlightPath,
+  onToggleFlightPath,
   onClose,
 }: TelemetryPlayerProps) {
   // 타임라인 마커 필터 상태 (기본값: 킬만 활성화)
@@ -97,7 +101,12 @@ export default function TelemetryPlayer({
       <div className="absolute bottom-4 sm:bottom-8 left-1/2 transform -translate-x-1/2 w-max bg-[#1a1a1a]/95 backdrop-blur shadow-2xl rounded-full border border-[#444] z-[5000] flex items-center justify-between text-white font-sans px-4 py-2 gap-6">
         <div className="flex items-center gap-3">
           <button 
-            onClick={() => setIsPlaying(!isPlaying)}
+            onClick={() => {
+              if (!isPlaying && currentTimeMs >= maxTimeMs && maxTimeMs > 0) {
+                setCurrentTimeMs(0);
+              }
+              setIsPlaying(!isPlaying);
+            }}
             className="w-8 h-8 flex items-center justify-center bg-[#F2A900] rounded-full text-black hover:bg-yellow-400 active:scale-95 transition-all"
           >
             {isPlaying ? (
@@ -338,6 +347,20 @@ export default function TelemetryPlayer({
             }}
           >
             🏷️ 이름 {showPlayerNames ? "ON" : "OFF"}
+          </button>
+
+          {/* 비행기 경로 토글 */}
+          <button
+            onClick={onToggleFlightPath}
+            title={showFlightPath ? "비행기 경로 숨기기" : "비행기 경로 표시"}
+            className="flex items-center gap-1 text-[10px] font-bold px-2 py-1 rounded border transition-all whitespace-nowrap"
+            style={{
+              backgroundColor: showFlightPath ? "rgba(255,255,255,0.1)" : "rgba(40,40,40,0.8)",
+              borderColor: showFlightPath ? "#ddd" : "#444",
+              color: showFlightPath ? "#fff" : "#666",
+            }}
+          >
+            ✈️ 비행경로 {showFlightPath ? "ON" : "OFF"}
           </button>
 
           {/* 이동 경로 토글 기능 제거됨 */}
