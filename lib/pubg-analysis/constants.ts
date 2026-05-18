@@ -45,26 +45,38 @@ export const TACTICAL_THRESHOLDS = {
 export const WEAPON_NAMES: Record<string, string> = {
   // AR
   "WeapM416_C": "M416", "WeapHK416_C": "M416", "HK416": "M416", "M416": "M416",
-  "WeapSCAR-L_C": "SCAR-L", "WeapAKM_C": "AKM", "WeapBerylM762_C": "베릴 M762", "BerylM762": "베릴 M762",
-  "WeapM16A4_C": "M16A4", "WeapMk47Mutant_C": "뮤턴트", "WeapG36C_C": "G36C", "WeapK2_C": "K2", "WeapACE32_C": "ACE32",
-  "WeapAUG_C": "AUG", "WeapGroza_C": "그로자", "WeapFAMAS_C": "파마스",
+  "WeapSCAR-L_C": "SCAR-L", "SCAR-L": "SCAR-L", "WeapAKM_C": "AKM", "AKM": "AKM", 
+  "WeapBerylM762_C": "베릴 M762", "BerylM762": "베릴 M762", "Beryl": "베릴 M762",
+  "WeapM16A4_C": "M16A4", "M16A4": "M16A4", "WeapMk47Mutant_C": "뮤턴트", "Mk47Mutant": "뮤턴트", "Mutant": "뮤턴트",
+  "WeapG36C_C": "G36C", "G36C": "G36C", "WeapK2_C": "K2", "K2": "K2", "WeapACE32_C": "ACE32", "ACE32": "ACE32",
+  "WeapAUG_C": "AUG", "AUG": "AUG", "WeapGroza_C": "그로자", "Groza": "그로자", "WeapFAMAS_C": "파마스", "FAMAS": "파마스",
   
   // SR
-  "WeapKar98k_C": "Kar98k", "WeapM24_C": "M24", "WeapMosinnagant_C": "모신나강", "WeapWin94_C": "Win94", "WeapAWM_C": "AWM",
+  "WeapKar98k_C": "Kar98k", "Kar98k": "Kar98k", "WeapM24_C": "M24", "M24": "M24", 
+  "WeapMosinnagant_C": "모신나강", "Mosinnagant": "모신나강", "Mosin": "모신나강", 
+  "WeapWin94_C": "Win94", "Win94": "Win94", "WeapAWM_C": "AWM", "AWM": "AWM",
   "WeapL6_C": "링스 AMR", "L6": "링스 AMR", "LynxAMR": "링스 AMR", "l6": "링스 AMR", "weapL6_C": "링스 AMR",
   
   // DMR
-  "WeapSKS_C": "SKS", "WeapSLR_C": "SLR", "WeapMini14_C": "Mini14", "WeapMk14_C": "Mk14", "WeapQBU88_C": "QBU", "WeapVSS_C": "VSS", "WeapDragunov_C": "드라구노프",
+  "WeapSKS_C": "SKS", "SKS": "SKS", "WeapSLR_C": "SLR", "SLR": "SLR", 
+  "WeapMini14_C": "Mini14", "Mini14": "Mini14", "WeapMk14_C": "Mk14", "Mk14": "Mk14", 
+  "WeapQBU88_C": "QBU", "QBU88": "QBU", "QBU": "QBU", "WeapVSS_C": "VSS", "VSS": "VSS", 
+  "WeapDragunov_C": "드라구노프", "Dragunov": "드라구노프",
   
   // SMG
-  "WeapUZI_C": "마이크로 UZI", "WeapUMP45_C": "UMP45", "WeapVector_C": "벡터", "WeapTommyGun_C": "토미건", "WeapMP5K_C": "MP5K", "WeapP90_C": "P90", "WeapJS9_C": "JS9",
+  "WeapUZI_C": "마이크로 UZI", "UZI": "마이크로 UZI", "MicroUZI": "마이크로 UZI", 
+  "WeapUMP45_C": "UMP45", "UMP45": "UMP45", "UMP": "UMP45", 
+  "WeapVector_C": "벡터", "Vector": "벡터", "WeapTommyGun_C": "토미건", "TommyGun": "토미건", 
+  "WeapMP5K_C": "MP5K", "MP5K": "MP5K", "WeapP90_C": "P90", "P90": "P90", "WeapJS9_C": "JS9", "JS9": "JS9",
   
   // SG
-  "WeapS12K_C": "S12K", "WeapS1897_C": "S1897", "WeapS686_C": "S686", "WeapDBS_C": "DBS", 
+  "WeapS12K_C": "S12K", "S12K": "S12K", "WeapS1897_C": "S1897", "S1897": "S1897", 
+  "WeapS686_C": "S686", "S686": "S686", "WeapDBS_C": "DBS", "DBS": "DBS", 
   
   // LMG / Others
-  "WeapM249_C": "M249", "WeapDP28_C": "DP-28", "WeapMG3_C": "MG3", "WeapOriginS12_C": "O12",
-  "WeapPanzerFaust100M_C": "판처파우스트", "PanzerFaust100M_Projectile_C": "판처파우스트", "PanzerFaust100M_Projectile": "판처파우스트", "WeapMortar_C": "박격포", "WeapCrossbow_C": "석궁",
+  "WeapM249_C": "M249", "M249": "M249", "WeapDP28_C": "DP-28", "DP28": "DP-28", "DP-28": "DP-28",
+  "WeapMG3_C": "MG3", "MG3": "MG3", "WeapOriginS12_C": "O12", "OriginS12": "O12", "O12": "O12",
+  "WeapPanzerFaust100M_C": "판처파우스트", "PanzerFaust100M_Projectile_C": "판처파우스트", "PanzerFaust100M_Projectile": "판처파우스트", "Panzerfaust": "판처파우스트", "WeapMortar_C": "박격포", "WeapCrossbow_C": "석궁",
   
   // Damage Types
   "Damage_BlueZone": "자기장", "Damage_Falling": "낙사", "Damage_Drowning": "익사", "Damage_Groggy": "출혈(기절)", "Damage_Gunshot": "총기", "Damage_Explosion": "폭발",

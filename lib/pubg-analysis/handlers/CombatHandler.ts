@@ -1,6 +1,6 @@
 import { AnalysisState } from "../types";
 import { normalizeName, calcDist3D, scaleCoordinate } from "../utils";
-import { WEAPON_NAMES } from "../constants";
+import { WEAPON_NAMES, IGNORE_WEAPONS } from "../constants";
 import { BaseHandler } from "./BaseHandler";
 
 export class CombatHandler extends BaseHandler {
@@ -629,6 +629,33 @@ export class CombatHandler extends BaseHandler {
             const wId = w.weapon || "Unknown";
             const cleanWId = wId.replace(/Item_Weapon_|Weap|_Projectile|_C/g, "");
             
+            // 제외 무기 필터링 (투척물, 주먹, 프라이팬, 캐릭터 오브젝트, C4, 자전거 등 분석 배제)
+            if (
+              IGNORE_WEAPONS.includes(wId) || 
+              IGNORE_WEAPONS.includes(cleanWId) ||
+              cleanWId === "None" ||
+              cleanWId === "Unknown" ||
+              cleanWId.startsWith("Proj") ||
+              cleanWId.includes("Projectile") ||
+              cleanWId.includes("Grenade") ||
+              cleanWId.includes("Molotov") ||
+              cleanWId.includes("Smoke") ||
+              cleanWId.includes("Flash") ||
+              cleanWId.includes("Sticky") ||
+              cleanWId.includes("PlayerFemale") ||
+              cleanWId.includes("PlayerMale") ||
+              cleanWId.includes("Punch") ||
+              cleanWId.includes("Melee") ||
+              cleanWId.includes("Pan") ||
+              cleanWId.includes("Cowbar") ||
+              cleanWId.includes("Crowbar") ||
+              cleanWId.includes("C4") ||
+              cleanWId.includes("Bike") ||
+              cleanWId.includes("Flare")
+            ) {
+              return;
+            }
+            
             const existing = this.state.weaponStats.get(cleanWId) || { kills: 0, dbnos: 0, damage: 0, hits: 0 };
             
             existing.damage = w.damage ?? existing.damage;
@@ -652,6 +679,33 @@ export class CombatHandler extends BaseHandler {
           playerStat.stats.forEach((w: any) => {
             const wId = w.weapon || "Unknown";
             const cleanWId = wId.replace(/Item_Weapon_|Weap|_Projectile|_C/g, "");
+            
+            // 제외 무기 필터링 (투척물, 주먹, 프라이팬, 캐릭터 오브젝트, C4, 자전거 등 분석 배제)
+            if (
+              IGNORE_WEAPONS.includes(wId) || 
+              IGNORE_WEAPONS.includes(cleanWId) ||
+              cleanWId === "None" ||
+              cleanWId === "Unknown" ||
+              cleanWId.startsWith("Proj") ||
+              cleanWId.includes("Projectile") ||
+              cleanWId.includes("Grenade") ||
+              cleanWId.includes("Molotov") ||
+              cleanWId.includes("Smoke") ||
+              cleanWId.includes("Flash") ||
+              cleanWId.includes("Sticky") ||
+              cleanWId.includes("PlayerFemale") ||
+              cleanWId.includes("PlayerMale") ||
+              cleanWId.includes("Punch") ||
+              cleanWId.includes("Melee") ||
+              cleanWId.includes("Pan") ||
+              cleanWId.includes("Cowbar") ||
+              cleanWId.includes("Crowbar") ||
+              cleanWId.includes("C4") ||
+              cleanWId.includes("Bike") ||
+              cleanWId.includes("Flare")
+            ) {
+              return;
+            }
             
             tWeaponList.push({
               weapon: cleanWId,

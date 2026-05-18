@@ -28,6 +28,7 @@ import { useRouter } from "next/navigation";
 import { MatchTimeline } from "./MatchTimeline";
 import dynamic from "next/dynamic";
 import type { MatchData } from "../../types/stat";
+import { WEAPON_NAMES } from "@/lib/pubg-analysis/constants";
 import { estimateUserTier } from "@/lib/pubg-analysis/benchmarkScore";
 import { useAIStatus, aiManager } from "@/lib/ai-management";
 
@@ -732,7 +733,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                             
                             <div className="flex justify-between items-start mb-3 relative z-10">
                               <div>
-                                <h5 className="text-white font-black text-[15px] tracking-tight">{wName}</h5>
+                                <h5 className="text-white font-black text-[15px] tracking-tight">{WEAPON_NAMES[wName] || wName}</h5>
                                 <span className="text-[9px] text-gray-500 font-bold uppercase">
                                   {wStat.holdingTime ? `파지 ${Math.round(wStat.holdingTime)}초` : '주무기'}
                                 </span>
@@ -819,7 +820,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                               {sWeapons.map((sw, sIdx) => (
                                 <div key={sIdx} className="flex flex-col gap-1 text-[10px]">
                                   <div className="flex justify-between items-center text-gray-400">
-                                    <span className="font-bold">{sw.weapon}</span>
+                                    <span className="font-bold">{WEAPON_NAMES[sw.weapon] || sw.weapon}</span>
                                     <span className="font-black text-white/80">
                                       {Math.round(sw.damage)}딜 <span className="text-gray-500 font-medium">({sw.accuracy}%)</span>
                                     </span>
