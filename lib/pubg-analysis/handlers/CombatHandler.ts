@@ -99,10 +99,44 @@ export class CombatHandler extends BaseHandler {
 
         const wId = e.damageCauserName || (e.damageCauser && e.damageCauser.itemId) || e.weaponId || "Unknown";
         const cleanWId = wId.replace(/Item_Weapon_|Weap|_Projectile|_C/g, "");
-        const wStat = this.state.weaponStats.get(cleanWId) || { kills: 0, dbnos: 0, damage: 0, hits: 0 };
-        wStat.damage += damage;
-        wStat.hits++;
-        this.state.weaponStats.set(cleanWId, wStat);
+
+        // 1. 제외 무기 필터링 (투척물, 캐릭터 오브젝트, C4, 자전거 등 분석 배제)
+        if (
+          IGNORE_WEAPONS.includes(wId) || 
+          IGNORE_WEAPONS.includes(cleanWId) ||
+          cleanWId === "None" ||
+          cleanWId === "Unknown" ||
+          cleanWId.startsWith("Proj") ||
+          cleanWId.includes("Projectile") ||
+          cleanWId.includes("Grenade") ||
+          cleanWId.includes("Molotov") ||
+          cleanWId.includes("Smoke") ||
+          cleanWId.includes("Flash") ||
+          cleanWId.includes("Sticky") ||
+          cleanWId.includes("PlayerFemale") ||
+          cleanWId.includes("PlayerMale") ||
+          cleanWId.includes("Punch") ||
+          cleanWId.includes("Melee") ||
+          cleanWId.includes("Pan") ||
+          cleanWId.includes("Cowbar") ||
+          cleanWId.includes("Crowbar") ||
+          cleanWId.includes("C4") ||
+          cleanWId.includes("Bike") ||
+          cleanWId.includes("Flare")
+        ) {
+          return;
+        }
+
+        // 2. 피해자가 이미 기절(groggy) 상태이거나 사망(false) 상태인 경우 딜량 가산 제외 (확킬 딜량 오염 방지)
+        const victimStatus = this.state.playerAliveStatus.get(victimName);
+        const isVictimGroggy = victimStatus === "groggy" || victimStatus === false;
+
+        if (!isVictimGroggy) {
+          const wStat = this.state.weaponStats.get(cleanWId) || { kills: 0, dbnos: 0, damage: 0, hits: 0 };
+          wStat.damage += damage;
+          wStat.hits++;
+          this.state.weaponStats.set(cleanWId, wStat);
+        }
         
         this.state.combatPressure.totalHits++;
         if (victimName) this.state.combatPressure.uniqueVictims.add(victimName);
@@ -167,6 +201,11 @@ export class CombatHandler extends BaseHandler {
 
     if (dBNOId !== undefined && dBNOId !== -1) {
       this.state.dbnoMap.set(dBNOId, { attacker: makerName, victim: victimName, weaponId: weaponId, ts: ts, attackerAccountId: attacker?.accountId });
+    }
+
+    // 기절한 모든 플레이어의 생존 상태를 실시간 groggy로 업데이트
+    if (victimName) {
+      this.state.playerAliveStatus.set(victimName, "groggy");
     }
 
     if (isMeMaker) {
