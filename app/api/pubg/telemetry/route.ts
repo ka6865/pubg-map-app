@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { TELEMETRY_VERSION } from "@/lib/pubg-analysis/constants";
 import { normalizeName } from "@/lib/pubg-analysis/utils";
+import { uploadToR2, downloadFromR2 } from "@/lib/pubg-analysis/r2Service";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -56,13 +57,10 @@ export async function GET(request: Request) {
 
     // 1-1. 캐시 확인 (DB/Storage) - V26.0 버전 기반 무효화 적용
     const mapCachePath = `${matchId}_${lowerNickname}_v${TELEMETRY_VERSION}_map_${mode}.json`;
-    const { data: fileData, error: downloadError } = await supabase.storage
-      .from('telemetry')
-      .download(mapCachePath);
+    const fileText = await downloadFromR2(mapCachePath);
 
-    if (!downloadError && fileData) {
-      const text = await fileData.text();
-      return NextResponse.json(JSON.parse(text), {
+    if (fileText) {
+      return NextResponse.json(JSON.parse(fileText), {
         headers: { "Cache-Control": "no-store" }
       });
     }
@@ -86,11 +84,8 @@ export async function GET(request: Request) {
       zoneEvents: result.mapData?.zoneEvents || [],
     };
 
-    // [V26.0] 파싱된 최종 결과물을 스토리지에 저장
-    await supabase.storage.from('telemetry').upload(mapCachePath, JSON.stringify(finalData), {
-      contentType: 'application/json',
-      upsert: true
-    });
+    // [V58.3] 파싱된 최종 결과물을 Cloudflare R2 스토리지에 업로드
+    await uploadToR2(mapCachePath, JSON.stringify(finalData), 'application/json');
 
     return NextResponse.json(finalData, {
       headers: { "Cache-Control": "no-store" }

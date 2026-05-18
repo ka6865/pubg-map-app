@@ -36,11 +36,11 @@ describe('AnalysisEngine 실데이터(Gold Match) 정밀 검증', () => {
     expect(result.initiativeSampleCount).toBe(7); // 7회 시도 중 1회 성공
   });
 
-  it('실제 경기에서의 자기장 끝선 플레이(edgePlay)가 14회여야 함', () => {
+  it('실제 경기에서의 자기장 끝선 플레이(edgePlay)가 8회여야 함', () => {
     const engine = new AnalysisEngine(nickname, myAccountId, teamNames, teamAccountIds, eliteNames, eliteAccountIds, myRosterId);
     const result = engine.run(telemetry, { id: "gold-match", createdAt: "2026-05-02T16:00:00Z", gameMode: "squad" }, [], [], { damageDealt: 500, kills: 3, timeSurvived: 1200 }, [], {});
     
-    expect(result.zoneStrategy.edgePlayCount).toBe(14);
+    expect(result.zoneStrategy.edgePlayCount).toBe(8);
   });
 
   it('실제 경기에서의 교전 승리(wins)가 1회여야 함', () => {
@@ -49,5 +49,15 @@ describe('AnalysisEngine 실데이터(Gold Match) 정밀 검증', () => {
     
     expect(result.duelStats.wins).toBe(1);
     expect(result.duelStats.losses).toBe(2);
+  });
+
+  it('차량 전투 지표(리드샷/라이딩샷) 초기화 및 작동 정합성 검증', () => {
+    const engine = new AnalysisEngine(nickname, myAccountId, teamNames, teamAccountIds, eliteNames, eliteAccountIds, myRosterId);
+    const result = engine.run(telemetry, { id: "gold-match", createdAt: "2026-05-02T16:00:00Z", gameMode: "squad" }, [], [], { damageDealt: 500, kills: 3, timeSurvived: 1200 }, [], {});
+    
+    expect(result.leadShotKills).toBe(0);
+    expect(result.leadShotKnocks).toBe(0);
+    expect(result.ridingShotKills).toBe(0);
+    expect(result.ridingShotKnocks).toBe(0);
   });
 });

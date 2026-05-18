@@ -20,11 +20,16 @@ export async function POST(request: Request) {
       teamImpact = { damageImpact: 0, killImpact: 0, teamDamageShare: 0, teamKillShare: 0 } as any,
       badges = []
     } = matchData;
+    const leadKills = stats?.leadShotKills ?? matchData.leadShotKills ?? 0;
+    const leadKnocks = stats?.leadShotKnocks ?? matchData.leadShotKnocks ?? 0;
+    const ridingKills = stats?.ridingShotKills ?? matchData.ridingShotKills ?? 0;
+    const ridingKnocks = stats?.ridingShotKnocks ?? matchData.ridingShotKnocks ?? 0;
+    const hasVehicleCombat = leadKills > 0 || leadKnocks > 0 || ridingKills > 0 || ridingKnocks > 0;
 
     const playerReportSummary = `
 [기본 성적]
 - 매치: ${mapName} (${gameMode}), 순위: #${stats.winPlace}
-- 전투: ${stats.kills}킬 / ${stats.assists}어시 / ${stats.DBNOs}기절 / 딜량 ${Math.floor(stats.damageDealt)}
+- 전투: ${stats.kills}킬 / ${stats.assists}어시 / ${stats.DBNOs}기절 / 유효 딜량 ${Math.floor(stats.processedDamageDealt ?? stats.damageDealt)}${hasVehicleCombat ? `\n- 특수 전투(차량): 리드샷 기절/킬 ${leadKnocks}/${leadKills}, 라이딩샷 기절/킬 ${ridingKnocks}/${ridingKills}` : ""}
 - 킬 기여도: 직접 사살(Solo Kill) ${killContribution.solo}회 / 마무리 사살(Cleanup) ${killContribution.cleanup}회
 - 실력 등급: 엘리트 대비 딜량 ${teamImpact.damageImpact}% / 킬 ${teamImpact.killImpact}% 
 - 팀 기여도: 팀 내 딜량 비중 ${teamImpact.teamDamageShare}% / 팀 내 킬 비중 ${teamImpact.teamKillShare}%
