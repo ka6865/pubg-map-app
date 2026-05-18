@@ -182,7 +182,7 @@ function aggregateMatches(matches: any[], lowerNickname: string, myAccountId?: s
     }
 
     totalKills += (m.stats?.kills || 0);
-    totalDamage += (m.stats?.damageDealt || 0);
+    totalDamage += (m.stats?.processedDamageDealt ?? m.stats?.damageDealt ?? 0);
     totalDamageImpact += (m.teamImpact?.damageImpact || 0);
     totalTeamDamageShare += (m.teamImpact?.teamDamageShare || 0);
     totalTeamKillShare += (m.teamImpact?.teamKillShare || 0);
