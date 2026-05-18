@@ -21,7 +21,8 @@ import {
   TrendingUp,
   PlayCircle,
   ExternalLink,
-  X
+  X,
+  Car
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { MatchTimeline } from "./MatchTimeline";
@@ -156,6 +157,12 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
   const isAnalyzingRef = useRef(false); // [V46.0] 클로저 세이프 로딩 추적
   const { isAnalyzing: isGlobalAnalyzing, activeId } = useAIStatus();
   const router = useRouter();
+
+  const leadKills = matchData ? (matchData.stats?.leadShotKills ?? matchData.leadShotKills ?? 0) : 0;
+  const leadKnocks = matchData ? (matchData.stats?.leadShotKnocks ?? matchData.leadShotKnocks ?? 0) : 0;
+  const ridingKills = matchData ? (matchData.stats?.ridingShotKills ?? matchData.ridingShotKills ?? 0) : 0;
+  const ridingKnocks = matchData ? (matchData.stats?.ridingShotKnocks ?? matchData.ridingShotKnocks ?? 0) : 0;
+  const hasVehicleCombat = leadKills > 0 || leadKnocks > 0 || ridingKills > 0 || ridingKnocks > 0;
 
   // [V46.8] 언마운트 시 진행 중인 분석 강제 중단
   useEffect(() => {
@@ -624,6 +631,67 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
             <StatBox icon={<Shield size={16} />} label="기절시킴" value={Number(matchData!.stats.DBNOs) || 0} color="text-yellow-400" />
             <StatBox icon={<Clock size={16} />} label="생존시간" value={`${Math.floor((Number(matchData!.stats.timeSurvived) || 0) / 60)}분`} color="text-green-400" />
           </div>
+
+          {/* Premium Vehicle Combat Banner */}
+          {hasVehicleCombat && (
+            <div className="mt-6 relative overflow-hidden bg-gradient-to-r from-amber-500/5 via-orange-600/5 to-indigo-500/5 border border-white/10 rounded-[2rem] p-6 shadow-2xl transition-all duration-300 hover:border-amber-500/30">
+              {/* 백그라운드 발광 효과 */}
+              <div className="absolute top-0 right-0 w-48 h-48 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+              <div className="absolute bottom-0 left-0 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+
+              <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-gradient-to-br from-amber-500 to-orange-600 rounded-2xl flex items-center justify-center shadow-lg shadow-amber-500/20 shrink-0">
+                    <Car size={24} className="text-white" />
+                  </div>
+                  <div className="flex flex-col">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest bg-amber-500/10 px-2 py-0.5 rounded-full">
+                        전술 업적
+                      </span>
+                      <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">
+                        Vehicle Combat Master
+                      </span>
+                    </div>
+                    <h4 className="text-white font-black text-lg mt-1 tracking-tight">차량 전술 교전 마스터</h4>
+                    <p className="text-xs text-gray-400 mt-0.5 font-medium">
+                      차량 위에서 적을 격추하거나 고속 기동 중인 차량 내부의 적을 제압한 고급 플레이어 업적입니다.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:flex gap-3 w-full md:w-auto">
+                  {Number(leadKills || leadKnocks) > 0 && (
+                    <div className="flex items-center gap-3 bg-black/40 border border-white/10 px-4 py-3 rounded-2xl flex-1 md:flex-none">
+                      <div className="w-8 h-8 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-500 shrink-0">
+                        <Crosshair size={16} />
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-[9px] text-gray-500 font-bold uppercase">리드샷 (표적 사격)</span>
+                        <span className="text-[13px] text-white font-black leading-tight mt-0.5">
+                          기절 <span className="text-amber-400">{leadKnocks}</span> · 킬 <span className="text-red-400">{leadKills}</span>
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {Number(ridingKills || ridingKnocks) > 0 && (
+                    <div className="flex items-center gap-3 bg-black/40 border border-white/10 px-4 py-3 rounded-2xl flex-1 md:flex-none">
+                      <div className="w-8 h-8 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400 shrink-0">
+                        <Swords size={16} />
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-[9px] text-gray-500 font-bold uppercase">라이딩샷 (탑승 사격)</span>
+                        <span className="text-[13px] text-white font-black leading-tight mt-0.5">
+                          기절 <span className="text-indigo-400">{ridingKnocks}</span> · 킬 <span className="text-red-400">{ridingKills}</span>
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* [V12.5] New Tactical Dashboard (Radar + Timeline) */}
           <div className="mt-8">

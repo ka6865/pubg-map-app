@@ -21,6 +21,10 @@ export interface MatchStats {
   revives: number;
   name: string;
   playerId: string;
+  leadShotKills?: number;
+  leadShotKnocks?: number;
+  ridingShotKills?: number;
+  ridingShotKnocks?: number;
 }
 
 export interface MatchTeamMember {
@@ -187,4 +191,8 @@ export interface MatchData {
   };
   /** [V12.5] 상세 경기 타임라인 */
   timeline?: TimelineEvent[];
+  leadShotKills?: number;
+  leadShotKnocks?: number;
+  ridingShotKills?: number;
+  ridingShotKnocks?: number;
 }

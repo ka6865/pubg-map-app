@@ -85,6 +85,9 @@ function aggregateMatches(matches: any[], lowerNickname: string, myAccountId?: s
   let totalMinDist = 0, totalHeightDiff = 0, totalTeammateCountFinal = 0, isolationCountFinal = 0;
   let rankedCount = 0, normalCount = 0;
   const weaponMatchCount: Record<string, number> = {};
+  
+  // [V58.4] 차량 고정밀 교전 지표 집계용 변수
+  let totalLeadShotKills = 0, totalLeadShotKnocks = 0, totalRidingShotKills = 0, totalRidingShotKnocks = 0;
 
   const backupLatencies: number[] = [], reactionLatencies: number[] = [];
   const goldenTimeFinal = { early: 0, mid1: 0, mid2: 0, late: 0 };
@@ -206,6 +209,12 @@ function aggregateMatches(matches: any[], lowerNickname: string, myAccountId?: s
         weaponMatchCount[w] = (weaponMatchCount[w] || 0) + 1;
       });
     }
+
+    // [V58.4] 차량 교전 지표 누적 합산 (m.stats 또는 m 직계 필드에서 안전하게 추출)
+    totalLeadShotKills += Number(m.stats?.leadShotKills || m.leadShotKills || 0);
+    totalLeadShotKnocks += Number(m.stats?.leadShotKnocks || m.leadShotKnocks || 0);
+    totalRidingShotKills += Number(m.stats?.ridingShotKills || m.ridingShotKills || 0);
+    totalRidingShotKnocks += Number(m.stats?.ridingShotKnocks || m.ridingShotKnocks || 0);
   });
 
   const mLen = Math.max(1, matches.length);
@@ -271,7 +280,12 @@ function aggregateMatches(matches: any[], lowerNickname: string, myAccountId?: s
     },
     totalSmokes,
     itemUseSummary: { smokes: totalSmokes },
-    weaponMatchCount
+    weaponMatchCount,
+    // [V58.4] 차량 고정밀 교전 지표 누적 반환
+    totalLeadShotKills,
+    totalLeadShotKnocks,
+    totalRidingShotKills,
+    totalRidingShotKnocks
   };
 }
 
@@ -509,6 +523,16 @@ export async function POST(request: Request) {
     let userPrompt = `- 분석 대상: 최근 10경기 중 성적이 우수한 상위 ${summaryStats.mLen}경기 (랭크 매치: ${summaryStats.rankedCount}판 포함)\n`;
     userPrompt += `- 분석 기준: 유저의 최고 기량(Peak Performance)을 바탕으로 잠재력 및 보완점 분석\n`;
     userPrompt += `- 주력 모드: ${mainModeName.toUpperCase()} (신뢰도: ${tierConfidence}, 기반: ${summaryStats.mLen}판)\n`;
+
+    // [V58.4] 차량 전투 종합 성과 공급
+    const totalVehicleKnocks = (summaryStats.totalLeadShotKnocks || 0) + (summaryStats.totalRidingShotKnocks || 0);
+    const totalVehicleKills = (summaryStats.totalLeadShotKills || 0) + (summaryStats.totalRidingShotKills || 0);
+    if (totalVehicleKnocks > 0 || totalVehicleKills > 0) {
+      userPrompt += `\n### [차량 전투 성과 (V58.4)] (고정밀 드라이브바이/무빙타겟 헌팅)\n`;
+      userPrompt += `- 리드샷 (무빙 차량 표적 사격): 기절 ${summaryStats.totalLeadShotKnocks || 0}회, 킬 ${summaryStats.totalLeadShotKills || 0}회\n`;
+      userPrompt += `- 라이딩샷 (주행 차량 탑승 사격): 기절 ${summaryStats.totalRidingShotKnocks || 0}회, 킬 ${summaryStats.totalRidingShotKills || 0}회\n`;
+      userPrompt += `- 코칭 가이드라인: 이 플레이어는 고난도의 차량 전투 지표가 뛰어난 플레이어입니다. SPICY BOMBER와 KIND COACH 모두 드라이브바이 사격 성공과 리드샷 결정력의 전술적 의미를 극찬하거나 보완점으로 강조하여 분석에 웅장하고 미려하게 녹여내야 합니다.\n`;
+    }
 
     if (goldenTimeAvg) {
       const smokeRescueRate = summaryStats.totalSmokeCount > 0 ? Math.round((summaryStats.totalSmokeRescues / summaryStats.totalSmokeCount) * 100) : 0;

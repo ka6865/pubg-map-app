@@ -133,7 +133,11 @@ export class AnalysisEngine {
       groggyMap: new Map(),
       hasRealExplosions: false,
       positionEventCount: 0,
-      matchEndRelativeTime: null
+      matchEndRelativeTime: null,
+      leadShotKills: 0,
+      leadShotKnocks: 0,
+      ridingShotKills: 0,
+      ridingShotKnocks: 0
     };
 
     // 핸들러 주입
@@ -408,6 +412,10 @@ export class AnalysisEngine {
       avgCircleLuck: this.state.circleLuckCount > 0 ? Math.round((this.state.circleLuckSum / this.state.circleLuckCount) * 100) : 50,
       avgVehicleMastery: Math.min(100, Math.round((this.state.vehicleDistance / 5000) * 100)), // 5km 이동 시 만점
       weaponMatchCount: Array.from(this.state.weaponMatchCount),
+      leadShotKills: this.state.leadShotKills,
+      leadShotKnocks: this.state.leadShotKnocks,
+      ridingShotKills: this.state.ridingShotKills,
+      ridingShotKnocks: this.state.ridingShotKnocks,
 
       benchmark: getBenchmarkTier({
         rankPct: damageRank / Math.max(1, humanParticipants.length),

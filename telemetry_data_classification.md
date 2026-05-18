@@ -16,8 +16,8 @@
 | LogPlayerPosition | 위치 정보 | O | O | O | CORE: `isolationIndex` 및 리플레이 경로 빌드. <br> ※ 리플레이 수집 시 적군은 10번에 1번만 기록(`mode !== "full"` 일 때 10% Slimming 최적화)하여 저장 용량 초경량 보존. 최상위 `vehicle` 필드로 캐릭터 탑승 정보 수집. |
 | LogPlayerAttack | 공격/사격 | X | **O (100% 정상)** | O | **E2E 실증**: 리플레이 전용 API(`telemetry/route.ts`)는 원본 전체를 분석하므로 `"shot"` 및 `"throw"`로 100% 완벽히 가공/스토리지 캐싱 완료. 다만 AI DB 수집기(`match/route.ts`)에서만 필터 누락되어 통계 미반영. |
 | LogPlayerTakeDamage | 피격 정보 | O | O | O | CORE: HP 감쇄 피해량 및 교전 딜레이(latency) 산출. 리플레이에서 탄도선 및 탄착 VFX 렌더링에 직접 소비. |
-| LogPlayerMakeGroggy | 기절(Knock) | O | O | O | CORE: 기절 스탯 누적 및 연막 세이브 판정 트리거 |
-| LogPlayerKillV2 | 확킬(Kill) | O | O | O | CORE: KDA, 처치 공헌도 및 타임라인 핵심 지표 |
+| LogPlayerMakeGroggy | 기절(Knock) | O | O | O | CORE: 기절 스탯 누적 및 연막 세이브 판정 트리거. <br> ※ V58.4: 공격자/피해자의 차량 탑승 상태(isInVehicle)를 기반으로 **순수 무기 리드샷(Lead Shot) 기절 및 라이딩샷(Riding Shot) 기절** 지표를 실시간 가산 |
+| LogPlayerKillV2 | 확킬(Kill) | O | O | O | CORE: KDA, 처치 공헌도 및 타임라인 핵심 지표. <br> ※ V58.4: 공격자/피해자의 차량 탑승 상태(isInVehicle)를 기반으로 **순수 무기 리드샷(Lead Shot) 킬 및 라이딩샷(Riding Shot) 킬** 지표를 실시간 가산 |
 | LogPlayerRevive | 부활(소생) | O | O | O | CORE: 팀원 소생 횟수 집계 및 연막 내 소생 세이브 완료 |
 | LogPlayerRecall(Ship) | 블루칩 부활 | O | O | O | **(공식 문서 미등록, 실측 및 수집 완료)** `match/route.ts`에 정상 수집되며 `CombatHandler.ts` 및 `MapReplayHandler.ts` 부활 분기 100% 정상 작동 |
 | LogExplosiveExplode | 폭발물 기폭 | X | **X (Dead)** | O | **E2E 실증**: PUBG 텔레메트리 자체에 존재하지 않는 데드 이벤트임이 확정됨. `MapReplayHandler`는 수집 누락 시에도 투척 시점으로부터 2.5초 뒤 20m 전방 가상 폭발(`isEstimated: true`)을 생성하여 우회 렌더링을 지원함. |
@@ -89,7 +89,7 @@
 | LogMatchEnd.allWeaponStats | 무기별 상세 스탯 | **공식 문서 누락, 실측 원본 2개 전수 교차 입증 완료!** 매치 종료 시 무기별 `damage`, `shots`, `hits`, `holdingTime` 및 부위별 세부 피격 정보(`hitDetails`) 완벽 제공됨 | 최상 |
 | LogMatchDefinition | 매치 정의 | `MatchId` 기반 경쟁전/맵/시즌 메타데이터 초기화 | 하 |
 | LogWeaponFireCount | 무기 발사 횟수 | `LogPlayerTakeDamage` 결합 시 정확한 명중률 및 제압사격 산출 | 고 |
-| isAttackerInVehicle | 공격자 차량 탑승 여부 | 차량 샷(Drive-by) 마스터리 평가 (`LogPlayerMakeGroggy`, `LogPlayerKillV2`) | 중 |
+| isAttackerInVehicle | 공격자 차량 탑승 여부 | **[V58.4 구현 완료]** 공격자/피해자의 차량 탑승 상태(`isInVehicle`)를 판별하여 리드샷 및 라이딩샷(Drive-by) 지표 산출 | 완료 |
 | assists_AccountId | 어시스트 계정 | 데미지 기여 어시스트 보상 및 평가 (`LogPlayerKillV2`) | 중 |
 | teamKillers_AccountId | 팀킬러 계정 | 고의적 트롤링 식별 및 억울한 데스 보정 (`LogPlayerKillV2`) | 중 |
 | isSuicide | 자살 여부 | KDA 오염 방지 (자기장사, 낙사 등) (`LogPlayerKillV2`) | 하 |
@@ -167,6 +167,17 @@
 4.  **character.isInVehicle 및 character.isDBNO 실재성 검증**
     *   **팩트**: 두 신규 파일의 플레이어 캐릭터 객체 내부에 `"isInVehicle": false`, `"isDBNO": false`가 확실하게 상시 정의되어 내려옵니다.
     *   **통찰**: 10초 주기 위치 이벤트를 통해 플레이어의 생존 여부나 차량 탑승 여부를 Character 오브젝트 하위 단일 프로퍼티로 상시/최고속 감지할 수 있어 차후 AI 통계 엔진의 연산 리소스 절감에 대단히 유용하게 기여할 수 있는 핵심 필드임을 입증했습니다.
+
+### 4-4. 차량 전투 고정밀 지표(리드샷/라이딩샷) 및 로드킬 배제 실증 (V58.4 팩트)
+*   **로드킬(Roadkill) 제외 물리적 타당성**:
+    *   차량으로 플레이어를 쳐서 피해를 주거나 사망시키는 물리적 충돌 이벤트는 `damageTypeCategory` 필드가 `"Damage_Vehicle"` 혹은 `"Damage_Explosion_Vehicle"`로 지정되어 인입됩니다.
+    *   이를 분석 필터에서 완전히 제외(`!damageTypeCategory.toLowerCase().includes("vehicle")`)함으로써 **순수하게 총기 및 투척물을 이용해 차량에 탑승한 적을 맞추거나(리드샷), 자신이 차량에 탑승한 상태에서 사격해 처치(라이딩샷)한 교전만을 정확히 분리**해내는 데 성공했습니다.
+*   **실제 매치(59c397ee) 실측 데이터 결과**:
+    *   **라이딩샷 기절 (Riding Shot Knocks)**: 2회
+    *   **라이딩샷 킬 (Riding Shot Kills)**: 2회
+    *   **리드샷 기절 (Lead Shot Knocks)**: 0회
+    *   **리드샷 킬 (Lead Shot Kills)**: 0회
+    *   단위 테스트(`test_vehicle_metrics_all.ts` 및 `analysis-engine.test.ts`)를 가동하여 해당 매치의 오차 없는 정합성을 100% 검증 완료했습니다.
 
 ---
 

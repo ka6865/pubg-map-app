@@ -183,6 +183,10 @@ export interface AnalysisResult {
   avgCircleLuck?: number;
   avgVehicleMastery?: number;
   weaponMatchCount?: string[];
+  leadShotKills: number;
+  leadShotKnocks: number;
+  ridingShotKills: number;
+  ridingShotKnocks: number;
 }
 
 // 텔레메트리 이벤트 처리를 위한 내부 상태 타입
@@ -315,4 +319,8 @@ export interface AnalysisState {
   hasRealExplosions: boolean;
   positionEventCount: number;
   matchEndRelativeTime: number | null; // [V12.5] 승리 이벤트의 정확한 기록을 위한 매치 종료 상대 시간
+  leadShotKills: number;
+  leadShotKnocks: number;
+  ridingShotKills: number;
+  ridingShotKnocks: number;
 }

@@ -173,6 +173,18 @@ export class CombatHandler extends BaseHandler {
       const victimLoc = e.victim?.location || e.victim?.loc;
       const dist = Math.round(calcDist3D(killerLoc, victimLoc) / 100);
 
+      // [V59.0] 차량 탑승 타격 감지 (로드킬 제외)
+      const dmgCat = (e.damageTypeCategory || "").toLowerCase();
+      const isRoadkill = dmgCat.includes("vehicle");
+      if (!isRoadkill) {
+        if (e.victim?.isInVehicle === true) {
+          this.state.leadShotKnocks++;
+        }
+        if (attacker?.isInVehicle === true) {
+          this.state.ridingShotKnocks++;
+        }
+      }
+
       this.state.timeline.push({
         ts: ts - this.state.matchStartTime,
         type: 'KNOCK',
@@ -283,6 +295,18 @@ export class CombatHandler extends BaseHandler {
       const killerLoc = attackerObj?.location || attackerObj?.loc;
       const victimLoc = e.victim?.location || e.victim?.loc;
       const dist = Math.round(calcDist3D(killerLoc, victimLoc) / 100);
+
+      // [V59.0] 차량 탑승 킬 감지 (로드킬 제외)
+      const dmgCat = (e.damageTypeCategory || "").toLowerCase();
+      const isRoadkill = dmgCat.includes("vehicle");
+      if (!isRoadkill) {
+        if (e.victim?.isInVehicle === true) {
+          this.state.leadShotKills++;
+        }
+        if (attackerObj?.isInVehicle === true) {
+          this.state.ridingShotKills++;
+        }
+      }
 
       this.state.timeline.push({
         ts: ts - this.state.matchStartTime,
