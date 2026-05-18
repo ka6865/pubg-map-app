@@ -693,6 +693,161 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
             </div>
           )}
 
+          {/* [V58.4] 무기 세부 분석 및 아군 기여도 (Weapon & Squad Armory) */}
+          {((matchData.weaponStats && Object.keys(matchData.weaponStats).length > 0) || 
+            (matchData.squadWeaponStats && Object.keys(matchData.squadWeaponStats).length > 0)) && (
+            <div className="mt-8">
+              <div className="flex items-center gap-2 mb-6">
+                <div className="w-8 h-8 bg-amber-500/20 rounded-lg flex items-center justify-center">
+                  <Flame size={16} className="text-amber-400" />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-white font-black text-sm">고정밀 무기 교전 분석</span>
+                  <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Weapon Mastery & Squad Armory</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Left: 나의 무기 스탯 (7/12) */}
+                {matchData.weaponStats && Object.keys(matchData.weaponStats).length > 0 ? (
+                  <div className="lg:col-span-7 bg-white/2 border border-white/5 rounded-[2.5rem] p-6 flex flex-col gap-4">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-[10px] text-gray-500 font-black uppercase tracking-widest">My Weapon Stats</span>
+                      <span className="text-[10px] text-amber-400 font-bold bg-amber-500/10 px-2 py-0.5 rounded-full">공식 PUBG 통계 보정</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {Object.entries(matchData.weaponStats).map(([wName, wStat]) => {
+                        const hasAccuracy = wStat.accuracy !== undefined;
+                        const headshotDetail = wStat.hitDetails?.find(d => d.bodyPart === "HeadShot" || d.bodyPart === "Head");
+                        const headshotCount = headshotDetail?.hits || 0;
+                        const headshotDamage = Math.round(headshotDetail?.damage || 0);
+
+                        return (
+                          <div 
+                            key={wName} 
+                            className="bg-black/40 border border-white/10 p-5 rounded-3xl relative overflow-hidden group/wcard hover:border-amber-500/30 transition-all duration-300"
+                          >
+                            <div className="absolute top-0 right-0 w-24 h-24 bg-white/2 rounded-full blur-2xl group-hover/wcard:bg-amber-500/5 transition-all duration-500" />
+                            
+                            <div className="flex justify-between items-start mb-3 relative z-10">
+                              <div>
+                                <h5 className="text-white font-black text-[15px] tracking-tight">{wName}</h5>
+                                <span className="text-[9px] text-gray-500 font-bold uppercase">
+                                  {wStat.holdingTime ? `파지 ${Math.round(wStat.holdingTime)}초` : '주무기'}
+                                </span>
+                              </div>
+                              <div className="flex flex-col items-end">
+                                <span className="text-white font-black text-[14px]">
+                                  {Math.round(wStat.damage)} <span className="text-[10px] text-gray-500 font-medium">딜</span>
+                                </span>
+                                <span className="text-[10px] text-gray-400 font-bold">
+                                  기절 {wStat.dbnos} · {wStat.kills}킬
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* 명중률 (Accuracy) 프로그레스바 */}
+                            {hasAccuracy && (
+                              <div className="mt-4 flex flex-col gap-1 relative z-10">
+                                <div className="flex justify-between items-center text-[10px]">
+                                  <span className="text-gray-400 font-bold">명중률</span>
+                                  <span className="text-amber-400 font-black">
+                                    {wStat.accuracy}% <span className="text-gray-500 font-medium">({wStat.hits}/{wStat.shots}발)</span>
+                                  </span>
+                                </div>
+                                <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/10">
+                                  <div 
+                                    className="h-full bg-gradient-to-r from-amber-500 to-orange-500 rounded-full transition-all duration-1000"
+                                    style={{ width: `${wStat.accuracy}%` }}
+                                  />
+                                </div>
+                              </div>
+                            )}
+
+                            {/* 헤드샷 정보 */}
+                            {headshotCount > 0 && (
+                              <div className="mt-3 pt-3 border-t border-white/5 flex justify-between items-center text-[10px] text-gray-400 font-bold relative z-10">
+                                <div className="flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
+                                  <span>헤드샷 명중</span>
+                                </div>
+                                <span className="text-white font-black">
+                                  {headshotCount}회 <span className="text-red-400 font-bold">({headshotDamage} HP)</span>
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="lg:col-span-7 bg-white/2 border border-white/5 rounded-[2.5rem] p-8 flex flex-col items-center justify-center text-center">
+                    <Target size={32} className="text-gray-600 mb-2" />
+                    <span className="text-xs text-gray-400 font-bold">본인 공식 무기 통계 기록 없음</span>
+                  </div>
+                )}
+
+                {/* Right: 아군 무기 기여도 (5/12) */}
+                {matchData.squadWeaponStats && Object.keys(matchData.squadWeaponStats).length > 0 ? (
+                  <div className="lg:col-span-5 bg-white/2 border border-white/5 rounded-[2.5rem] p-6 flex flex-col gap-4">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-[10px] text-gray-500 font-black uppercase tracking-widest">Squad Weapon Stats</span>
+                      <span className="text-[10px] text-indigo-400 font-bold bg-indigo-500/10 px-2 py-0.5 rounded-full">팀원 화력 기여</span>
+                    </div>
+
+                    <div className="flex flex-col gap-4 max-h-[350px] overflow-y-auto pr-1 custom-scrollbar">
+                      {Object.entries(matchData.squadWeaponStats).map(([sName, sWeapons]) => {
+                        const totalSDeamage = sWeapons.reduce((sum, w) => sum + w.damage, 0);
+                        
+                        return (
+                          <div 
+                            key={sName} 
+                            className="bg-black/30 border border-white/5 p-4 rounded-2xl flex flex-col gap-2.5"
+                          >
+                            <div className="flex justify-between items-center">
+                              <span className="text-white font-black text-[12px] tracking-tight truncate max-w-[150px]">
+                                {sName}
+                              </span>
+                              <span className="text-[11px] text-indigo-400 font-black">
+                                총 {Math.round(totalSDeamage)} 딜
+                              </span>
+                            </div>
+
+                            <div className="flex flex-col gap-2">
+                              {sWeapons.map((sw, sIdx) => (
+                                <div key={sIdx} className="flex flex-col gap-1 text-[10px]">
+                                  <div className="flex justify-between items-center text-gray-400">
+                                    <span className="font-bold">{sw.weapon}</span>
+                                    <span className="font-black text-white/80">
+                                      {Math.round(sw.damage)}딜 <span className="text-gray-500 font-medium">({sw.accuracy}%)</span>
+                                    </span>
+                                  </div>
+                                  <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
+                                    <div 
+                                      className="h-full bg-indigo-500 rounded-full transition-all duration-1000"
+                                      style={{ width: `${Math.min(100, (sw.damage / Math.max(1, totalSDeamage)) * 100)}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="lg:col-span-5 bg-white/2 border border-white/5 rounded-[2.5rem] p-8 flex flex-col items-center justify-center text-center">
+                    <User size={32} className="text-gray-600 mb-2" />
+                    <span className="text-xs text-gray-400 font-bold">아군 화력 통계 기록 없음</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* [V12.5] New Tactical Dashboard (Radar + Timeline) */}
           <div className="mt-8">
             <div className="flex items-center gap-2 mb-6">

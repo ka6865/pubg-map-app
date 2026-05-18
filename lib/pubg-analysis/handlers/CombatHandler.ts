@@ -32,6 +32,9 @@ export class CombatHandler extends BaseHandler {
       case "LogPlayerCreate": // [V26.1] 태이고 복귀전 등 암시적 부활 대응
         this.handleRecall(e, ts);
         break;
+      case "LogMatchEnd":
+        this.handleMatchEnd(e);
+        break;
     }
   }
 
@@ -592,6 +595,79 @@ export class CombatHandler extends BaseHandler {
               pData.duelLosses++;
             }
           }
+        }
+      }
+    });
+  }
+
+  private handleMatchEnd(e: any) {
+    if (!e.allWeaponStats || !Array.isArray(e.allWeaponStats)) return;
+
+    // 1. accountId -> canonicalName 맵 구축
+    const accountToNameMap = new Map<string, string>();
+    if (e.characters && Array.isArray(e.characters)) {
+      e.characters.forEach((c: any) => {
+        if (c.accountId && c.name) {
+          accountToNameMap.set(c.accountId, c.name);
+        }
+      });
+    }
+
+    // 2. allWeaponStats 순회
+    e.allWeaponStats.forEach((playerStat: any) => {
+      const accId = playerStat.accountId;
+      if (!accId) return;
+
+      const isMe = accId === this.state.myAccountId;
+      const isTeammate = this.state.teamAccountIds.has(accId) && !isMe;
+
+      if (isMe) {
+        // 본인 무기 통계 정밀 오버라이트 보정
+        if (playerStat.stats && Array.isArray(playerStat.stats)) {
+          playerStat.stats.forEach((w: any) => {
+            const wId = w.weapon || "Unknown";
+            const cleanWId = wId.replace(/Item_Weapon_|Weap|_Projectile|_C/g, "");
+            
+            const existing = this.state.weaponStats.get(cleanWId) || { kills: 0, dbnos: 0, damage: 0, hits: 0 };
+            
+            existing.damage = w.damage ?? existing.damage;
+            existing.hits = w.hits ?? existing.hits;
+            existing.shots = w.shots ?? 0;
+            existing.dBNODamage = w.dBNODamage ?? 0;
+            existing.dBNOHits = w.dBNOHits ?? 0;
+            existing.holdingTime = w.holdingTime ?? 0;
+            existing.hitDetails = w.hitDetails ?? [];
+            existing.accuracy = w.shots > 0 ? Math.round((w.hits / w.shots) * 100) : 0;
+
+            this.state.weaponStats.set(cleanWId, existing);
+          });
+        }
+      } else if (isTeammate) {
+        // 아군 무기 통계 적재
+        const tName = accountToNameMap.get(accId) || accId;
+        const tWeaponList: any[] = [];
+
+        if (playerStat.stats && Array.isArray(playerStat.stats)) {
+          playerStat.stats.forEach((w: any) => {
+            const wId = w.weapon || "Unknown";
+            const cleanWId = wId.replace(/Item_Weapon_|Weap|_Projectile|_C/g, "");
+            
+            tWeaponList.push({
+              weapon: cleanWId,
+              damage: w.damage ?? 0,
+              dBNODamage: w.dBNODamage ?? 0,
+              shots: w.shots ?? 0,
+              hits: w.hits ?? 0,
+              dBNOHits: w.dBNOHits ?? 0,
+              holdingTime: w.holdingTime ?? 0,
+              hitDetails: w.hitDetails ?? [],
+              accuracy: w.shots > 0 ? Math.round((w.hits / w.shots) * 100) : 0
+            });
+          });
+        }
+        
+        if (tWeaponList.length > 0) {
+          this.state.squadWeaponStats.set(tName, tWeaponList);
         }
       }
     });
