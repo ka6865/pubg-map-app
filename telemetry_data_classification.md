@@ -1,9 +1,9 @@
-# [사실기반] BGMS 텔레메트리 데이터 실구현 명세서 (V58.0)
-*공식 PUBG API 텔레메트리 이벤트 + 오브젝트 전수 대조 완료*
+# [사실기반] BGMS 텔레메트리 데이터 실구현 명세서 (V59.0)
+*공식 PUBG API 텔레메트리 이벤트 + 오브젝트 전수 대조 및 V59.0 고정밀 정합성 패치 완료*
 
 ---
 
-## 1. 실구현 항목 (CORE / AI)
+## 1. 실구현 항목 (CORE / AI / UI)
 
 ### 1-1. 이벤트 (수집 채널 및 실질 소비 여부 전수 감사)
 | 이벤트명 | 한글명 | DB/AI 수집 | 리플레이 수집 | 핸들러 소비 여부 | 실제 최종 지표 반영 여부 및 특이사항 |
@@ -15,10 +15,10 @@
 | LogParachuteLanding | 낙하산 착지 | O | O | O | CORE: 초기 파밍 지역 판정 및 크론 작업([hotdrop/route.ts](file:///Users/kangheesung/pubg-map-app-local/app/api/cron/hotdrop/route.ts))을 통한 핫드랍 히트맵 추출 가동 |
 | LogPlayerPosition | 위치 정보 | O | O | O | CORE: `isolationIndex` 및 리플레이 경로 빌드. <br> ※ 리플레이 수집 시 적군은 10번에 1번만 기록(`mode !== "full"` 일 때 10% Slimming 최적화)하여 저장 용량 초경량 보존. 최상위 `vehicle` 필드로 캐릭터 탑승 정보 수집. |
 | LogPlayerAttack | 공격/사격 | X | **O (100% 정상)** | O | **E2E 실증**: 리플레이 전용 API(`telemetry/route.ts`)는 원본 전체를 분석하므로 `"shot"` 및 `"throw"`로 100% 완벽히 가공/스토리지 캐싱 완료. 다만 AI DB 수집기(`match/route.ts`)에서만 필터 누락되어 통계 미반영. |
-| LogPlayerTakeDamage | 피격 정보 | O | O | O | CORE: HP 감쇄 피해량 및 교전 딜레이(latency) 산출. 리플레이에서 탄도선 및 탄착 VFX 렌더링에 직접 소비. |
-| LogPlayerMakeGroggy | 기절(Knock) | O | O | O | CORE: 기절 스탯 누적 및 연막 세이브 판정 트리거. <br> ※ V58.4: 공격자/피해자의 차량 탑승 상태(isInVehicle)를 기반으로 **순수 무기 리드샷(Lead Shot) 기절 및 라이딩샷(Riding Shot) 기절** 지표를 실시간 가산 |
-| LogPlayerKillV2 | 확킬(Kill) | O | O | O | CORE: KDA, 처치 공헌도 및 타임라인 핵심 지표. <br> ※ V58.4: 공격자/피해자의 차량 탑승 상태(isInVehicle)를 기반으로 **순수 무기 리드샷(Lead Shot) 킬 및 라이딩샷(Riding Shot) 킬** 지표를 실시간 가산 |
-| LogPlayerRevive | 부활(소생) | O | O | O | CORE: 팀원 소생 횟수 집계 및 연막 내 소생 세이브 완료 |
+| LogPlayerTakeDamage | 피격 정보 | O | O | O | CORE: HP 감쇄 피해량 및 교전 딜레이(latency) 산출. 리플레이에서 탄도선 및 탄착 VFX 렌더링에 직접 소비. <br> **[V58.4 패치]**: 아군 사격(Friendly Fire) 및 자해 데미지는 본인 무기 교전 통계 및 시간대별 딜량(`goldenTimeDamage`)에서 완전히 제외하여 딜량 오염 차단. 또한 피해자가 이미 기절(`groggy`) 또는 사망 상태인 경우 확킬 딜량 오염 방지를 위해 무기 딜량 및 타격 가산 제외. |
+| LogPlayerMakeGroggy | 기절(Knock) | O | O | O | CORE: 기절 스탯 누적 및 연막 세이브 판정 트리거. <br> **[V58.4 패치]**: 기절 발생 시 피해자의 생존 상태를 실시간 `"groggy"`로 추적하여 확킬 데미지 차단 필터와 연동. 공격자/피해자의 차량 탑승 상태(isInVehicle)를 기반으로 **순수 무기 리드샷(Lead Shot) 기절 및 라이딩샷(Riding Shot) 기절** 지표를 실시간 가산. |
+| LogPlayerKillV2 | 확킬(Kill) | O | O | O | CORE: KDA, 처치 공헌도 및 타임라인 핵심 지표. <br> **[V58.4 패치]**: 공격자/피해자의 차량 탑승 상태(isInVehicle)를 기반으로 **순수 무기 리드샷(Lead Shot) 킬 및 라이딩샷(Riding Shot) 킬** 지표를 실시간 가산. 사망한 플레이어 상태를 실시간으로 기록하여 딜량 가산 예외 처리 연동. |
+| LogPlayerRevive | 부활(소생) | O | O | O | CORE: 팀원 소생 횟수 집계 및 연막 내 소생 세이브 완료. 소생 성공 시 대상 플레이어 상태를 생존 상태로 갱신하여 딜량 필터 복구. |
 | LogPlayerRecall(Ship) | 블루칩 부활 | O | O | O | **(공식 문서 미등록, 실측 및 수집 완료)** `match/route.ts`에 정상 수집되며 `CombatHandler.ts` 및 `MapReplayHandler.ts` 부활 분기 100% 정상 작동 |
 | LogExplosiveExplode | 폭발물 기폭 | X | **X (Dead)** | O | **E2E 실증**: PUBG 텔레메트리 자체에 존재하지 않는 데드 이벤트임이 확정됨. `MapReplayHandler`는 수집 누락 시에도 투척 시점으로부터 2.5초 뒤 20m 전방 가상 폭발(`isEstimated: true`)을 생성하여 우회 렌더링을 지원함. |
 | LogPlayerRedeploy(BR) | 재배치 | O | O | O | CORE: 블루칩 무전 소생 분석 및 스태츠 보정 |
@@ -28,6 +28,7 @@
 | LogVehicleRide | 차량 탑승 | X | **O (100% 정상)** | O | **E2E 실증**: 리플레이 API(`telemetry/route.ts`)는 원본 전체를 분석하므로 `"ride"`로 100% 완벽히 가공/캐싱되어 리플레이 🚗 마커 병합 연출 정상 가동. AI DB 수집기(`match/route.ts`)만 필터 누락 상태. |
 | LogVehicleLeave | 차량 하차 | X | **O (100% 정상)** | O | **E2E 실증**: 리플레이 API(`telemetry/route.ts`)는 원본 전체를 분석하므로 `"leave"`로 100% 완벽히 가공/캐싱되어 리플레이 하차 처리 정상 가동. AI DB 수집기(`match/route.ts`)만 필터 누락 상태. |
 | LogProjectileHit | 투척물 피격 | O | O | **X (Dead)** | **Dead Data (신규 발굴)**: 수집/저장되나 분석 엔진 핸들러에서 이를 소비하는 로직이 0개 존재 및 PUBG 텔레메트리 원본에 실존하지 않는 데드 이벤트임이 입증됨. |
+| LogMatchEnd | 매치 종료 | O | O | O | **[V58.4 구현 완료]**: 매치 종료 시점에 제공되는 `allWeaponStats` 및 `characters` 배열 데이터를 수집 및 가공. 본인 무기 교전 통계(shots, holdingTime, hitDetails)의 최고정밀 오버라이트 보정 및 **아군 무기 교전 스탯(`squadWeaponStats`)**을 신규 추출하여 Squad Armory 프리미엄 UI에 실시간 도킹 및 렌더링. |
 
 ### 1-2. 오브젝트 - 현재 수집 중인 필드
 | 오브젝트 | 수집 필드 | 미수집 필드 (활용 가능 / 1차 Discard) |
@@ -86,10 +87,7 @@
 | LogPlayerUseFlareGun | 플레어건 | 보급 유인 전술 | 고 |
 | BlueZoneCustomOptions | 자기장 설정 | 페이즈별 자기장 속도/피해 패턴 분석 | 고 |
 | LogPlayerDestroyBreachableWall | 벽 파괴 | 데스턴 맵 전술 다양성 | 중 |
-| LogMatchEnd.allWeaponStats | 무기별 상세 스탯 | **공식 문서 누락, 실측 원본 2개 전수 교차 입증 완료!** 매치 종료 시 무기별 `damage`, `shots`, `hits`, `holdingTime` 및 부위별 세부 피격 정보(`hitDetails`) 완벽 제공됨 | 최상 |
-| LogMatchDefinition | 매치 정의 | `MatchId` 기반 경쟁전/맵/시즌 메타데이터 초기화 | 하 |
 | LogWeaponFireCount | 무기 발사 횟수 | `LogPlayerTakeDamage` 결합 시 정확한 명중률 및 제압사격 산출 | 고 |
-| isAttackerInVehicle | 공격자 차량 탑승 여부 | **[V58.4 구현 완료]** 공격자/피해자의 차량 탑승 상태(`isInVehicle`)를 판별하여 리드샷 및 라이딩샷(Drive-by) 지표 산출 | 완료 |
 | assists_AccountId | 어시스트 계정 | 데미지 기여 어시스트 보상 및 평가 (`LogPlayerKillV2`) | 중 |
 | teamKillers_AccountId | 팀킬러 계정 | 고의적 트롤링 식별 및 억울한 데스 보정 (`LogPlayerKillV2`) | 중 |
 | isSuicide | 자살 여부 | KDA 오염 방지 (자기장사, 낙사 등) (`LogPlayerKillV2`) | 하 |
@@ -150,6 +148,15 @@
     *   **팩트**: 리플레이 API(`telemetry/route.ts`)는 스토리지 캐시 검사 후 파일이 없을 때만 PUBG 원시 JSON 파일을 내려받아 `AnalysisEngine`을 구동하고, 최종 가공된 `finalData`를 Supabase Storage 버킷(`telemetry/`)에 독립적인 `.json` 파일 캐시로 보존합니다.
     *   **최적화 팩트**: 이 과정에서 적군의 위치 이벤트(`LogPlayerPosition`)는 10번에 1번만 기록(`positionEventCount % 10 !== 0` 일 때 스킵)하는 **10% Slimming(경량화) 필터**가 작동하여, 캔버스 동선 렌더링에 지장이 없는 선에서 전송 파일 용량을 수십 MB에서 수백 KB 수준으로 경이롭게 절약하고 있음이 코드로 확인되었습니다.
     *   **결과**: 이로써 2D 리플레이 UI는 네트워크 과부하 및 프론트엔드 메모리 병목 없이 부드러운 60fps 보간 애니메이션을 그릴 수 있는 물리적 기초를 완벽하게 제공받고 있습니다.
+7.  **아군 사격(Friendly Fire) 및 자해 데미지 통계 배제 (V58.4 패치)**
+    *   **팩트**: PUBG 원본 텔레메트리에서는 팀원끼리 부딪히거나 자신이 수류탄으로 입는 피해도 `LogPlayerTakeDamage` 이벤트에 그대로 기록됩니다.
+    *   **코드 검증**: `CombatHandler`의 `handleDamage` 세션에서 `isTeammateVictim`이거나 `victimName === this.state.lowerNickname`인 경우 분석 연산에서 전면 제외(return)하여, 팀원 간 차량 충돌 딜이나 자해 딜 등으로 인한 무기 딜량의 오염을 100% 완벽 차단하는 데 성공했습니다.
+8.  **기절/사망 대상 확킬 딜량 가산 제외 (V58.4 패치)**
+    *   **팩트**: 적이 이미 기절하여 바닥에 쓰러졌거나 사망한 뒤에 입히는 데미지(일명 '확킬 딜')는 순수한 대인 교전 화력으로 인정하기 어렵고 KDA 딜량을 왜곡시킵니다.
+    *   **코드 검증**: `LogPlayerMakeGroggy` 및 `LogPlayerKillV2` 발생 시 플레이어의 생존 상태(`playerAliveStatus`)를 즉각 갱신 및 추적하고, `CombatHandler`에서 피해자가 이미 `groggy` 또는 사망(false) 상태인 경우에는 `weaponStats` 딜량 및 타격 가산에서 완전히 예외 처리하도록 고정밀 필터를 도킹하여 순수 대인 유효 딜량의 무결성을 이룩했습니다.
+9.  **0딜 및 0히트 무기 노이즈(SLR, FNFal) 자동 소거 (V58.4 패치)**
+    *   **팩트**: 펍지 매치 종료 시 `LogMatchEnd.allWeaponStats` 에는 플레이어가 게임 중 단 1회라도 무기를 들고만 다녔어도 해당 무기가 스탯 목록에 `0딜/0히트` 상태로 등재됩니다. (이로 인해 SLR/FNFal 등의 미사용 무기가 노이즈로 렌더링됨)
+    *   **코드 검증**: 본인 무기 교전 통계 병합 시에 `damage === 0 && hits === 0` 인 빈 껍데기 무기들은 목록에서 즉각 영구 삭제(`weaponStats.delete`)하도록 하이브리드 정리 로직을 장착했습니다. 또한 아군의 무기 목록을 가공할 때도 0딜/0히트 데이터는 완전히 배제하여 UI의 가독성을 최고 품질로 최적화했습니다.
 
 ### 4-3. 신규 텔레메트리 원본 2종(recent_1, recent_2) 추가 교차 검증 및 사실 입증
 
@@ -163,7 +170,7 @@
     *   **통찰**: 이는 비행기 탑승 및 인게임 드롭 전에는 지리적 지역 판정이 되지 않아 `[]` 빈 문자열 배열로 펍지 서버에서 제공하다가, 매치 진행에 따라 동적으로 Miramar/Erangel 등 내 세부 지역명을 문자열 요소로 밀어 넣는다는 동작 방식을 실증합니다.
 3.  **numAlivePlayers의 최상위 위치 보존 팩트 교차 확인**
     *   **팩트**: `recent_1` 파일의 `LogPlayerPosition` 최상위 레벨에는 `"numAlivePlayers": 44`, `recent_2` 파일의 동일 이벤트에는 `"numAlivePlayers": 48`이 각각 정확하고 온전하게 기록되어 있습니다.
-    *   **통찰**: 이는 앞서 `raw_telemetry_59c397ee.json` 매치 분석을 통해 도출했던 **"GameStatePeriodic의 gameState에서는 생존자 수 필드가 Discard(삭제)되나, LogPlayerPosition 최상위 필드로 우회 수집 및 보존되고 있다"**는 팩트가 일시적 현상이 아닌, 펍지 텔레메트리 데이터 파이프라인 전체를 관통하는 **공통적이고 일관된 물리적 법칙**임을 재차 마스터 입증하는 최강의 증거입니다.
+    *   **통찰**: 이는 앞서 `raw_telemetry_59c397ee.json` 매치 분석을 통해 도출했던 **"GameStatePeriodic of gameState에서는 생존자 수 필드가 Discard(삭제)되나, LogPlayerPosition 최상위 필드로 우회 수집 및 보존되고 있다"**는 팩트가 일시적 현상이 아닌, 펍지 텔레메트리 데이터 파이프라인 전체를 관통하는 **공통적이고 일관된 물리적 법칙**임을 재차 마스터 입증하는 최강의 증거입니다.
 4.  **character.isInVehicle 및 character.isDBNO 실재성 검증**
     *   **팩트**: 두 신규 파일의 플레이어 캐릭터 객체 내부에 `"isInVehicle": false`, `"isDBNO": false`가 확실하게 상시 정의되어 내려옵니다.
     *   **통찰**: 10초 주기 위치 이벤트를 통해 플레이어의 생존 여부나 차량 탑승 여부를 Character 오브젝트 하위 단일 프로퍼티로 상시/최고속 감지할 수 있어 차후 AI 통계 엔진의 연산 리소스 절감에 대단히 유용하게 기여할 수 있는 핵심 필드임을 입증했습니다.
@@ -178,6 +185,26 @@
     *   **리드샷 기절 (Lead Shot Knocks)**: 0회
     *   **리드샷 킬 (Lead Shot Kills)**: 0회
     *   단위 테스트(`test_vehicle_metrics_all.ts` 및 `analysis-engine.test.ts`)를 가동하여 해당 매치의 오차 없는 정합성을 100% 검증 완료했습니다.
+*   **순수 유효 대인 딜량 정합성 일치화**:
+    *   `AnalysisEngine`이 최종 산출해 반환하는 `stats.damageDealt` 값을 PUBG API의 기본 리포트 값에만 일차원적으로 의존하지 않고, 아군사격/자해/기절 딜이 배제된 순수 유효 대인 딜량의 총합(`processedDamageDealt`)으로 재할당하여 딜량 표기 정합성을 100% 완벽히 보증했습니다.
+
+### 4-5. 텔레메트리 무기/차량 딜량 노이즈 필터링 및 텍스트 매핑 정책 (V58.5 팩트)
+*   **유효 딜량 판정 체계 변경**:
+    *   과거에는 `Grenade`, `Pan`, `C4`, `Vehicle(Uaz 등)`을 포함한 폭발물/근접무기/차량 충돌 피해를 노이즈로 간주하고 필터링(Discard)하였으나, 이는 실질적인 대인 교전 및 킬 기여도를 훼손하는 심각한 논리 오류였음이 입증되었습니다.
+    *   현재는 `Smoke`, `Flash`, `Decoy`, `SpikeStrip`, `Flare`, `PlayerFemale/Male` (플레이어 충돌 모델 오류), `None` (낙사, 익사 등 시스템 요인) 등 **실제 0딜이거나 교전과 무관한 순수 시스템 노이즈만 필터링**하도록 정책을 전면 개편했습니다.
+    *   결과적으로 수류탄, 화염병, 프라이팬, C4, 각종 차량 충돌(로드킬 제외한 유효 딜) 스탯이 모두 플레이어 무기 사용 내역(`weaponStats`)에 100% 정상 가산됩니다.
+*   **동적 무기 명칭 번역 체계 (UI 연동)**:
+    *   텔레메트리의 원시 무기/차량 ID(예: `Uaz_B_01_esports`, `WeapPan_C`)를 그대로 노출하지 않고, `constants.ts`에 내장된 정규식 기반 동적 번역 레이어(`getTranslatedWeaponName`)를 통해 "UAZ", "프라이팬", "수류탄" 등 직관적인 한글 명칭으로 변환하여 UI에 노출되도록 개선했습니다.
+
+---
+
+### 4-6. V59.0 고정밀 텔레메트리 업데이트 팩트 (차량 전투 및 순수 딜량 정합성)
+*   **차량 탑승 킬/기절 분리 판별 완료 (리드샷/라이딩샷)**:
+    *   `LogPlayerMakeGroggy` 및 `LogPlayerKillV2` 단계에서 `e.victim?.isInVehicle` 및 `e.attacker?.isInVehicle` 상태를 정밀 추적.
+    *   차량 로드킬(damageTypeCategory 기반)을 제외한 순수 총기 격발 교전만 `leadShotKills/Knocks` 및 `ridingShotKills/Knocks` 지표로 완벽하게 맵핑 분리.
+*   **순수 대인 유효 딜량(`processedDamageDealt`) 계산 구조 완벽 검증**:
+    *   `CombatHandler`에서 아군사격(Friendly Fire), 자해(Suicide), 그리고 기절/사망 대상에 대한 무의미한 확킬 딜량을 철저히 배제.
+    *   `AnalysisEngine`이 반환하는 최종 `damageDealt` 값을 PUBG 원본 API 스탯에 의존하지 않고, 직접 필터링한 `weaponStats` 총합(`processedDamageDealt`)으로 100% 덮어쓰기하여 UI와의 절대적인 수치 정합성 구현.
 
 ---
 

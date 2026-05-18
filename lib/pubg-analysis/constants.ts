@@ -117,9 +117,53 @@ export const WEAPON_NAMES: Record<string, string> = {
  * 분석에서 제외할 무기 (투척물, 주먹 등)
  */
 export const IGNORE_WEAPONS = [
-  "WeapGrenade_C", "WeapMolotov_C", "WeapSmokeBomb_C", "WeapFlashBang_C", "WeapStickyGrenade_C",
-  "WeapSpikeStrip_C", "WeapDecoyGrenade_C", "WeapBluezoneGrenade_C", "None", "Cowbar_C", "Pan_C"
+  "WeapSmokeBomb_C", "WeapFlashBang_C", "WeapSpikeStrip_C", "WeapDecoyGrenade_C", "None"
 ];
+
+/**
+ * 분석에서 제외할 무기 이름 패턴 (부분 일치)
+ */
+export const IGNORE_WEAPON_PATTERNS = [
+  "Smoke", "Flash", "PlayerFemale", "PlayerMale", "Flare"
+];
+
+/**
+ * 무기 영문명을 한글로 번역합니다. 
+ * WEAPON_NAMES에 매핑되지 않은 변형(예: Uaz_B_01_esports)도 처리합니다.
+ */
+export function getTranslatedWeaponName(wId: string): string {
+  if (WEAPON_NAMES[wId]) return WEAPON_NAMES[wId];
+  
+  const wLower = wId.toLowerCase();
+  if (wLower.includes("uaz")) return "UAZ";
+  if (wLower.includes("dacia")) return "다시아";
+  if (wLower.includes("buggy")) return "버기";
+  if (wLower.includes("motorcycle") || wLower.includes("motorbike")) return "오토바이";
+  if (wLower.includes("pickup") || wLower.includes("pickuptruck")) return "픽업트럭";
+  if (wLower.includes("mirado")) return "미라도";
+  if (wLower.includes("ponycoupe") || wLower.includes("pony")) return "포니 쿠페";
+  if (wLower.includes("couperb") || wLower.includes("coupe")) return "쿠페 RB";
+  if (wLower.includes("zima")) return "지마";
+  if (wLower.includes("porter")) return "포터";
+  if (wLower.includes("brdm")) return "BRDM";
+  if (wLower.includes("scooter")) return "스쿠터";
+  if (wLower.includes("snowmobile")) return "스노우모빌";
+  if (wLower.includes("snowbike")) return "스노우바이크";
+  if (wLower.includes("tuktuk")) return "툭툭";
+  if (wLower.includes("bicycle")) return "자전거";
+  if (wLower.includes("dirtbike")) return "더트바이크";
+  if (wLower.includes("boat") || wLower.includes("pg117")) return "보트";
+  if (wLower.includes("aquarail")) return "아쿠아레일";
+  if (wLower.includes("airboat")) return "에어보트";
+  if (wLower.includes("ladaniva") || wLower.includes("niva")) return "라다 니바";
+  if (wLower.includes("minibus") || wLower.includes("bus")) return "미니버스";
+  if (wLower.includes("tractor")) return "트랙터";
+  if (wLower.includes("blanc")) return "블랑";
+  if (wLower.includes("pillar")) return "필라 차량";
+  if (wLower.includes("vehicle")) return "차량";
+  
+  return wId;
+}
 
 /**
  * 로컬 스토리지 키 (최근 검색, 즐겨찾기)

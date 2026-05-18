@@ -349,6 +349,19 @@ export class AnalysisEngine {
       teamImpact: { damageImpact, killImpact, teamDamageShare, teamKillShare, totalTeamDamage, totalTeamKills },
       badges,
       weaponStats: Object.fromEntries(this.state.weaponStats),
+      squadWeaponStats: Array.from(this.state.squadWeaponStats.entries()).reduce((acc, [sName, wMap]) => {
+        const wArray = Array.from(wMap.values()) as any[];
+        wArray.forEach((w: any) => {
+          if (w.shots && w.shots > 0) {
+            w.accuracy = Math.round((w.hits / w.shots) * 100);
+          } else {
+            w.accuracy = 0; // We might not track shots for teammates
+          }
+        });
+        wArray.sort((a: any, b: any) => b.damage - a.damage);
+        acc[sName] = wArray;
+        return acc;
+      }, {} as Record<string, any[]>),
       zoneStrategy: this.state.zoneStrategy,
       goldenTimeDamage: this.state.goldenTimeDamage,
       killContribution: this.state.killContribution,
@@ -448,8 +461,7 @@ export class AnalysisEngine {
         zoneEvents: this.state.mapZoneEvents,
         teammates: Array.from(this.state.teamAccountIds),
         teamNames: Array.from(this.state.teamNames)
-      },
-      squadWeaponStats: Object.fromEntries(this.state.squadWeaponStats)
+      }
     };
   }
 
