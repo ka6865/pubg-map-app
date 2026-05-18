@@ -5,6 +5,8 @@ import { getBaseTier } from "@/lib/pubg-analysis/benchmarkScore";
 import { RESULT_VERSION, TELEMETRY_VERSION } from "@/lib/pubg-analysis/constants";
 import { normalizeName } from "@/lib/pubg-analysis/utils";
 import { adaptBenchmark } from "@/lib/pubg-analysis/benchmarkAdapter";
+import { uploadToR2, downloadFromR2 } from "@/lib/pubg-analysis/r2Service";
+
 
 // [V41.7] 2026 Next.js 16 Premium Configuration
 export const dynamic = 'force-dynamic';
@@ -104,11 +106,11 @@ export async function GET(request: NextRequest) {
 
     if (telemetryAsset) {
       const analyzePath = `${matchId}_${lowerNickname}_v${TELEMETRY_VERSION}_analyze.json`;
-      const { data: fileData, error: downloadError } = await supabase.storage.from('telemetry').download(analyzePath);
+      const fileText = await downloadFromR2(analyzePath);
 
-      let needsProcessing = !fileData || downloadError;
-      if (fileData) {
-        const parsed = JSON.parse(await fileData.text());
+      let needsProcessing = !fileText;
+      if (fileText) {
+        const parsed = JSON.parse(fileText);
         const isHealthy = parsed.length > 0 && parsed.some((ev: any) => ev.attacker?.accountId || ev.victim?.accountId);
         if (isHealthy) {
           telData = parsed;
@@ -192,8 +194,8 @@ export async function GET(request: NextRequest) {
           return slim;
         });
 
-        // [V55.0] telemetry 저장은 하되, master 레코드는 마지막에 한 번만 통합 업데이트
-        await supabase.storage.from('telemetry').upload(analyzePath, JSON.stringify(telData), { contentType: 'application/json', upsert: true });
+        // [V58.3] telemetry 저장은 하되, Cloudflare R2로 무부하 저장
+        await uploadToR2(analyzePath, JSON.stringify(telData), 'application/json');
       }
     }
 
@@ -268,11 +270,8 @@ export async function GET(request: NextRequest) {
     const mapCachePath = `${matchId}_${lowerNickname}_v${TELEMETRY_VERSION}_map.json`;
     
     await Promise.all([
-      // 1. 리플레이용 대용량 데이터는 스토리지로 (DB 부하 방지)
-      supabase.storage.from('telemetry').upload(mapCachePath, JSON.stringify(mapData), {
-        contentType: 'application/json',
-        upsert: true
-      }),
+      // 1. 리플레이용 대용량 데이터는 Cloudflare R2로 (DB 부하 영구 제거)
+      uploadToR2(mapCachePath, JSON.stringify(mapData), 'application/json'),
       // 2. 전술 통계, 요약 데이터 및 마스터 레코드 통합 저장 (Transaction 최적화)
       supabase.from("processed_match_telemetry").upsert({
         match_id: matchId,
@@ -284,7 +283,8 @@ export async function GET(request: NextRequest) {
         match_id: matchId,
         map_name: matchAttr.mapId,
         game_mode: matchAttr.gameMode,
-        telemetry_version: TELEMETRY_VERSION
+        telemetry_version: TELEMETRY_VERSION,
+        storage_path: mapCachePath // [V58.3] 스마트 클린업 연동용 도킹 열쇠 컬럼!
       }, { onConflict: 'match_id' })
     ]);
 
