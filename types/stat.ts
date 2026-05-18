@@ -21,6 +21,10 @@ export interface MatchStats {
   revives: number;
   name: string;
   playerId: string;
+  leadShotKills?: number;
+  leadShotKnocks?: number;
+  ridingShotKills?: number;
+  ridingShotKnocks?: number;
 }
 
 export interface MatchTeamMember {
@@ -187,4 +191,47 @@ export interface MatchData {
   };
   /** [V12.5] 상세 경기 타임라인 */
   timeline?: TimelineEvent[];
+  leadShotKills?: number;
+  leadShotKnocks?: number;
+  ridingShotKills?: number;
+  ridingShotKnocks?: number;
+  weaponStats?: Record<string, {
+    kills: number;
+    dbnos: number;
+    damage: number;
+    hits: number;
+    shots?: number;
+    accuracy?: number;
+    holdingTime?: number;
+    dBNODamage?: number;
+    dBNOHits?: number;
+    hitDetails?: Array<{
+      bodyPart: string;
+      kills: number;
+      dBNOs: number;
+      hits: number;
+      dBNOHits: number;
+      damage: number;
+      dBNODamage: number;
+    }>;
+  }>;
+  squadWeaponStats?: Record<string, Array<{
+    weapon: string;
+    damage: number;
+    dBNODamage: number;
+    shots: number;
+    hits: number;
+    dBNOHits: number;
+    holdingTime: number;
+    accuracy: number;
+    hitDetails?: Array<{
+      bodyPart: string;
+      kills: number;
+      dBNOs: number;
+      hits: number;
+      dBNOHits: number;
+      damage: number;
+      dBNODamage: number;
+    }>;
+  }>>;
 }

@@ -1,11 +1,36 @@
 import { AnalysisState } from "../types";
 import { normalizeName, calcDist3D, scaleCoordinate } from "../utils";
-import { WEAPON_NAMES } from "../constants";
+import { WEAPON_NAMES, IGNORE_WEAPONS, IGNORE_WEAPON_PATTERNS } from "../constants";
 import { BaseHandler } from "./BaseHandler";
 
 export class CombatHandler extends BaseHandler {
   constructor(state: AnalysisState) {
     super(state);
+  }
+
+  private isIgnoredWeapon(wId: string, cleanWId: string, damageTypeCategory?: string): boolean {
+    if (damageTypeCategory && (
+      damageTypeCategory.includes("Fall") || 
+      damageTypeCategory.includes("BlueZone") || 
+      damageTypeCategory.includes("RedZone") || 
+      damageTypeCategory.includes("Environment") ||
+      damageTypeCategory.includes("Bleeding") ||
+      damageTypeCategory.includes("Lava") ||
+      damageTypeCategory.includes("Groggy")
+    )) {
+      return true;
+    }
+    
+    if (IGNORE_WEAPON_PATTERNS.some(pattern => cleanWId.includes(pattern))) {
+      return true;
+    }
+
+    return (
+      IGNORE_WEAPONS.includes(wId) || 
+      IGNORE_WEAPONS.includes(cleanWId) ||
+      cleanWId === "None" ||
+      cleanWId === "Unknown"
+    );
   }
 
   public handleEvent(e: any, ts: number, _elapsed: number) {
@@ -32,15 +57,18 @@ export class CombatHandler extends BaseHandler {
       case "LogPlayerCreate": // [V26.1] 태이고 복귀전 등 암시적 부활 대응
         this.handleRecall(e, ts);
         break;
+      case "LogMatchEnd":
+        this.handleMatchEnd(e);
+        break;
     }
   }
 
   private handleDamage(e: any, ts: number) {
     const attackerName = normalizeName(e.attacker?.name || "");
-    const victimName = normalizeName(e.victim?.name || "");
+    const victimName = normalizeName(e.victim?.name || e.victim?.accountId || "");
     const damage = e.damage || 0;
 
-    if (!victimName) return;
+    if (!e.victim) return;
 
     // 아군 피격 시 최근 피격 시점 업데이트 (Trade/Bait 판정용)
     if (this.state.teamNames.has(victimName) && victimName !== this.state.lowerNickname) {
@@ -72,13 +100,7 @@ export class CombatHandler extends BaseHandler {
       this.processDuelData(e, ts, e.attacker, e.victim);
     }
 
-    if (isMeAttacker) {
-      const elapsedSec = (ts - this.state.matchStartTime) / 1000;
-      if (elapsedSec < 300) this.state.goldenTimeDamage.early += damage;
-      else if (elapsedSec < 900) this.state.goldenTimeDamage.mid1 += damage;
-      else if (elapsedSec < 1500) this.state.goldenTimeDamage.mid2 += damage;
-      else this.state.goldenTimeDamage.late += damage;
-    }
+
 
     if (isTeammateAttacker) {
       if (isMeAttacker) {
@@ -90,29 +112,69 @@ export class CombatHandler extends BaseHandler {
       const currentVictimDamage = this.state.victimDamage.get(victimName) || 0;
       this.state.victimDamage.set(victimName, currentVictimDamage + damage);
 
-      if (isMeAttacker) {
-        const currentMyDmg = this.state.myVictimDamage.get(victimName) || 0;
-        this.state.myVictimDamage.set(victimName, currentMyDmg + damage);
+      if (isMeAttacker || isTeammateAttacker) {
+        // 0. 아군 공격(Friendly Fire) 및 자해 데미지는 본인/아군 무기 교전 통계에서 완벽 배제 (팀원 차량 박치기 딜량 오염 차단)
+        if (isTeammateVictim || victimName === attackerName) {
+          return;
+        }
+
+        if (isMeAttacker) {
+          const currentMyDmg = this.state.myVictimDamage.get(victimName) || 0;
+          this.state.myVictimDamage.set(victimName, currentMyDmg + damage);
+        }
 
         const wId = e.damageCauserName || (e.damageCauser && e.damageCauser.itemId) || e.weaponId || "Unknown";
         const cleanWId = wId.replace(/Item_Weapon_|Weap|_Projectile|_C/g, "");
-        const wStat = this.state.weaponStats.get(cleanWId) || { kills: 0, dbnos: 0, damage: 0, hits: 0 };
-        wStat.damage += damage;
-        wStat.hits++;
-        this.state.weaponStats.set(cleanWId, wStat);
-        
-        this.state.combatPressure.totalHits++;
-        if (victimName) this.state.combatPressure.uniqueVictims.add(victimName);
 
-        const attackerLoc = e.attacker?.location || e.attacker?.loc;
-        const victimLoc = e.victim?.location || e.victim?.loc;
-        const dist = calcDist3D(attackerLoc, victimLoc);
-        if (dist !== 999) {
-          const distM = Math.round(dist / 100);
-          this.state.combatPressure.maxHitDistance = Math.max(this.state.combatPressure.maxHitDistance, distM);
-          if (distM < 50) this.state.itemUseStats.distanceDamage.short += damage;
-          else if (distM < 200) this.state.itemUseStats.distanceDamage.mid += damage;
-          else this.state.itemUseStats.distanceDamage.long += damage;
+        // 1. 제외 무기 필터링 (투척물, 캐릭터 오브젝트, C4, 자전거 등 분석 배제)
+        if (!this.isIgnoredWeapon(wId, cleanWId, e.damageTypeCategory)) {
+          // 2. 피해자가 이미 기절(groggy) 상태이거나 사망(false) 상태인 경우 딜량 가산 제외 (확킬 딜량 오염 방지)
+          const victimStatus = this.state.playerAliveStatus.get(victimName);
+          const isAI = victimName.startsWith("ai.");
+          const isVictimGroggy = !isAI && (victimStatus === "groggy" || victimStatus === false);
+
+          if (!isVictimGroggy) {
+            if (isMeAttacker) {
+              const wStat = this.state.weaponStats.get(cleanWId) || { kills: 0, dbnos: 0, damage: 0, hits: 0 };
+              wStat.damage += damage;
+              wStat.hits++;
+              this.state.weaponStats.set(cleanWId, wStat);
+
+              // goldenTimeDamage도 아군/자해/기절이 완벽 차단된 실질 대인 유효 딜량만 누적하도록 동기화
+              const elapsedSec = (ts - this.state.matchStartTime) / 1000;
+              if (elapsedSec < 300) this.state.goldenTimeDamage.early += damage;
+              else if (elapsedSec < 900) this.state.goldenTimeDamage.mid1 += damage;
+              else if (elapsedSec < 1500) this.state.goldenTimeDamage.mid2 += damage;
+              else this.state.goldenTimeDamage.late += damage;
+            } else {
+              let squadWMap = this.state.squadWeaponStats;
+              let pStats = squadWMap.get(attackerName);
+              if (!pStats) {
+                pStats = new Map();
+                squadWMap.set(attackerName, pStats);
+              }
+              const wStat = pStats.get(cleanWId) || { weapon: cleanWId, kills: 0, dbnos: 0, damage: 0, hits: 0, shots: 0 };
+              wStat.damage += damage;
+              wStat.hits++;
+              pStats.set(cleanWId, wStat);
+            }
+          }
+        }
+        
+        if (isMeAttacker) {
+          this.state.combatPressure.totalHits++;
+          if (victimName) this.state.combatPressure.uniqueVictims.add(victimName);
+
+          const attackerLoc = e.attacker?.location || e.attacker?.loc;
+          const victimLoc = e.victim?.location || e.victim?.loc;
+          const dist = calcDist3D(attackerLoc, victimLoc);
+          if (dist !== 999) {
+            const distM = Math.round(dist / 100);
+            this.state.combatPressure.maxHitDistance = Math.max(this.state.combatPressure.maxHitDistance, distM);
+            if (distM < 50) this.state.itemUseStats.distanceDamage.short += damage;
+            else if (distM < 200) this.state.itemUseStats.distanceDamage.mid += damage;
+            else this.state.itemUseStats.distanceDamage.long += damage;
+          }
         }
       }
 
@@ -166,12 +228,52 @@ export class CombatHandler extends BaseHandler {
       this.state.dbnoMap.set(dBNOId, { attacker: makerName, victim: victimName, weaponId: weaponId, ts: ts, attackerAccountId: attacker?.accountId });
     }
 
+    // 기절한 모든 플레이어의 생존 상태를 실시간 groggy로 업데이트
+    if (victimName) {
+      this.state.playerAliveStatus.set(victimName, "groggy");
+    }
+
+    if (isMeMaker || this.isTeammate(attacker)) {
+      if (weaponId && weaponId !== "Unknown" && !isTeammateVictim) {
+        const cleanWId = weaponId.replace(/Item_Weapon_|Weap|_Projectile|_C/g, "");
+        if (!this.isIgnoredWeapon(weaponId, cleanWId, e.damageTypeCategory)) {
+          if (isMeMaker) {
+            const wStat = this.state.weaponStats.get(cleanWId) || { kills: 0, dbnos: 0, damage: 0, hits: 0 };
+            wStat.dbnos++;
+            this.state.weaponStats.set(cleanWId, wStat);
+          } else {
+            let squadWMap = this.state.squadWeaponStats;
+            let pStats = squadWMap.get(makerName);
+            if (!pStats) {
+              pStats = new Map();
+              squadWMap.set(makerName, pStats);
+            }
+            const wStat = pStats.get(cleanWId) || { weapon: cleanWId, kills: 0, dbnos: 0, damage: 0, hits: 0, shots: 0 };
+            wStat.dbnos++;
+            pStats.set(cleanWId, wStat);
+          }
+        }
+      }
+    }
+
     if (isMeMaker) {
       this.state.myActionTimestamps.push(ts);
       this.updateDuelOutcome(attacker, e.victim);
       const killerLoc = attacker?.location || attacker?.loc;
       const victimLoc = e.victim?.location || e.victim?.loc;
       const dist = Math.round(calcDist3D(killerLoc, victimLoc) / 100);
+
+      // [V59.0] 차량 탑승 타격 감지 (로드킬 제외)
+      const dmgCat = (e.damageTypeCategory || "").toLowerCase();
+      const isRoadkill = dmgCat.includes("vehicle");
+      if (!isRoadkill) {
+        if (e.victim?.isInVehicle === true) {
+          this.state.leadShotKnocks++;
+        }
+        if (attacker?.isInVehicle === true) {
+          this.state.ridingShotKnocks++;
+        }
+      }
 
       this.state.timeline.push({
         ts: ts - this.state.matchStartTime,
@@ -233,7 +335,7 @@ export class CombatHandler extends BaseHandler {
   }
 
   private handleKill(e: any, ts: number) {
-    const victimName = normalizeName(e.victim?.name || "");
+    const victimName = normalizeName(e.victim?.name || e.victim?.accountId || "");
     const isMeKiller = this.isMe(e.killer);
     const isMeFinisher = this.isMe(e.finisher);
     const isMeVictim = this.isMe(e.victim);
@@ -277,12 +379,47 @@ export class CombatHandler extends BaseHandler {
       }
     }
 
+    if (isMeKiller || isTeammateKiller) {
+      if (wId && wId !== "Unknown" && !isTeammateVictim) {
+        const cleanWId = wId.replace(/Item_Weapon_|Weap|_Projectile|_C/g, "");
+        if (!this.isIgnoredWeapon(wId, cleanWId, e.damageTypeCategory)) {
+          if (isMeKiller) {
+            const wStat = this.state.weaponStats.get(cleanWId) || { kills: 0, dbnos: 0, damage: 0, hits: 0 };
+            wStat.kills++;
+            this.state.weaponStats.set(cleanWId, wStat);
+          } else {
+            let squadWMap = this.state.squadWeaponStats;
+            let pStats = squadWMap.get(killerName);
+            if (!pStats) {
+              pStats = new Map();
+              squadWMap.set(killerName, pStats);
+            }
+            const wStat = pStats.get(cleanWId) || { weapon: cleanWId, kills: 0, dbnos: 0, damage: 0, hits: 0, shots: 0 };
+            wStat.kills++;
+            pStats.set(cleanWId, wStat);
+          }
+        }
+      }
+    }
+
     if (isMeKiller) {
       this.state.myActionTimestamps.push(ts);
       this.updateDuelOutcome(e.killer, e.victim);
       const killerLoc = attackerObj?.location || attackerObj?.loc;
       const victimLoc = e.victim?.location || e.victim?.loc;
       const dist = Math.round(calcDist3D(killerLoc, victimLoc) / 100);
+
+      // [V59.0] 차량 탑승 킬 감지 (로드킬 제외)
+      const dmgCat = (e.damageTypeCategory || "").toLowerCase();
+      const isRoadkill = dmgCat.includes("vehicle");
+      if (!isRoadkill) {
+        if (e.victim?.isInVehicle === true) {
+          this.state.leadShotKills++;
+        }
+        if (attackerObj?.isInVehicle === true) {
+          this.state.ridingShotKills++;
+        }
+      }
 
       this.state.timeline.push({
         ts: ts - this.state.matchStartTime,
@@ -568,6 +705,169 @@ export class CombatHandler extends BaseHandler {
               pData.duelLosses++;
             }
           }
+        }
+      }
+    });
+  }
+
+  private handleMatchEnd(e: any) {
+    if (!e.allWeaponStats || !Array.isArray(e.allWeaponStats)) return;
+
+    // 1. accountId -> canonicalName 맵 구축
+    const accountToNameMap = new Map<string, string>();
+    if (e.characters && Array.isArray(e.characters)) {
+      e.characters.forEach((c: any) => {
+        const char = c.character || c;
+        if (char && char.accountId && char.name) {
+          accountToNameMap.set(char.accountId, char.name);
+        }
+      });
+    }
+
+    // 2. allWeaponStats 순회
+    e.allWeaponStats.forEach((playerStat: any) => {
+      const accId = playerStat.accountId;
+      if (!accId) return;
+
+      const isMe = accId === this.state.myAccountId;
+      const isTeammate = this.state.teamAccountIds.has(accId) && !isMe;
+
+      if (isMe) {
+        // 본인 무기 통계 정밀 오버라이트 보정
+        if (playerStat.stats && Array.isArray(playerStat.stats)) {
+          playerStat.stats.forEach((w: any) => {
+            const wId = w.weapon || "Unknown";
+            const cleanWId = wId.replace(/Item_Weapon_|Weap|_Projectile|_C/g, "");
+            
+            // 제외 무기 필터링 (투척물, 주먹, 프라이팬, 캐릭터 오브젝트, C4, 자전거 등 분석 배제)
+            if (
+              IGNORE_WEAPONS.includes(wId) || 
+              IGNORE_WEAPONS.includes(cleanWId) ||
+              cleanWId === "None" ||
+              cleanWId === "Unknown" ||
+              cleanWId.startsWith("Proj") ||
+              cleanWId.includes("Projectile") ||
+              cleanWId.includes("Grenade") ||
+              cleanWId.includes("Molotov") ||
+              cleanWId.includes("Smoke") ||
+              cleanWId.includes("Flash") ||
+              cleanWId.includes("Sticky") ||
+              cleanWId.includes("PlayerFemale") ||
+              cleanWId.includes("PlayerMale") ||
+              cleanWId.includes("Punch") ||
+              cleanWId.includes("Melee") ||
+              cleanWId.includes("Pan") ||
+              cleanWId.includes("Cowbar") ||
+              cleanWId.includes("Crowbar") ||
+              cleanWId.includes("C4") ||
+              cleanWId.includes("Bike") ||
+              cleanWId.includes("Flare")
+            ) {
+              return;
+            }
+            
+            const existing = this.state.weaponStats.get(cleanWId) || { kills: 0, dbnos: 0, damage: 0, hits: 0 };
+            
+            // 1. API(w)의 누적 딜량 대신, 우리가 handleDamage에서 정밀 계산한 순수 대인 유효 딜량(existing.damage)을 최종 유지함.
+            // 2. 단, 무기의 shots, holdingTime 등 메타정보는 API 값을 반영함.
+            existing.shots = w.shots ?? 0;
+            existing.dBNODamage = w.dBNODamage ?? 0;
+            existing.dBNOHits = w.dBNOHits ?? 0;
+            existing.holdingTime = w.holdingTime ?? 0;
+            existing.hitDetails = w.hitDetails ?? [];
+            existing.accuracy = existing.shots > 0 ? Math.round((existing.hits / existing.shots) * 100) : 0;
+
+            // [V58.4 Fix] 킬/기절 데이터를 API 최상위 필드 또는 hitDetails에서 합산하여 복구
+            let hdKills = 0;
+            let hdDbnos = 0;
+            if (Array.isArray(w.hitDetails)) {
+              w.hitDetails.forEach((hd: any) => {
+                hdKills += hd.kills || 0;
+                hdDbnos += hd.dBNOs || hd.dbnos || 0;
+              });
+            }
+            existing.kills = Math.max(existing.kills || 0, w.kills || 0, hdKills);
+            existing.dbnos = Math.max(existing.dbnos || 0, w.dBNOs || w.dbnos || 0, hdDbnos);
+
+            // 3. 만약 정제된 순수 유효 딜량과 타격수가 모두 0인 무기(들고만 다녔거나, 0딜 권총 등)인 경우 목록에서 완전히 소거
+            if (existing.damage === 0 && existing.hits === 0) {
+              this.state.weaponStats.delete(cleanWId);
+              return;
+            }
+
+            this.state.weaponStats.set(cleanWId, existing);
+          });
+        }
+      } else if (isTeammate) {
+        // 아군 무기 통계 적재
+        const tName = accountToNameMap.get(accId) || accId;
+        const tWeaponList: any[] = [];
+
+        if (playerStat.stats && Array.isArray(playerStat.stats)) {
+          playerStat.stats.forEach((w: any) => {
+            const wId = w.weapon || "Unknown";
+            const cleanWId = wId.replace(/Item_Weapon_|Weap|_Projectile|_C/g, "");
+            
+            // 제외 무기 필터링 (투척물, 주먹, 프라이팬, 캐릭터 오브젝트, C4, 자전거 등 분석 배제)
+            if (
+              IGNORE_WEAPONS.includes(wId) || 
+              IGNORE_WEAPONS.includes(cleanWId) ||
+              cleanWId === "None" ||
+              cleanWId === "Unknown" ||
+              cleanWId.startsWith("Proj") ||
+              cleanWId.includes("Projectile") ||
+              cleanWId.includes("Grenade") ||
+              cleanWId.includes("Molotov") ||
+              cleanWId.includes("Smoke") ||
+              cleanWId.includes("Flash") ||
+              cleanWId.includes("Sticky") ||
+              cleanWId.includes("PlayerFemale") ||
+              cleanWId.includes("PlayerMale") ||
+              cleanWId.includes("Punch") ||
+              cleanWId.includes("Melee") ||
+              cleanWId.includes("Pan") ||
+              cleanWId.includes("Cowbar") ||
+              cleanWId.includes("Crowbar") ||
+              cleanWId.includes("C4") ||
+              cleanWId.includes("Bike") ||
+              cleanWId.includes("Flare")
+            ) {
+              return;
+            }
+            
+            // 0딜 및 0히트인 아군 무기는 스쿼드 무기 목록에서 완전히 소거
+            if ((w.damage ?? 0) === 0 && (w.hits ?? 0) === 0) {
+              return;
+            }
+
+            // [V58.4 Fix] 아군 스쿼드 무기 통계에서도 킬/기절 데이터를 정상 추출
+            let tHdKills = 0;
+            let tHdDbnos = 0;
+            if (Array.isArray(w.hitDetails)) {
+              w.hitDetails.forEach((hd: any) => {
+                tHdKills += hd.kills || 0;
+                tHdDbnos += hd.dBNOs || hd.dbnos || 0;
+              });
+            }
+
+            tWeaponList.push({
+              weapon: cleanWId,
+              damage: w.damage ?? 0,
+              dBNODamage: w.dBNODamage ?? 0,
+              shots: w.shots ?? 0,
+              hits: w.hits ?? 0,
+              dBNOHits: w.dBNOHits ?? 0,
+              holdingTime: w.holdingTime ?? 0,
+              hitDetails: w.hitDetails ?? [],
+              accuracy: w.shots > 0 ? Math.round((w.hits / w.shots) * 100) : 0,
+              kills: Math.max(w.kills || 0, tHdKills),
+              dbnos: Math.max(w.dBNOs || w.dbnos || 0, tHdDbnos)
+            });
+          });
+        }
+        
+        if (tWeaponList.length > 0) {
+          this.state.squadWeaponStats.set(tName, tWeaponList);
         }
       }
     });

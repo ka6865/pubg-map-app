@@ -133,7 +133,12 @@ export class AnalysisEngine {
       groggyMap: new Map(),
       hasRealExplosions: false,
       positionEventCount: 0,
-      matchEndRelativeTime: null
+      matchEndRelativeTime: null,
+      leadShotKills: 0,
+      leadShotKnocks: 0,
+      ridingShotKills: 0,
+      ridingShotKnocks: 0,
+      squadWeaponStats: new Map()
     };
 
     // 핸들러 주입
@@ -315,6 +320,13 @@ export class AnalysisEngine {
     const reversalRate = pData.reversalAttempts > 0 ? (pData.reversalWins / pData.reversalAttempts) * 100 : 0;
     const initiativeRate = pData.total > 0 ? (pData.success / pData.total) * 100 : -1;
 
+    // weaponStats 맵에 최종 저장된 순수 유효 대인 딜량의 총합을 계산하여 총 딜량 정합성을 일치화함
+    let processedDamageDealt = 0;
+    for (const [_, wStat] of this.state.weaponStats.entries()) {
+      processedDamageDealt += wStat.damage || 0;
+    }
+    processedDamageDealt = Math.round(processedDamageDealt);
+
     return {
       matchId: matchAttr.id,
       v: RESULT_VERSION,
@@ -322,7 +334,7 @@ export class AnalysisEngine {
       createdAt: matchAttr.createdAt,
       stats: {
         ...myStats,
-        damageDealt: myStats.damageDealt ?? 0,
+        damageDealt: processedDamageDealt,
         kills: myStats.kills ?? 0,
         winPlace: myStats.winPlace ?? 100,
         timeSurvived: myStats.timeSurvived ?? 0
@@ -337,6 +349,19 @@ export class AnalysisEngine {
       teamImpact: { damageImpact, killImpact, teamDamageShare, teamKillShare, totalTeamDamage, totalTeamKills },
       badges,
       weaponStats: Object.fromEntries(this.state.weaponStats),
+      squadWeaponStats: Array.from(this.state.squadWeaponStats.entries()).reduce((acc, [sName, wMap]) => {
+        const wArray = Array.from(wMap.values()) as any[];
+        wArray.forEach((w: any) => {
+          if (w.shots && w.shots > 0) {
+            w.accuracy = Math.round((w.hits / w.shots) * 100);
+          } else {
+            w.accuracy = 0; // We might not track shots for teammates
+          }
+        });
+        wArray.sort((a: any, b: any) => b.damage - a.damage);
+        acc[sName] = wArray;
+        return acc;
+      }, {} as Record<string, any[]>),
       zoneStrategy: this.state.zoneStrategy,
       goldenTimeDamage: this.state.goldenTimeDamage,
       killContribution: this.state.killContribution,
@@ -408,6 +433,10 @@ export class AnalysisEngine {
       avgCircleLuck: this.state.circleLuckCount > 0 ? Math.round((this.state.circleLuckSum / this.state.circleLuckCount) * 100) : 50,
       avgVehicleMastery: Math.min(100, Math.round((this.state.vehicleDistance / 5000) * 100)), // 5km 이동 시 만점
       weaponMatchCount: Array.from(this.state.weaponMatchCount),
+      leadShotKills: this.state.leadShotKills,
+      leadShotKnocks: this.state.leadShotKnocks,
+      ridingShotKills: this.state.ridingShotKills,
+      ridingShotKnocks: this.state.ridingShotKnocks,
 
       benchmark: getBenchmarkTier({
         rankPct: damageRank / Math.max(1, humanParticipants.length),

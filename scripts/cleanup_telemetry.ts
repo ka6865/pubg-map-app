@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import path from 'path';
+import { listR2Files, deleteMultipleFromR2 } from '../lib/pubg-analysis/r2Service';
 
 // .env.local 파일 로드
 dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
@@ -62,14 +63,13 @@ async function smartCleanup() {
     const matchIds = targets.map(t => t.match_id);
     const storagePaths = targets.map(t => t.storage_path).filter(Boolean);
 
-    // 1. Storage 삭제
+    // 1. Cloudflare R2 스토리지 대량 삭제 (무부하 초고속 처리)
     if (storagePaths.length > 0) {
-      const { data: deletedFiles, error: storageError } = await supabase.storage
-        .from('telemetry')
-        .remove(storagePaths);
-      
-      if (!storageError && deletedFiles) {
-        totalFilesDeleted += deletedFiles.length;
+      try {
+        await deleteMultipleFromR2(storagePaths);
+        totalFilesDeleted += storagePaths.length;
+      } catch (storageError) {
+        console.error('❌ Cloudflare R2 삭제 실패:', storageError);
       }
     }
 
@@ -117,15 +117,19 @@ async function smartCleanup() {
   }
   console.log(`✅ 벤치마크 최신화 및 캡핑 완료 (티어별 최대 ${MAX_SAMPLES_PER_TIER}개)`);
 
-  const { data: bucketFiles } = await supabase.storage.from('telemetry').list('', { limit: 1000 });
+  const bucketFiles = await listR2Files(1000);
   if (bucketFiles && bucketFiles.length > 0) {
     const { data: activeRecords } = await supabase.from('match_master_telemetry').select('storage_path');
     const activePaths = new Set(activeRecords?.map(r => r.storage_path) || []);
-    const orphanedFiles = bucketFiles.map(f => f.name).filter(name => !activePaths.has(name));
+    const orphanedFiles = bucketFiles.map(f => f.key).filter(name => !activePaths.has(name));
 
     if (orphanedFiles.length > 0) {
-      const { data: deletedOrphans } = await supabase.storage.from('telemetry').remove(orphanedFiles);
-      if (deletedOrphans) totalFilesDeleted += deletedOrphans.length;
+      try {
+        await deleteMultipleFromR2(orphanedFiles);
+        totalFilesDeleted += orphanedFiles.length;
+      } catch (orphanError) {
+        console.error('❌ Cloudflare R2 고립 파일 삭제 실패:', orphanError);
+      }
     }
   }
 
@@ -136,17 +140,12 @@ async function smartCleanup() {
   // 용량 합산 로직 (페이지네이션)
   let totalSizeBytes = 0;
   let totalFileCount = 0;
-  let offset = 0;
-  while (true) {
-    const { data: files } = await supabase.storage.from('telemetry').list('', { limit: 100, offset });
-    if (!files || files.length === 0) break;
-    files.forEach(f => {
-      totalSizeBytes += (f.metadata?.size || 0);
-      totalFileCount++;
-    });
-    if (files.length < 100) break;
-    offset += 100;
-  }
+  
+  const remainingFiles = await listR2Files(1000);
+  remainingFiles.forEach(f => {
+    totalSizeBytes += f.size;
+    totalFileCount++;
+  });
 
   const totalSizeMB = (totalSizeBytes / (1024 * 1024)).toFixed(2);
   const totalSizeGB = (totalSizeBytes / (1024 * 1024 * 1024)).toFixed(2);

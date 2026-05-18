@@ -21,12 +21,14 @@ import {
   TrendingUp,
   PlayCircle,
   ExternalLink,
-  X
+  X,
+  Car
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { MatchTimeline } from "./MatchTimeline";
 import dynamic from "next/dynamic";
 import type { MatchData } from "../../types/stat";
+import { getTranslatedWeaponName } from "@/lib/pubg-analysis/constants";
 import { estimateUserTier } from "@/lib/pubg-analysis/benchmarkScore";
 import { useAIStatus, aiManager } from "@/lib/ai-management";
 
@@ -156,6 +158,12 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
   const isAnalyzingRef = useRef(false); // [V46.0] 클로저 세이프 로딩 추적
   const { isAnalyzing: isGlobalAnalyzing, activeId } = useAIStatus();
   const router = useRouter();
+
+  const leadKills = matchData ? (matchData.stats?.leadShotKills ?? matchData.leadShotKills ?? 0) : 0;
+  const leadKnocks = matchData ? (matchData.stats?.leadShotKnocks ?? matchData.leadShotKnocks ?? 0) : 0;
+  const ridingKills = matchData ? (matchData.stats?.ridingShotKills ?? matchData.ridingShotKills ?? 0) : 0;
+  const ridingKnocks = matchData ? (matchData.stats?.ridingShotKnocks ?? matchData.ridingShotKnocks ?? 0) : 0;
+  const hasVehicleCombat = leadKills > 0 || leadKnocks > 0 || ridingKills > 0 || ridingKnocks > 0;
 
   // [V46.8] 언마운트 시 진행 중인 분석 강제 중단
   useEffect(() => {
@@ -624,6 +632,247 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
             <StatBox icon={<Shield size={16} />} label="기절시킴" value={Number(matchData!.stats.DBNOs) || 0} color="text-yellow-400" />
             <StatBox icon={<Clock size={16} />} label="생존시간" value={`${Math.floor((Number(matchData!.stats.timeSurvived) || 0) / 60)}분`} color="text-green-400" />
           </div>
+
+          {/* Premium Vehicle Combat Banner */}
+          {hasVehicleCombat && (
+            <div className="mt-6 relative overflow-hidden bg-gradient-to-r from-amber-500/5 via-orange-600/5 to-indigo-500/5 border border-white/10 rounded-[2rem] p-6 shadow-2xl transition-all duration-300 hover:border-amber-500/30">
+              {/* 백그라운드 발광 효과 */}
+              <div className="absolute top-0 right-0 w-48 h-48 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+              <div className="absolute bottom-0 left-0 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+
+              <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-gradient-to-br from-amber-500 to-orange-600 rounded-2xl flex items-center justify-center shadow-lg shadow-amber-500/20 shrink-0">
+                    <Car size={24} className="text-white" />
+                  </div>
+                  <div className="flex flex-col">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest bg-amber-500/10 px-2 py-0.5 rounded-full">
+                        전술 업적
+                      </span>
+                      <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">
+                        Vehicle Combat Master
+                      </span>
+                    </div>
+                    <h4 className="text-white font-black text-lg mt-1 tracking-tight">차량 전술 교전 마스터</h4>
+                    <p className="text-xs text-gray-400 mt-0.5 font-medium">
+                      차량 위에서 적을 격추하거나 고속 기동 중인 차량 내부의 적을 제압한 고급 플레이어 업적입니다.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 sm:flex gap-3 w-full md:w-auto">
+                  {Number(leadKills || leadKnocks) > 0 && (
+                    <div className="flex items-center gap-3 bg-black/40 border border-white/10 px-4 py-3 rounded-2xl flex-1 md:flex-none">
+                      <div className="w-8 h-8 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-500 shrink-0">
+                        <Crosshair size={16} />
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-[9px] text-gray-500 font-bold uppercase">리드샷 (표적 사격)</span>
+                        <span className="text-[13px] text-white font-black leading-tight mt-0.5">
+                          기절 <span className="text-amber-400">{leadKnocks}</span> · 킬 <span className="text-red-400">{leadKills}</span>
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {Number(ridingKills || ridingKnocks) > 0 && (
+                    <div className="flex items-center gap-3 bg-black/40 border border-white/10 px-4 py-3 rounded-2xl flex-1 md:flex-none">
+                      <div className="w-8 h-8 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400 shrink-0">
+                        <Swords size={16} />
+                      </div>
+                      <div className="flex flex-col">
+                        <span className="text-[9px] text-gray-500 font-bold uppercase">라이딩샷 (탑승 사격)</span>
+                        <span className="text-[13px] text-white font-black leading-tight mt-0.5">
+                          기절 <span className="text-indigo-400">{ridingKnocks}</span> · 킬 <span className="text-red-400">{ridingKills}</span>
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* [V58.4] 무기 세부 분석 및 아군 기여도 (Weapon & Squad Armory) */}
+          {((matchData.weaponStats && Object.keys(matchData.weaponStats).length > 0) || 
+            (matchData.squadWeaponStats && Object.keys(matchData.squadWeaponStats).length > 0)) && (
+            <div className="mt-8">
+              <div className="flex items-center gap-2 mb-6">
+                <div className="w-8 h-8 bg-amber-500/20 rounded-lg flex items-center justify-center">
+                  <Flame size={16} className="text-amber-400" />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-white font-black text-sm">고정밀 무기 교전 분석</span>
+                  <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Weapon Mastery & Squad Armory</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Left: 나의 무기 스탯 (7/12) */}
+                {matchData.weaponStats && Object.keys(matchData.weaponStats).length > 0 ? (
+                  <div className="lg:col-span-7 bg-white/2 border border-white/5 rounded-[2.5rem] p-6 flex flex-col gap-4">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-[10px] text-gray-500 font-black uppercase tracking-widest">My Weapon Stats</span>
+                      <span className="text-[10px] text-amber-400 font-bold bg-amber-500/10 px-2 py-0.5 rounded-full">공식 PUBG 통계 보정</span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      {Object.entries(matchData.weaponStats).map(([wName, wStat]) => {
+                        const hasAccuracy = wStat.accuracy !== undefined;
+                        // Hit Area Precision Logic
+                        const hitDetails = wStat.hitDetails || [];
+                        let headHits = 0, torsoHits = 0, limbHits = 0;
+                        
+                        hitDetails.forEach(d => {
+                          if (d.bodyPart === "HeadShot" || d.bodyPart === "Head") headHits += d.hits;
+                          else if (d.bodyPart === "TorsoShot" || d.bodyPart === "PelvisShot") torsoHits += d.hits;
+                          else if (d.bodyPart === "ArmShot" || d.bodyPart === "LegShot") limbHits += d.hits;
+                        });
+
+                        const totalPrecisionHits = headHits + torsoHits + limbHits;
+                        const headPct = totalPrecisionHits > 0 ? (headHits / totalPrecisionHits) * 100 : 0;
+                        const torsoPct = totalPrecisionHits > 0 ? (torsoHits / totalPrecisionHits) * 100 : 0;
+                        const limbPct = totalPrecisionHits > 0 ? (limbHits / totalPrecisionHits) * 100 : 0;
+
+                        return (
+                          <div 
+                            key={wName} 
+                            className="bg-black/40 border border-white/10 p-5 rounded-3xl relative overflow-hidden group/wcard hover:border-amber-500/30 transition-all duration-300"
+                          >
+                            <div className="absolute top-0 right-0 w-24 h-24 bg-white/2 rounded-full blur-2xl group-hover/wcard:bg-amber-500/5 transition-all duration-500" />
+                            
+                            <div className="flex justify-between items-start mb-3 relative z-10">
+                              <div>
+                                <h5 className="text-white font-black text-[15px] tracking-tight">{getTranslatedWeaponName(wName)}</h5>
+                                <span className="text-[9px] text-gray-500 font-bold uppercase">
+                                  {wStat.holdingTime ? `파지 ${Math.round(wStat.holdingTime)}초` : '주무기'}
+                                </span>
+                              </div>
+                              <div className="flex flex-col items-end">
+                                <span className="text-white font-black text-[14px]">
+                                  {Math.round(wStat.damage)} <span className="text-[10px] text-gray-500 font-medium">딜</span>
+                                </span>
+                                <span className="text-[10px] text-gray-400 font-bold">
+                                  기절 {wStat.dbnos} · {wStat.kills}킬
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* 명중률 (Accuracy) 프로그레스바 */}
+                            {hasAccuracy && (
+                              <div className="mt-4 flex flex-col gap-1 relative z-10">
+                                <div className="flex justify-between items-center text-[10px]">
+                                  <span className="text-gray-400 font-bold">명중률</span>
+                                  <span className="text-amber-400 font-black">
+                                    {wStat.accuracy}% <span className="text-gray-500 font-medium">({wStat.hits}/{wStat.shots}발)</span>
+                                  </span>
+                                </div>
+                                <div className="w-full h-1.5 bg-white/5 rounded-full overflow-hidden border border-white/10">
+                                  <div 
+                                    className="h-full bg-gradient-to-r from-amber-500 to-orange-500 rounded-full transition-all duration-1000"
+                                    style={{ width: `${wStat.accuracy}%` }}
+                                  />
+                                </div>
+                              </div>
+                            )}
+
+                            {/* 부위별 정밀 타격률 (Hit Area Precision) */}
+                            {totalPrecisionHits > 0 && (
+                              <div className="mt-3 pt-3 border-t border-white/5 flex flex-col gap-2 relative z-10">
+                                <div className="flex justify-between items-center text-[10px]">
+                                  <span className="text-gray-400 font-bold">정밀 타격률</span>
+                                  <span className="text-gray-500 font-medium">{totalPrecisionHits} Hit</span>
+                                </div>
+                                
+                                {/* Stacked Bar */}
+                                <div className="w-full h-1.5 flex rounded-full overflow-hidden border border-white/10 gap-[1px] bg-black/50">
+                                  {headPct > 0 && <div className="h-full bg-red-500 transition-all duration-1000" style={{ width: `${headPct}%` }} />}
+                                  {torsoPct > 0 && <div className="h-full bg-amber-500 transition-all duration-1000" style={{ width: `${torsoPct}%` }} />}
+                                  {limbPct > 0 && <div className="h-full bg-white/20 transition-all duration-1000" style={{ width: `${limbPct}%` }} />}
+                                </div>
+
+                                {/* Legend & Count */}
+                                <div className="flex justify-between items-center text-[9px] font-bold mt-0.5">
+                                  <div className="flex items-center gap-2">
+                                    {headHits > 0 && <span className="text-red-400 flex items-center gap-0.5"><span className="w-1 h-1 rounded-full bg-red-500"/> 헤드 {headHits}</span>}
+                                    {torsoHits > 0 && <span className="text-amber-400 flex items-center gap-0.5"><span className="w-1 h-1 rounded-full bg-amber-500"/> 몸통 {torsoHits}</span>}
+                                    {limbHits > 0 && <span className="text-gray-400 flex items-center gap-0.5"><span className="w-1 h-1 rounded-full bg-white/20"/> 팔다리 {limbHits}</span>}
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="lg:col-span-7 bg-white/2 border border-white/5 rounded-[2.5rem] p-8 flex flex-col items-center justify-center text-center">
+                    <Target size={32} className="text-gray-600 mb-2" />
+                    <span className="text-xs text-gray-400 font-bold">본인 공식 무기 통계 기록 없음</span>
+                  </div>
+                )}
+
+                {/* Right: 아군 무기 기여도 (5/12) */}
+                {matchData.squadWeaponStats && Object.keys(matchData.squadWeaponStats).length > 0 ? (
+                  <div className="lg:col-span-5 bg-white/2 border border-white/5 rounded-[2.5rem] p-6 flex flex-col gap-4">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-[10px] text-gray-500 font-black uppercase tracking-widest">Squad Weapon Stats</span>
+                      <span className="text-[10px] text-indigo-400 font-bold bg-indigo-500/10 px-2 py-0.5 rounded-full">팀원 화력 기여</span>
+                    </div>
+
+                    <div className="flex flex-col gap-4 max-h-[350px] overflow-y-auto pr-1 custom-scrollbar">
+                      {Object.entries(matchData.squadWeaponStats).map(([sName, sWeapons]) => {
+                        if (!Array.isArray(sWeapons)) return null;
+                        const totalSDeamage = sWeapons.reduce((sum, w) => sum + w.damage, 0);
+                        
+                        return (
+                          <div 
+                            key={sName} 
+                            className="bg-black/30 border border-white/5 p-4 rounded-2xl flex flex-col gap-2.5"
+                          >
+                            <div className="flex justify-between items-center">
+                              <span className="text-white font-black text-[12px] tracking-tight truncate max-w-[150px]">
+                                {sName}
+                              </span>
+                              <span className="text-[11px] text-indigo-400 font-black">
+                                총 {Math.round(totalSDeamage)} 딜
+                              </span>
+                            </div>
+
+                            <div className="flex flex-col gap-2">
+                              {sWeapons.map((sw, sIdx) => (
+                                <div key={sIdx} className="flex flex-col gap-1 text-[10px]">
+                                  <div className="flex justify-between items-center text-gray-400">
+                                    <span className="font-bold">{getTranslatedWeaponName(sw.weapon)}</span>
+                                    <span className="font-black text-white/80">
+                                      {Math.round(sw.damage)}딜 <span className="text-gray-500 font-medium">({sw.accuracy}%)</span>
+                                    </span>
+                                  </div>
+                                  <div className="w-full h-1 bg-white/5 rounded-full overflow-hidden">
+                                    <div 
+                                      className="h-full bg-indigo-500 rounded-full transition-all duration-1000"
+                                      style={{ width: `${Math.min(100, (sw.damage / Math.max(1, totalSDeamage)) * 100)}%` }}
+                                    />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="lg:col-span-5 bg-white/2 border border-white/5 rounded-[2.5rem] p-8 flex flex-col items-center justify-center text-center">
+                    <User size={32} className="text-gray-600 mb-2" />
+                    <span className="text-xs text-gray-400 font-bold">아군 화력 통계 기록 없음</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* [V12.5] New Tactical Dashboard (Radar + Timeline) */}
           <div className="mt-8">

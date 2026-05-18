@@ -192,20 +192,23 @@ export function classifyRole(stats: any, bench: any, overallTier: string): RoleI
   scores.pointMan = (stats.userInitiativeRate || 0) * 0.5 
     + reactionScore 
     + (parseFloat(stats.avgMinDistStr) < 15 ? 10 : 5)
-    + (isCloseRange ? 15 : 0);
+    + (isCloseRange ? 15 : 0)
+    + (stats.totalRidingShotKnocks || 0) * 8; // [V58.4] 라이딩샷 기절 가중치
 
   // 2. 저격 유령 (Phantom Overwatch)
   scores.phantomOverwatch = Math.max(0, 
     Math.min(40, (stats.totalMaxHitDist / 10)) + 
     (stats.userInitiativeRate || 0) * 0.3 + 
     Math.min(30, parseFloat(stats.avgIsolationStr) * 10) +
-    (isCloseRange ? -10 : 10)
+    (isCloseRange ? -10 : 10) +
+    (stats.totalLeadShotKnocks || 0) * 8 // [V58.4] 리드샷 기절 가중치
   );
 
   // 3. 처형자 (Executor)
   scores.executor = (stats.avgDuelWinRate || 0) * 0.7 + 
                     Math.min(30, (stats.totalReversalWins / mLen) * 15) + 
-                    Math.min(20, (stats.totalTeamWipes / mLen) * 15);
+                    Math.min(20, (stats.totalTeamWipes / mLen) * 15) +
+                    (stats.totalRidingShotKills || 0) * 5; // [V58.4] 라이딩샷 킬 가중치
 
   // 4. 팀의 방패 (Shield)
   const knockBase = Math.max(stats.totalTeammateKnocks, 3 * mLen);
@@ -220,7 +223,8 @@ export function classifyRole(stats: any, bench: any, overallTier: string): RoleI
   scores.zoneController = Math.min(35, edgePlayPerMatch * 8) + 
                          Math.min(10, (100 - Math.min(100, stats.totalBluezoneWaste / mLen)) * 0.1) + 
                          Math.min(40, stats.avgPressureIndex * 8) +
-                         Math.min(15, (stats.avgDeathPhase / 9) * 15);
+                         Math.min(15, (stats.avgDeathPhase / 9) * 15) +
+                         (stats.totalLeadShotKills || 0) * 5; // [V58.4] 리드샷 킬 가중치
 
   // 6. 핫드랍 약탈자 (Drop Predator)
   const totalGoldenTime = (stats.goldenTimeAvg?.early || 0) + 
@@ -264,7 +268,18 @@ export function classifyRole(stats: any, bench: any, overallTier: string): RoleI
   const comboKey = secondaryRole ? `${primaryRole}+${secondaryRole}` : null;
   const comboTitle = comboKey ? COMBO_TITLES[comboKey] : null;
 
-  if (comboTitle) {
+  // [V58.4] 차량 전투 스페셜 전설 칭호 우선 판정
+  const ridingShotSum = (stats.totalRidingShotKnocks || 0) + (stats.totalRidingShotKills || 0);
+  const leadShotSum = (stats.totalLeadShotKnocks || 0) + (stats.totalLeadShotKills || 0);
+  const vehicleCombatSum = ridingShotSum + leadShotSum;
+  
+  if (vehicleCombatSum >= 3) {
+    title = `${prefix} 아스팔트의 지배자`;
+  } else if (ridingShotSum >= 2) {
+    title = `${prefix} 도로 위의 저승사자`;
+  } else if (leadShotSum >= 2) {
+    title = `${prefix} 고속도로 저격수`;
+  } else if (comboTitle) {
     title = `${prefix} ${comboTitle}`;
   } else if (weapon.isSpecial) {
     title = `${weapon.name}, ${roleTitle}`;
