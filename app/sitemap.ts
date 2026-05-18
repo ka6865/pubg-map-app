@@ -1,6 +1,8 @@
 import { MetadataRoute } from 'next';
 import { createClient } from '@/utils/supabase/server';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * [V3] 사이트맵 고도화: 정적 경로 + 동적 커뮤니티 게시글 포함
  */

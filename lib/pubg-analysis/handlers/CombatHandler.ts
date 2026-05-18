@@ -75,13 +75,7 @@ export class CombatHandler extends BaseHandler {
       this.processDuelData(e, ts, e.attacker, e.victim);
     }
 
-    if (isMeAttacker) {
-      const elapsedSec = (ts - this.state.matchStartTime) / 1000;
-      if (elapsedSec < 300) this.state.goldenTimeDamage.early += damage;
-      else if (elapsedSec < 900) this.state.goldenTimeDamage.mid1 += damage;
-      else if (elapsedSec < 1500) this.state.goldenTimeDamage.mid2 += damage;
-      else this.state.goldenTimeDamage.late += damage;
-    }
+
 
     if (isTeammateAttacker) {
       if (isMeAttacker) {
@@ -94,6 +88,11 @@ export class CombatHandler extends BaseHandler {
       this.state.victimDamage.set(victimName, currentVictimDamage + damage);
 
       if (isMeAttacker) {
+        // 0. 아군 공격(Friendly Fire) 및 자해 데미지는 본인 무기 교전 통계에서 완벽 배제 (팀원 차량 박치기 딜량 오염 차단)
+        if (isTeammateVictim || victimName === this.state.lowerNickname) {
+          return;
+        }
+
         const currentMyDmg = this.state.myVictimDamage.get(victimName) || 0;
         this.state.myVictimDamage.set(victimName, currentMyDmg + damage);
 
@@ -136,6 +135,13 @@ export class CombatHandler extends BaseHandler {
           wStat.damage += damage;
           wStat.hits++;
           this.state.weaponStats.set(cleanWId, wStat);
+
+          // goldenTimeDamage도 아군/자해/기절이 완벽 차단된 실질 대인 유효 딜량만 누적하도록 동기화
+          const elapsedSec = (ts - this.state.matchStartTime) / 1000;
+          if (elapsedSec < 300) this.state.goldenTimeDamage.early += damage;
+          else if (elapsedSec < 900) this.state.goldenTimeDamage.mid1 += damage;
+          else if (elapsedSec < 1500) this.state.goldenTimeDamage.mid2 += damage;
+          else this.state.goldenTimeDamage.late += damage;
         }
         
         this.state.combatPressure.totalHits++;
@@ -697,14 +703,20 @@ export class CombatHandler extends BaseHandler {
             
             const existing = this.state.weaponStats.get(cleanWId) || { kills: 0, dbnos: 0, damage: 0, hits: 0 };
             
-            existing.damage = w.damage ?? existing.damage;
-            existing.hits = w.hits ?? existing.hits;
+            // 1. API(w)의 누적 딜량 대신, 우리가 handleDamage에서 정밀 계산한 순수 대인 유효 딜량(existing.damage)을 최종 유지함.
+            // 2. 단, 무기의 shots, holdingTime 등 메타정보는 API 값을 반영함.
             existing.shots = w.shots ?? 0;
             existing.dBNODamage = w.dBNODamage ?? 0;
             existing.dBNOHits = w.dBNOHits ?? 0;
             existing.holdingTime = w.holdingTime ?? 0;
             existing.hitDetails = w.hitDetails ?? [];
-            existing.accuracy = w.shots > 0 ? Math.round((w.hits / w.shots) * 100) : 0;
+            existing.accuracy = existing.shots > 0 ? Math.round((existing.hits / existing.shots) * 100) : 0;
+
+            // 3. 만약 정제된 순수 유효 딜량과 타격수가 모두 0인 무기(들고만 다녔거나, 0딜 권총 등)인 경우 목록에서 완전히 소거
+            if (existing.damage === 0 && existing.hits === 0) {
+              this.state.weaponStats.delete(cleanWId);
+              return;
+            }
 
             this.state.weaponStats.set(cleanWId, existing);
           });
@@ -746,6 +758,11 @@ export class CombatHandler extends BaseHandler {
               return;
             }
             
+            // 0딜 및 0히트인 아군 무기는 스쿼드 무기 목록에서 완전히 소거
+            if ((w.damage ?? 0) === 0 && (w.hits ?? 0) === 0) {
+              return;
+            }
+
             tWeaponList.push({
               weapon: cleanWId,
               damage: w.damage ?? 0,

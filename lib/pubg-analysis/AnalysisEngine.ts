@@ -320,6 +320,13 @@ export class AnalysisEngine {
     const reversalRate = pData.reversalAttempts > 0 ? (pData.reversalWins / pData.reversalAttempts) * 100 : 0;
     const initiativeRate = pData.total > 0 ? (pData.success / pData.total) * 100 : -1;
 
+    // weaponStats 맵에 최종 저장된 순수 유효 대인 딜량의 총합을 계산하여 총 딜량 정합성을 일치화함
+    let processedDamageDealt = 0;
+    for (const [_, wStat] of this.state.weaponStats.entries()) {
+      processedDamageDealt += wStat.damage || 0;
+    }
+    processedDamageDealt = Math.round(processedDamageDealt);
+
     return {
       matchId: matchAttr.id,
       v: RESULT_VERSION,
@@ -327,7 +334,7 @@ export class AnalysisEngine {
       createdAt: matchAttr.createdAt,
       stats: {
         ...myStats,
-        damageDealt: myStats.damageDealt ?? 0,
+        damageDealt: processedDamageDealt,
         kills: myStats.kills ?? 0,
         winPlace: myStats.winPlace ?? 100,
         timeSurvived: myStats.timeSurvived ?? 0

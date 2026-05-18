@@ -84,7 +84,8 @@ export const WEAPON_NAMES: Record<string, string> = {
   // Vehicles
   "Vehicle_Dacia_C": "다시아", "Vehicle_UAZ_C": "UAZ", "Vehicle_CoupeRB_C": "쿠페 RB", "BP_CoupeRB_C": "쿠페 RB", "CoupeRB": "쿠페 RB", "BPoupeRB": "쿠페 RB",
   "Vehicle_Motorbike_C": "오토바이", "Vehicle_Zima_C": "지마", "Vehicle_Porter_C": "포터", "Vehicle_PonyCoupe_C": "포니 쿠페", "BP_PonyCoupe_C": "포니 쿠페",
-  "Vehicle_Mirado_C": "미라도", "Vehicle_TukTuk_C": "툭툭", "Vehicle_Rony_C": "로니", "Vehicle_Pickup_C": "픽업트럭",
+  "Vehicle_Mirado_C": "미라도", "BP_Mirado_A_01": "미라도", "BP_Mirado_A_02": "미라도", "BP_Mirado_A_03": "미라도", "BP_Mirado_A_03_Esports": "미라도", "Mirado": "미라도",
+  "Vehicle_TukTuk_C": "툭툭", "Vehicle_Rony_C": "로니", "Vehicle_Pickup_C": "픽업트럭",
   "Vehicle_BRDM_C": "BRDM", "Vehicle_LootTruck_C": "보급 트럭", "Vehicle_AquaRail_C": "아쿠아레일", "Vehicle_PG117_C": "보트",
   "Vehicle": "차량",
   
