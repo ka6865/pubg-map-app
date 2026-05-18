@@ -36,6 +36,21 @@ export async function GET(request: NextRequest) {
   const platform = searchParams.get("platform") || "steam";
   const lowerNickname = normalizeName(nickname || "");
 
+  // [MOCK] 로컬 DB 장애 및 시뮬레이션을 위한 골드 매치 모킹
+  if (matchId === "match-gold-simulation-1234") {
+    try {
+      const fs = await import("fs");
+      const path = await import("path");
+      const filePath = path.join(process.cwd(), "scratch", "mock_gold_match_data.json");
+      if (fs.existsSync(filePath)) {
+        const data = fs.readFileSync(filePath, "utf-8");
+        return NextResponse.json(JSON.parse(data));
+      }
+    } catch (e) {
+      console.error("[MOCK-ERROR]", e);
+    }
+  }
+
   if (!matchId || !nickname) {
     return NextResponse.json({ error: "Missing required parameters" }, { status: 400 });
   }
@@ -190,6 +205,12 @@ export async function GET(request: NextRequest) {
           // [V58.0] 페이즈 추적을 위한 common.isGame 필드 보존
           if (e.common?.isGame !== undefined) slim.common = { isGame: e.common.isGame };
           else if (e.Common?.IsGame !== undefined) slim.Common = { IsGame: e.Common.IsGame };
+
+          // [V58.4] LogMatchEnd 이벤트의 고정밀 무기 스탯 및 캐릭터 필드 보존
+          if (e._T === "LogMatchEnd") {
+            if (e.allWeaponStats !== undefined) slim.allWeaponStats = e.allWeaponStats;
+            if (e.characters !== undefined) slim.characters = e.characters;
+          }
 
           return slim;
         });

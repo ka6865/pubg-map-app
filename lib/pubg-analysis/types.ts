@@ -187,6 +187,7 @@ export interface AnalysisResult {
   leadShotKnocks: number;
   ridingShotKills: number;
   ridingShotKnocks: number;
+  squadWeaponStats?: Record<string, any>;
 }
 
 // 텔레메트리 이벤트 처리를 위한 내부 상태 타입
@@ -323,4 +324,5 @@ export interface AnalysisState {
   leadShotKnocks: number;
   ridingShotKills: number;
   ridingShotKnocks: number;
+  squadWeaponStats: Map<string, any>;
 }

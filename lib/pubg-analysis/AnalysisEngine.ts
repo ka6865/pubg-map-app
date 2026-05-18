@@ -137,7 +137,8 @@ export class AnalysisEngine {
       leadShotKills: 0,
       leadShotKnocks: 0,
       ridingShotKills: 0,
-      ridingShotKnocks: 0
+      ridingShotKnocks: 0,
+      squadWeaponStats: new Map()
     };
 
     // 핸들러 주입
@@ -440,7 +441,8 @@ export class AnalysisEngine {
         zoneEvents: this.state.mapZoneEvents,
         teammates: Array.from(this.state.teamAccountIds),
         teamNames: Array.from(this.state.teamNames)
-      }
+      },
+      squadWeaponStats: Object.fromEntries(this.state.squadWeaponStats)
     };
   }
 

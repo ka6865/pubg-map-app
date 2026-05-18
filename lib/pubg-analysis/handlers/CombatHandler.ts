@@ -607,8 +607,9 @@ export class CombatHandler extends BaseHandler {
     const accountToNameMap = new Map<string, string>();
     if (e.characters && Array.isArray(e.characters)) {
       e.characters.forEach((c: any) => {
-        if (c.accountId && c.name) {
-          accountToNameMap.set(c.accountId, c.name);
+        const char = c.character || c;
+        if (char && char.accountId && char.name) {
+          accountToNameMap.set(char.accountId, char.name);
         }
       });
     }
