@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { unstable_cache } from "next/cache"; // [ISR V1.0] Next.js 16 캐싱 API
 import { AnalysisEngine } from "@/lib/pubg-analysis/AnalysisEngine";
 import { getBaseTier } from "@/lib/pubg-analysis/benchmarkScore";
 import { RESULT_VERSION, TELEMETRY_VERSION } from "@/lib/pubg-analysis/constants";
@@ -7,8 +8,8 @@ import { normalizeName } from "@/lib/pubg-analysis/utils";
 import { adaptBenchmark } from "@/lib/pubg-analysis/benchmarkAdapter";
 import { uploadToR2, downloadFromR2 } from "@/lib/pubg-analysis/r2Service";
 
-
-// [V41.7] 2026 Next.js 16 Premium Configuration
+// [ISR V1.0] force-dynamic 유지: PUBG API 호출, R2 업로드, DB Upsert 등 부수효과 보호
+// unstable_cache는 DB 읽기(캐시 조회) 전용 프록시로만 사용
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
@@ -22,6 +23,35 @@ const MAP_NAMES: Record<string, string> = {
   "Summerland_Main": "카라킨", "Chimera_Main": "파라모", "Tiger_Main": "태이고",
   "Kiki_Main": "데스턴", "Neon_Main": "론도", "DihorOtok_Main": "비켄디"
 };
+
+/**
+ * [ISR V1.0] Supabase DB 조회를 Next.js 16 unstable_cache로 래핑
+ * - Cache Hit 시: DB 커넥션 0건, 메모리/Edge 캐시에서 즉시 반환
+ * - Cache Miss 시: DB 1회 조회 후 결과를 캐시에 자동 적재
+ * - revalidateTag('match-analysis') 호출 시: 모든 캐시 엔트리 즉각 만료
+ */
+const getCachedMatchTelemetry = unstable_cache(
+  async (matchId: string, lowerNickname: string) => {
+    console.log(`[NEXT-CACHE-MISS] Supabase DB 직접 조회 기동: ${matchId}/${lowerNickname}`);
+    const { data: cachedResult, error } = await supabase
+      .from("processed_match_telemetry")
+      .select("data")
+      .eq("match_id", matchId)
+      .eq("player_id", lowerNickname)
+      .maybeSingle();
+
+    if (error) {
+      console.error(`[NEXT-CACHE-MISS] DB 조회 오류:`, error.message);
+      return null;
+    }
+    return cachedResult?.data || null;
+  },
+  ["match-telemetry"], // 캐시 네임스페이스 키
+  {
+    tags: ["match-analysis"], // revalidateTag('match-analysis')로 무효화
+    revalidate: 604800 // 7일간 캐시 보존 (배포 시 revalidateTag로 즉시 소각)
+  }
+);
 
 const MAP_IDS: Record<string, string> = {
   "Baltic_Main": "erangel", "Savage_Main": "sanhok", "Desert_Main": "miramar",
@@ -103,16 +133,14 @@ export async function GET(request: NextRequest) {
     const myDamageRank = sortedByDamage.findIndex((s: any) => normalizeName(s.name) === lowerNickname) + 1;
     const rankPct = humanParticipants.length > 0 ? myDamageRank / humanParticipants.length : 1;
 
-    // 1. 캐시 무결성 검사 (타입 가드 강화)
-    const { data: cachedResult } = await supabase
-      .from("processed_match_telemetry")
-      .select("data")
-      .eq("match_id", matchId)
-      .eq("player_id", lowerNickname)
-      .maybeSingle();
+    // [ISR V1.0] unstable_cache 프록시를 통한 DB 캐시 조회
+    // Cache Hit: DB 커넥션 0건으로 즉시 반환 (Supabase 무료 플랜 커넥션 절약)
+    // Cache Miss: DB 1회 조회 후 Next.js Edge 캐시에 자동 적재
+    const cachedData = await getCachedMatchTelemetry(matchId, lowerNickname) as any;
 
-    const cachedData = cachedResult?.data as any;
-    if (cachedData?.fullResult && cachedData.fullResult.v >= RESULT_VERSION) {
+    // [ISR V1.0] RESULT_VERSION 비교 제거 — 캐시가 존재하면 최신으로 인정
+    // 캐시 무효화는 revalidateTag('match-analysis')가 전담 (수동 버전 범핑 소각)
+    if (cachedData?.fullResult) {
       return NextResponse.json(cachedData.fullResult);
     }
 
