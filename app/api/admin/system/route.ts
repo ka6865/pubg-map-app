@@ -1,15 +1,35 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { createClient as createSupabaseAdminClient } from "@supabase/supabase-js";
+import { createClient } from "@/utils/supabase/server";
 import { RESULT_VERSION } from "@/lib/pubg-analysis/constants";
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
+async function verifyAdmin() {
+  const supabaseServer = await createClient();
+  const { data: { user } } = await supabaseServer.auth.getUser();
+  if (!user) return null;
+
+  const { data: profile } = await supabaseServer.from("profiles").select("role").eq("id", user.id).single();
+  
+  if (profile?.role === "admin") {
+    const supabaseAdmin = createSupabaseAdminClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    return { user, supabaseAdmin };
+  }
+  return null;
+}
+
 export async function POST(req: Request) {
   try {
+    const adminContext = await verifyAdmin();
+    if (!adminContext) {
+      return NextResponse.json({ error: "🔒 관리자 권한이 없습니다." }, { status: 403 });
+    }
+    const { supabaseAdmin } = adminContext;
+
     const body = await req.json();
     const { action, nickname, matchId } = body;
-    const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
     if (action === "flush_old_cache") {
       // 🚀 모든 분석 완료 데이터(가공된 데이터)만 삭제

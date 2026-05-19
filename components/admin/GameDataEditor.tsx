@@ -18,6 +18,39 @@ export default function GameDataEditor() {
   const [flushNickname, setFlushNickname] = useState("");
   const [flushMatchId, setFlushMatchId] = useState("");
 
+  // [UI-UPGRADE] 커스텀 Confirm 모달 상태 추가
+  const [confirmConfig, setConfirmConfig] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void | Promise<void>;
+    danger?: boolean;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+    onConfirm: () => {},
+    danger: false
+  });
+
+  const triggerConfirm = (
+    title: string,
+    message: string,
+    onConfirm: () => void | Promise<void>,
+    danger = false
+  ) => {
+    setConfirmConfig({
+      isOpen: true,
+      title,
+      message,
+      onConfirm: async () => {
+        setConfirmConfig(prev => ({ ...prev, isOpen: false }));
+        await onConfirm();
+      },
+      danger
+    });
+  };
+
   useEffect(() => {
     const checkAdmin = async () => {
       const { data: { session } } = await supabase.auth.getSession();
@@ -103,27 +136,32 @@ export default function GameDataEditor() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("정말 삭제하시겠습니까? 관련 시뮬레이션에 영향이 있을 수 있습니다.")) return;
+  const handleDelete = (id: string) => {
+    triggerConfirm(
+      "⚠️ 항목 삭제",
+      "정말 이 항목을 삭제하시겠습니까?\n관련 시뮬레이션에 심각한 영향이 있을 수 있습니다.",
+      async () => {
+        try {
+          const { data: { session } } = await supabase.auth.getSession();
+          const apiUrl = getApiUrl(`/api/admin/game-data?category=${activeCategory}&id=${id}`);
+          const response = await fetch(apiUrl, {
+            method: "DELETE",
+            headers: {
+              "Authorization": `Bearer ${session?.access_token}`
+            }
+          });
 
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const apiUrl = getApiUrl(`/api/admin/game-data?category=${activeCategory}&id=${id}`);
-      const response = await fetch(apiUrl, {
-        method: "DELETE",
-        headers: {
-          "Authorization": `Bearer ${session?.access_token}`
+          const result = await response.json();
+          if (!response.ok) throw new Error(result.error || "삭제 실패");
+
+          toast.success("항목이 성공적으로 삭제되었습니다.");
+          fetchItems();
+        } catch (err: any) {
+          toast.error("삭제 중 오류 발생: " + err.message);
         }
-      });
-
-      const result = await response.json();
-      if (!response.ok) throw new Error(result.error || "삭제 실패");
-
-      toast.success("항목이 성공적으로 삭제되었습니다.");
-      fetchItems();
-    } catch (err: any) {
-      toast.error("삭제 중 오류 발생: " + err.message);
-    }
+      },
+      true // danger
+    );
   };
 
   const createNewItem = () => {
@@ -188,8 +226,9 @@ export default function GameDataEditor() {
             ].map(cat => (
               <button
                 key={cat.id}
+                type="button"
                 onClick={() => setActiveCategory(cat.id as ItemCategory)}
-                className={`px-3 py-1.5 rounded text-xs font-bold transition-all ${
+                className={`px-3 py-1.5 rounded text-xs font-bold transition-all cursor-pointer ${
                   activeCategory === cat.id ? "bg-[#F2A900] text-black" : "bg-[#252525] text-gray-400 hover:bg-[#333]"
                 }`}
               >
@@ -215,42 +254,47 @@ export default function GameDataEditor() {
           />
           <button 
             id="sync-btn"
-            onClick={async () => {
+            type="button"
+            onClick={() => {
               const urlInput = document.getElementById("manual-sync-url") as HTMLInputElement;
               const manualUrl = urlInput?.value.trim();
               
               const confirmMsg = manualUrl 
-                ? `입력하신 URL(${manualUrl})로 강제 동기화를 진행할까요?`
-                : "모든 공식 뉴스를 훑어보고 최신 패치노트 전 내용을 동기화할까요?";
+                ? `입력하신 URL(${manualUrl})로 강제 패치노트 동기화를 진행할까요?`
+                : "모든 공식 뉴스를 탐색하여 최신 패치노트 전체 내용을 동기화할까요?";
                 
-              if (!confirm(confirmMsg)) return;
-              
-              setIsSaving(true);
-              try {
-                const apiUrl = `/api/admin/patch-notes/sync`;
-                const res = await fetch(apiUrl, { 
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ url: manualUrl })
-                });
-                const result = await res.json();
-                
-                if (result.success) {
-                  toast.success("✅ 동기화 완료! (" + (result.details?.join(", ") || "내역 없음") + ")");
-                  if (urlInput) urlInput.value = ""; // 성공 시 비우기
-                  router.push("/board");
-                } else {
-                  toast.error("❌ 동기화 실패: " + (result.error || result.message || "알 수 없는 오류"));
+              triggerConfirm(
+                "🔄 패치노트 동기화",
+                confirmMsg,
+                async () => {
+                  setIsSaving(true);
+                  try {
+                    const apiUrl = `/api/admin/patch-notes/sync`;
+                    const res = await fetch(apiUrl, { 
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ url: manualUrl })
+                    });
+                    const result = await res.json();
+                    
+                    if (result.success) {
+                      toast.success("✅ 동기화 완료! (" + (result.details?.join(", ") || "내역 없음") + ")");
+                      if (urlInput) urlInput.value = ""; // 성공 시 비우기
+                      router.push("/board");
+                    } else {
+                      toast.error("❌ 동기화 실패: " + (result.error || result.message || "알 수 없는 오류"));
+                    }
+                  } catch (err) {
+                    console.error("Sync error:", err);
+                    toast.error("연동 통신 중 오류가 발생했습니다.");
+                  } finally {
+                    setIsSaving(false);
+                  }
                 }
-              } catch (err) {
-                console.error("Sync error:", err);
-                toast.error("연동 통신 중 오류가 발생했습니다.");
-              } finally {
-                setIsSaving(false);
-              }
+              );
             }}
             disabled={isSaving}
-            className={`px-3 py-1.5 rounded text-[11px] font-bold border transition-all ${
+            className={`px-3 py-1.5 rounded text-[11px] font-bold border transition-all cursor-pointer ${
               isSaving 
                 ? "bg-gray-800 border-gray-700 text-gray-500 cursor-not-allowed" 
                 : "bg-blue-600/10 border-blue-600/30 text-blue-400 hover:bg-blue-600/20"
@@ -259,7 +303,11 @@ export default function GameDataEditor() {
             {isSaving ? "⏳ 동기화 중..." : "🔄 패치노트 데이터 동기화"}
           </button>
           </div>
-          <button onClick={() => router.push("/")} className="text-sm font-bold text-gray-400 hover:text-white transition-colors">
+          <button 
+            type="button"
+            onClick={() => router.push("/")} 
+            className="text-sm font-bold text-gray-400 hover:text-white transition-colors cursor-pointer"
+          >
             나가기
           </button>
         </div>
@@ -278,8 +326,9 @@ export default function GameDataEditor() {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
             <button
+              type="button"
               onClick={createNewItem}
-              className="w-full mt-3 bg-[#34A853] hover:bg-[#2a8a43] text-white text-xs font-bold py-2 rounded transition-colors"
+              className="w-full mt-3 bg-[#34A853] hover:bg-[#2a8a43] text-white text-xs font-bold py-2 rounded transition-colors cursor-pointer"
             >
               + 새 항목 추가
             </button>
@@ -313,26 +362,33 @@ export default function GameDataEditor() {
                     원본 데이터는 보존되며, 사용자가 전적을 조회할 때 최신 엔진으로 다시 계산됩니다.
                   </p>
                   <button
-                    onClick={async () => {
-                      if (!confirm("정말 모든 분석 캐시를 삭제하시겠습니까? (복구 불가능)")) return;
-                      setIsSaving(true);
-                      try {
-                        const res = await fetch("/api/admin/system", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ action: "flush_old_cache" })
-                        });
-                        const data = await res.json();
-                        if (data.success) toast.success(data.message);
-                        else throw new Error(data.error);
-                      } catch (err: any) {
-                        toast.error("처리 중 오류: " + err.message);
-                      } finally {
-                        setIsSaving(false);
-                      }
+                    type="button"
+                    onClick={() => {
+                      triggerConfirm(
+                        "🗑️ 전체 분석 캐시 초기화",
+                        "정말 모든 분석 캐시를 삭제하시겠습니까?\n이 작업은 복구가 불가능하며, 전체 processed_match_telemetry 데이터가 리셋됩니다.",
+                        async () => {
+                          setIsSaving(true);
+                          try {
+                            const res = await fetch("/api/admin/system", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ action: "flush_old_cache" })
+                            });
+                            const data = await res.json();
+                            if (data.success) toast.success(data.message);
+                            else throw new Error(data.error);
+                          } catch (err: any) {
+                            toast.error("처리 중 오류: " + err.message);
+                          } finally {
+                            setIsSaving(false);
+                          }
+                        },
+                        true // danger
+                      );
                     }}
                     disabled={isSaving}
-                    className="px-6 py-3 bg-red-600/20 text-red-500 border border-red-600/30 rounded-lg font-bold hover:bg-red-600/30 transition-all"
+                    className="px-6 py-3 bg-red-600/20 text-red-500 border border-red-600/30 rounded-lg font-bold hover:bg-red-600/30 transition-all cursor-pointer"
                   >
                     🗑️ 전체 분석 데이터 삭제 (초기화)
                   </button>
@@ -345,26 +401,33 @@ export default function GameDataEditor() {
                     수행 후 &apos;벤치마커 스크립트&apos;를 다시 돌려야 최신 데이터로 채워집니다.
                   </p>
                   <button
-                    onClick={async () => {
-                      if (!confirm("벤치마크 데이터를 초기화하시겠습니까? (복구 불가능)")) return;
-                      setIsSaving(true);
-                      try {
-                        const res = await fetch("/api/admin/system", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ action: "reset_benchmarks" })
-                        });
-                        const data = await res.json();
-                        if (data.success) toast.success(data.message);
-                        else throw new Error(data.error);
-                      } catch (err: any) {
-                        toast.error("처리 중 오류: " + err.message);
-                      } finally {
-                        setIsSaving(false);
-                      }
+                    type="button"
+                    onClick={() => {
+                      triggerConfirm(
+                        "🔄 글로벌 벤치마크 초기화",
+                        "벤치마크 데이터를 전체 초기화하시겠습니까?\n이 작업은 복구가 불가능하며, 엘리트 선수들의 통계 데이터(global_benchmarks)를 전부 비웁니다.",
+                        async () => {
+                          setIsSaving(true);
+                          try {
+                            const res = await fetch("/api/admin/system", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ action: "reset_benchmarks" })
+                            });
+                            const data = await res.json();
+                            if (data.success) toast.success(data.message);
+                            else throw new Error(data.error);
+                          } catch (err: any) {
+                            toast.error("처리 중 오류: " + err.message);
+                          } finally {
+                            setIsSaving(false);
+                          }
+                        },
+                        true // danger
+                      );
                     }}
                     disabled={isSaving}
-                    className="px-6 py-3 bg-orange-600/20 text-orange-500 border border-orange-600/30 rounded-lg font-bold hover:bg-orange-600/30 transition-all"
+                    className="px-6 py-3 bg-orange-600/20 text-orange-500 border border-orange-600/30 rounded-lg font-bold hover:bg-orange-600/30 transition-all cursor-pointer"
                   >
                     🔄 벤치마크 데이터 전체 초기화
                   </button>
@@ -386,29 +449,36 @@ export default function GameDataEditor() {
                         onChange={(e) => setFlushNickname(e.target.value)}
                       />
                       <button
-                        onClick={async () => {
+                        type="button"
+                        onClick={() => {
                           if (!flushNickname) return toast.error("닉네임을 입력하세요.");
-                          if (!confirm(`${flushNickname}님의 모든 분석 데이터를 삭제하시겠습니까?`)) return;
-                          setIsSaving(true);
-                          try {
-                            const res = await fetch("/api/admin/system", {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({ action: "flush_player_cache", nickname: flushNickname })
-                            });
-                            const data = await res.json();
-                            if (data.success) {
-                              toast.success(data.message);
-                              setFlushNickname("");
-                            } else throw new Error(data.error);
-                          } catch (err: any) {
-                            toast.error(err.message);
-                          } finally {
-                            setIsSaving(false);
-                          }
+                          triggerConfirm(
+                            "👤 플레이어 분석 초기화",
+                            `정말 ${flushNickname}님의 모든 분석 데이터를 삭제하시겠습니까?`,
+                            async () => {
+                              setIsSaving(true);
+                              try {
+                                const res = await fetch("/api/admin/system", {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ action: "flush_player_cache", nickname: flushNickname })
+                                });
+                                const data = await res.json();
+                                if (data.success) {
+                                  toast.success(data.message);
+                                  setFlushNickname("");
+                                } else throw new Error(data.error);
+                              } catch (err: any) {
+                                toast.error(err.message);
+                              } finally {
+                                setIsSaving(false);
+                              }
+                            },
+                            true // danger
+                          );
                         }}
                         disabled={isSaving}
-                        className="px-4 py-2 bg-blue-600/20 text-blue-400 border border-blue-600/30 rounded font-bold hover:bg-blue-600/30 transition-all text-sm"
+                        className="px-4 py-2 bg-blue-600/20 text-blue-400 border border-blue-600/30 rounded font-bold hover:bg-blue-600/30 transition-all text-sm cursor-pointer"
                       >
                         유저 데이터 삭제
                       </button>
@@ -423,29 +493,36 @@ export default function GameDataEditor() {
                         onChange={(e) => setFlushMatchId(e.target.value)}
                       />
                       <button
-                        onClick={async () => {
+                        type="button"
+                        onClick={() => {
                           if (!flushMatchId) return toast.error("매치 ID를 입력하세요.");
-                          if (!confirm(`해당 매치(${flushMatchId})의 모든 분석 데이터를 삭제하시겠습니까?`)) return;
-                          setIsSaving(true);
-                          try {
-                            const res = await fetch("/api/admin/system", {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({ action: "flush_match_cache", matchId: flushMatchId })
-                            });
-                            const data = await res.json();
-                            if (data.success) {
-                              toast.success(data.message);
-                              setFlushMatchId("");
-                            } else throw new Error(data.error);
-                          } catch (err: any) {
-                            toast.error(err.message);
-                          } finally {
-                            setIsSaving(false);
-                          }
+                          triggerConfirm(
+                            "🎮 매치 분석 초기화",
+                            `정말 해당 매치(${flushMatchId})의 모든 분석 데이터를 삭제하시겠습니까?`,
+                            async () => {
+                              setIsSaving(true);
+                              try {
+                                const res = await fetch("/api/admin/system", {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({ action: "flush_match_cache", matchId: flushMatchId })
+                                });
+                                const data = await res.json();
+                                if (data.success) {
+                                  toast.success(data.message);
+                                  setFlushMatchId("");
+                                } else throw new Error(data.error);
+                              } catch (err: any) {
+                                toast.error(err.message);
+                              } finally {
+                                setIsSaving(false);
+                              }
+                            },
+                            true // danger
+                          );
                         }}
                         disabled={isSaving}
-                        className="px-4 py-2 bg-purple-600/20 text-purple-400 border border-purple-600/30 rounded font-bold hover:bg-purple-600/30 transition-all text-sm"
+                        className="px-4 py-2 bg-purple-600/20 text-purple-400 border border-purple-600/30 rounded font-bold hover:bg-purple-600/30 transition-all text-sm cursor-pointer"
                       >
                         매치 데이터 삭제
                       </button>
@@ -455,32 +532,26 @@ export default function GameDataEditor() {
               </div>
             </div>
           ) : selectedItem ? (
-            <div className="max-w-[700px] mx-auto">
-              <div className="flex justify-between items-center mb-8">
-                <h2 className="text-2xl font-black text-white">{selectedItem.name || "항목 편집"}</h2>
-                <button
-                  onClick={() => handleDelete(selectedItem.id)}
-                  className="bg-red-500/10 hover:bg-red-500/20 text-red-500 text-xs font-bold px-4 py-2 rounded border border-red-500/30 transition-all"
-                >
-                  아이템 삭제
-                </button>
+            <div className="max-w-[700px] mx-auto bg-[#141414] p-8 rounded-2xl border border-[#222]">
+              <div className="flex justify-between items-start mb-8">
+                <div>
+                  <h2 className="text-2xl font-black text-white">{selectedItem.name}</h2>
+                  <p className="text-xs text-gray-500 font-mono mt-1">ID: {selectedItem.id}</p>
+                </div>
+                {!selectedItem.id.startsWith("new_") && (
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(selectedItem.id)}
+                    className="px-4 py-2 bg-red-600/10 hover:bg-red-600/20 text-red-500 border border-red-600/30 rounded-lg text-xs font-bold transition-all cursor-pointer"
+                  >
+                    🗑️ 항목 삭제
+                  </button>
+                )}
               </div>
 
               <form onSubmit={handleSave} className="grid grid-cols-2 gap-6">
-                <div className="col-span-1">
-                  <label className="block text-xs font-bold text-gray-500 mb-2">항목 ID</label>
-                  <input
-                    id="item-id"
-                    name="id"
-                    type="text"
-                    required
-                    value={selectedItem.id}
-                    onChange={(e) => setSelectedItem({...selectedItem, id: e.target.value})}
-                    className="w-full bg-[#1a1a1a] border border-[#333] rounded px-4 py-2.5 text-sm focus:outline-none focus:border-[#F2A900]"
-                  />
-                </div>
-                <div className="col-span-1">
-                  <label className="block text-xs font-bold text-gray-500 mb-2">이름</label>
+                <div className="col-span-2">
+                  <label className="block text-xs font-bold text-gray-500 mb-2">아이템 이름</label>
                   <input
                     id="item-name"
                     name="name"
@@ -493,13 +564,12 @@ export default function GameDataEditor() {
                 </div>
 
                 {activeCategory === "vehicles" ? (
-                  <div className="col-span-1">
+                  <div className="col-span-2">
                     <label className="block text-xs font-bold text-gray-500 mb-2">트렁크 용량</label>
                     <input
                       id="vehicle-trunk"
                       name="trunk_capacity"
                       type="number"
-                      required
                       value={(selectedItem as Vehicle).trunk_capacity || 0}
                       onChange={(e) => setSelectedItem({...selectedItem, trunk_capacity: Number(e.target.value)} as Vehicle)}
                       className="w-full bg-[#1a1a1a] border border-[#333] rounded px-4 py-2.5 text-sm focus:outline-none focus:border-[#F2A900]"
@@ -629,7 +699,7 @@ export default function GameDataEditor() {
                   <button
                     type="submit"
                     disabled={isSaving}
-                    className={`w-full py-4 rounded-xl font-black text-lg transition-all ${
+                    className={`w-full py-4 rounded-xl font-black text-lg transition-all cursor-pointer ${
                       isSaving ? "bg-gray-700 text-gray-500" : "bg-[#F2A900] text-black hover:bg-[#cc8b00] active:scale-[0.98]"
                     }`}
                   >
@@ -646,6 +716,40 @@ export default function GameDataEditor() {
           )}
         </main>
       </div>
+
+      {/* [UI-UPGRADE] 커스텀 Confirm Modal (글래스모피즘 & 애니메이션) */}
+      {confirmConfig.isOpen && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm transition-all duration-300">
+          <div className="bg-[#1a1a1a] border border-[#333] rounded-xl max-w-[450px] w-full p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <h3 className={`text-lg font-black mb-3 ${confirmConfig.danger ? "text-red-500" : "text-[#F2A900]"}`}>
+              {confirmConfig.title}
+            </h3>
+            <p className="text-sm text-gray-300 mb-6 whitespace-pre-line leading-relaxed">
+              {confirmConfig.message}
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setConfirmConfig(prev => ({ ...prev, isOpen: false }))}
+                className="px-4 py-2 bg-[#2a2a2a] hover:bg-[#383838] text-gray-300 rounded-lg text-sm font-bold transition-all cursor-pointer"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={confirmConfig.onConfirm}
+                className={`px-4 py-2 rounded-lg text-sm font-bold text-white transition-all cursor-pointer ${
+                  confirmConfig.danger 
+                    ? "bg-red-600 hover:bg-red-700 active:scale-[0.98]" 
+                    : "bg-blue-600 hover:bg-blue-700 active:scale-[0.98]"
+                }`}
+              >
+                확인
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
