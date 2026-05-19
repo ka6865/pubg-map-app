@@ -153,7 +153,8 @@ export async function GET(request: NextRequest) {
           
           const reanalyzePromise = reanalyzeAndSave(
             matchId, nickname, platform, lowerNickname, matchData, teamNames, teamAccountIds,
-            myRosterId, myParticipant, teamStats, rankPct, matchAttr, rosters, participants, request.url
+            myRosterId, myParticipant, teamStats, rankPct, matchAttr, rosters, participants, request.url,
+            true
           ).catch(err => {
             console.error(`[SWR-BACKGROUND-ERROR] Background reanalysis failed for ${matchId}:`, err.message);
           });
@@ -183,7 +184,8 @@ export async function GET(request: NextRequest) {
     // 캐시가 없거나 강제 업데이트가 필요한 경우 동기식 분석 실행
     const finalResponse = await reanalyzeAndSave(
       matchId, nickname, platform, lowerNickname, matchData, teamNames, teamAccountIds,
-      myRosterId, myParticipant, teamStats, rankPct, matchAttr, rosters, participants, request.url
+      myRosterId, myParticipant, teamStats, rankPct, matchAttr, rosters, participants, request.url,
+      shouldForce
     );
 
     return NextResponse.json(finalResponse);
@@ -212,14 +214,15 @@ async function reanalyzeAndSave(
   matchAttr: any,
   rosters: any[],
   participants: any[],
-  requestUrl: string
+  requestUrl: string,
+  force: boolean = false
 ) {
   const telemetryAsset = matchData.included.find((it: any) => it.type === "asset");
   let telData: any[] = [];
 
   if (telemetryAsset) {
     const analyzePath = `${matchId}_${lowerNickname}_v${TELEMETRY_VERSION}_analyze.json`;
-    const fileText = await downloadFromR2(analyzePath);
+    const fileText = force ? null : await downloadFromR2(analyzePath);
 
     let needsProcessing = !fileText;
     if (fileText) {
