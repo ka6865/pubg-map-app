@@ -68,6 +68,7 @@ export class AnalysisEngine {
       combatIsolationCount: 0,
       hasLanded: false,
       currentPhase: 0,
+      deathPhaseSnapshot: 0, // [BUG-FIX] 사망 순간 페이즈 고정
       totalTeammateKnocks: 0,
       myReviveCount: 0,
       totalSuppCount: 0,
@@ -138,6 +139,8 @@ export class AnalysisEngine {
       leadShotKnocks: 0,
       ridingShotKills: 0,
       ridingShotKnocks: 0,
+      roadKills: 0,
+      roadKnocks: 0,
       squadWeaponStats: new Map()
     };
 
@@ -225,9 +228,10 @@ export class AnalysisEngine {
         this.handlers.forEach(h => h.handleEvent(e, ts, elapsed));
       } else {
         // 사망 이후라도 상태 업데이트는 필요할 수 있으므로 최소한의 핸들링만 수행 (타임라인 제외)
-        // 여기서는 간단히 페이즈 상태만 업데이트
+        // [BUG-FIX] 페이즈 업데이트는 하되, deathPhaseSnapshot은 절대 덮어쓰지 않음
         if (e._T === "LogPhaseStart" || e._T === "LogPhaseChange") {
           this.state.currentPhase = e.phase;
+          // deathPhaseSnapshot은 최초 1회만 기록 (사망 직후 첫 PhaseChange 전까지의 값)
         }
       }
     });
@@ -340,7 +344,7 @@ export class AnalysisEngine {
         timeSurvived: myStats.timeSurvived ?? 0
       },
       team: teamStats,
-      deathPhase: this.state.currentPhase,
+      deathPhase: this.state.deathPhaseSnapshot || this.state.currentPhase,
       mapName: MAP_NAMES[matchAttr.mapName] || matchAttr.mapName,
       gameMode: matchAttr.gameMode,
       matchType: matchAttr.matchType || "Official",
@@ -437,6 +441,8 @@ export class AnalysisEngine {
       leadShotKnocks: this.state.leadShotKnocks,
       ridingShotKills: this.state.ridingShotKills,
       ridingShotKnocks: this.state.ridingShotKnocks,
+      roadKills: this.state.roadKills,
+      roadKnocks: this.state.roadKnocks,
 
       benchmark: getBenchmarkTier({
         rankPct: damageRank / Math.max(1, humanParticipants.length),
@@ -450,7 +456,7 @@ export class AnalysisEngine {
         tradeRate: this.state.totalTeammateKnocks > 0 ? (this.state.totalTradeKills / this.state.totalTeammateKnocks) * 100 : 0,
         teamWipes: this.state.wipedTeamsByUserParticipation.size,
         reversalRate: reversalRate,
-        deathPhase: this.state.currentPhase,
+        deathPhase: this.state.deathPhaseSnapshot || this.state.currentPhase,
         suppRate: this.state.totalTeammateKnocks > 0 ? (this.state.totalSuppCount / this.state.totalTeammateKnocks) * 100 : 0
       }, (this.state.gameMode || "").includes("solo")),
       isValidBenchmark: (myStats.timeSurvived || 0) >= 300,

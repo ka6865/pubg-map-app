@@ -335,6 +335,9 @@ export class CombatHandler extends BaseHandler {
         if (attacker?.isInVehicle === true) {
           this.state.ridingShotKnocks++;
         }
+      } else {
+        // [V60.0] 차량 충돌 기절(로드킬) 누계
+        this.state.roadKnocks++;
       }
 
       this.state.timeline.push({
@@ -483,6 +486,9 @@ export class CombatHandler extends BaseHandler {
         if (attackerObj?.isInVehicle === true) {
           this.state.ridingShotKills++;
         }
+      } else {
+        // [V60.0] 차량 충돌 킬(로드킬) 누계
+        this.state.roadKills++;
       }
 
       this.state.timeline.push({
@@ -569,6 +575,8 @@ export class CombatHandler extends BaseHandler {
 
     if (isMeVictim) {
       this.state.myDeathTime = ts;
+      // [BUG-FIX] 사망 순간의 페이즈를 즉시 스냅샷으로 저장 (이후 currentPhase 덮어쓰기 방지)
+      this.state.deathPhaseSnapshot = this.state.currentPhase;
       this.state.playerAliveStatus.set(this.state.lowerNickname, false);
       this.state.playerAliveStatus.set(this.state.myAccountId, false);
       this.updateDuelOutcome(e.killer || e.finisher || e.dBNOMaker, e.victim);
@@ -729,7 +737,7 @@ export class CombatHandler extends BaseHandler {
             session.lastHitByUser = ts;
             if (!session.userStarted && session.lastHitByEnemy > 0 && pData.reversalAttempts > 0) {
               const latency = ts - session.lastHitByEnemy;
-              if (latency >= 0 && latency < 10000) {
+              if (latency >= 0 && latency < 3000) {
                 this.state.reactLatSum += latency;
                 this.state.reactCount++;
               }

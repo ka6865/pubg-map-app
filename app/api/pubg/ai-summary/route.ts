@@ -88,6 +88,8 @@ function aggregateMatches(matches: any[], lowerNickname: string, myAccountId?: s
   
   // [V58.4] 차량 고정밀 교전 지표 집계용 변수
   let totalLeadShotKills = 0, totalLeadShotKnocks = 0, totalRidingShotKills = 0, totalRidingShotKnocks = 0;
+  let totalRoadKills = 0, totalRoadKnocks = 0;
+  let vehicleCombatMatchCount = 0;
 
   const backupLatencies: number[] = [], reactionLatencies: number[] = [];
   const goldenTimeFinal = { early: 0, mid1: 0, mid2: 0, late: 0 };
@@ -211,10 +213,23 @@ function aggregateMatches(matches: any[], lowerNickname: string, myAccountId?: s
     }
 
     // [V58.4] 차량 교전 지표 누적 합산 (m.stats 또는 m 직계 필드에서 안전하게 추출)
-    totalLeadShotKills += Number(m.stats?.leadShotKills || m.leadShotKills || 0);
-    totalLeadShotKnocks += Number(m.stats?.leadShotKnocks || m.leadShotKnocks || 0);
-    totalRidingShotKills += Number(m.stats?.ridingShotKills || m.ridingShotKills || 0);
-    totalRidingShotKnocks += Number(m.stats?.ridingShotKnocks || m.ridingShotKnocks || 0);
+    const lK = Number(m.stats?.leadShotKills || m.leadShotKills || 0);
+    const lKn = Number(m.stats?.leadShotKnocks || m.leadShotKnocks || 0);
+    const rK = Number(m.stats?.ridingShotKills || m.ridingShotKills || 0);
+    const rKn = Number(m.stats?.ridingShotKnocks || m.ridingShotKnocks || 0);
+    const rdK = Number(m.stats?.roadKills || m.roadKills || 0);
+    const rdKn = Number(m.stats?.roadKnocks || m.roadKnocks || 0);
+
+    totalLeadShotKills += lK;
+    totalLeadShotKnocks += lKn;
+    totalRidingShotKills += rK;
+    totalRidingShotKnocks += rKn;
+    totalRoadKills += rdK;
+    totalRoadKnocks += rdKn;
+
+    if ((lK + lKn + rK + rKn + rdK + rdKn) > 0) {
+      vehicleCombatMatchCount++;
+    }
   });
 
   const mLen = Math.max(1, matches.length);
@@ -285,7 +300,10 @@ function aggregateMatches(matches: any[], lowerNickname: string, myAccountId?: s
     totalLeadShotKills,
     totalLeadShotKnocks,
     totalRidingShotKills,
-    totalRidingShotKnocks
+    totalRidingShotKnocks,
+    totalRoadKills,
+    totalRoadKnocks,
+    vehicleCombatMatchCount
   };
 }
 
@@ -347,7 +365,7 @@ export async function POST(request: Request) {
         const batch = missingMatchIds.slice(i, i + 2);
         await Promise.all(batch.map(async (id: string) => {
           try {
-            const res = await fetch(`${baseUrl}/api/pubg/match?matchId=${id}&nickname=${nickname}&platform=${platform}`, { cache: 'no-store' });
+            const res = await fetch(`${baseUrl}/api/pubg/match?matchId=${id}&nickname=${nickname}&platform=${platform}${force ? '&force=true' : ''}`, { cache: 'no-store' });
             if (res.ok) {
               const data = await res.json();
               const pureId = id.includes(':') ? id.split(':').pop()! : id;
@@ -465,7 +483,7 @@ export async function POST(request: Request) {
       `당신들은 PUBG [${isSoloSquadFocus ? '극한의 솔로 챌린저' : (isCompetitiveFocus ? '프로급 경쟁전' : '일반전 전술')}] 분석 데스크의 전문 코치입니다. 전달받은 경기 데이터와 'Benchmark(엘리트 지표)'를 바탕으로 끝장 토론을 진행하십시오.`,
       isSoloSquadFocus
         ? "1. KIND COACH: 혼자서 다수를 상대하는 유저의 용기와 교전 능력을 극찬하십시오. 팀플레이 지표가 낮은 것은 당연한 것이니 무시하고, '고독한 사냥꾼'으로서의 면모를 부각하십시오."
-        : "1. KIND COACH: 유저의 강점을 배지와 데이터를 근거로 칭찬하며, 벤치마크보다 우수한 지표를 강조하여 동기부여를 제공하십시오.",
+        : "1. KIND COACH: 유저의 강력한 화력 공헌(1선 격수로서의 교전 지표, 딜량 비중 등)을 적극 옹호하고, 팀플레이 지표나 백업 속도가 부족하더라도 '팀의 화력을 책임지는 1선 에이스로서 당연히 짊어져야 할 역할'이라며 강하게 쉴드치고 동기부여를 제공하십시오.",
       isSoloSquadFocus
         ? "2. SPICY BOMBER: 솔로 스쿼드라는 핑계 뒤에 숨은 피지컬의 한계를 지적하십시오. '혼자 들어갔으면 전멸을 시켰어야지', '기절만 시키고 확킬을 못 내는 것은 실력 부족'이라며 더 높은 화력을 요구하십시오."
         : `2. SPICY BOMBER: 유저의 지표가 상위권(엘리트) 지표보다 미달하는 부분을 냉혹하게 찌르십시오. ${isCompetitiveFocus ? '[경쟁전 룰셋]을 고려할 때 이 정도 수치는 팀에게 민폐 수준임을 강조하십시오.' : '[일반전] 데이터임을 감안해도 처참한 수준임을 강조하십시오.'} 수치 격차를 언급하며 유저의 전술적 오만을 꺾으십시오.`,
@@ -506,13 +524,22 @@ export async function POST(request: Request) {
 
     function selectDebateTopics(stats: any, bench: any): string[] {
       if (!stats || !bench) return ["화력", "교전 주도권", "포지셔닝"];
+      
+      const userTradeRate = stats.totalTeammateKnocks > 0 ? (stats.totalTradeKills / stats.totalTeammateKnocks) * 100 : 0;
+      const tradeRateGap = Math.abs(userTradeRate - (bench.avgTradeRate || 30)) / 100;
+      
+      const userBackupLatency = parseFloat(stats.avgBackupLatency || "15");
+      const backupLatencyGap = isNaN(userBackupLatency) ? 0 : Math.min(1.0, Math.abs(userBackupLatency - (bench.avgTradeLatency || 12)) / 20);
+      
+      const tradeAndBackupGap = Math.max(tradeRateGap, backupLatencyGap);
+
       const issues = [
         { topic: "화력", gap: Math.abs(stats.avgDamage - (bench.avgDamage || 200)) / Math.max(bench.avgDamage || 200, 1) },
         { topic: "교전 주도권", gap: Math.abs(stats.userInitiativeRate - (bench.avgInitiativeRate || 40)) / 100 },
         { topic: "1:1 결정력", gap: Math.abs(stats.avgDuelWinRate - (bench.avgDuelWinRate || 50)) / 100 },
         { topic: "유틸리티 활용", gap: stats.totalUtilityThrows < 5 ? 0.4 : 0.1 },
         { topic: "포지셔닝", gap: parseFloat(stats.avgIsolationStr) > 3.5 ? 0.35 : 0.05 },
-        { topic: "아군 백업 속도", gap: Math.abs(parseFloat(stats.avgBackupLatency || "15") - (bench.avgTradeLatency || 12)) / 20 }
+        { topic: "복수 성공률 및 백업", gap: tradeAndBackupGap }
       ];
       return issues.sort((a, b) => b.gap - a.gap).slice(0, 3).map(i => i.topic);
     }
@@ -522,13 +549,14 @@ export async function POST(request: Request) {
     userPrompt += `- 주력 모드: ${mainModeName.toUpperCase()} (신뢰도: ${tierConfidence}, 기반: ${summaryStats.mLen}판)\n`;
 
     // [V58.4] 차량 전투 종합 성과 공급
-    const totalVehicleKnocks = (summaryStats.totalLeadShotKnocks || 0) + (summaryStats.totalRidingShotKnocks || 0);
-    const totalVehicleKills = (summaryStats.totalLeadShotKills || 0) + (summaryStats.totalRidingShotKills || 0);
+    const totalVehicleKnocks = (summaryStats.totalLeadShotKnocks || 0) + (summaryStats.totalRidingShotKnocks || 0) + (summaryStats.totalRoadKnocks || 0);
+    const totalVehicleKills = (summaryStats.totalLeadShotKills || 0) + (summaryStats.totalRidingShotKills || 0) + (summaryStats.totalRoadKills || 0);
     if (totalVehicleKnocks > 0 || totalVehicleKills > 0) {
-      userPrompt += `\n### [차량 전투 성과 (V58.4)] (고정밀 드라이브바이/무빙타겟 헌팅)\n`;
+      userPrompt += `\n### [차량 전투 성과 (V58.4)] (고정밀 드라이브바이/무빙타겟 헌팅 및 로드킬)\n`;
       userPrompt += `- 리드샷 (무빙 차량 표적 사격): 기절 ${summaryStats.totalLeadShotKnocks || 0}회, 킬 ${summaryStats.totalLeadShotKills || 0}회\n`;
       userPrompt += `- 라이딩샷 (주행 차량 탑승 사격): 기절 ${summaryStats.totalRidingShotKnocks || 0}회, 킬 ${summaryStats.totalRidingShotKills || 0}회\n`;
-      userPrompt += `- 코칭 가이드라인: 이 플레이어는 고난도의 차량 전투 지표가 뛰어난 플레이어입니다. SPICY BOMBER와 KIND COACH 모두 드라이브바이 사격 성공과 리드샷 결정력의 전술적 의미를 극찬하거나 보완점으로 강조하여 분석에 웅장하고 미려하게 녹여내야 합니다.\n`;
+      userPrompt += `- 로드킬 (차량 충돌): 기절 ${summaryStats.totalRoadKnocks || 0}회, 킬 ${summaryStats.totalRoadKills || 0}회\n`;
+      userPrompt += `- 코칭 가이드라인: 이 플레이어는 고난도의 차량 전투 및 로드킬 지표가 뛰어난 플레이어입니다. SPICY BOMBER와 KIND COACH 모두 드라이브바이 사격 성공, 리드샷 결정력, 그리고 로드킬의 전술적 의미를 극찬하거나 보완점으로 강조하여 분석에 웅장하고 미려하게 녹여내야 합니다.\n`;
     }
 
     if (goldenTimeAvg) {
@@ -651,9 +679,15 @@ export async function POST(request: Request) {
       const benchDuelWinRate = bench.avgDuelWinRate;
       userPrompt += `- [교전 결정력] 1:1 교전 승률: ${gStats.avgDuelWinRate}% (Benchmark: ${benchDuelWinRate}%, 승리: ${gStats.totalDuelWins}회, 패배: ${gStats.totalDuelLosses}회, 역전승: ${gStats.totalReversalWins}회)\n- [교전 압박] 평균 압박 지수: ${gStats.avgPressureIndex} (Benchmark: ${bench.avgPressureIndex}), 최대 교전 거리: ${gStats.totalMaxHitDist}m\n`;
       if (mode !== 'solo') {
-        userPrompt += `- [팀 기여도] 적 팀 전멸 기여: ${gStats.totalTeamWipes}회, 화력 집중(점사): ${gStats.totalFocusFireCount}회\n- [팀플레이] 아군 기절 ${gStats.totalTeammateKnocks}회 → 부활: ${gStats.totalRevCount}회, 복수(Trade): ${gStats.totalTradeKills}회 (복수 성공률: ${gStats.totalTeammateKnocks > 0 ? Math.round((gStats.totalTradeKills / gStats.totalTeammateKnocks) * 100) : 0}% vs 상위권: ${bench.avgTradeRate}%)\n- [전술 기여] 견제 지원율: ${gStats.totalTeammateKnocks > 0 ? Math.round((gStats.totalSuppCount / gStats.totalTeammateKnocks) * 100) : 0}%, 미끼: ${gStats.totalBaitCount}회, 연막 활용(구출시도/총사용): ${gStats.totalSmokeCount}/${gStats.itemUseSummary.smokes}회 (상위권 평균: ${bench.avgSmokeRate}% 구출 성공)\n`;
+        userPrompt += `- [팀 내 영향력(딜량/킬 비중)] 적 팀 전멸 기여: ${gStats.totalTeamWipes}회, 화력 집중(점사): ${gStats.totalFocusFireCount}회\n- [팀플레이] 아군 기절 ${gStats.totalTeammateKnocks}회 → 부활: ${gStats.totalRevCount}회, 복수(Trade): ${gStats.totalTradeKills}회 (복수 성공률: ${gStats.totalTeammateKnocks > 0 ? Math.round((gStats.totalTradeKills / gStats.totalTeammateKnocks) * 100) : 0}% vs 상위권: ${bench.avgTradeRate}%)\n- [전술 기여] 견제 지원율: ${gStats.totalTeammateKnocks > 0 ? Math.round((gStats.totalSuppCount / gStats.totalTeammateKnocks) * 100) : 0}%, 미끼: ${gStats.totalBaitCount}회, 연막 활용(구출시도/총사용): ${gStats.totalSmokeCount}/${gStats.itemUseSummary.smokes}회 (상위권 평균: ${bench.avgSmokeRate}% 구출 성공)\n`;
       }
-      userPrompt += `- [반응 속도] 대응 사격 속도: ${gStats.avgReactionLatency} (Benchmark: ${bench.avgCounterLatency}s), 반격 성공률: ${gStats.totalReversalAttempts > 0 ? Math.round((gStats.totalReversalWins / gStats.totalReversalAttempts) * 100) : 0}%\n- [백업 속도] 아군 백업 속도: ${gStats.avgBackupLatency} (Benchmark: ${bench.avgTradeLatency}s)\n- [생존 환경] 고립 지수(운영/교전/사망): ${gStats.avgIsolationStr}/${gStats.isolationCountFinal > 0 ? (gStats.totalCombatIso / gStats.isolationCountFinal).toFixed(2) : "0"}/${gStats.isolationCountFinal > 0 ? (gStats.totalDeathIso / gStats.isolationCountFinal).toFixed(2) : "0"}, 양각 노출 상황: ${gStats.totalCrossfireExposureCount}회\n- [거리 관리] 팀원과의 평균 거리: ${gStats.avgMinDistStr}, 평균 고도차: ${gStats.avgHeightDiffStr}, 경기당 평균 거리별 데미지(근/중/원): ${gStats.avgDistanceDamage.short}/${gStats.avgDistanceDamage.mid}/${gStats.avgDistanceDamage.long}\n- [킬 분류] 솔로 킬: ${gStats.killContribFinal.solo}회, 클린업 킬: ${gStats.killContribFinal.cleanup}회 (솔로 비중: ${gStats.soloKillRate}% vs Benchmark: ${bench.avgSoloKillRate}%)\n- [유틸리티] 총 투척 ${gStats.totalUtilityThrows}회, 적중 ${gStats.totalUtilityHits}회, 데미지 ${Math.round(gStats.totalUtilityDamage / gStats.mLen)} (평균)\n- [운영 패턴] 평균 사망 페이즈: ${gStats.avgDeathPhase} (Benchmark: ${bench.avgDeathPhase}), 자기장 누적 피해: ${Math.round(gStats.totalBluezoneWaste / gStats.mLen)} HP, 엣지(Edge) 플레이: ${gStats.totalEdgePlay}회, 진입 지연: ${gStats.totalFatalDelay}회\n\n`;
+      const reactionStr = gStats.avgReactionLatency === "측정 불가"
+        ? "측정 불가 (선제 공격 중심 플레이로 피격 후 반격 샘플 없음 — 이 항목을 언급하거나 추론하지 말 것)"
+        : `${gStats.avgReactionLatency} (Benchmark: ${bench.avgCounterLatency}s)`;
+      const backupStr = gStats.avgBackupLatency === "측정 불가"
+        ? "측정 불가 (아군 기절 후 복수 교전 샘플 없음 — 이 항목을 언급하거나 추론하지 말 것)"
+        : `${gStats.avgBackupLatency} (Benchmark: ${bench.avgTradeLatency}s)`;
+      userPrompt += `- [반응 속도] 대응 사격 속도: ${reactionStr}, 반격 성공률: ${gStats.totalReversalAttempts > 0 ? Math.round((gStats.totalReversalWins / gStats.totalReversalAttempts) * 100) : 0}%\n- [백업 속도] 아군 백업 속도: ${backupStr}\n- [생존 환경] 고립 지수(운영/교전/사망): ${gStats.avgIsolationStr}/${gStats.isolationCountFinal > 0 ? (gStats.totalCombatIso / gStats.isolationCountFinal).toFixed(2) : "0"}/${gStats.isolationCountFinal > 0 ? (gStats.totalDeathIso / gStats.isolationCountFinal).toFixed(2) : "0"}, 양각 노출 상황: ${gStats.totalCrossfireExposureCount}회\n- [거리 관리] 팀원과의 평균 거리: ${gStats.avgMinDistStr}, 평균 고도차: ${gStats.avgHeightDiffStr}, 경기당 평균 거리별 데미지(근/중/원): ${gStats.avgDistanceDamage.short}/${gStats.avgDistanceDamage.mid}/${gStats.avgDistanceDamage.long}\n- [킬 분류] 솔로 킬: ${gStats.killContribFinal.solo}회, 클린업 킬: ${gStats.killContribFinal.cleanup}회 (솔로 비중: ${gStats.soloKillRate}% vs Benchmark: ${bench.avgSoloKillRate}%)\n- [유틸리티] 총 투척 ${gStats.totalUtilityThrows}회, 적중 ${gStats.totalUtilityHits}회, 데미지 ${Math.round(gStats.totalUtilityDamage / gStats.mLen)} (평균)\n- [운영 패턴] 평균 사망 페이즈: ${gStats.avgDeathPhase} (Benchmark: ${bench.avgDeathPhase}), 자기장 누적 피해: ${Math.round(gStats.totalBluezoneWaste / gStats.mLen)} HP, 엣지(Edge) 플레이: ${gStats.totalEdgePlay}회, 진입 지연: ${gStats.totalFatalDelay}회\n\n`;
     }
 
     if (mainBench) {

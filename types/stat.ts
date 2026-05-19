@@ -25,6 +25,8 @@ export interface MatchStats {
   leadShotKnocks?: number;
   ridingShotKills?: number;
   ridingShotKnocks?: number;
+  roadKills?: number;
+  roadKnocks?: number;
 }
 
 export interface MatchTeamMember {
@@ -195,6 +197,8 @@ export interface MatchData {
   leadShotKnocks?: number;
   ridingShotKills?: number;
   ridingShotKnocks?: number;
+  roadKills?: number;
+  roadKnocks?: number;
   weaponStats?: Record<string, {
     kills: number;
     dbnos: number;

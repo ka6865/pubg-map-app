@@ -187,6 +187,8 @@ export interface AnalysisResult {
   leadShotKnocks: number;
   ridingShotKills: number;
   ridingShotKnocks: number;
+  roadKills: number;
+  roadKnocks: number;
   squadWeaponStats?: Record<string, any>;
 }
 
@@ -236,6 +238,7 @@ export interface AnalysisState {
   combatIsolationCount: number;
   hasLanded: boolean;
   currentPhase: number;
+  deathPhaseSnapshot: number; // [BUG-FIX] 사망 순간의 페이즈를 고정 저장 (사망 후에도 currentPhase가 덮어써지는 버그 방지)
 
   totalTeammateKnocks: number;
   myReviveCount: number; // [V55.2] 유저 본인이 직접 부활시킨 횟수
@@ -324,5 +327,7 @@ export interface AnalysisState {
   leadShotKnocks: number;
   ridingShotKills: number;
   ridingShotKnocks: number;
+  roadKills: number;
+  roadKnocks: number;
   squadWeaponStats: Map<string, any>;
 }
