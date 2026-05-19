@@ -1,17 +1,26 @@
 import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
-// Initialize Cloudflare R2 Client using standard AWS S3 SDK v3
-const r2Client = new S3Client({
-  region: 'auto',
-  endpoint: process.env.CLOUDFLARE_R2_ENDPOINT,
-  credentials: {
-    accessKeyId: process.env.CLOUDFLARE_R2_ACCESS_KEY_ID || '',
-    secretAccessKey: process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY || '',
-  },
-});
+let r2ClientInstance: S3Client | null = null;
 
-const BUCKET_NAME = process.env.CLOUDFLARE_R2_BUCKET_NAME || 'telemetry';
+function getR2Client(): S3Client {
+  if (!r2ClientInstance) {
+    r2ClientInstance = new S3Client({
+      region: 'auto',
+      endpoint: process.env.CLOUDFLARE_R2_ENDPOINT,
+      credentials: {
+        accessKeyId: process.env.CLOUDFLARE_R2_ACCESS_KEY_ID || '',
+        secretAccessKey: process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY || '',
+      },
+      forcePathStyle: true,
+    });
+  }
+  return r2ClientInstance;
+}
+
+function getBucketName(): string {
+  return process.env.CLOUDFLARE_R2_BUCKET_NAME || 'telemetry';
+}
 
 /**
  * Uploads a text/binary buffer file to Cloudflare R2 Bucket
@@ -26,14 +35,14 @@ export async function uploadToR2(key: string, body: string | Buffer, contentType
   }
 
   const command = new PutObjectCommand({
-    Bucket: BUCKET_NAME,
+    Bucket: getBucketName(),
     Key: key,
     Body: body,
     ContentType: contentType,
   });
 
   try {
-    await r2Client.send(command);
+    await getR2Client().send(command);
     console.log(`[R2 Success] File successfully uploaded to R2: ${key}`);
   } catch (error) {
     console.error(`[R2 Error] Failed to upload file to R2: ${key}`, error);
@@ -53,12 +62,12 @@ export async function getPresignedUrlFromR2(key: string, expiresInSeconds: numbe
   }
 
   const command = new GetObjectCommand({
-    Bucket: BUCKET_NAME,
+    Bucket: getBucketName(),
     Key: key,
   });
 
   try {
-    const url = await getSignedUrl(r2Client, command, { expiresIn: expiresInSeconds });
+    const url = await getSignedUrl(getR2Client(), command, { expiresIn: expiresInSeconds });
     return url;
   } catch (error) {
     console.error(`[R2 Error] Failed to generate Presigned URL for key: ${key}`, error);
@@ -77,12 +86,12 @@ export async function downloadFromR2(key: string): Promise<string | null> {
   }
 
   const command = new GetObjectCommand({
-    Bucket: BUCKET_NAME,
+    Bucket: getBucketName(),
     Key: key,
   });
 
   try {
-    const response = await r2Client.send(command);
+    const response = await getR2Client().send(command);
     if (!response.Body) return null;
     return await response.Body.transformToString();
   } catch (error: any) {
@@ -106,12 +115,12 @@ export async function deleteFromR2(key: string): Promise<void> {
   }
 
   const command = new DeleteObjectCommand({
-    Bucket: BUCKET_NAME,
+    Bucket: getBucketName(),
     Key: key,
   });
 
   try {
-    await r2Client.send(command);
+    await getR2Client().send(command);
     console.log(`[R2 Success] File successfully deleted from R2: ${key}`);
   } catch (error) {
     console.error(`[R2 Error] Failed to delete file from R2: ${key}`, error);
@@ -137,7 +146,7 @@ export async function deleteMultipleFromR2(keys: string[]): Promise<void> {
   for (const chunk of chunks) {
     const { DeleteObjectsCommand } = await import('@aws-sdk/client-s3');
     const command = new DeleteObjectsCommand({
-      Bucket: BUCKET_NAME,
+      Bucket: getBucketName(),
       Delete: {
         Objects: chunk.map(key => ({ Key: key })),
         Quiet: true,
@@ -145,7 +154,7 @@ export async function deleteMultipleFromR2(keys: string[]): Promise<void> {
     });
 
     try {
-      await r2Client.send(command);
+      await getR2Client().send(command);
       console.log(`[R2 Success] Batch deleted ${chunk.length} files from R2.`);
     } catch (error) {
       console.error('[R2 Error] Failed to batch delete files from R2', error);
@@ -165,12 +174,12 @@ export async function listR2Files(limit: number = 1000): Promise<{ key: string; 
   }
 
   const command = new ListObjectsV2Command({
-    Bucket: BUCKET_NAME,
+    Bucket: getBucketName(),
     MaxKeys: limit,
   });
 
   try {
-    const response = await r2Client.send(command);
+    const response = await getR2Client().send(command);
     if (!response.Contents) {
       return [];
     }

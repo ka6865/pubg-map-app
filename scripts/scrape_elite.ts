@@ -85,7 +85,7 @@ async function scrapeEliteData() {
       } catch (err) { continue; }
 
       for (const matchId of matchIds) {
-        // [최적화 1] DB 중복 체크 (V11.6 미만이면 재분석 수행)
+        // [Step 1] processed_match_telemetry 분석 캐시 최신 여부 확인
         const { data: existing } = await supabase
           .from("processed_match_telemetry")
           .select("data")
@@ -93,20 +93,39 @@ async function scrapeEliteData() {
           .eq("player_id", nickname.toLowerCase().trim())
           .single();
 
-        if (existing && (existing.data?.fullResult?.v || 0) >= RESULT_VERSION) {
-          console.log(`   - MatchID(${matchId}): 최신 데이터 존재 (Skip)`);
-          continue;
-        }
-
-        if (existing) {
+        // 구버전 캐시 → 무조건 재분석
+        if (existing && (existing.data?.fullResult?.v || 0) < RESULT_VERSION) {
           console.log(`   - MatchID(${matchId}): 구버전 발견(${existing.data?.fullResult?.v || "unknown"}) -> V${RESULT_VERSION} 재분석 시작...`);
+        } else if (existing) {
+          // [Step 2] 최신 캐시가 있는 경우 → global_benchmarks 교차 검증
+          // (벤치마크 초기화 이후 스킵 방지)
+          const { data: benchmark } = await supabase
+            .from("global_benchmarks")
+            .select("id")
+            .eq("match_id", matchId)
+            .maybeSingle();
+
+          if (benchmark) {
+            // 캐시도 있고 벤치마크도 있으면 완전히 Skip
+            console.log(`   - MatchID(${matchId}): 최신 캐시 + 벤치마크 존재 (Skip)`);
+            continue;
+          } else {
+            // 캐시는 있지만 벤치마크가 비어있음 → force 재분석 필요
+            console.log(`   - MatchID(${matchId}): 캐시 OK, 벤치마크 누락 → 강제 재분석(force=true) 요청`);
+          }
         } else {
           console.log(`   - MatchID(${matchId}): 신규 수집 시작...`);
         }
-        
+
+        // 벤치마크 누락 여부에 따라 force 파라미터 결정
+        const hasCacheButNoBenchmark = existing && (existing.data?.fullResult?.v || 0) >= RESULT_VERSION;
+        const forceParam = hasCacheButNoBenchmark
+          ? `&force=true&secret=${encodeURIComponent(process.env.ADMIN_REVALIDATE_TOKEN || '')}`
+          : '';
+
         try {
-          // [최적화 2] 로컬 서버 API 호출 (동기적으로 대기)
-          const res = await axios.get(`${MATCH_API_URL}?matchId=${matchId}&nickname=${encodeURIComponent(nickname.trim())}&platform=steam`);
+          // [Step 3] 로컬/원격 서버 API 호출 (동기적으로 대기)
+          const res = await axios.get(`${MATCH_API_URL}?matchId=${matchId}&nickname=${encodeURIComponent(nickname.trim())}&platform=steam${forceParam}`);
           
           if (res.status === 200) {
             const d = res.data;
