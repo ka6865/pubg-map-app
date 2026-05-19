@@ -45,25 +45,29 @@ async function fetchPatchNoteDetail(url: string, title: string) {
 
     // [규칙 준수] 모델 풀백 순서: 최신 안정 모델 우선
     const geminiModels = [
-      "gemini-3.1-flash-lite-preview",
+      "gemini-3.1-flash-lite",
       "gemini-3-flash-preview",
       "gemini-2.5-flash",
     ];
 
     const prompt = `
 당신은 PUBG(배틀그라운드) 전문 전략 분석가입니다. 
-제공된 패치노트 원문(${title})을 읽고, 유저들이 가장 궁금해할 핵심 내용을 요약해 주세요.
+제공된 패치노트 원문(${title})을 읽고, 유저들이 게임 플레이 시 반드시 알아야 할 가장 핵심적인 변화들을 극도로 슬림하고 강렬하게 요약해 주세요.
 
-[중요 지침]
-- 반드시 제공된 원문 내용에만 기반하여 요약하세요. 
-- 과거 패치 데이터(드론 제어기 등)가 텍스트에 포함되어 있더라도 무시하고, 제목(${title})에 해당하는 최신 정보만 추출하세요.
-- 각 섹션 제목은 반드시 [섹션명] 형식으로 작성하세요.
+[요약 제약 조건 - 절대 엄수]
+1. 섹션(카테고리)은 반드시 **최대 3개에서 4개**까지만 도출하세요. (예: [신규 무기], [맵 업데이트], [시스템 개선] 등)
+2. 각 섹션 하단에 작성하는 불렛포인트(-) 요약문은 **반드시 섹션당 최대 2개 이하**로 제한하세요.
+3. 각 불렛포인트는 **반드시 15자 내외의 극도로 짧고 직관적인 핵심 1줄 요약**이어야 합니다. 상세 설명이나 중언부언은 과감히 생략하십시오.
+4. 반드시 한국어로 작성하고, 가장 핵심적인 키워드만 **강조**해 주십시오.
 
-[출력 규칙]
-1. 반드시 한국어로 답변해줘.
-2. 각 섹션 제목은 [섹션명] 형식으로 작성해줘.
-3. 각 카테고리 하단에 핵심 내용을 불렛포인트(-)로 작성해줘.
-4. 중요한 키워드는 **강조**해줘.
+예시 규격:
+[신규 총기: MP9]
+- 풀파츠급 성능의 신규 **SMG 무기** 출시.
+- 기본 소음기 및 레이저 사이트 **자동 장착**.
+
+[전술 장비 리밸런싱]
+- 스포터 스코프의 탐색 거리 **100m 너프**.
+- 전술 가방의 보관 슬롯 **2칸 축소**.
 
 패치노트 원문:
 ${cleanText}`;
@@ -94,22 +98,25 @@ ${cleanText}`;
     console.log(aiSummary);
     console.log('--- AI SUMMARY END ---');
 
-    const aiSummaryHtml = formatAiSummaryToHtml(aiSummary);
+    // 6. 예쁘고 세련된 Tailwind 기반의 반응형 디자인 구성 (Tailwind v4 준수)
+    const formattedContent = minifyHtml(`
+      <div class="patch-note-container space-y-4">
+        <div class="bg-[#F2A900]/10 border border-[#F2A900]/30 rounded-lg p-4 mb-1">
+          <h3 class="flex items-center gap-1.5 text-[#F2A900] font-black text-base md:text-lg">
+            🤖 BGMS AI 패치노트 핵심 요약
+          </h3>
+        </div>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          ${formatAiSummaryToHtml(aiSummary)}
+        </div>
 
-    // 너비 확장: 100% 가득 채움
-    const formattedContent = `
-      <div style="width:100%!important;margin:0 auto!important;font-family:'Pretendard',sans-serif;background:#141414;border:1px solid #333;border-radius:4px;overflow:hidden;display:block!important;padding:0!important;line-height:1.2!important;">
-        <div style="background:#222;padding:4px 8px!important;border-bottom:1px solid #333;display:block!important;margin:0!important;">
-          <span style="color:#F2A900!important;font-size:12px!important;font-weight:900!important;display:inline-block!important;">🤖 BGMS AI 요약 브리핑</span>
-        </div>
-        <div style="padding:4px!important;display:block!important;margin:0!important;">
-          ${aiSummaryHtml}
-        </div>
-        <div style="padding:6px!important;text-align:center!important;display:block!important;margin:0!important;border-top:1px solid #222;">
-          <a href="${url}" target="_blank" style="display:inline-block!important;padding:4px 12px!important;background:#F2A900!important;color:#000!important;font-weight:900!important;font-size:11px!important;text-decoration:none!important;border-radius:2px!important;">🔗 공식 패치노트 원문 보기</a>
+        <div class="flex flex-col items-center justify-center p-6 bg-[#1a1a1a] rounded-lg border border-white/5">
+          <p class="text-gray-400 text-xs mb-3">더 자세한 내용은 공식 원문에서 확인하실 수 있습니다.</p>
+          <a href="${url}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 px-6 py-2.5 bg-[#F2A900] text-black font-black text-sm rounded hover:bg-[#cc8b00] transition-all transform active:scale-95 shadow-md shadow-[#F2A900]/20">🔗 원문 보러가기</a>
         </div>
       </div>
-    `.replace(/>\s+</g, "><").replace(/\n/g, "").trim();
+    `);
 
     return formattedContent;
   } catch (error) {
@@ -118,47 +125,85 @@ ${cleanText}`;
   }
 }
 
+/**
+ * HTML 문자열의 모든 줄바꿈과 불필요한 연속 공백을 압축(minify)하여 white-space: pre-wrap 오작동을 영구 방지하는 헬퍼 함수
+ */
+function minifyHtml(html: string): string {
+  return html
+    .replace(/\s+/g, ' ')
+    .replace(/>\s+</g, '><')
+    .trim();
+}
+
 function formatAiSummaryToHtml(summary: string): string {
   if (!summary) return "";
-
+  
+  // 1. 만약 대괄호 [섹션] 형태가 없고, "* **제목**:" 또는 "- **제목**:" 형태의 목록이 존재한다면,
+  // 이를 대괄호 [섹션] 형태로 전처리하여 쪼개기 쉽게 만듭니다.
+  let processed = summary;
   if (!summary.includes('[') || !summary.includes(']')) {
-    return `<div style="color:#bbb;font-size:12px;padding:4px;">${summary.replace(/\n/g, '<br/>')}</div>`;
+    processed = summary.replace(/[*•-]\s*\*\*(.*?)\*\*[:\s]*/g, '\n[$1]\n- ');
   }
 
-  const sections = summary.split(/(?=\[.*?\])/g);
+  // 만약 카테고리 표기법([섹션])이 여전히 존재하지 않는 단순 텍스트인 경우 줄바꿈만 치환하여 반환
+  if (!processed.includes('[') || !processed.includes(']')) {
+    return minifyHtml(`
+      <div class="bg-[#1a1a1a] border border-white/5 rounded-lg p-4 text-gray-300 text-sm leading-relaxed">
+        ${processed.replace(/\n/g, '<br/>')}
+      </div>
+    `);
+  }
 
-  const formatted = sections.map(section => {
+  // [카테고리] 단위로 정밀하게 split
+  const sections = processed.split(/(?=\[.*?\])/g);
+  
+  const cardsHtml = sections.map(section => {
     const titleMatch = section.match(/\[(.*?)\]/);
     if (!titleMatch) return "";
-
-    const title = titleMatch[1];
-    const content = section.replace(`[${title}]`, "").trim();
-
+    
+    const title = titleMatch[1].trim();
+    const content = section.replace(`[${titleMatch[1]}]`, "").trim();
+    
+    // 카테고리 텍스트에 어울리는 최적의 매치 이모지 지정
     let emoji = "🔹";
-    if (title.includes("신규")) emoji = "🆕";
-    else if (title.includes("밸런스")) emoji = "⚖️";
-    else if (title.includes("시스템") || title.includes("편의성")) emoji = "⚙️";
+    if (title.includes("신규") || title.includes("새로운")) emoji = "🆕";
+    else if (title.includes("밸런스") || title.includes("조정") || title.includes("너프") || title.includes("버프")) emoji = "⚖️";
+    else if (title.includes("시스템") || title.includes("편의성") || title.includes("개선") || title.includes("UI") || title.includes("UX")) emoji = "⚙️";
+    else if (title.includes("수정") || title.includes("해결") || title.includes("버그")) emoji = "🛠️";
+    else if (title.includes("맵") || title.includes("지형") || title.includes("월드")) emoji = "🗺️";
+    else if (title.includes("무기") || title.includes("아이템")) emoji = "🔫";
 
+    // 본문 줄바꿈 및 리스트 아이템 정밀 파싱
     const items = content.split('\n')
       .map(line => line.trim())
-      .filter(line => line.length > 5)
+      .filter(line => line.length > 2)
       .map(line => {
-        const text = line.replace(/^[^a-zA-Z0-9가-힣]+/, "").trim();
-        const highlighted = text.replace(/\*\*(.*?)\*\*/g, '<strong style="color:#F2A900!important;">$1</strong>');
-        return `<div style="display:block!important;margin:0 0 1px 0!important;padding:0 0 0 10px!important;position:relative!important;font-size:12px!important;color:#bbb!important;line-height:1.2!important;text-indent:-10px!important;">• ${highlighted}</div>`;
+        // 기존의 불렛 마커(-, *, • 등)를 말끔하게 제거하고 텍스트 정규화
+        const text = line.replace(/^[-*•\s]+/, "").trim();
+        // 볼드 처리(**텍스트**)를 Tailwind 스타일이 적용된 강조용 strong 태그로 치환
+        const highlighted = text.replace(/\*\*(.*?)\*\*/g, '<strong class="text-[#F2A900] font-black">$1</strong>');
+        
+        return `
+          <li class="relative pl-4 text-gray-300 text-xs md:text-sm leading-normal mb-1.5 list-none">
+            <span class="absolute left-0 top-0 text-[#F2A900] font-bold">✓</span>
+            ${highlighted}
+          </li>
+        `;
       }).join("");
 
     if (!items) return "";
 
     return `
-      <div style="display:block!important;margin:0 0 6px 0!important;padding:4px!important;background:rgba(255,255,255,0.02);border-radius:2px!important;border:1px solid rgba(255,255,255,0.03)!important;">
-        <div style="color:#F2A900!important;font-size:12px!important;font-weight:900!important;margin:0 0 3px 0!important;display:block!important;">${emoji} ${title}</div>
-        ${items}
+      <div class="bg-[#1a1a1a] border border-white/5 rounded-lg p-4 shadow-md transition-all hover:border-white/10 hover:shadow-lg">
+        <div class="text-[#F2A900] text-sm md:text-base font-black mb-2 flex items-center gap-1.5 border-b border-white/5 pb-1.5">
+          <span>${emoji}</span> ${title}
+        </div>
+        <ul class="space-y-1 m-0 p-0">${items}</ul>
       </div>
     `;
   }).join("");
 
-  return formatted || `<div style="color:#bbb;font-size:12px;padding:4px;">${summary.replace(/\n/g, '<br/>')}</div>`;
+  return minifyHtml(cardsHtml);
 }
 
 async function syncPatchNotes() {

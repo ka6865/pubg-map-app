@@ -130,7 +130,7 @@ export default function BoardWriteClient() {
   };
 
   return (
-    <div className="w-full flex justify-center pb-20 pt-6 bg-[#121212] min-h-[calc(100vh-56px)]">
+    <div className="w-full flex justify-center pb-6 pt-3 bg-[#121212] min-h-[calc(100vh-56px)]">
       <div className="w-full max-w-[900px]">
         <BoardWrite
           newTitle={newTitle}
