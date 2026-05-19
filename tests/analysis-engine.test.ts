@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { AnalysisEngine } from '../lib/pubg-analysis/AnalysisEngine';
+import { calcBenchmarkScore, getBenchmarkTier, getBaseTier, getNextTierInfo } from '../lib/pubg-analysis/benchmarkScore';
 import fs from 'fs';
 import path from 'path';
 
@@ -97,3 +98,108 @@ describe('AnalysisEngine 실데이터(Gold Match) 정밀 검증', () => {
     }
   });
 });
+
+describe('티어 산정 및 조기 탈락 폴백 엔진 검증', () => {
+
+  it('90점 이상 획득 시 S+ 등급으로 판정되어야 함', () => {
+    // 만점에 가까운 높은 지표 입력 (스쿼드 기준)
+    const highInput = {
+      rankPct: 0.05,
+      survivalTime: 1700,
+      initiativeRate: 90,
+      counterLatencyMs: 150,
+      pressureIndex: 4.8,
+      smokeRate: 95,
+      suppCount: 8,
+      reviveRate: 95,
+      tradeRate: 95,
+      teamWipes: 3,
+      reversalRate: 90,
+      deathPhase: 8,
+      suppRate: 90
+    };
+    const result = getBenchmarkTier(highInput, false);
+    expect(result.tier).toBe('S+');
+    expect(result.score).toBeGreaterThanOrEqual(90);
+  });
+
+  it('82점 이상 90점 미만 획득 시 S 등급으로 판정되어야 함', () => {
+    const sInput = {
+      rankPct: 0.08,
+      survivalTime: 1600,
+      initiativeRate: 75,
+      counterLatencyMs: 300,
+      pressureIndex: 4.2,
+      smokeRate: 80,
+      suppCount: 5,
+      reviveRate: 80,
+      tradeRate: 80,
+      teamWipes: 2,
+      reversalRate: 70,
+      deathPhase: 7,
+      suppRate: 70
+    };
+    const result = getBenchmarkTier(sInput, false);
+    expect(result.tier).toBe('S');
+    expect(result.score).toBeGreaterThanOrEqual(82);
+    expect(result.score).toBeLessThan(90);
+  });
+
+  it('getBaseTier 함수가 S+ 와 S 모두 S를 반환해야 함', () => {
+    expect(getBaseTier('S+')).toBe('S');
+    expect(getBaseTier('S')).toBe('S');
+    expect(getBaseTier('A+')).toBe('A');
+    expect(getBaseTier('B-')).toBe('B');
+  });
+
+  it('조기 탈락자(10분 미만 또는 3페이즈 이하 사망)는 폴백 혜택이 낮게 적용되어야 함', () => {
+    // 생존시간 500초(10분 미만), 사망페이즈 2 (조기 탈락)
+    // 폴백이 필요한 음수(-1) 전달
+    const earlyDeathInput = {
+      rankPct: 0.4,
+      survivalTime: 500,
+      initiativeRate: -1,
+      counterLatencyMs: -1,
+      pressureIndex: 1.0,
+      smokeRate: -1,
+      suppCount: 0,
+      reviveRate: -1,
+      tradeRate: -1,
+      teamWipes: 0,
+      reversalRate: -1,
+      deathPhase: 2,
+      suppRate: -1
+    };
+
+    // 생존시간 700초(10분 이상), 사망페이즈 4 (정상 탈락)
+    // 동일하게 폴백이 필요한 음수(-1) 전달
+    const normalDeathInput = {
+      rankPct: 0.4,
+      survivalTime: 700,
+      initiativeRate: -1,
+      counterLatencyMs: -1,
+      pressureIndex: 1.0,
+      smokeRate: -1,
+      suppCount: 0,
+      reviveRate: -1,
+      tradeRate: -1,
+      teamWipes: 0,
+      reversalRate: -1,
+      deathPhase: 4,
+      suppRate: -1
+    };
+
+    const earlyScore = calcBenchmarkScore(earlyDeathInput, false);
+    const normalScore = calcBenchmarkScore(normalDeathInput, false);
+
+    // 정상 탈락자가 높은 폴백율(70~80%)을 적용받으므로 점수가 훨씬 높아야 함
+    // (물론 생존시간과 데스페이즈 자체 점수 차이도 있지만, 폴백 차이[Smoke 30->70, Revive 30->80, Trade 30->80 등]로 인해 점수 격차가 매우 큼)
+    expect(normalScore).toBeGreaterThan(earlyScore + 10); // 최소 10점 이상의 폴백 점수 차이가 나야 함
+  });
+
+  it('getNextTierInfo 함수가 S+ 등급일 때 null을 반환해야 함', () => {
+    // 95점인 경우 S+ 등급으로 추정되므로 getNextTierInfo는 null을 반환해야 함
+    expect(getNextTierInfo(95)).toBeNull();
+  });
+});
+
