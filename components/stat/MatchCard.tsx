@@ -423,180 +423,236 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
     : "bg-black/40 hover:bg-black/50";
 
   return (
-    <div className={`mb-4 rounded-[2rem] border transition-all duration-300 shadow-2xl relative ${borderColor} ${bgGradient} ${(isExpanded || showTierTooltip) ? 'bg-[#0c0c0c] ring-1 ring-white/20 z-[999] isolation-isolate' : 'z-10'} hover:z-[70]`}>
-      {/* Header Area */}
-      <div 
+    <div className={`mb-4 rounded-[2rem] border transition-all duration-300 shadow-2xl relative overflow-hidden
+      ${isWin ? 'border-amber-500/50' : isRanked ? 'border-amber-500/20 hover:border-amber-500/40' : 'border-white/10 hover:border-white/20'}
+      ${isWin ? 'bg-gradient-to-br from-[#1a1200] via-black to-[#0d0d0d]' : isRanked ? 'bg-gradient-to-br from-black/80 via-black/60 to-[#1a1508]' : 'bg-black/40 hover:bg-black/50'}
+      ${(isExpanded || showTierTooltip) ? 'ring-1 ring-white/20 z-[999] isolation-isolate' : 'z-10'} hover:z-[70]`}>
+
+      {/* 승리 shimmer 효과 */}
+      {isWin && (
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute -top-20 -right-20 w-64 h-64 bg-amber-500/10 rounded-full blur-[60px]" />
+          <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-amber-600/8 rounded-full blur-[40px]" />
+        </div>
+      )}
+
+      {/* ── 스코어카드 헤더 ─────────────────────────────── */}
+      <div
         onClick={() => setIsExpanded(!isExpanded)}
-        className="p-5 flex flex-col md:flex-row md:items-center justify-between cursor-pointer group gap-4"
+        className="relative p-4 md:p-5 cursor-pointer group"
       >
-        <div className="flex items-center gap-4">
-          <div className={`w-14 h-14 rounded-2xl flex flex-col items-center justify-center font-black transition-transform group-hover:scale-105 ${
-            isWin ? 'bg-amber-500 text-black shadow-[0_0_20px_rgba(245,158,11,0.3)]' : 
-            isTop10 ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 
-            'bg-white/5 text-gray-400 border border-white/10'
-          }`}>
-            <span className="text-[9px] uppercase tracking-tighter opacity-70">Rank</span>
-            <span className="text-xl">#{matchData.stats.winPlace}</span>
-            <span className="text-[8px] opacity-50 mt-0.5">/ {totalScale}</span>
+        {/* 상단 행: 순위 + 맵/모드/시간 + 티어 + 펼치기 */}
+        <div className="flex items-center gap-3 md:gap-4">
+
+          {/* 순위 박스 */}
+          <div className={`shrink-0 w-16 h-16 md:w-18 md:h-18 rounded-2xl flex flex-col items-center justify-center font-black transition-transform group-hover:scale-105 relative overflow-hidden
+            ${isWin
+              ? 'bg-amber-500 text-black shadow-[0_0_30px_rgba(245,158,11,0.5)]'
+              : isTop10
+              ? 'bg-green-500/15 text-green-400 border border-green-500/30'
+              : 'bg-white/5 text-white/50 border border-white/10'}`}>
+            {isWin && <div className="absolute inset-0 bg-gradient-to-b from-white/20 to-transparent" />}
+            <span className="text-[9px] uppercase tracking-widest opacity-60 relative z-10">
+              {isWin ? '👑' : 'RANK'}
+            </span>
+            <span className="text-2xl leading-none relative z-10">#{matchData.stats.winPlace}</span>
+            <span className="text-[8px] opacity-40 relative z-10">/ {totalScale}</span>
           </div>
 
-          <div className="flex flex-col gap-0.5">
-            <div className="flex items-center gap-2">
-              <span className="text-white font-black text-lg tracking-tight">{matchData.mapName}</span>
-              <span className="text-[10px] text-white/30 font-bold">{getRelativeTime(matchData.createdAt)}</span>
-              <div className="flex gap-1.5">
-                <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider flex items-center gap-1 ${isRanked ? 'bg-amber-500/20 text-amber-500 border border-amber-500/30 shadow-[0_0_10px_rgba(245,158,11,0.1)]' : 'bg-white/10 text-gray-400 border border-white/10'}`}>
-                  {isRanked && <Swords size={10} />}
-                  {isRanked ? "경쟁전" : "일반전"}
-                </span>
-                <span className="px-2 py-0.5 bg-white/5 rounded text-[10px] text-gray-400 font-bold uppercase tracking-wider border border-white/5">
-                  {(() => {
-                    const mode = (matchData.gameMode || "").toLowerCase();
-                    const isFpp = mode.includes("fpp");
-                    const type = mode.includes("solo") ? "솔로" : mode.includes("duo") ? "듀오" : "스쿼드";
-                    return `${isFpp ? "1인칭" : "3인칭"} ${type}`;
-                  })()}
-                </span>
-              </div>
+          {/* 맵명 + 모드 + 시간 */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-white font-black text-base md:text-lg tracking-tight truncate">
+                {matchData.mapName}
+              </span>
+              <span className="text-[10px] text-white/25 font-bold shrink-0">
+                {getRelativeTime(matchData.createdAt)}
+              </span>
             </div>
-            <div className="flex gap-4 items-center">
-              <div className="flex items-baseline gap-1">
-                <span className="text-red-400 font-black text-sm">{matchData.stats.kills}</span>
-                <span className="text-[10px] text-red-400/60 font-bold uppercase">Kills</span>
-              </div>
-              <div className="w-1 h-1 bg-white/10 rounded-full" />
-              <div className="flex items-baseline gap-1">
-                <span className="text-indigo-400 font-black text-sm">{Math.floor(Number(matchData.stats.damageDealt) || 0)}</span>
-                <span className="text-[10px] text-indigo-400/60 font-bold uppercase">Dmg</span>
-              </div>
-              {(matchData.teamImpact?.teamDamageShare ?? 0) > 0 && (
-                <>
-                  <div className="w-1 h-1 bg-white/10 rounded-full" />
-                  <div className="flex items-center gap-1 bg-orange-500/10 px-1.5 py-0.5 rounded border border-orange-500/20" title="팀 내 딜량 비중">
-                    <Flame size={10} className="text-orange-500" />
-                    <span className="text-[10px] text-orange-500 font-black">팀 딜량 {Number(matchData.teamImpact?.teamDamageShare || 0).toFixed(1)}%</span>
-                  </div>
-                </>
+            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+              <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider flex items-center gap-1
+                ${isRanked ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-white/8 text-white/40 border border-white/10'}`}>
+                {isRanked && <Swords size={9} />}
+                {isRanked ? '경쟁전' : '일반전'}
+              </span>
+              <span className="px-2 py-0.5 bg-white/5 rounded-md text-[10px] text-white/30 font-bold border border-white/8">
+                {(() => {
+                  const mode = (matchData.gameMode || '').toLowerCase();
+                  const isFpp = mode.includes('fpp');
+                  const type = mode.includes('solo') ? '솔로' : mode.includes('duo') ? '듀오' : '스쿼드';
+                  return `${isFpp ? '1인칭' : '3인칭'} ${type}`;
+                })()}
+              </span>
+              {matchData.myRank && (
+                <span className="px-2 py-0.5 bg-amber-500/10 border border-amber-500/20 rounded-md text-[10px] text-amber-400 font-black flex items-center gap-1 hidden md:flex">
+                  <Trophy size={9} />킬 순위 #{matchData.myRank.killRank || 1}
+                </span>
               )}
             </div>
-            {/* Tactical Badges Display */}
-            {matchData.badges && matchData.badges.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mt-1.5">
-                {matchData.badges.map((badge: any, i: number) => {
-                  let badgeIcon = "🏅";
-                  if (badge.id === "smoke_master") badgeIcon = "💨";
-                  else if (badge.id === "sharpshooter") badgeIcon = "🎯";
-                  else if (badge.id === "zone_wizard") badgeIcon = "⚡️";
-                  else if (badge.id === "last_survivor") badgeIcon = "🛡️";
-                  else if (badge.id === "damage_carry") badgeIcon = "🔥";
-                  
-                  return (
-                    <div key={i} className="flex items-center gap-1 bg-white/5 border border-white/10 px-1.5 py-0.5 rounded text-[9px] font-bold text-gray-300">
-                      <span>{badgeIcon}</span>
-                      <span>{badge.name}</span>
+          </div>
+
+          {/* 티어 배지 + 펼치기 */}
+          <div className="flex items-center gap-2 shrink-0">
+            {matchData.benchmark && (
+              <div className="relative" ref={tierRef}>
+                {renderTierBadge()}
+                {showTierTooltip && (
+                  <div
+                    ref={tooltipRef}
+                    onClick={(e) => e.stopPropagation()}
+                    className={`${isMobile
+                      ? 'fixed inset-x-4 bottom-20 animate-in slide-in-from-bottom-5'
+                      : 'absolute bottom-full right-0 mb-3 w-64 animate-in fade-in zoom-in-95'
+                    } bg-[#0a0a0a] border border-white/20 p-5 rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.9)] z-[1001]`}
+                  >
+                    <div className="flex justify-between items-center border-b border-white/10 pb-2 mb-4">
+                      <div className="text-[12px] font-black text-indigo-400 uppercase tracking-widest">매치 상세 분석</div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-white bg-indigo-500 px-2 py-0.5 rounded-full text-[10px] tabular-nums">
+                          {matchData.benchmark.score} / 100
+                        </span>
+                        {isMobile && (
+                          <button onClick={() => setShowTierTooltip(false)} className="text-white/40"><X size={16} /></button>
+                        )}
+                      </div>
                     </div>
-                  );
-                })}
+                    <div className="space-y-4">
+                      <ScoreBar label="전투" score={matchData.benchmark.breakdown.combat} max={isRanked ? 40 : 50} color="bg-gradient-to-r from-red-600 to-red-400" />
+                      <ScoreBar label="전술" score={matchData.benchmark.breakdown.tactical} max={isRanked ? 35 : 15} color="bg-gradient-to-r from-indigo-600 to-indigo-400" />
+                      <ScoreBar label="생존" score={matchData.benchmark.breakdown.survival} max={isRanked ? 25 : 35} color="bg-gradient-to-r from-emerald-600 to-emerald-400" />
+                    </div>
+                    <div className="mt-5 grid grid-cols-2 gap-2 border-t border-white/10 pt-4">
+                      <div className="flex items-center gap-2 bg-white/5 p-2 rounded-xl border border-white/5">
+                        <Crosshair size={12} className="text-red-400" />
+                        <div className="flex flex-col">
+                          <span className="text-[8px] text-gray-500 font-bold">전투 영향력</span>
+                          <span className="text-[10px] text-white font-black">{Math.floor(matchData.stats.damageDealt)} dmg</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 bg-white/5 p-2 rounded-xl border border-white/5">
+                        <Zap size={12} className="text-amber-400" />
+                        <div className="flex flex-col">
+                          <span className="text-[8px] text-gray-500 font-bold">반응 속도</span>
+                          <span className="text-[10px] text-white font-black">
+                            {matchData.tradeStats?.reactionLatencyMs && matchData.tradeStats.reactionLatencyMs > 0
+                              ? `${Math.floor(matchData.tradeStats.reactionLatencyMs)}ms` : '측정 불가'}
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 bg-white/5 p-2 rounded-xl border border-white/5">
+                        <Shield size={12} className="text-indigo-400" />
+                        <div className="flex flex-col">
+                          <span className="text-[8px] text-gray-500 font-bold">전술 기여</span>
+                          <span className="text-[10px] text-white font-black">팀전멸 {matchData.tradeStats?.enemyTeamWipes || 0}회</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 bg-white/5 p-2 rounded-xl border border-white/5">
+                        <Clock size={12} className="text-emerald-400" />
+                        <div className="flex flex-col">
+                          <span className="text-[8px] text-gray-500 font-bold">생존력</span>
+                          <span className="text-[10px] text-white font-black">{Math.floor(matchData.stats.timeSurvived / 60)}분 생존</span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="mt-4 text-[9px] text-gray-400 leading-relaxed font-medium bg-white/5 p-2 rounded-lg border border-white/5 italic">
+                      * 딜량, 선제공격, 반응속도, 팀기여, 생존시간 등을 종합 분석한 실력 점수입니다.
+                    </div>
+                  </div>
+                )}
               </div>
             )}
+            <div className="p-2 hover:bg-white/5 rounded-full transition-colors">
+              <ChevronDown className={`text-gray-500 transition-transform duration-500 ${isExpanded ? 'rotate-180' : ''}`} />
+            </div>
           </div>
         </div>
 
-        {/* V3 Tactical Badges & Tier */}
-        <div className="flex items-center justify-between md:justify-end gap-3">
-          {matchData.benchmark && (
-            <div className="relative" ref={tierRef}>
-              {renderTierBadge()}
-              
-              {/* Tooltip Breakdown */}
-              {showTierTooltip && (
-                <div 
-                  ref={tooltipRef}
-                  onClick={(e) => e.stopPropagation()}
-                  className={`${
-                    isMobile 
-                    ? 'fixed inset-x-4 bottom-20 animate-in slide-in-from-bottom-5' 
-                    : 'absolute bottom-full right-0 mb-3 w-64 animate-in fade-in zoom-in-95'
-                  } bg-[#0a0a0a] border border-white/20 p-5 rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.9)] transition-all duration-300 z-[1001] border-t-white/40`}
-                >
-                  <div className="flex justify-between items-center border-b border-white/10 pb-2 mb-4">
-                    <div className="text-[12px] font-black text-indigo-400 uppercase tracking-widest">
-                      매치 상세 분석
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-white bg-indigo-500 px-2 py-0.5 rounded-full text-[10px] tabular-nums">
-                        {matchData.benchmark.score} / 100
-                      </span>
-                      {isMobile && (
-                        <button onClick={() => setShowTierTooltip(false)} className="text-white/40">
-                          <X size={16} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  
-                  <div className="space-y-4">
-                    <ScoreBar label="전투" score={matchData.benchmark.breakdown.combat} max={isRanked ? 40 : 50} color="bg-gradient-to-r from-red-600 to-red-400" />
-                    <ScoreBar label="전술" score={matchData.benchmark.breakdown.tactical} max={isRanked ? 35 : 15} color="bg-gradient-to-r from-indigo-600 to-indigo-400" />
-                    <ScoreBar label="생존" score={matchData.benchmark.breakdown.survival} max={isRanked ? 25 : 35} color="bg-gradient-to-r from-emerald-600 to-emerald-400" />
-                  </div>
+        {/* ── 수평 스탯 배지 행 ── */}
+        <div className="mt-3 pt-3 border-t border-white/5 flex items-center gap-2 md:gap-4 flex-wrap">
+          {/* Kills */}
+          <div className="flex items-baseline gap-1">
+            <span className={`font-black text-xl leading-none ${matchData.stats.kills >= 10 ? 'text-red-400' : matchData.stats.kills >= 5 ? 'text-orange-400' : 'text-white/70'}`}>
+              {matchData.stats.kills}
+            </span>
+            <span className="text-[10px] text-white/25 font-black uppercase">Kills</span>
+          </div>
 
-                  {/* Key Logic Indicators */}
-                  <div className="mt-5 grid grid-cols-2 gap-2 border-t border-white/10 pt-4">
-                    <div className="flex items-center gap-2 bg-white/5 p-2 rounded-xl border border-white/5">
-                      <Crosshair size={12} className="text-red-400" />
-                      <div className="flex flex-col">
-                        <span className="text-[8px] text-gray-500 font-bold">전투 영향력</span>
-                        <span className="text-[10px] text-white font-black">{Math.floor(matchData.stats.damageDealt)} dmg</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 bg-white/5 p-2 rounded-xl border border-white/5">
-                      <Zap size={12} className="text-amber-400" />
-                      <div className="flex flex-col">
-                        <span className="text-[8px] text-gray-500 font-bold">반응 속도</span>
-                        <span className="text-[10px] text-white font-black">
-                          {matchData.tradeStats?.reactionLatencyMs && matchData.tradeStats.reactionLatencyMs > 0 
-                            ? `${Math.floor(matchData.tradeStats.reactionLatencyMs)}ms` 
-                            : '측정 불가'}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 bg-white/5 p-2 rounded-xl border border-white/5">
-                      <Shield size={12} className="text-indigo-400" />
-                      <div className="flex flex-col">
-                        <span className="text-[8px] text-gray-500 font-bold">전술 기여</span>
-                        <span className="text-[10px] text-white font-black">팀전멸 {matchData.tradeStats?.enemyTeamWipes || 0}회</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 bg-white/5 p-2 rounded-xl border border-white/5">
-                      <Clock size={12} className="text-emerald-400" />
-                      <div className="flex flex-col">
-                        <span className="text-[8px] text-gray-500 font-bold">생존력</span>
-                        <span className="text-[10px] text-white font-black">{Math.floor(matchData.stats.timeSurvived / 60)}분 생존</span>
-                      </div>
-                    </div>
-                  </div>
+          <div className="w-px h-4 bg-white/10" />
 
-                  <div className="mt-4 text-[9px] text-gray-400 leading-relaxed font-medium bg-white/5 p-2 rounded-lg border border-white/5 italic">
-                    * 딜량, 선제공격, 반응속도, 팀기여, 생존시간 등을 종합 분석한 실력 점수입니다.
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+          {/* Dmg */}
+          <div className="flex items-baseline gap-1">
+            <span className={`font-black text-xl leading-none ${Number(matchData.stats.damageDealt) >= 500 ? 'text-indigo-300' : 'text-indigo-400/70'}`}>
+              {Math.floor(Number(matchData.stats.damageDealt) || 0)}
+            </span>
+            <span className="text-[10px] text-white/25 font-black uppercase">Dmg</span>
+          </div>
 
-          {matchData.myRank && (
-            <div className="flex gap-2 hidden md:flex">
-              <div className="px-3 py-1.5 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center gap-2 group/rank">
-                <Trophy size={14} className="text-amber-500 group-hover/rank:scale-110 transition-transform" />
-                <span className="text-[11px] font-black text-amber-500">킬 순위 #{matchData.myRank.killRank || 1}</span>
+          <div className="w-px h-4 bg-white/10" />
+
+          {/* DBNO */}
+          <div className="flex items-baseline gap-1">
+            <span className="text-yellow-400/80 font-black text-base leading-none">
+              {Number(matchData.stats.DBNOs) || 0}
+            </span>
+            <span className="text-[10px] text-white/25 font-black uppercase">DBNO</span>
+          </div>
+
+          <div className="w-px h-4 bg-white/10" />
+
+          {/* 헤드샷율 */}
+          {matchData.stats.kills > 0 && (
+            <>
+              <div className="flex items-baseline gap-1">
+                <span className="text-rose-400/80 font-black text-base leading-none">
+                  {((Number(matchData.stats.headshotKills) / matchData.stats.kills) * 100).toFixed(0)}%
+                </span>
+                <span className="text-[10px] text-white/25 font-black uppercase">헤드샷 킬</span>
               </div>
-            </div>
+              <div className="w-px h-4 bg-white/10" />
+            </>
           )}
-          <div className="p-2 hover:bg-white/5 rounded-full transition-colors">
-            <ChevronDown className={`text-gray-500 transition-transform duration-500 ${isExpanded ? 'rotate-180' : ''}`} />
+
+          {/* 생존시간 */}
+          <div className="flex items-baseline gap-1">
+            <span className="text-emerald-400/70 font-black text-base leading-none">
+              {Math.floor((Number(matchData.stats.timeSurvived) || 0) / 60)}분
+            </span>
+            <span className="text-[10px] text-white/25 font-black uppercase">생존</span>
           </div>
+
+          {/* 팀딜 비중 */}
+          {(matchData.teamImpact?.teamDamageShare ?? 0) > 0 && (
+            <>
+              <div className="w-px h-4 bg-white/10" />
+              <div className="flex items-center gap-1 bg-orange-500/10 px-2 py-0.5 rounded-full border border-orange-500/20">
+                <Flame size={10} className="text-orange-400" />
+                <span className="text-[10px] text-orange-400 font-black">
+                  팀 {Number(matchData.teamImpact?.teamDamageShare || 0).toFixed(1)}%
+                </span>
+              </div>
+            </>
+          )}
         </div>
+
+        {/* ── 전술 배지 행 ── */}
+        {matchData.badges && matchData.badges.length > 0 && (
+          <div className="mt-2.5 flex flex-wrap gap-1.5">
+            {matchData.badges.map((badge: any, i: number) => {
+              let badgeIcon = '🏅';
+              if (badge.id === 'smoke_master') badgeIcon = '💨';
+              else if (badge.id === 'sharpshooter') badgeIcon = '🎯';
+              else if (badge.id === 'zone_wizard') badgeIcon = '⚡️';
+              else if (badge.id === 'last_survivor') badgeIcon = '🛡️';
+              else if (badge.id === 'damage_carry') badgeIcon = '🔥';
+              return (
+                <div key={i} className="flex items-center gap-1.5 bg-white/5 border border-white/10 hover:border-white/20 px-2.5 py-1 rounded-full text-[11px] font-bold text-white/60 transition-colors">
+                  <span>{badgeIcon}</span>
+                  <span>{badge.name}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Quick Action Bar (Floating) */}

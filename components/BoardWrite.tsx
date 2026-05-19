@@ -29,16 +29,16 @@ const QuillGlobalStyles = (
       border-top-right-radius: 4px;
     }
     .quill-wrapper .ql-container {
-      min-height: 350px;
-      max-height: 50vh;
+      min-height: 240px;
+      max-height: 40vh;
       overflow-y: auto;
       border-bottom-left-radius: 4px;
       border-bottom-right-radius: 4px;
-      font-size: 16px;
+      font-size: 15px;
       cursor: text;
     }
     .quill-wrapper .ql-editor {
-      min-height: 350px;
+      min-height: 240px;
     }
     .quill-wrapper .ql-editor.ql-blank::before {
       color: #adb5bd;
@@ -397,23 +397,23 @@ export default function BoardWrite({
     <div
       style={{
         backgroundColor: "#1a1a1a",
-        padding: isMobile ? "15px" : "30px",
+        padding: isMobile ? "12px" : "20px",
         borderRadius: "8px",
         border: "1px solid #333",
       }}
     >
       {QuillGlobalStyles}
-      <h2 style={{ marginBottom: "20px", color: "#F2A900", fontSize: "20px", fontWeight: "bold" }}>
+      <h2 style={{ marginBottom: "12px", color: "#F2A900", fontSize: "18px", fontWeight: "bold" }}>
         {isEditing ? "게시글 수정" : "새 게시글 작성"}
       </h2>
 
-      <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: "10px", marginBottom: "15px" }}>
+      <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: "10px", marginBottom: "10px" }}>
         <select
           id="post-category"
           name="category"
           value={newCategory}
           onChange={(e) => setNewCategory(e.target.value)}
-          style={{ padding: "10px", backgroundColor: "#252525", color: "white", border: "1px solid #333", borderRadius: "4px" }}
+          style={{ padding: "8px 10px", backgroundColor: "#252525", color: "white", border: "1px solid #333", borderRadius: "4px" }}
         >
           {BOARD_CATEGORIES.filter((c) => isAdmin || c !== "패치노트").map((c) => (
             <option key={c} value={c}>{c}</option>
@@ -427,7 +427,7 @@ export default function BoardWrite({
           value={newTitle}
           onChange={(e) => setNewTitle(e.target.value)}
           maxLength={50}
-          style={{ flex: 1, padding: "10px", backgroundColor: "#252525", color: "white", border: "1px solid #333", borderRadius: "4px", fontSize: "16px" }}
+          style={{ flex: 1, padding: "8px 10px", backgroundColor: "#252525", color: "white", border: "1px solid #333", borderRadius: "4px", fontSize: "15px" }}
         />
         <button
           type="button"
@@ -536,7 +536,7 @@ export default function BoardWrite({
 
       <div
         className="quill-wrapper"
-        style={{ marginBottom: "50px", backgroundColor: "#252525", color: "#e5e5e5", borderRadius: "4px", position: "relative", border: "1px solid #333" }}
+        style={{ marginBottom: "12px", backgroundColor: "#252525", color: "#e5e5e5", borderRadius: "4px", position: "relative", border: "1px solid #333" }}
         onClick={handleWrapperClick}
       >
         {isUploadingImage && (
@@ -555,7 +555,7 @@ export default function BoardWrite({
       </div>
 
       {isAdmin && (
-        <label style={{ display: "flex", gap: "8px", marginBottom: "20px", color: "#F2A900" }}>
+        <label style={{ display: "flex", gap: "8px", marginBottom: "12px", color: "#F2A900" }}>
           <input 
             id="post-notice-check"
             name="is_notice"

@@ -3,7 +3,7 @@
 
 import React, { useState, useEffect, useId, useCallback, useRef } from "react";
 import { MatchCard } from "./stat/MatchCard";
-import { StatSummaryCard } from "./stat/StatSummaryCard";
+import { StatSummaryPanel } from "./stat/StatSummaryPanel";
 import { RecentAISummary } from "./stat/RecentAISummary";
 import { Shield, ChevronDown, Swords, Star, Clock, User, X, Zap, MapPin, LogIn } from "lucide-react";
 
@@ -427,21 +427,8 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
             </select>
           </div>
 
-          <div>
-            <h3 style={{ fontSize: "18px", color: "#F2A900", marginBottom: "15px" }}>🏆 경쟁전 (Ranked)</h3>
-            <div style={{ display: "flex", gap: "20px", flexWrap: "wrap" }}>
-              <StatSummaryCard title="듀오" data={result.stats?.ranked?.duo} isRanked={true} isMobile={isMobile} />
-              <StatSummaryCard title="스쿼드" data={result.stats?.ranked?.squad} isRanked={true} isMobile={isMobile} />
-            </div>
-          </div>
-          <div>
-            <h3 style={{ fontSize: "18px", color: "#aaa", marginBottom: "15px" }}>🎮 일반전 (Normal)</h3>
-            <div style={{ display: "flex", gap: "20px", flexWrap: "wrap" }}>
-              <StatSummaryCard title="솔로" data={result.stats?.normal?.solo} isRanked={false} isMobile={isMobile} />
-              <StatSummaryCard title="듀오" data={result.stats?.normal?.duo} isRanked={false} isMobile={isMobile} />
-              <StatSummaryCard title="스쿼드" data={result.stats?.normal?.squad} isRanked={false} isMobile={isMobile} />
-            </div>
-          </div>
+          {/* 경쟁전 / 일반전 통합 탭 패널 */}
+          <StatSummaryPanel stats={result.stats} isMobile={isMobile} />
 
           {/* BGMS AI 전술 분석 시스템 설명 (토글형으로 최적화) */}
           <div className="mt-4 mb-6">

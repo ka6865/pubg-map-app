@@ -41,8 +41,10 @@ export default function BoardDetailClient({
   const [isAdmin, setIsAdmin] = useState(false);
   const [displayName, setDisplayName] = useState("익명");
   const [isMobile, setIsMobile] = useState(false);
+  const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
     checkMobile();
     window.addEventListener("resize", checkMobile);
@@ -83,11 +85,20 @@ export default function BoardDetailClient({
 
   const formatTimeAgo = (dateString: string) => {
     const date = new Date(dateString);
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+
+    // SSR 단계 및 Hydration 시점에는 locale이나 dynamic time에 무관한 결정론적 날짜를 출력하여 에러를 원천 봉쇄합니다.
+    if (!mounted) {
+      return `${y}. ${m}. ${d}.`;
+    }
+
     const diff = (new Date().getTime() - date.getTime()) / 1000;
     if (diff < 60) return "방금 전";
     if (diff < 3600) return `${Math.floor(diff / 60)}분 전`;
     if (diff < 86400) return `${Math.floor(diff / 3600)}시간 전`;
-    return date.toLocaleDateString();
+    return `${y}. ${m}. ${d}.`;
   };
 
   const handleLikePost = async () => {
@@ -236,6 +247,37 @@ export default function BoardDetailClient({
               .board-content a { color: #F2A900 !important; text-decoration: underline !important; text-underline-offset: 4px !important; transition: opacity 0.2s !important; }
               .board-content a:hover { opacity: 0.7 !important; }
               .board-content { white-space: pre-wrap !important; word-break: break-word !important; font-family: inherit !important; color: #e5e5e5 !important; letter-spacing: -0.01em !important; }
+              
+              /* 패치노트 전용 AI 요약 영역 격리 리셋 */
+              .board-content .patch-note-container { white-space: normal !important; }
+              .board-content .patch-note-container * { white-space: normal !important; }
+              .board-content .patch-note-container p,
+              .board-content .patch-note-container div,
+              .board-content .patch-note-container ul,
+              .board-content .patch-note-container li,
+              .board-content .patch-note-container h3,
+              .board-content .patch-note-container a {
+                margin-bottom: 0 !important;
+                line-height: inherit !important;
+              }
+              .board-content .patch-note-container a {
+                color: #000000 !important;
+                text-decoration: none !important;
+              }
+              .board-content .patch-note-container a:hover {
+                color: #000000 !important;
+                opacity: 0.8 !important;
+              }
+              .board-content .patch-note-container ul {
+                list-style-type: none !important;
+                padding-left: 0 !important;
+                margin-bottom: 0 !important;
+              }
+              .board-content .patch-note-container li {
+                display: block !important;
+                margin-bottom: 0 !important;
+              }
+              
               .ql-snow .ql-editor { background-color: transparent !important; color: inherit !important; padding: 0 !important; }
               .ql-container.ql-snow { border: none !important; }
             `}</style>
