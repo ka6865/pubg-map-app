@@ -60,4 +60,40 @@ describe('AnalysisEngine 실데이터(Gold Match) 정밀 검증', () => {
     expect(result.ridingShotKills).toBe(0);
     expect(result.ridingShotKnocks).toBe(0);
   });
+
+  it('실시간 hitDetails 수집 및 LogMatchEnd의 hitDetails 누락 시 Fallback 정합성 검증', () => {
+    const engine = new AnalysisEngine(nickname, myAccountId, teamNames, teamAccountIds, eliteNames, eliteAccountIds, myRosterId);
+    
+    // telemetry에서 LogMatchEnd를 찾고, w.hitDetails를 강제로 비워 텔레메트리 상세 누락 유실 상태를 모사
+    const modifiedTelemetry = JSON.parse(JSON.stringify(telemetry));
+    const matchEndEvent = modifiedTelemetry.find((e: any) => e._T === "LogMatchEnd");
+    if (matchEndEvent && matchEndEvent.allWeaponStats) {
+      matchEndEvent.allWeaponStats.forEach((player: any) => {
+        if (player.accountId === myAccountId && player.stats) {
+          player.stats.forEach((w: any) => {
+            w.hitDetails = []; // ⚠️ 강제로 비워서 누락된 API 상태를 모사
+          });
+        }
+      });
+    }
+
+    const result = engine.run(modifiedTelemetry, { id: "gold-match", createdAt: "2026-05-02T16:00:00Z", gameMode: "squad" }, [], [], { damageDealt: 500, kills: 3, timeSurvived: 1200 }, [], {});
+    
+    // 결과의 weaponStats를 확인
+    expect(result.weaponStats).toBeDefined();
+    const weaponKeys = Object.keys(result.weaponStats);
+    expect(weaponKeys.length).toBeGreaterThan(0);
+    
+    // 실시간으로 누적된 명중 정보(hitDetails)가 Fallback을 통해 안전하게 복구되었는지 검증
+    const mainWeaponKey = weaponKeys.find(key => key === "Dragunov" || key === "ACE32" || key === "FNFal");
+    expect(mainWeaponKey).toBeDefined();
+    if (mainWeaponKey) {
+      const mainWeapon = (result.weaponStats as any)[mainWeaponKey];
+      expect(mainWeapon.hitDetails).toBeDefined();
+      expect(mainWeapon.hitDetails.length).toBeGreaterThan(0);
+      expect(mainWeapon.hits).toBeGreaterThan(0);
+      expect(mainWeapon.damage).toBeGreaterThan(0);
+      console.log(`🎯 [Fallback Test Passed] ${mainWeaponKey} hitDetails count:`, mainWeapon.hitDetails.length);
+    }
+  });
 });

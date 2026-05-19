@@ -2,7 +2,7 @@
  * PUBG 전술 분석 엔진 상수 정의
  */
 
-export const RESULT_VERSION = 58.3; // [V58.3] 자기장 매핑 팩트 기반 최종 복구 (White=Warning, Blue=Safety)
+export const RESULT_VERSION = 60.0; // [V60.0] 고정밀 피격 데이터 및 LogMatchEnd Fallback 통합 보정
 export const TELEMETRY_VERSION = 58.3;
 
 export const MAP_NAMES: Record<string, string> = {
