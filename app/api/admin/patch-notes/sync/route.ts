@@ -34,12 +34,31 @@ async function summarizeText(rawText: string) {
   const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GEMINI_API_KEY);
   
   // 2026년 기준 가장 안정적인 별칭 우선 순위 설정
-  const modelsToTry = ["gemini-3.1-flash-lite-preview", "gemini-3-flash-preview", "gemini-2.5-flash"];
+  const modelsToTry = ["gemini-3.1-flash-lite", "gemini-3-flash-preview", "gemini-2.5-flash"];
 
   for (const modelName of modelsToTry) {
     try {
       const model = genAI.getGenerativeModel({ model: modelName });
-      const prompt = `배틀그라운드 패치노트를 3~7개의 불렛포인트로 핵심만 한국어로 요약해줘. 다음 텍스트 기반으로 작성:\n\n${textToProcess}`;
+      const prompt = `당신은 PUBG(배틀그라운드) 전문 전략 분석가입니다. 
+제공된 패치노트 원문을 읽고, 유저들이 게임 플레이 시 반드시 알아야 할 가장 핵심적인 변화들을 극도로 슬림하고 강렬하게 요약해 주세요.
+
+[요약 제약 조건 - 절대 엄수]
+1. 섹션(카테고리)은 반드시 **최대 3개에서 4개**까지만 도출하세요. (예: [신규 무기], [맵 업데이트], [시스템 개선] 등)
+2. 각 섹션 하단에 작성하는 불렛포인트(-) 요약문은 **반드시 섹션당 최대 2개 이하**로 제한하세요.
+3. 각 불렛포인트는 **반드시 15자 내외의 극도로 짧고 직관적인 핵심 1줄 요약**이어야 합니다. 상세 설명이나 중언부언은 과감히 생략하십시오.
+4. 반드시 한국어로 작성하고, 가장 핵심적인 키워드만 **강조**해 주십시오.
+
+예시 규격:
+[신규 총기: MP9]
+- 풀파츠급 성능의 신규 **SMG 무기** 출시.
+- 기본 소음기 및 레이저 사이트 **자동 장착**.
+
+[전술 장비 리밸런싱]
+- 스포터 스코프의 탐색 거리 **100m 너프**.
+- 전술 가방의 보관 슬롯 **2칸 축소**.
+
+패치노트 원문:
+${textToProcess}`;
       const result = await model.generateContent(prompt);
       const text = result.response.text();
       
@@ -85,18 +104,29 @@ async function fetchOfficialPatchNote(supabaseAdmin: any, manualUrl?: string) {
   }
 
   let summaryOrError = "";
+  let imageUrl = "";
   try {
     const detailRes = await fetch(fullUrl, { cache: 'no-store' });
     if (detailRes.ok) {
-      const root = parse(await detailRes.text());
+      const detailHtmlText = await detailRes.text();
+      const root = parse(detailHtmlText);
       const content = root.querySelector(".post-detail__content") || root.querySelector(".news-detail__content") || root.querySelector("article");
       summaryOrError = await summarizeText(content?.text || "");
+
+      // 썸네일 이미지 파싱 (og:image 또는 _thumb 이미지)
+      const ogImage = root.querySelector("meta[property='og:image']")?.getAttribute("content");
+      if (ogImage) {
+        imageUrl = ogImage;
+      } else {
+        const thumbMatch = detailHtmlText.match(/https?:\/\/[^\s"'<>]*?_thumb\.(?:jpg|jpeg|gif|png)/i);
+        if (thumbMatch) imageUrl = thumbMatch[0];
+      }
     } else {
       summaryOrError = `❌ 본문 접속 실패 (${detailRes.status})`;
     }
   } catch(e: any) { summaryOrError = `❌ 시스템 오류: ${e.message}`; }
 
-  return { type: "patch_notes", title, fullUrl, summaryOrError };
+  return { type: "patch_notes", title, fullUrl, summaryOrError, imageUrl };
 }
 
 // 2. 카카오 무점검 패치 파싱
@@ -105,16 +135,22 @@ async function fetchKakaoPatchNote(supabaseAdmin: any, manualUrl: string) {
   const response = await fetch(targetUrl, { cache: 'no-store', headers: { "User-Agent": "Mozilla/5.0" }});
   if (!response.ok) throw new Error(`카카오 페이지 접속 실패 (${response.status})`);
   
-  const root = parse(await response.text());
+  const rawHtml = await response.text();
+  const root = parse(rawHtml);
   let title = root.querySelector(".tit_view")?.text.trim() || root.querySelector(".subject")?.text.trim() || root.querySelector("title")?.text.trim() || "카카오 패치노트";
 
   let summaryOrError = "";
+  let imageUrl = "";
   try {
     const ajaxUrl = targetUrl.replace("/notice/read?", "/notice/ajax/read?");
     const detailRes = await fetch(ajaxUrl, { 
       cache: 'no-store', 
       headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Referer": targetUrl }
     });
+
+    // 카카오 OG 이미지 파싱
+    const ogImage = root.querySelector("meta[property='og:image']")?.getAttribute("content");
+    if (ogImage) imageUrl = ogImage;
 
     if (detailRes.ok) {
       const detailHTML = await detailRes.text();
@@ -134,7 +170,7 @@ async function fetchKakaoPatchNote(supabaseAdmin: any, manualUrl: string) {
     summaryOrError = `❌ 시스템 오류: ${e.message}`;
   }
 
-  return { type: "kakao_patch_notes", title: `[카카오] ${title}`, fullUrl: targetUrl, summaryOrError };
+  return { type: "kakao_patch_notes", title: `[카카오] ${title}`, fullUrl: targetUrl, summaryOrError, imageUrl };
 }
 
 export async function POST(request: Request) {
@@ -171,7 +207,8 @@ export async function POST(request: Request) {
       content: buildHtml(r.summaryOrError, r.fullUrl),
       author: 'BGMS 시스템',
       category: '패치노트',
-      is_notice: true
+      is_notice: true,
+      image_url: r.imageUrl || null
     }));
 
     const { error: insertError } = await supabaseAdmin.from('posts').upsert(postsToInsert, { onConflict: 'title' });
@@ -187,21 +224,127 @@ export async function POST(request: Request) {
   }
 }
 
+/**
+ * HTML 문자열의 모든 줄바꿈과 불필요한 연속 공백을 압축(minify)하여 white-space: pre-wrap 오작동을 영구 방지하는 헬퍼 함수
+ */
+function minifyHtml(html: string): string {
+  return html
+    .replace(/\s+/g, ' ')
+    .replace(/>\s+</g, '><')
+    .trim();
+}
+
+/**
+ * AI 요약 본문을 세련된 모바일 반응형 카드 박스(표 형태)로 정교하게 포맷팅하는 헬퍼 함수
+ */
+function formatAiSummaryToHtml(summary: string): string {
+  if (!summary) return "";
+  
+  // 1. 만약 대괄호 [섹션] 형태가 없고, "* **제목**:" 또는 "- **제목**:" 형태의 목록이 존재한다면,
+  // 이를 대괄호 [섹션] 형태로 전처리하여 쪼개기 쉽게 만듭니다.
+  let processed = summary;
+  if (!summary.includes('[') || !summary.includes(']')) {
+    processed = summary.replace(/[*•-]\s*\*\*(.*?)\*\*[:\s]*/g, '\n[$1]\n- ');
+  }
+
+  // 만약 카테고리 표기법([섹션])이 여전히 존재하지 않는 단순 텍스트인 경우 줄바꿈만 치환하여 반환
+  if (!processed.includes('[') || !processed.includes(']')) {
+    return minifyHtml(`
+      <div class="bg-[#1a1a1a] border border-white/5 rounded-lg p-4 text-gray-300 text-sm leading-relaxed">
+        ${processed.replace(/\n/g, '<br/>')}
+      </div>
+    `);
+  }
+
+  // [카테고리] 단위로 정밀하게 split
+  const sections = processed.split(/(?=\[.*?\])/g);
+  
+  const cardsHtml = sections.map(section => {
+    const titleMatch = section.match(/\[(.*?)\]/);
+    if (!titleMatch) return "";
+    
+    const title = titleMatch[1].trim();
+    const content = section.replace(`[${titleMatch[1]}]`, "").trim();
+    
+    // 카테고리 텍스트에 어울리는 최적의 매치 이모지 지정
+    let emoji = "🔹";
+    if (title.includes("신규") || title.includes("새로운")) emoji = "🆕";
+    else if (title.includes("밸런스") || title.includes("조정") || title.includes("너프") || title.includes("버프")) emoji = "⚖️";
+    else if (title.includes("시스템") || title.includes("편의성") || title.includes("개선") || title.includes("UI") || title.includes("UX")) emoji = "⚙️";
+    else if (title.includes("수정") || title.includes("해결") || title.includes("버그")) emoji = "🛠️";
+    else if (title.includes("맵") || title.includes("지형") || title.includes("월드")) emoji = "🗺️";
+    else if (title.includes("무기") || title.includes("아이템")) emoji = "🔫";
+
+    // 본문 줄바꿈 및 리스트 아이템 정밀 파싱
+    const items = content.split('\n')
+      .map(line => line.trim())
+      .filter(line => line.length > 2)
+      .map(line => {
+        // 기존의 불렛 마커(-, *, • 등)를 말끔하게 제거하고 텍스트 정규화
+        const text = line.replace(/^[-*•\s]+/, "").trim();
+        // 볼드 처리(**텍스트**)를 Tailwind 스타일이 적용된 강조용 strong 태그로 치환
+        const highlighted = text.replace(/\*\*(.*?)\*\*/g, '<strong class="text-[#F2A900] font-black">$1</strong>');
+        
+        return `
+          <li class="relative pl-4 text-gray-300 text-xs md:text-sm leading-normal mb-1.5 list-none">
+            <span class="absolute left-0 top-0 text-[#F2A900] font-bold">✓</span>
+            ${highlighted}
+          </li>
+        `;
+      }).join("");
+
+    if (!items) return "";
+
+    return `
+      <div class="bg-[#1a1a1a] border border-white/5 rounded-lg p-4 shadow-md transition-all hover:border-white/10 hover:shadow-lg">
+        <div class="text-[#F2A900] text-sm md:text-base font-black mb-2 flex items-center gap-1.5 border-b border-white/5 pb-1.5">
+          <span>${emoji}</span> ${title}
+        </div>
+        <ul class="space-y-1 m-0 p-0">${items}</ul>
+      </div>
+    `;
+  }).join("");
+
+  return minifyHtml(cardsHtml);
+}
+
 function buildHtml(summaryOrError: string, fullUrl: string) {
   const isError = summaryOrError.startsWith("❌");
-  return `
-    <div class="patch-note-container">
-      <div class="${isError ? 'bg-red-500/10 border-red-500/30' : 'bg-[#F2A900]/10 border-[#F2A900]/30'} border rounded-xl p-6 mb-8">
-        <h3 class="flex items-center gap-2 ${isError ? 'text-red-500' : 'text-[#F2A900]'} font-black text-xl mb-4">
-          ${isError ? '🚨 동기화 오류' : '🤖 AI 핵심 요약'}
-        </h3>
-        <div class="prose prose-invert max-w-none text-gray-200 leading-relaxed whitespace-pre-wrap">${summaryOrError}</div>
+  if (isError) {
+    return minifyHtml(`
+      <div class="patch-note-container space-y-4">
+        <div class="bg-red-500/10 border border-red-500/30 rounded-lg p-4">
+          <h3 class="flex items-center gap-1.5 text-red-500 font-black text-lg mb-2">
+            🚨 동기화 오류
+          </h3>
+          <div class="prose prose-invert max-w-none text-gray-200 text-sm leading-relaxed whitespace-pre-wrap">${summaryOrError}</div>
+        </div>
+        <div class="flex flex-col items-center justify-center p-6 bg-[#1a1a1a] rounded-lg border border-white/5">
+          <p class="text-gray-400 text-xs mb-3">더 자세한 내용은 공식 원문에서 확인하실 수 있습니다.</p>
+          <a href="${fullUrl}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 px-6 py-2.5 bg-[#F2A900] text-black font-black text-sm rounded hover:bg-[#cc8b00] transition-all transform active:scale-95 shadow-md shadow-[#F2A900]/20">🔗 원문 보러가기</a>
+        </div>
       </div>
-      <div class="flex flex-col items-center justify-center p-8 bg-[#1a1a1a] rounded-xl border border-white/5">
-        <p class="text-gray-400 text-sm mb-4">더 자세한 내용은 공식 원문에서 확인하실 수 있습니다.</p>
-        <a href="${fullUrl}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-2 px-8 py-3 bg-[#F2A900] text-black font-black rounded-lg hover:bg-[#cc8b00] transition-all transform active:scale-95 shadow-lg shadow-[#F2A900]/20">🔗 원문 보러가기</a>
+    `);
+  }
+
+  return minifyHtml(`
+    <div class="patch-note-container space-y-4">
+      <div class="bg-[#F2A900]/10 border border-[#F2A900]/30 rounded-lg p-4 mb-1">
+        <h3 class="flex items-center gap-1.5 text-[#F2A900] font-black text-base md:text-lg">
+          🤖 BGMS AI 패치노트 핵심 요약
+        </h3>
+      </div>
+      
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        ${formatAiSummaryToHtml(summaryOrError)}
+      </div>
+
+      <div class="flex flex-col items-center justify-center p-6 bg-[#1a1a1a] rounded-lg border border-white/5">
+        <p class="text-gray-400 text-xs mb-3">더 자세한 내용은 공식 원문에서 확인하실 수 있습니다.</p>
+        <a href="${fullUrl}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 px-6 py-2.5 bg-[#F2A900] text-black font-black text-sm rounded hover:bg-[#cc8b00] transition-all transform active:scale-95 shadow-md shadow-[#F2A900]/20">🔗 원문 보러가기</a>
       </div>
     </div>
-  `;
+  `);
 }
+
 

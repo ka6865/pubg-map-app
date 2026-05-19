@@ -40,8 +40,8 @@ export async function POST(request: Request) {
 - 1:1 교전 승률: ${matchData.duelStats?.duelWinRate || 0}% (Elite Avg: ${eliteBenchmark.avgDuelWinRate || 55}%)
 - 복수(Trade) 성공률: ${tradeStats.tradeRate || 0}% (Elite Avg: ${eliteBenchmark.avgTradeRate || 50}%)
 - 선제 공격 성공률: ${matchData.initiative_rate || 0}% (Elite Avg: ${eliteBenchmark.avgInitiativeRate || 55}%)
-- 대응 사격 속도(반응): ${tradeStats.reactionLatencyMs > 0 ? (tradeStats.reactionLatencyMs/1000).toFixed(2) : "데이터 부족"}s (Elite Avg: ${(eliteBenchmark.avg_latency || 1500)/1000}s)
-- 백업(Trade) 속도: ${tradeStats.tradeLatencyMs > 0 ? (tradeStats.tradeLatencyMs/1000).toFixed(1) : "데이터 부족"}s (Elite Avg: ${(eliteBenchmark.avg_trade_latency || 15000)/1000}s)
+- 대응 사격 속도(반응): ${tradeStats.reactionLatencyMs > 0 ? (tradeStats.reactionLatencyMs/1000).toFixed(2) : "데이터 부족"}s (Elite Avg: ${eliteBenchmark.avgCounterLatency !== undefined ? eliteBenchmark.avgCounterLatency : 0.5}s)
+- 백업(Trade) 속도: ${tradeStats.tradeLatencyMs > 0 ? (tradeStats.tradeLatencyMs/1000).toFixed(1) : "데이터 부족"}s (Elite Avg: ${eliteBenchmark.avgTradeLatency !== undefined ? eliteBenchmark.avgTradeLatency : 12.0}s)
 - 전술 지원: 견제사격 ${tradeStats.suppCount || 0}회 (Elite Avg: ${eliteBenchmark.avgSuppCount || 3.0}회)
 - 위기 관리: 소생률 ${tradeStats.teammateKnocks > 0 ? Math.round((tradeStats.revCount / tradeStats.teammateKnocks) * 100) : 0}% (Elite Avg: ${eliteBenchmark.avgReviveRate || 80}%) / 연막 엄호율 ${tradeStats.teammateKnocks > 0 ? Math.round((tradeStats.smokeCount / tradeStats.teammateKnocks) * 100) : 0}% (Elite Avg: ${eliteBenchmark.avgSmokeRate || 60}%)
 - 공간 전술: 고립 지수 ${isolationData?.isolationIndex || "데이터 부족"} (Elite Avg: ${eliteBenchmark.avgIsolationIndex || 1.0}) / 아군 평균 거리: ${isolationData?.minDist || 0}m / 고도차 ${isolationData?.heightDiff || 0}m / 십자포화 노출: ${isolationData?.isCrossfire ? "있음" : "없음"}
@@ -93,7 +93,7 @@ export async function POST(request: Request) {
 
     const genAI = new GoogleGenerativeAI(apiKey);
     const modelsToTry = [
-      "gemini-3.1-flash-lite-preview", 
+      "gemini-3.1-flash-lite", 
       "gemini-3-flash-preview", 
       "gemini-2.5-flash"
     ];

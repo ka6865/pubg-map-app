@@ -33,6 +33,64 @@ export class CombatHandler extends BaseHandler {
     );
   }
 
+  private updateHitDetails(
+    wStat: any,
+    bodyPartName: string,
+    damage: number = 0,
+    isHit: boolean = false,
+    isKnock: boolean = false,
+    isKill: boolean = false
+  ) {
+    if (!wStat) return;
+    if (!wStat.hitDetails) {
+      wStat.hitDetails = [];
+    }
+
+    // PUBG telemetry body part normalization
+    let bodyPart = "TorsoShot";
+    const lowerPart = (bodyPartName || "").toLowerCase();
+    if (lowerPart.includes("head")) {
+      bodyPart = "HeadShot";
+    } else if (lowerPart.includes("torso") || lowerPart.includes("neck") || lowerPart.includes("chest") || lowerPart.includes("groin")) {
+      bodyPart = "TorsoShot";
+    } else if (lowerPart.includes("pelvis") || lowerPart.includes("hip") || lowerPart.includes("abdomen")) {
+      bodyPart = "PelvisShot";
+    } else if (lowerPart.includes("arm") || lowerPart.includes("hand") || lowerPart.includes("shoulder") || lowerPart.includes("elbow") || lowerPart.includes("wrist")) {
+      bodyPart = "ArmShot";
+    } else if (lowerPart.includes("leg") || lowerPart.includes("foot") || lowerPart.includes("thigh") || lowerPart.includes("knee") || lowerPart.includes("ankle")) {
+      bodyPart = "LegShot";
+    } else {
+      bodyPart = "TorsoShot";
+    }
+
+    let detail = wStat.hitDetails.find((d: any) => d.bodyPart === bodyPart);
+    if (!detail) {
+      detail = {
+        bodyPart,
+        kills: 0,
+        dBNOs: 0,
+        hits: 0,
+        dBNOHits: 0,
+        damage: 0,
+        dBNODamage: 0
+      };
+      wStat.hitDetails.push(detail);
+    }
+
+    if (isHit) {
+      detail.hits++;
+      detail.damage = Number((detail.damage + damage).toFixed(2));
+    }
+    if (isKnock) {
+      detail.dBNOs++;
+      detail.dBNOHits++;
+      detail.dBNODamage = Number((detail.dBNODamage + damage).toFixed(2));
+    }
+    if (isKill) {
+      detail.kills++;
+    }
+  }
+
   public handleEvent(e: any, ts: number, _elapsed: number) {
     switch (e._T) {
       case "LogPlayerTakeDamage":
@@ -138,6 +196,7 @@ export class CombatHandler extends BaseHandler {
               const wStat = this.state.weaponStats.get(cleanWId) || { kills: 0, dbnos: 0, damage: 0, hits: 0 };
               wStat.damage += damage;
               wStat.hits++;
+              this.updateHitDetails(wStat, e.damageReason, damage, true, false, false);
               this.state.weaponStats.set(cleanWId, wStat);
 
               // goldenTimeDamage도 아군/자해/기절이 완벽 차단된 실질 대인 유효 딜량만 누적하도록 동기화
@@ -156,6 +215,7 @@ export class CombatHandler extends BaseHandler {
               const wStat = pStats.get(cleanWId) || { weapon: cleanWId, kills: 0, dbnos: 0, damage: 0, hits: 0, shots: 0 };
               wStat.damage += damage;
               wStat.hits++;
+              this.updateHitDetails(wStat, e.damageReason, damage, true, false, false);
               pStats.set(cleanWId, wStat);
             }
           }
@@ -240,6 +300,7 @@ export class CombatHandler extends BaseHandler {
           if (isMeMaker) {
             const wStat = this.state.weaponStats.get(cleanWId) || { kills: 0, dbnos: 0, damage: 0, hits: 0 };
             wStat.dbnos++;
+            this.updateHitDetails(wStat, e.damageReason, 0, false, true, false);
             this.state.weaponStats.set(cleanWId, wStat);
           } else {
             let squadWMap = this.state.squadWeaponStats;
@@ -250,6 +311,7 @@ export class CombatHandler extends BaseHandler {
             }
             const wStat = pStats.get(cleanWId) || { weapon: cleanWId, kills: 0, dbnos: 0, damage: 0, hits: 0, shots: 0 };
             wStat.dbnos++;
+            this.updateHitDetails(wStat, e.damageReason, 0, false, true, false);
             pStats.set(cleanWId, wStat);
           }
         }
@@ -386,6 +448,7 @@ export class CombatHandler extends BaseHandler {
           if (isMeKiller) {
             const wStat = this.state.weaponStats.get(cleanWId) || { kills: 0, dbnos: 0, damage: 0, hits: 0 };
             wStat.kills++;
+            this.updateHitDetails(wStat, e.damageReason || (e.killerDamageInfo && e.killerDamageInfo.damageReason), 0, false, false, true);
             this.state.weaponStats.set(cleanWId, wStat);
           } else {
             let squadWMap = this.state.squadWeaponStats;
@@ -396,6 +459,7 @@ export class CombatHandler extends BaseHandler {
             }
             const wStat = pStats.get(cleanWId) || { weapon: cleanWId, kills: 0, dbnos: 0, damage: 0, hits: 0, shots: 0 };
             wStat.kills++;
+            this.updateHitDetails(wStat, e.damageReason || (e.killerDamageInfo && e.killerDamageInfo.damageReason), 0, false, false, true);
             pStats.set(cleanWId, wStat);
           }
         }
@@ -774,14 +838,21 @@ export class CombatHandler extends BaseHandler {
             existing.dBNODamage = w.dBNODamage ?? 0;
             existing.dBNOHits = w.dBNOHits ?? 0;
             existing.holdingTime = w.holdingTime ?? 0;
-            existing.hitDetails = w.hitDetails ?? [];
+            
+            // [V60.0 Fallback] API(w)의 hitDetails가 비어있지 않으면 우선 적용, 비어있으면 실시간 누적본(existing.hitDetails)을 유지함.
+            if (w.hitDetails && Array.isArray(w.hitDetails) && w.hitDetails.length > 0) {
+              existing.hitDetails = w.hitDetails;
+            } else {
+              existing.hitDetails = existing.hitDetails || [];
+            }
+            
             existing.accuracy = existing.shots > 0 ? Math.round((existing.hits / existing.shots) * 100) : 0;
 
             // [V58.4 Fix] 킬/기절 데이터를 API 최상위 필드 또는 hitDetails에서 합산하여 복구
             let hdKills = 0;
             let hdDbnos = 0;
-            if (Array.isArray(w.hitDetails)) {
-              w.hitDetails.forEach((hd: any) => {
+            if (Array.isArray(existing.hitDetails)) {
+              existing.hitDetails.forEach((hd: any) => {
                 hdKills += hd.kills || 0;
                 hdDbnos += hd.dBNOs || hd.dbnos || 0;
               });
@@ -802,6 +873,9 @@ export class CombatHandler extends BaseHandler {
         // 아군 무기 통계 적재
         const tName = accountToNameMap.get(accId) || accId;
         const tWeaponList: any[] = [];
+        
+        // [V60.0 Fallback] 실시간 수집된 해당 아군의 무기 맵 가져오기
+        const realTimeSquadStatsMap = this.state.squadWeaponStats.get(tName);
 
         if (playerStat.stats && Array.isArray(playerStat.stats)) {
           playerStat.stats.forEach((w: any) => {
@@ -835,16 +909,30 @@ export class CombatHandler extends BaseHandler {
               return;
             }
             
+            const realTimeWStat = (realTimeSquadStatsMap && typeof realTimeSquadStatsMap.get === "function")
+              ? realTimeSquadStatsMap.get(cleanWId)
+              : undefined;
+
+            const apiDamage = w.damage ?? 0;
+            const apiHits = w.hits ?? 0;
+            const finalDamage = (apiDamage === 0 && realTimeWStat) ? (realTimeWStat.damage ?? 0) : apiDamage;
+            const finalHits = (apiHits === 0 && realTimeWStat) ? (realTimeWStat.hits ?? 0) : apiHits;
+
             // 0딜 및 0히트인 아군 무기는 스쿼드 무기 목록에서 완전히 소거
-            if ((w.damage ?? 0) === 0 && (w.hits ?? 0) === 0) {
+            if (finalDamage === 0 && finalHits === 0) {
               return;
+            }
+
+            let finalHitDetails = w.hitDetails ?? [];
+            if ((!finalHitDetails || finalHitDetails.length === 0) && realTimeWStat && realTimeWStat.hitDetails) {
+              finalHitDetails = realTimeWStat.hitDetails;
             }
 
             // [V58.4 Fix] 아군 스쿼드 무기 통계에서도 킬/기절 데이터를 정상 추출
             let tHdKills = 0;
             let tHdDbnos = 0;
-            if (Array.isArray(w.hitDetails)) {
-              w.hitDetails.forEach((hd: any) => {
+            if (Array.isArray(finalHitDetails)) {
+              finalHitDetails.forEach((hd: any) => {
                 tHdKills += hd.kills || 0;
                 tHdDbnos += hd.dBNOs || hd.dbnos || 0;
               });
@@ -852,14 +940,14 @@ export class CombatHandler extends BaseHandler {
 
             tWeaponList.push({
               weapon: cleanWId,
-              damage: w.damage ?? 0,
+              damage: finalDamage,
               dBNODamage: w.dBNODamage ?? 0,
               shots: w.shots ?? 0,
-              hits: w.hits ?? 0,
+              hits: finalHits,
               dBNOHits: w.dBNOHits ?? 0,
               holdingTime: w.holdingTime ?? 0,
-              hitDetails: w.hitDetails ?? [],
-              accuracy: w.shots > 0 ? Math.round((w.hits / w.shots) * 100) : 0,
+              hitDetails: finalHitDetails,
+              accuracy: w.shots > 0 ? Math.round((finalHits / w.shots) * 100) : 0,
               kills: Math.max(w.kills || 0, tHdKills),
               dbnos: Math.max(w.dBNOs || w.dbnos || 0, tHdDbnos)
             });

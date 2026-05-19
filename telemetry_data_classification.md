@@ -1,5 +1,5 @@
-# [사실기반] BGMS 텔레메트리 데이터 실구현 명세서 (V59.0)
-*공식 PUBG API 텔레메트리 이벤트 + 오브젝트 전수 대조 및 V59.0 고정밀 정합성 패치 완료*
+# [사실기반] BGMS 텔레메트리 데이터 실구현 명세서 (V60.0)
+*공식 PUBG API 텔레메트리 이벤트 + 오브젝트 전수 대조 및 V60.0 고정밀 정합성 패치 완료*
 
 ---
 
@@ -205,6 +205,15 @@
 *   **순수 대인 유효 딜량(`processedDamageDealt`) 계산 구조 완벽 검증**:
     *   `CombatHandler`에서 아군사격(Friendly Fire), 자해(Suicide), 그리고 기절/사망 대상에 대한 무의미한 확킬 딜량을 철저히 배제.
     *   `AnalysisEngine`이 반환하는 최종 `damageDealt` 값을 PUBG 원본 API 스탯에 의존하지 않고, 직접 필터링한 `weaponStats` 총합(`processedDamageDealt`)으로 100% 덮어쓰기하여 UI와의 절대적인 수치 정합성 구현.
+
+### 4-7. 고정밀 피격 부위 누적(hitDetails) 및 LogMatchEnd 누락 무손실 Fallback 아키텍처 (V60.0 팩트)
+*   **피격 부위 실시간 누적 연동 (`updateHitDetails`)**:
+    *   전투 도중 발생하는 `LogPlayerTakeDamage` (대미지), `LogPlayerMakeGroggy` (기절), `LogPlayerKillV2` (처치) 이벤트를 감지하여, 본인(`weaponStats`) 및 아군(`squadWeaponStats`)이 사용한 무기별 피격 부위(Head, Torso, Pelvis, Arm, Leg) 상세 스탯(Hits, Damage, Groggy/Knock, Kills)을 실시간으로 집계 및 누적 관리합니다.
+*   **무손실 Fallback 방어막 장착**:
+    *   매치 종료 시점(`LogMatchEnd`)에 결산으로 제공되는 `allWeaponStats` 객체 내 `hitDetails` 배열이 PUBG API 서버의 한계 또는 유실로 인해 누락되거나 비어있을 경우, 실시간 전투 데이터로 수집해 둔 고정밀 누적 명중 정보를 안전하게 복구(Fallback) 및 병합합니다.
+    *   본인 무기(`weaponStats`)뿐만 아니라 **아군 무기 스탯(`squadWeaponStats`)** 역시 실시간 집계된 아군 데이터 맵을 이용하여 빈 틈 없이 무손실 폴백 복구가 적용되도록 아키텍처를 고도화했습니다.
+*   **통합 단위 검증 완료 (`tests/analysis-engine.test.ts`)**:
+    *   실제 인게임 Gold Match 데이터(`revive-gold-match.json`)를 대상으로 `LogMatchEnd` 결산 데이터의 `hitDetails`가 100% 누락된 가상의 데이터 유실 시나리오를 구성한 뒤, 해당 Fallback 로직을 거쳐 무손실 복구된 피격 정보(`Dragunov`, `ACE32`, `FNFal` 등)의 정합성을 엄격히 통과 및 검증 완료했습니다.
 
 ---
 

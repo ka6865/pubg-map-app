@@ -56,7 +56,7 @@ export const StatSummaryCard = ({ title, data, isRanked, isMobile }: { title: st
           </div>
           
           <div className="flex justify-between items-end">
-            <h4 className="text-2xl font-black text-white tracking-tight">{isRanked ? (data.currentTier?.tier || "Unranked") : title}</h4>
+            <h4 className="text-2xl font-black text-white tracking-tight">{isRanked ? (data.currentTier?.tier || "랭크 정보 없음") : title}</h4>
             {isRanked && (
               <div className="text-right">
                 <div className="text-amber-500 font-black text-xl leading-none">{data.currentRankPoint || 0} <span className="text-xs">RP</span></div>
@@ -108,7 +108,7 @@ export const StatSummaryCard = ({ title, data, isRanked, isMobile }: { title: st
         <div className="flex flex-col gap-1 relative" ref={tooltipRef}>
           <div className="flex items-center gap-2 text-white/30">
             <Swords size={12} />
-            <span className="text-[10px] font-black uppercase tracking-wider">평균 DBNO</span>
+            <span className="text-[10px] font-black uppercase tracking-wider">평균 기절시킴 (DBNO)</span>
             <button 
               onMouseEnter={() => !isMobile && setShowTooltip(true)} 
               onMouseLeave={() => !isMobile && setShowTooltip(false)} 
@@ -123,7 +123,7 @@ export const StatSummaryCard = ({ title, data, isRanked, isMobile }: { title: st
           </div>
           {showTooltip && (
             <div className={`absolute left-0 mb-2 p-3 bg-black border border-amber-500/50 rounded-xl text-[10px] text-white/80 font-bold z-50 w-48 shadow-2xl animate-in fade-in slide-in-from-bottom-1 ${isMobile ? 'bottom-full mb-4' : 'bottom-full'}`}>
-              DBNO: 적을 기절시킨 횟수를 의미합니다.
+              DBNO(Down But Not Out): 적을 기절시킨 횟수를 의미합니다.
             </div>
           )}
         </div>

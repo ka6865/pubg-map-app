@@ -104,14 +104,14 @@ export const MatchTimeline = ({ events, nickname, onEventClick }: MatchTimelineP
     <div className="space-y-12 pb-10">
       {groups.map((group, gIdx) => (
         <div key={gIdx} className="relative">
-          <div className="sticky top-0 z-20 flex items-center gap-4 py-4 bg-black/90 backdrop-blur-md">
-            <div className="flex items-center gap-2 px-4 py-1.5 bg-blue-500/10 border border-blue-500/30 rounded-full">
-              <Zap size={14} className="text-blue-400" />
-              <span className="text-xs font-black text-blue-400 uppercase tracking-widest">
-                Phase {group.phase}
+          <div className="sticky top-0 z-20 flex items-center gap-4 py-3 bg-[#0d0e12]/60 backdrop-blur-xl rounded-2xl px-4 border border-white/5 shadow-lg shadow-black/30">
+            <div className="flex items-center gap-2 px-3 py-1 bg-gradient-to-r from-blue-500/20 to-indigo-500/20 border border-blue-500/30 rounded-full shadow-[0_0_15px_rgba(59,130,246,0.2)]">
+              <Zap size={13} className="text-blue-400 animate-pulse" />
+              <span className="text-[11px] font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-300 uppercase tracking-widest">
+                페이즈 {group.phase}
               </span>
             </div>
-            <div className="flex-1 h-px bg-gradient-to-r from-blue-500/30 to-transparent" />
+            <div className="flex-1 h-[2px] bg-gradient-to-r from-blue-500/40 via-blue-500/10 to-transparent" />
           </div>
 
           <div className="pl-4 border-l-2 border-white/5 ml-2 md:ml-8 mt-6 space-y-4">
@@ -159,7 +159,7 @@ export const MatchTimeline = ({ events, nickname, onEventClick }: MatchTimelineP
                       <div className="flex items-center gap-1 md:gap-2 truncate text-[11px] md:text-sm font-bold tracking-tight">
                         {isMe && (
                           <span className="px-1 py-0.5 rounded-[4px] bg-blue-500/20 text-blue-400 text-[8px] md:text-[9px] font-black mr-0.5 border border-blue-500/30 shrink-0">
-                            ME
+                            나
                           </span>
                         )}
                         <div className="truncate">
@@ -355,7 +355,7 @@ const renderEventText = (event: TimelineEvent, lowerNickname: string) => {
     case 'VICTORY':
       return <span className="text-yellow-400 font-black tracking-tighter shrink-0">치킨 달성! 🍗</span>;
     case 'PHASE_START':
-      return <span className="text-blue-400/80 shrink-0">Phase {event.phase ?? '?'} 시작</span>;
+      return <span className="text-blue-400/80 shrink-0">페이즈 {event.phase ?? '?'} 시작</span>;
     default:
       return (
         <div className="flex items-center gap-1 min-w-0">

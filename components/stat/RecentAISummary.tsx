@@ -418,7 +418,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
               <div className="flex flex-col gap-1.5">
                 <div className="flex items-center gap-2">
                   <span className="px-2 py-0.5 bg-indigo-500/20 border border-indigo-500/30 rounded text-[10px] text-indigo-300 font-black tracking-widest uppercase">
-                    10 Match Tactics
+                    최근 10경기 핵심 전술
                   </span>
                   {debateData?.visuals?.latestMatchTime && (
                     <span className="text-[10px] text-white/40 font-bold">{getRelativeTime(debateData.visuals.latestMatchTime)}</span>
@@ -436,7 +436,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
             {/* Right: Tier Badge */}
             <div className="flex items-center justify-center bg-white/5 border border-white/10 rounded-2xl p-4 md:px-8 md:py-6 shadow-xl backdrop-blur-sm self-center md:self-auto min-w-[140px]">
               <div className="flex flex-col items-center">
-                <span className="text-[10px] text-white/30 font-black uppercase tracking-[0.2em] mb-1">Overall Tier</span>
+                <span className="text-[10px] text-white/30 font-black uppercase tracking-[0.2em] mb-1">종합 티어</span>
                 <div className="text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-b from-white to-white/40 drop-shadow-[0_0_15px_rgba(255,255,255,0.3)]">
                   {debateData?.visuals?.overallTier || "N/A"}
                 </div>
@@ -510,7 +510,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
                   <div className="w-4 h-4 bg-emerald-500 rounded-full animate-ping" />
                   <div className="absolute inset-0 w-4 h-4 bg-emerald-500 rounded-full" />
                 </div>
-                <span className="text-[12px] text-emerald-400 font-black uppercase tracking-[0.3em]">AI Tactical Analytics Engine</span>
+                <span className="text-[12px] text-emerald-400 font-black uppercase tracking-[0.3em]">AI 전술 분석 엔진</span>
               </div>
 
               <div className="space-y-4">
@@ -636,7 +636,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="px-4 py-1.5 bg-white/10 rounded-full border border-white/10">
-                    <span className="text-[12px] font-black text-white tracking-widest uppercase">{(debateData.visuals.overallTier || 'B')} TIER</span>
+                    <span className="text-[12px] font-black text-white tracking-widest uppercase">{(debateData.visuals.overallTier || 'B')} 티어</span>
                   </div>
 
                   {/* [V38.2] 티어 세부 점수 툴팁 */}
@@ -660,7 +660,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
                             } p-4 bg-black/95 border border-white/20 rounded-2xl backdrop-blur-xl shadow-[0_20px_50px_rgba(0,0,0,0.8)] z-[100] duration-200`}
                         >
                           <div className="flex justify-between items-center mb-3 pb-2 border-b border-white/10">
-                            <div className="text-[11px] text-white/50 font-black uppercase tracking-wider">Tier Analysis</div>
+                            <div className="text-[11px] text-white/50 font-black uppercase tracking-wider">티어 분석 결과</div>
                             {isMobile && (
                               <button onClick={() => setShowTierTooltip(false)} className="text-white/40">
                                 <X size={14} />
@@ -725,7 +725,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
               {/* 중간: 직업군 설명 */}
               <div className="flex-1 text-center md:text-left space-y-3">
                 <div className="space-y-1">
-                  <span className="text-[12px] text-indigo-400 font-black uppercase tracking-[0.3em]">Tactical Identity</span>
+                  <span className="text-[12px] text-indigo-400 font-black uppercase tracking-[0.3em]">전술적 정체성</span>
                   <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight leading-none italic">
                     {debateData.visuals.roleInfo.title}
                   </h2>
@@ -747,7 +747,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
 
                 <div className="relative z-10 space-y-4">
                   <div className="flex flex-col gap-1">
-                    <span className="text-[10px] text-gray-500 font-black uppercase tracking-widest">Signature Weapon</span>
+                    <span className="text-[10px] text-gray-500 font-black uppercase tracking-widest">시그니처 무기</span>
                     <div className="text-xl font-black text-white flex items-center gap-2">
                       <Flame size={18} className="text-orange-500 animate-pulse" />
                       {debateData.visuals.roleInfo.signatureWeapon}
@@ -757,11 +757,11 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
                   <div className="grid grid-cols-2 gap-4 pt-4 border-t border-white/10">
                     <div className="flex flex-col">
                       <span className="text-[18px] font-black text-white">{debateData.visuals.roleInfo.signatureWeaponStats?.kills || 0}</span>
-                      <span className="text-[9px] text-gray-500 font-black uppercase tracking-tighter">Kills</span>
+                      <span className="text-[9px] text-gray-500 font-black uppercase tracking-tighter">킬 수 (Kills)</span>
                     </div>
                     <div className="flex flex-col">
                       <span className="text-[18px] font-black text-indigo-400">{debateData.visuals.roleInfo.signatureWeaponStats?.dbnos || 0}</span>
-                      <span className="text-[9px] text-gray-500 font-black uppercase tracking-tighter">Knocks (DBNO)</span>
+                      <span className="text-[9px] text-gray-500 font-black uppercase tracking-tighter">기절 횟수 (DBNO)</span>
                     </div>
                   </div>
                 </div>
@@ -780,7 +780,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
             <div className="flex items-center justify-between mb-10 relative z-10">
               <div className="flex flex-col gap-2">
                 <div className="text-[12px] text-yellow-400 font-black uppercase tracking-[0.3em] flex items-center gap-2">
-                  <span className="text-lg">🔥</span> Golden Time Analysis
+                  <span className="text-lg">🔥</span> 골든타임 분석 (Golden Time)
                 </div>
                 <div className="text-xl font-black text-white">생존 구간별 화력 집중도</div>
               </div>
@@ -824,7 +824,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
                             <div className="text-[10px] md:text-[14px] font-black text-white drop-shadow-md group-hover:scale-110 transition-transform">
                               {Math.round(item.val).toLocaleString()}
                             </div>
-                            <div className="text-[7px] md:text-[9px] font-black text-white/40 uppercase">DMG</div>
+                            <div className="text-[7px] md:text-[9px] font-black text-white/40 uppercase">피해량</div>
                           </div>
                           <div
                             className={`w-full bg-gradient-to-t ${item.color} transition-all duration-1000 ease-out shadow-[0_-4px_20px_rgba(0,0,0,0.5)] relative z-10`}
@@ -1023,10 +1023,10 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
                 {debateData?.visuals?.modeDistribution && (
                   <div className="flex items-center gap-1.5 ml-2">
                     <span className="px-2 py-0.5 bg-indigo-500/20 border border-indigo-500/30 rounded text-[9px] text-indigo-300 font-black tracking-tighter uppercase">
-                      Ranked {debateData?.visuals?.modeDistribution?.ranked || 0}
+                      경쟁전 {debateData?.visuals?.modeDistribution?.ranked || 0}회
                     </span>
                     <span className="px-2 py-0.5 bg-white/5 border border-white/10 rounded text-[9px] text-white/40 font-black tracking-tighter uppercase">
-                      Normal {debateData?.visuals?.modeDistribution?.normal || 0}
+                      일반전 {debateData?.visuals?.modeDistribution?.normal || 0}회
                     </span>
                   </div>
                 )}
@@ -1131,7 +1131,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
                     <div className={`p-5 rounded-2xl border transition-all ${(issue?.winner?.toLowerCase() || "").includes("kind") ? "bg-green-500/5 border-green-500/30 ring-1 ring-green-500/20" : "bg-black/30 border-white/10"}`}>
                       <div className="flex items-center gap-2 mb-3">
                         <span className="text-lg">😊</span>
-                        <span className="text-xs font-black text-green-400 uppercase">KIND COACH</span>
+                        <span className="text-xs font-black text-green-400 uppercase">착한맛 코치</span>
                       </div>
                       <p className="text-sm text-gray-300 leading-relaxed font-medium">&quot;{issue?.kindOpinion || "의견을 가져오는 중..."}&quot;</p>
                     </div>
@@ -1139,7 +1139,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
                     <div className={`p-5 rounded-2xl border transition-all ${(issue?.winner?.toLowerCase() || "").includes("spicy") ? "bg-red-500/5 border-red-500/30 ring-1 ring-red-500/20" : "bg-black/30 border-white/10"}`}>
                       <div className="flex items-center gap-2 mb-3">
                         <span className="text-lg">⚡</span>
-                        <span className="text-xs font-black text-red-400 uppercase">SPICY BOMBER</span>
+                        <span className="text-xs font-black text-red-400 uppercase">매운맛 폭격기</span>
                       </div>
                       <p className="text-sm text-gray-300 leading-relaxed font-medium">&quot;{issue?.spicyOpinion || "의견을 가져오는 중..."}&quot;</p>
                     </div>
@@ -1147,7 +1147,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
 
                   <div className="mt-8 p-6 bg-black/40 rounded-2xl border border-white/5">
                     <div className="flex flex-col gap-1 text-center md:text-left mb-8">
-                      <span className="text-[10px] text-gray-500 font-black uppercase tracking-widest">데이터 증거 (Tactical Evidence)</span>
+                      <span className="text-[10px] text-gray-500 font-black uppercase tracking-widest">데이터 증거 (전술적 증거)</span>
                       <span className="text-lg font-black text-white">{issue?.topic || "데이터"} 상세 비교</span>
                     </div>
 

@@ -1,8 +1,18 @@
 /**
  * PUBG 전술 분석 엔진 상수 정의
+ *
+ * [ISR 캐시 아키텍처 V1.0]
+ * - RESULT_VERSION: 분석 결과 DB 레코드에 기록되는 엔진 버전 식별자입니다.
+ *   Next.js 16 unstable_cache + revalidateTag 기반 온디맨드 ISR 도입 이후,
+ *   캐시 무효화는 revalidateTag('match-analysis')가 담당하므로
+ *   수동 버전 범핑을 통한 잦은 캐시 소각은 더 이상 필요하지 않습니다.
+ *   엔진 로직이 대규모로 변경될 때만 값을 증가시킵니다.
+ *
+ * - TELEMETRY_VERSION: R2 스토리지의 리플레이/슬림 텔레메트리 파일명에 포함되어
+ *   파일 수준의 캐시 무효화를 수행합니다. (R2 파일명 기반, ISR 무관)
  */
 
-export const RESULT_VERSION = 58.3; // [V58.3] 자기장 매핑 팩트 기반 최종 복구 (White=Warning, Blue=Safety)
+export const RESULT_VERSION = 60.0; // [V60.0] 고정밀 피격 데이터 및 LogMatchEnd Fallback 통합 보정
 export const TELEMETRY_VERSION = 58.3;
 
 export const MAP_NAMES: Record<string, string> = {

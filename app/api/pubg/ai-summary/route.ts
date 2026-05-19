@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import { createClient } from "@supabase/supabase-js";
-import { RESULT_VERSION, WEAPON_NAMES } from "@/lib/pubg-analysis/constants";
+import { WEAPON_NAMES } from "@/lib/pubg-analysis/constants";
 import { estimateUserTier, getBaseTier } from "@/lib/pubg-analysis/benchmarkScore";
 import { classifyRole } from "@/lib/pubg-analysis/roleClassifier";
 import { normalizeName } from "@/lib/pubg-analysis/utils";
@@ -323,18 +323,15 @@ export async function POST(request: Request) {
     if (cachedMatches) {
       cachedMatches.forEach(m => {
         const fullResult = (m.data as any)?.fullResult;
-        // [V30.1] RESULT_VERSION 체크 도입 - 버전이 낮으면 캐시 무시하고 재분석 유도
-        const version = Number((m.data as any)?.fullResult?.v || 0);
-        const currentVersion = Number(RESULT_VERSION);
-
-        if (!force && version >= currentVersion) {
+        // [ISR V1.0] RESULT_VERSION 비교 로직 소각 — 캐시 무효화는 revalidateTag가 전담
+        // force=true일 때만 캐시를 건너뛰고 재분석 유도 (사용자 명시적 '새로고침')
+        if (!force && fullResult) {
           const pureId = m.match_id.includes(':') ? m.match_id.split(':').pop()! : m.match_id;
           const normalizedData = { ...fullResult, matchId: pureId };
           cachedMap.set(pureId, normalizedData);
           cachedMap.set(m.match_id, normalizedData);
-        } else {
-          const reason = force ? 'Force Refresh' : `Version Mismatch (${version} < ${currentVersion})`;
-          console.log(`[AI-SUMMARY] Skipping cache for ${m.match_id}: Reason=${reason}`);
+        } else if (force) {
+          console.log(`[AI-SUMMARY] Skipping cache for ${m.match_id}: Reason=Force Refresh`);
         }
       });
     }
@@ -698,7 +695,7 @@ export async function POST(request: Request) {
 
     const genAI = new GoogleGenerativeAI(geminiApiKey);
     const modelsToTry = [
-      "gemini-3.1-flash-lite-preview",
+      "gemini-3.1-flash-lite",
       "gemini-3-flash-preview",
       "gemini-2.5-flash"
     ];
