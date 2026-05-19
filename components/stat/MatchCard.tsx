@@ -536,9 +536,9 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                   </div>
                   
                   <div className="space-y-4">
-                    <ScoreBar label="전투 (Combat)" score={matchData.benchmark.breakdown.combat} max={isRanked ? 40 : 50} color="bg-gradient-to-r from-red-600 to-red-400" />
-                    <ScoreBar label="전술 (Tactical)" score={matchData.benchmark.breakdown.tactical} max={isRanked ? 35 : 15} color="bg-gradient-to-r from-indigo-600 to-indigo-400" />
-                    <ScoreBar label="생존 (Survival)" score={matchData.benchmark.breakdown.survival} max={isRanked ? 25 : 35} color="bg-gradient-to-r from-emerald-600 to-emerald-400" />
+                    <ScoreBar label="전투" score={matchData.benchmark.breakdown.combat} max={isRanked ? 40 : 50} color="bg-gradient-to-r from-red-600 to-red-400" />
+                    <ScoreBar label="전술" score={matchData.benchmark.breakdown.tactical} max={isRanked ? 35 : 15} color="bg-gradient-to-r from-indigo-600 to-indigo-400" />
+                    <ScoreBar label="생존" score={matchData.benchmark.breakdown.survival} max={isRanked ? 25 : 35} color="bg-gradient-to-r from-emerald-600 to-emerald-400" />
                   </div>
 
                   {/* Key Logic Indicators */}
@@ -651,7 +651,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                         전술 업적
                       </span>
                       <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">
-                        Vehicle Combat Master
+                        차량 전술 교전 마스터
                       </span>
                     </div>
                     <h4 className="text-white font-black text-lg mt-1 tracking-tight">차량 전술 교전 마스터</h4>
@@ -704,7 +704,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                 </div>
                 <div className="flex flex-col">
                   <span className="text-white font-black text-sm">고정밀 무기 교전 분석</span>
-                  <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Weapon Mastery & Squad Armory</span>
+                  <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">무기 숙련도 및 아군 화력 기여</span>
                 </div>
               </div>
 
@@ -713,7 +713,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                 {matchData.weaponStats && Object.keys(matchData.weaponStats).length > 0 ? (
                   <div className="lg:col-span-7 bg-white/2 border border-white/5 rounded-[2.5rem] p-6 flex flex-col gap-4">
                     <div className="flex justify-between items-center mb-2">
-                      <span className="text-[10px] text-gray-500 font-black uppercase tracking-widest">My Weapon Stats</span>
+                      <span className="text-[10px] text-gray-500 font-black uppercase tracking-widest">내 무기 상세 스탯</span>
                       <span className="text-[10px] text-amber-400 font-bold bg-amber-500/10 px-2 py-0.5 rounded-full">공식 PUBG 통계 보정</span>
                     </div>
 
@@ -818,7 +818,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                 {matchData.squadWeaponStats && Object.keys(matchData.squadWeaponStats).length > 0 ? (
                   <div className="lg:col-span-5 bg-white/2 border border-white/5 rounded-[2.5rem] p-6 flex flex-col gap-4">
                     <div className="flex justify-between items-center mb-2">
-                      <span className="text-[10px] text-gray-500 font-black uppercase tracking-widest">Squad Weapon Stats</span>
+                      <span className="text-[10px] text-gray-500 font-black uppercase tracking-widest">아군 무기 상세 스탯</span>
                       <span className="text-[10px] text-indigo-400 font-bold bg-indigo-500/10 px-2 py-0.5 rounded-full">팀원 화력 기여</span>
                     </div>
 
@@ -882,7 +882,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
               </div>
               <div className="flex flex-col">
                 <span className="text-white font-black text-sm">전술 위치 분석</span>
-                <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Tactical Location & Match Timeline</span>
+                <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">전술 위치 및 매치 타임라인</span>
               </div>
             </div>
             
@@ -890,7 +890,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
               {/* Left: Mini Map */}
               <div className="lg:col-span-5 xl:col-span-4 bg-white/2 border border-white/5 rounded-[2.5rem] overflow-hidden min-h-[300px] lg:min-h-0 lg:h-[500px] relative group/map">
                 <div className="absolute top-4 left-4 z-10 px-3 py-1 bg-black/60 backdrop-blur-md border border-white/10 rounded-full text-[9px] text-gray-400 font-black uppercase tracking-widest opacity-0 group-hover/map:opacity-100 transition-opacity">
-                  Interactive Tactical Map
+                  인터랙티브 전술 지도
                 </div>
                 <TimelineMiniMap 
                   selectedEvent={selectedEvent}
@@ -912,10 +912,10 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
               {/* Right: Timeline */}
               <div className="lg:col-span-7 xl:col-span-8 bg-white/2 border border-white/5 rounded-[2.5rem] p-2 md:p-6 lg:h-[500px] flex flex-col">
                 <div className="flex items-center justify-between mb-6 shrink-0">
-                  <div className="text-[10px] text-gray-500 font-black uppercase tracking-widest">Match Timeline</div>
+                  <div className="text-[10px] text-gray-500 font-black uppercase tracking-widest">매치 타임라인</div>
                   <div className="flex items-center gap-1.5 px-3 py-1 bg-white/5 rounded-full border border-white/10 text-[10px] text-gray-400 font-bold">
                     <Clock size={10} />
-                    <span>{Math.floor(matchData!.stats.timeSurvived / 60)}m {matchData!.stats.timeSurvived % 60}s Survived</span>
+                    <span>{Math.floor(matchData!.stats.timeSurvived / 60)}분 {matchData!.stats.timeSurvived % 60}초 생존</span>
                   </div>
                 </div>
                 
@@ -1013,7 +1013,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                                 {data.coach || (isMildTheme ? "KIND COACH" : "SPICY BOMBER")}
                               </span>
                               <div className={`h-1 w-1 rounded-full bg-${accentColor}-500`} />
-                              <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Match Report</span>
+                              <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">전술 매치 보고서</span>
                             </div>
                             <h3 className="text-3xl font-black text-white mb-2 leading-tight">{data.signature}</h3>
                             <p className="text-gray-400 text-sm font-medium">{data.signatureSub}</p>
@@ -1045,7 +1045,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                            <div className={`absolute inset-0 bg-${accentColor}-500/5 pointer-events-none`} />
                            <div className="relative z-10">
                              <div className="flex items-center gap-2 mb-4">
-                               <span className={`text-[10px] font-black text-${accentColor}-400 uppercase tracking-[0.2em]`}>Final Coaching Verdict</span>
+                               <span className={`text-[10px] font-black text-${accentColor}-400 uppercase tracking-[0.2em]`}>종합 코칭 진단</span>
                                <div className="flex-1 h-px bg-white/5" />
                              </div>
                              <p className="text-xl font-black text-white leading-tight mb-8">&quot;{data.finalVerdict}&quot;</p>
@@ -1111,7 +1111,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
           {/* Team Members List (웅장한 리뉴얼) */}
           <div className="mt-10 pt-8 border-t border-white/5">
             <div className="flex items-center gap-2 mb-6">
-              <span className="text-xs text-gray-500 font-black uppercase tracking-[0.2em]">Team Combat Performance</span>
+              <span className="text-xs text-gray-500 font-black uppercase tracking-[0.2em]">팀원 교전 성적</span>
               <div className="flex-1 h-px bg-gradient-to-r from-white/10 to-transparent" />
             </div>
             
@@ -1131,7 +1131,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                     {isMe && (
                       <div className={`absolute -top-2 -right-2 px-2 py-0.5 rounded-lg text-[8px] font-black uppercase tracking-tighter
                         ${isRanked ? 'bg-amber-500 text-black' : 'bg-indigo-500 text-white'}`}>
-                        YOU
+                        나
                       </div>
                     )}
 

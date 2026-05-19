@@ -5,7 +5,7 @@ import React, { useState, useEffect, useId, useCallback, useRef } from "react";
 import { MatchCard } from "./stat/MatchCard";
 import { StatSummaryCard } from "./stat/StatSummaryCard";
 import { RecentAISummary } from "./stat/RecentAISummary";
-import { Shield, ChevronDown, Swords, Star, Clock, User, X } from "lucide-react";
+import { Shield, ChevronDown, Swords, Star, Clock, User, X, Zap, MapPin, LogIn } from "lucide-react";
 
 import { STORAGE_KEY_RECENT, STORAGE_KEY_FAVORITES } from "../lib/pubg-analysis/constants";
 
@@ -144,21 +144,20 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
   }, [initialNickname, initialPlatform]);
 
   useEffect(() => {
-    // 이미 결과가 있거나, 로딩 중이거나, 에러가 발생한 상태라면 자동 검색을 시도하지 않음
     if (result || loading || error) return;
 
-    // 1. URL 파라미터가 있는 경우 우선순위 1위
+    // 1. URL 파라미터가 있는 경우 자동 검색 유지 (공유 링크 진입 등)
     if (initialNickname) {
       handleSearch(selectedSeason, initialNickname, initialPlatform);
       return;
     }
 
-    // 2. 로그인 유저 프로필 연동 (URL 파라미터가 없을 때만)
+    // 2. [Option B] 로그인 유저 — 자동 검색 제거, 닉네임 프리필만 수행
+    // 유저가 검색 버튼을 직접 눌러야 실행되어 탐색 자유도가 높아집니다.
     if (userProfile?.pubg_nickname) {
       const userPlatform = userProfile.pubg_platform || "steam";
       setNickname(userProfile.pubg_nickname);
       setPlatform(userPlatform);
-      handleSearch(selectedSeason, userProfile.pubg_nickname, userPlatform);
     }
   }, [userProfile, result, loading, error, selectedSeason, handleSearch, initialNickname, initialPlatform]);
 
@@ -374,6 +373,26 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
         </div>
       )}
 
+      {/* [Empty State V1.0] 결과 없음 + 로딩/에러 아님 → 유저 상태별 분기 화면 */}
+      {!result && !loading && !error && (
+        <>
+          {/* 로그인 + 닉네임 미등록 → 마이페이지 등록 유도 카드 */}
+          {user && !userProfile?.pubg_nickname && (
+            <RegisterNicknamePrompt />
+          )}
+          {/* 결과가 없는 모든 상태 → Hero 화면 (비로그인 / 닉네임 미등록 / 닉네임 등록 후 검색 전 모두 포함) */}
+          <HeroEmptyState
+            recentSearches={recentSearches}
+            favorites={favorites}
+            isLoggedIn={!!user}
+            onQuickSearch={(name: string) => {
+              setNickname(name);
+              handleSearch(selectedSeason, name, platform);
+            }}
+          />
+        </>
+      )}
+
       {result && (
         <div style={{ display: "flex", flexDirection: "column", gap: "30px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "2px solid #333", paddingBottom: "15px", flexWrap: "wrap", gap: "15px" }}>
@@ -465,34 +484,34 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
                 <div className="border-t border-white/5 pt-6">
                   <div className="flex items-center gap-2 mb-4">
                     <div className="w-1 h-3 bg-amber-500 rounded-full" />
-                    <span className="text-xs font-black text-white uppercase tracking-wider">핵심 지표 사전 (Metric Dictionary)</span>
+                    <span className="text-xs font-black text-white uppercase tracking-wider">전술 지표 사전</span>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
                     <div className="flex gap-3">
                       <span className="text-amber-500/30 font-black italic">01</span>
                       <div>
-                        <div className="text-gray-200 text-xs font-bold mb-1">반응 속도 (Reaction Latency)</div>
+                        <div className="text-gray-200 text-xs font-bold mb-1">평균 반응 속도</div>
                         <div className="text-gray-500 text-[11px] leading-relaxed">피격 시점부터 적에게 반격을 가하기까지의 시간. 당신의 순수 피지컬과 위기 대처 능력을 측정합니다.</div>
                       </div>
                     </div>
                     <div className="flex gap-3">
                       <span className="text-amber-500/30 font-black italic">02</span>
                       <div>
-                        <div className="text-gray-200 text-xs font-bold mb-1">백업 속도 (Trade Latency)</div>
+                        <div className="text-gray-200 text-xs font-bold mb-1">백업 소요 속도 (트레이드)</div>
                         <div className="text-gray-500 text-[11px] leading-relaxed">아군이 기절한 후 당신이 해당 적을 처치하기까지의 시간. 팀워크와 커버 능력을 측정합니다.</div>
                       </div>
                     </div>
                     <div className="flex gap-3">
                       <span className="text-amber-500/30 font-black italic">03</span>
                       <div>
-                        <div className="text-gray-200 text-xs font-bold mb-1">전투 주도권 (Initiative)</div>
+                        <div className="text-gray-200 text-xs font-bold mb-1">전투 주도권</div>
                         <div className="text-gray-500 text-[11px] leading-relaxed">교전 시작 시 먼저 선제 타격을 가한 비율. 능동적으로 교전을 리드하는 성향을 분석합니다.</div>
                       </div>
                     </div>
                     <div className="flex gap-3">
                       <span className="text-amber-500/30 font-black italic">04</span>
                       <div>
-                        <div className="text-gray-200 text-xs font-bold mb-1">팀 기여 임팩트 (Team Impact)</div>
+                        <div className="text-gray-200 text-xs font-bold mb-1">팀 내 화력 지분</div>
                         <div className="text-gray-500 text-[11px] leading-relaxed">팀 전체 데미지 중 당신의 지분. 단순 킬 수를 넘어 교전에서 실제로 얼마나 화력을 담당했는지 측정합니다.</div>
                       </div>
                     </div>
@@ -543,6 +562,158 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
               </div>
             )}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// [Empty State V1.0] 보조 컴포넌트
+// ─────────────────────────────────────────────────────────────
+
+/** 닉네임 미등록 로그인 유저 — 마이페이지 등록 유도 카드 */
+function RegisterNicknamePrompt() {
+  return (
+    <div className="flex items-center gap-4 p-5 bg-amber-500/5 border border-amber-500/20 rounded-2xl mb-4 animate-in fade-in duration-300">
+      <div className="p-3 bg-amber-500/10 rounded-xl shrink-0">
+        <User size={22} className="text-amber-500" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-black text-white">PUBG 닉네임을 등록하면 전적을 바로 볼 수 있어요!</p>
+        <p className="text-xs text-gray-500 mt-1 leading-relaxed">마이페이지에서 닉네임을 등록하면, 다음 방문 시 검색창에 자동으로 입력됩니다.</p>
+      </div>
+      <a
+        href="/mypage"
+        className="shrink-0 px-4 py-2 bg-amber-500 text-black text-xs font-black rounded-xl hover:bg-amber-400 transition-colors whitespace-nowrap active:scale-95"
+      >
+        닉네임 등록 →
+      </a>
+    </div>
+  );
+}
+
+/** 비로그인 / 닉네임 미등록 유저 — Hero Empty State */
+function HeroEmptyState({
+  recentSearches,
+  favorites,
+  isLoggedIn,
+  onQuickSearch,
+}: {
+  recentSearches: string[];
+  favorites: string[];
+  isLoggedIn: boolean;
+  onQuickSearch: (name: string) => void;
+}) {
+  // [Hydration 수정] localStorage 의존 데이터는 마운트 후에만 사용
+  // 서버/클라이언트 초기 렌더링 결과를 동일하게 유지하여 Hydration 불일치 방지
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => { setMounted(true); }, []);
+
+  const quickList = mounted ? [
+    ...favorites.slice(0, 3),
+    ...recentSearches.filter((n) => !favorites.includes(n)).slice(0, Math.max(0, 5 - Math.min(favorites.length, 3))),
+  ].slice(0, 5) : [];
+
+  const featureCards = [
+    {
+      icon: <Zap size={20} className="text-amber-500" />,
+      title: "AI 전술 분석",
+      desc: "반응속도, 팀 임팩트, 교전 주도권을 텔레메트리 데이터로 정밀 분석합니다.",
+      badge: "CORE",
+      badgeClass: "text-amber-500 bg-amber-500/10 border-amber-500/20",
+    },
+    {
+      icon: <MapPin size={20} className="text-blue-400" />,
+      title: "2D 리플레이",
+      desc: "실제 동선 재생과 피격 위치를 지도 위에 시각화하여 전황을 재현합니다.",
+      badge: "VISUAL",
+      badgeClass: "text-blue-400 bg-blue-400/10 border-blue-400/20",
+    },
+    {
+      icon: <Swords size={20} className="text-purple-400" />,
+      title: "비교 모드",
+      desc: "두 플레이어의 전술 지표를 1:1로 직관적으로 비교 분석합니다.",
+      badge: "PVP",
+      badgeClass: "text-purple-400 bg-purple-400/10 border-purple-400/20",
+    },
+  ];
+
+  return (
+    <div className="flex flex-col gap-8 pt-4 animate-in fade-in duration-500">
+      {/* 브랜드 슬로건 */}
+      <div className="text-center py-4">
+        <div className="inline-flex items-center gap-2 px-3 py-1 bg-amber-500/10 border border-amber-500/20 rounded-full mb-4">
+          <div className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse" />
+          <span className="text-[11px] font-black text-amber-500 uppercase tracking-widest">BGMS Tactical AI</span>
+        </div>
+        <h2 className="text-2xl md:text-3xl font-black text-white mb-3 leading-tight">
+          30초 만에 확인하는<br />
+          <span className="text-amber-500">나의 전술 등급</span>
+        </h2>
+        <p className="text-sm text-gray-500 leading-relaxed">
+          실시간 텔레메트리 기반 &middot; AI 교전 분석 &middot; 2D 리플레이
+        </p>
+      </div>
+
+      {/* 기능 소개 카드 3종 */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {featureCards.map((card) => (
+          <div
+            key={card.title}
+            className="p-5 bg-white/[0.03] border border-white/[0.08] rounded-2xl hover:border-white/15 hover:bg-white/5 transition-all duration-300"
+          >
+            <div className="flex items-center justify-between mb-3">
+              <div className="p-2 bg-black/40 rounded-xl">{card.icon}</div>
+              <span className={`px-2 py-0.5 text-[9px] font-black rounded-md border uppercase tracking-widest ${card.badgeClass}`}>
+                {card.badge}
+              </span>
+            </div>
+            <h3 className="text-sm font-black text-white mb-1.5">{card.title}</h3>
+            <p className="text-[11px] text-gray-500 leading-relaxed">{card.desc}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* 최근/즐겨찾기 빠른 검색 (localStorage 기반, DB 비용 0) */}
+      {quickList.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <Clock size={13} className="text-gray-600" />
+            <span className="text-[11px] font-black text-gray-600 uppercase tracking-widest">최근 검색한 플레이어</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {quickList.map((name) => {
+              const isFav = favorites.includes(name);
+              return (
+                <button
+                  key={name}
+                  onClick={() => onQuickSearch(name)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 hover:bg-amber-500/10 border border-white/10 hover:border-amber-500/30 rounded-full text-xs font-bold text-gray-300 hover:text-white transition-all"
+                >
+                  {isFav
+                    ? <Star size={11} className="text-yellow-400 fill-yellow-400" />
+                    : <Clock size={11} className="text-gray-600" />
+                  }
+                  {name}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 로그인 유도 링크 (비로그인 시) */}
+      {!isLoggedIn && (
+        <div className="flex items-center justify-center gap-3 py-4 border-t border-white/5">
+          <span className="text-xs text-gray-600">닉네임을 저장하고 빠르게 내 전적 보기</span>
+          <a
+            href="/login"
+            className="flex items-center gap-1.5 text-xs font-black text-amber-500 hover:text-amber-400 transition-colors"
+          >
+            <LogIn size={13} />
+            로그인하기
+          </a>
         </div>
       )}
     </div>
