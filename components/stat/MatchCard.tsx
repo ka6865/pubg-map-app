@@ -163,7 +163,10 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
   const leadKnocks = matchData ? (matchData.stats?.leadShotKnocks ?? matchData.leadShotKnocks ?? 0) : 0;
   const ridingKills = matchData ? (matchData.stats?.ridingShotKills ?? matchData.ridingShotKills ?? 0) : 0;
   const ridingKnocks = matchData ? (matchData.stats?.ridingShotKnocks ?? matchData.ridingShotKnocks ?? 0) : 0;
-  const hasVehicleCombat = leadKills > 0 || leadKnocks > 0 || ridingKills > 0 || ridingKnocks > 0;
+  const roadKills = matchData ? (matchData.stats?.roadKills ?? matchData.roadKills ?? 0) : 0;
+  const roadKnocks = matchData ? (matchData.stats?.roadKnocks ?? matchData.roadKnocks ?? 0) : 0;
+  const vehicleCombatTotal = leadKills + leadKnocks + ridingKills + ridingKnocks + roadKills + roadKnocks;
+  const hasVehicleCombat = vehicleCombatTotal > 0;
 
   // [V46.8] 언마운트 시 진행 중인 분석 강제 중단
   useEffect(() => {
@@ -690,65 +693,108 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
           </div>
 
           {/* Premium Vehicle Combat Banner */}
-          {hasVehicleCombat && (
-            <div className="mt-6 relative overflow-hidden bg-gradient-to-r from-amber-500/5 via-orange-600/5 to-indigo-500/5 border border-white/10 rounded-[2rem] p-6 shadow-2xl transition-all duration-300 hover:border-amber-500/30">
-              {/* 백그라운드 발광 효과 */}
-              <div className="absolute top-0 right-0 w-48 h-48 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
-              <div className="absolute bottom-0 left-0 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+          {hasVehicleCombat && (() => {
+            const isMaster = vehicleCombatTotal >= 2;
+            const badgeTitle = isMaster ? "차량 전술 교전 마스터" : "차량 기동 교전";
+            const badgeDesc = isMaster 
+              ? "차량 위에서 적을 격추하거나, 차량 내부의 적을 제압하거나, 차량 충돌로 적을 제압한 고급 플레이어 업적입니다." 
+              : "차량 위에서 적을 사격하거나, 차량 내부의 적을 제압하거나, 차량 충돌로 적을 제압하는 기동 전술의 시작입니다.";
+            
+            // 등급에 따른 그라데이션 및 광채 스타일 분기
+            const containerStyle = isMaster
+              ? "mt-6 relative overflow-hidden bg-gradient-to-r from-amber-500/5 via-orange-600/5 to-indigo-500/5 border border-white/10 rounded-[2rem] p-6 shadow-2xl transition-all duration-300 hover:border-amber-500/30"
+              : "mt-6 relative overflow-hidden bg-gradient-to-r from-slate-600/5 via-slate-700/5 to-slate-800/5 border border-white/5 rounded-[2rem] p-6 shadow-xl transition-all duration-300 hover:border-slate-500/20";
+            
+            const iconBgStyle = isMaster
+              ? "w-12 h-12 bg-gradient-to-br from-amber-500 to-orange-600 rounded-2xl flex items-center justify-center shadow-lg shadow-amber-500/20 shrink-0"
+              : "w-12 h-12 bg-gradient-to-br from-slate-500 to-slate-600 rounded-2xl flex items-center justify-center shadow-md shadow-slate-500/10 shrink-0";
 
-              <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-gradient-to-br from-amber-500 to-orange-600 rounded-2xl flex items-center justify-center shadow-lg shadow-amber-500/20 shrink-0">
-                    <Car size={24} className="text-white" />
-                  </div>
-                  <div className="flex flex-col">
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest bg-amber-500/10 px-2 py-0.5 rounded-full">
-                        전술 업적
-                      </span>
-                      <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">
-                        차량 전술 교전 마스터
-                      </span>
+            const tagColorStyle = isMaster
+              ? "text-[10px] font-black text-amber-400 uppercase tracking-widest bg-amber-500/10 px-2 py-0.5 rounded-full"
+              : "text-[10px] font-black text-slate-400 uppercase tracking-widest bg-slate-500/10 px-2 py-0.5 rounded-full";
+
+            return (
+              <div className={containerStyle}>
+                {/* 백그라운드 발광 효과 */}
+                {isMaster ? (
+                  <>
+                    <div className="absolute top-0 right-0 w-48 h-48 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+                    <div className="absolute bottom-0 left-0 w-48 h-48 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+                  </>
+                ) : (
+                  <>
+                    <div className="absolute top-0 right-0 w-48 h-48 bg-slate-500/5 rounded-full blur-3xl pointer-events-none" />
+                  </>
+                )}
+
+                <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                  <div className="flex items-center gap-4">
+                    <div className={iconBgStyle}>
+                      <Car size={24} className="text-white" />
                     </div>
-                    <h4 className="text-white font-black text-lg mt-1 tracking-tight">차량 전술 교전 마스터</h4>
-                    <p className="text-xs text-gray-400 mt-0.5 font-medium">
-                      차량 위에서 적을 격추하거나 고속 기동 중인 차량 내부의 적을 제압한 고급 플레이어 업적입니다.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 sm:flex gap-3 w-full md:w-auto">
-                  {Number(leadKills || leadKnocks) > 0 && (
-                    <div className="flex items-center gap-3 bg-black/40 border border-white/10 px-4 py-3 rounded-2xl flex-1 md:flex-none">
-                      <div className="w-8 h-8 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-500 shrink-0">
-                        <Crosshair size={16} />
-                      </div>
-                      <div className="flex flex-col">
-                        <span className="text-[9px] text-gray-500 font-bold uppercase">리드샷 (표적 사격)</span>
-                        <span className="text-[13px] text-white font-black leading-tight mt-0.5">
-                          기절 <span className="text-amber-400">{leadKnocks}</span> · 킬 <span className="text-red-400">{leadKills}</span>
+                    <div className="flex flex-col">
+                      <div className="flex items-center gap-2">
+                        <span className={tagColorStyle}>
+                          전술 업적
+                        </span>
+                        <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">
+                          {badgeTitle}
                         </span>
                       </div>
+                      <h4 className="text-white font-black text-lg mt-1 tracking-tight">{badgeTitle}</h4>
+                      <p className="text-xs text-gray-400 mt-0.5 font-medium">
+                        {badgeDesc}
+                      </p>
                     </div>
-                  )}
+                  </div>
 
-                  {Number(ridingKills || ridingKnocks) > 0 && (
-                    <div className="flex items-center gap-3 bg-black/40 border border-white/10 px-4 py-3 rounded-2xl flex-1 md:flex-none">
-                      <div className="w-8 h-8 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400 shrink-0">
-                        <Swords size={16} />
+                  <div className="grid grid-cols-2 sm:flex gap-3 w-full md:w-auto">
+                    {Number(leadKills || leadKnocks) > 0 && (
+                      <div className="flex items-center gap-3 bg-black/40 border border-white/10 px-4 py-3 rounded-2xl flex-1 md:flex-none">
+                        <div className="w-8 h-8 rounded-xl bg-amber-500/10 flex items-center justify-center text-amber-500 shrink-0">
+                          <Crosshair size={16} />
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-[9px] text-gray-500 font-bold uppercase">리드샷 (표적 사격)</span>
+                          <span className="text-[13px] text-white font-black leading-tight mt-0.5">
+                            기절 <span className="text-amber-400">{leadKnocks}</span> · 킬 <span className="text-red-400">{leadKills}</span>
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex flex-col">
-                        <span className="text-[9px] text-gray-500 font-bold uppercase">라이딩샷 (탑승 사격)</span>
-                        <span className="text-[13px] text-white font-black leading-tight mt-0.5">
-                          기절 <span className="text-indigo-400">{ridingKnocks}</span> · 킬 <span className="text-red-400">{ridingKills}</span>
-                        </span>
+                    )}
+
+                    {Number(ridingKills || ridingKnocks) > 0 && (
+                      <div className="flex items-center gap-3 bg-black/40 border border-white/10 px-4 py-3 rounded-2xl flex-1 md:flex-none">
+                        <div className="w-8 h-8 rounded-xl bg-indigo-500/10 flex items-center justify-center text-indigo-400 shrink-0">
+                          <Swords size={16} />
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-[9px] text-gray-500 font-bold uppercase">라이딩샷 (탑승 사격)</span>
+                          <span className="text-[13px] text-white font-black leading-tight mt-0.5">
+                            기절 <span className="text-indigo-400">{ridingKnocks}</span> · 킬 <span className="text-red-400">{ridingKills}</span>
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  )}
+                    )}
+
+                    {Number(roadKills || roadKnocks) > 0 && (
+                      <div className="flex items-center gap-3 bg-black/40 border border-white/10 px-4 py-3 rounded-2xl flex-1 md:flex-none">
+                        <div className="w-8 h-8 rounded-xl bg-rose-500/10 flex items-center justify-center text-rose-400 shrink-0">
+                          <Car size={16} />
+                        </div>
+                        <div className="flex flex-col">
+                          <span className="text-[9px] text-gray-500 font-bold uppercase">로드킬 (차량 충돌)</span>
+                          <span className="text-[13px] text-white font-black leading-tight mt-0.5">
+                            기절 <span className="text-rose-400">{roadKnocks}</span> · 킬 <span className="text-rose-400">{roadKills}</span>
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
 
           {/* [V58.4] 무기 세부 분석 및 아군 기여도 (Weapon & Squad Armory) */}
           {((matchData.weaponStats && Object.keys(matchData.weaponStats).length > 0) || 

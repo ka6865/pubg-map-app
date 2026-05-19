@@ -65,6 +65,8 @@ export async function GET(request: NextRequest) {
   const nickname = searchParams.get("nickname");
   const platform = searchParams.get("platform") || "steam";
   const lowerNickname = normalizeName(nickname || "");
+  const force = searchParams.get("force") === "true";
+  const secret = searchParams.get("secret");
 
   // [MOCK] 로컬 DB 장애 및 시뮬레이션을 위한 골드 매치 모킹
   if (matchId === "match-gold-simulation-1234") {
@@ -118,6 +120,7 @@ export async function GET(request: NextRequest) {
       .then(({ error }) => {
         if (error) console.warn('[CACHE-UPDATE-ERROR]', error.message);
       });
+
     const myRoster = rosters.find((r: any) => r.relationships.participants.data.some((p: any) => p.id === myParticipant.id));
     const myRosterId = myRoster?.id || "";
 
@@ -133,238 +136,55 @@ export async function GET(request: NextRequest) {
     const myDamageRank = sortedByDamage.findIndex((s: any) => normalizeName(s.name) === lowerNickname) + 1;
     const rankPct = humanParticipants.length > 0 ? myDamageRank / humanParticipants.length : 1;
 
+    // 보안 검증된 어드민만 forceUpdate 활성화
+    const isAdmin = secret === process.env.ADMIN_REVALIDATE_TOKEN;
+    const shouldForce = force && isAdmin;
+
     // [ISR V1.0] unstable_cache 프록시를 통한 DB 캐시 조회
-    // Cache Hit: DB 커넥션 0건으로 즉시 반환 (Supabase 무료 플랜 커넥션 절약)
-    // Cache Miss: DB 1회 조회 후 Next.js Edge 캐시에 자동 적재
-    const cachedData = await getCachedMatchTelemetry(matchId, lowerNickname) as any;
-
-    // [ISR V1.0] RESULT_VERSION 비교 제거 — 캐시가 존재하면 최신으로 인정
-    // 캐시 무효화는 revalidateTag('match-analysis')가 전담 (수동 버전 범핑 소각)
-    if (cachedData?.fullResult) {
-      return NextResponse.json(cachedData.fullResult);
-    }
-
-    const telemetryAsset = matchData.included.find((it: any) => it.type === "asset");
-    let telData: any[] = [];
-
-    if (telemetryAsset) {
-      const analyzePath = `${matchId}_${lowerNickname}_v${TELEMETRY_VERSION}_analyze.json`;
-      const fileText = await downloadFromR2(analyzePath);
-
-      let needsProcessing = !fileText;
-      if (fileText) {
-        const parsed = JSON.parse(fileText);
-        const isHealthy = parsed.length > 0 && parsed.some((ev: any) => ev.attacker?.accountId || ev.victim?.accountId);
-        if (isHealthy) {
-          telData = parsed;
-        } else {
-          needsProcessing = true;
-        }
-      }
-
-      if (needsProcessing) {
-        const telRes = await fetch(telemetryAsset.attributes.URL);
-        const rawTel = await telRes.json();
-
-
-        let posCount = 0;
-        telData = rawTel.filter((e: any) => {
-          if (e._T === "LogPlayerPosition") {
-            const pName = normalizeName(e.character?.name || "");
-            if (teamNames.has(pName)) return true;
-            return (++posCount) % 10 === 0;
-          }
-          return [
-            "LogMatchStart", "LogPlayerCreate", "LogPlayerKill", "LogPlayerKillV2",
-            "LogPlayerMakeGroggy", "LogPlayerRevive", "LogPlayerRecall",
-            "LogPlayerRecallShip", "LogPlayerRedeploy", "LogPlayerRedeployBRStart",
-            "LogPlayerTakeDamage", "LogItemUse", "LogPlayerUseThrowable",
-            "LogThrowableUse", "LogProjectileHit", "LogGameStatePeriodic",
-            "LogPhaseChange", "LogParachuteLanding", "LogMatchEnd"
-          ].includes(e._T);
-        }).map((e: any) => {
-          const slim: any = { _T: e._T, _D: e._D };
-          const normLoc = (loc: any) => {
-            if (!loc) return null;
-            const res = { x: Math.round(loc.x), y: Math.round(loc.y), z: Math.round(loc.z || 0) };
-            if (e._T === "LogPlayerPosition" && Math.abs(res.x) < 10000 && Math.abs(res.x) > 0) {
-              // Valid small coordinate case
-            }
-            return res;
-          };
-
-          if (e._T === "LogGameStatePeriodic") {
-            const gs = e.gameState;
-            slim.gameState = {
-              safetyZonePosition: normLoc(gs.safetyZonePosition),
-              safetyZoneRadius: Math.round(gs.safetyZoneRadius),
-              poisonGasWarningPosition: normLoc(gs.poisonGasWarningPosition),
-              poisonGasWarningRadius: gs.poisonGasWarningRadius != null ? Math.round(gs.poisonGasWarningRadius) : null
-            };
-            return slim;
-          }
-
-          const actors = ["attacker", "victim", "killer", "maker", "dBNOMaker", "finisher", "character", "recaller", "reviver", "item", "recallingPlayer", "recalledPlayer"];
-          actors.forEach(key => {
-            if (e[key]) {
-              const char = e[key];
-              slim[key] = {
-                name: (typeof char === 'string' ? char : (char.name || char.characterName || char.itemId)),
-                accountId: char.accountId || char.playerId,
-                teamId: char.teamId,
-                location: normLoc(char.location),
-                vehicle: char.vehicle // [V16.0] 탈것 숙련도 계산을 위해 차량 정보 유지
-              };
-            }
+    let cachedData = null;
+    if (!shouldForce) {
+      cachedData = await getCachedMatchTelemetry(matchId, lowerNickname) as any;
+      if (cachedData?.fullResult) {
+        const cachedVersion = cachedData.fullResult.v || 0;
+        
+        // [Stale-While-Revalidate] 캐시 데이터 버전이 낮으면 백그라운드 재분석 기동
+        if (cachedVersion < RESULT_VERSION) {
+          console.log(`[SWR-TRIGGER] Old version detected (v${cachedVersion} < v${RESULT_VERSION}). Re-analyzing in background: ${matchId}/${lowerNickname}`);
+          
+          const reanalyzePromise = reanalyzeAndSave(
+            matchId, nickname, platform, lowerNickname, matchData, teamNames, teamAccountIds,
+            myRosterId, myParticipant, teamStats, rankPct, matchAttr, rosters, participants, request.url
+          ).catch(err => {
+            console.error(`[SWR-BACKGROUND-ERROR] Background reanalysis failed for ${matchId}:`, err.message);
           });
 
-          if (e.recalledPlayers && Array.isArray(e.recalledPlayers)) {
-            slim.recalledPlayers = e.recalledPlayers.map((p: any) => ({
-              name: p.name || p.characterName,
-              accountId: p.accountId || p.playerId,
-              teamId: p.teamId,
-              location: normLoc(p.location)
-            }));
+          // Next.js request.waitUntil 이 지원되면 백그라운드 작업 생명주기 관리
+          if (typeof (request as any).waitUntil === 'function') {
+            (request as any).waitUntil(reanalyzePromise);
           }
+        }
 
-          const keepFields = ["damage", "damageReason", "damageTypeCategory", "damageCauserName", "damageCauser", "distance", "weapon", "weaponId", "dBNOId", "phase", "isGame", "attackId", "killerDamageInfo", "finishDamageInfo", "dBNODamageInfo", "reviveType", "vehicle"];
-          keepFields.forEach(f => { if (e[f] !== undefined) slim[f] = e[f]; });
+        // 샘플 참가자 추출 (기존 response 형식 호환)
+        const allParticipantNames = participants
+          .filter((p: any) => !p.attributes.stats.playerId?.startsWith("ai."))
+          .map((p: any) => p.attributes.stats.name)
+          .filter((name: string) => normalizeName(name) !== lowerNickname);
+        const sampleParticipants = allParticipantNames
+          .sort(() => 0.5 - Math.random())
+          .slice(0, 5);
 
-          // [V58.0] 페이즈 추적을 위한 common.isGame 필드 보존
-          if (e.common?.isGame !== undefined) slim.common = { isGame: e.common.isGame };
-          else if (e.Common?.IsGame !== undefined) slim.Common = { IsGame: e.Common.IsGame };
-
-          // [V58.4] LogMatchEnd 이벤트의 고정밀 무기 스탯 및 캐릭터 필드 보존
-          if (e._T === "LogMatchEnd") {
-            if (e.allWeaponStats !== undefined) slim.allWeaponStats = e.allWeaponStats;
-            if (e.characters !== undefined) slim.characters = e.characters;
-          }
-
-          return slim;
+        return NextResponse.json({
+          ...cachedData.fullResult,
+          sampleParticipants
         });
-
-        // [V58.3] telemetry 저장은 하되, Cloudflare R2로 무부하 저장
-        await uploadToR2(analyzePath, JSON.stringify(telData), 'application/json');
       }
     }
 
-    // 2. 매치 컨텍스트 티어 판정 (순위 백분율 기반)
-    const getMatchTier = (pct: number) => {
-      if (pct <= 0.1) return 'S';
-      if (pct <= 0.3) return 'A';
-      if (pct <= 0.6) return 'B';
-      return 'C';
-    };
-    const matchTier = getMatchTier(rankPct);
-
-    // 3. 벤치마크 통계 조회
-    const { data: tierStats } = await supabase
-      .from('benchmark_stats_by_tier')
-      .select('*')
-      .eq('game_mode', matchAttr.gameMode)
-      .eq('tier', getBaseTier(matchTier))
-      .maybeSingle();
-
-    const bench = adaptBenchmark(tierStats);
-
-    const engine = new AnalysisEngine(
-      nickname, myAccountId, teamNames, teamAccountIds,
-      new Set<string>(), new Set<string>(),
-      myRosterId
+    // 캐시가 없거나 강제 업데이트가 필요한 경우 동기식 분석 실행
+    const finalResponse = await reanalyzeAndSave(
+      matchId, nickname, platform, lowerNickname, matchData, teamNames, teamAccountIds,
+      myRosterId, myParticipant, teamStats, rankPct, matchAttr, rosters, participants, request.url
     );
-
-    const result = engine.run(
-      telData,
-      matchAttr,
-      rosters,
-      participants,
-      myParticipant.attributes.stats,
-      teamStats,
-      bench
-    );
-
-    const defaultBenchmark = {
-      avg_damage: 200,
-      breakdown: {
-        combat: 20,
-        tactical: 20,
-        survival: 20
-      }
-    };
-
-    const fullResult = {
-      ...result,
-      v: RESULT_VERSION,
-      matchId,
-      player_id: lowerNickname,
-      platform,
-      matchInfo: {
-        map: MAP_NAMES[matchAttr.mapId] || matchAttr.mapId,
-        mapId: MAP_IDS[matchAttr.mapId] || 'erangel', // [V47.0] UI 맵 이미지 매핑용 ID 변환
-        date: matchAttr.createdAt,
-        mode: matchAttr.gameMode,
-        duration: matchAttr.duration,
-        rankPct,
-        tier: matchTier
-      },
-      benchmark: {
-        ...defaultBenchmark,
-        ...bench,
-        ...(result.benchmark || {})
-      }
-    };
-
-    // [V26.0] 지도 리플레이 데이터 분리 및 스토리지 저장
-    const { mapData, ...tacticalResult } = fullResult;
-    const mapCachePath = `${matchId}_${lowerNickname}_v${TELEMETRY_VERSION}_map.json`;
-    
-    await Promise.all([
-      // 1. 리플레이용 대용량 데이터는 Cloudflare R2로 (DB 부하 영구 제거)
-      uploadToR2(mapCachePath, JSON.stringify(mapData), 'application/json'),
-      // 2. 전술 통계, 요약 데이터 및 마스터 레코드 통합 저장 (Transaction 최적화)
-      supabase.from("processed_match_telemetry").upsert({
-        match_id: matchId,
-        player_id: lowerNickname,
-        data: { fullResult: tacticalResult },
-        updated_at: new Date().toISOString()
-      }),
-      supabase.from("match_master_telemetry").upsert({
-        match_id: matchId,
-        map_name: matchAttr.mapId,
-        game_mode: matchAttr.gameMode,
-        telemetry_version: TELEMETRY_VERSION,
-        storage_path: mapCachePath // [V58.3] 스마트 클린업 연동용 도킹 열쇠 컬럼!
-      }, { onConflict: 'match_id' })
-    ]);
-
-    // 벤치마크 데이터 DB 저장을 위한 Ingest 트리거 (배경 실행)
-    // [V26.0] telData는 이미 Storage에 저장되었으므로 payload에서 제외하여 대역폭 및 메모리 절약
-    fetch(`${new URL(request.url).origin}/api/pubg/ingest`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ 
-        matchId, 
-        playerNickname: lowerNickname, 
-        finalResult: tacticalResult, // tacticalResult만 전달
-        matchAttr,
-        rawParticipants: participants 
-      })
-    }).catch(e => console.error("[MATCH-API] Ingest trigger failed:", e));
-
-    // [V56.1] 샘플링을 위한 무작위 참가자 추출 (엘리트 외 일반 데이터 확보용)
-    const allParticipantNames = participants
-      .filter((p: any) => !p.attributes.stats.playerId?.startsWith("ai."))
-      .map((p: any) => p.attributes.stats.name)
-      .filter((name: string) => normalizeName(name) !== lowerNickname);
-
-    const sampleParticipants = allParticipantNames
-      .sort(() => 0.5 - Math.random())
-      .slice(0, 5);
-
-    const finalResponse = {
-      ...fullResult,
-      sampleParticipants
-    };
 
     return NextResponse.json(finalResponse);
 
@@ -372,4 +192,227 @@ export async function GET(request: NextRequest) {
     console.error(`[CRITICAL-FAILURE]`, err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
+}
+
+/**
+ * 텔레메트리를 분석하고 분석 데이터를 R2 스토리지 및 DB에 저장하는 중추 로직
+ */
+async function reanalyzeAndSave(
+  matchId: string,
+  nickname: string,
+  platform: string,
+  lowerNickname: string,
+  matchData: any,
+  teamNames: Set<string>,
+  teamAccountIds: Set<string>,
+  myRosterId: string,
+  myParticipant: any,
+  teamStats: any[],
+  rankPct: number,
+  matchAttr: any,
+  rosters: any[],
+  participants: any[],
+  requestUrl: string
+) {
+  const telemetryAsset = matchData.included.find((it: any) => it.type === "asset");
+  let telData: any[] = [];
+
+  if (telemetryAsset) {
+    const analyzePath = `${matchId}_${lowerNickname}_v${TELEMETRY_VERSION}_analyze.json`;
+    const fileText = await downloadFromR2(analyzePath);
+
+    let needsProcessing = !fileText;
+    if (fileText) {
+      const parsed = JSON.parse(fileText);
+      const isHealthy = parsed.length > 0 && parsed.some((ev: any) => ev.attacker?.accountId || ev.victim?.accountId);
+      if (isHealthy) {
+        telData = parsed;
+      } else {
+        needsProcessing = true;
+      }
+    }
+
+    if (needsProcessing) {
+      const telRes = await fetch(telemetryAsset.attributes.URL);
+      const rawTel = await telRes.json();
+
+      let posCount = 0;
+      telData = rawTel.filter((e: any) => {
+        if (e._T === "LogPlayerPosition") {
+          const pName = normalizeName(e.character?.name || "");
+          if (teamNames.has(pName)) return true;
+          return (++posCount) % 10 === 0;
+        }
+        return [
+          "LogMatchStart", "LogPlayerCreate", "LogPlayerKill", "LogPlayerKillV2",
+          "LogPlayerMakeGroggy", "LogPlayerRevive", "LogPlayerRecall",
+          "LogPlayerRecallShip", "LogPlayerRedeploy", "LogPlayerRedeployBRStart",
+          "LogPlayerTakeDamage", "LogItemUse", "LogPlayerUseThrowable",
+          "LogThrowableUse", "LogProjectileHit", "LogGameStatePeriodic",
+          "LogPhaseChange", "LogParachuteLanding", "LogMatchEnd"
+        ].includes(e._T);
+      }).map((e: any) => {
+        const slim: any = { _T: e._T, _D: e._D };
+        const normLoc = (loc: any) => {
+          if (!loc) return null;
+          return { x: Math.round(loc.x), y: Math.round(loc.y), z: Math.round(loc.z || 0) };
+        };
+
+        if (e._T === "LogGameStatePeriodic") {
+          const gs = e.gameState;
+          slim.gameState = {
+            safetyZonePosition: normLoc(gs.safetyZonePosition),
+            safetyZoneRadius: Math.round(gs.safetyZoneRadius),
+            poisonGasWarningPosition: normLoc(gs.poisonGasWarningPosition),
+            poisonGasWarningRadius: gs.poisonGasWarningRadius != null ? Math.round(gs.poisonGasWarningRadius) : null
+          };
+          return slim;
+        }
+
+        const actors = ["attacker", "victim", "killer", "maker", "dBNOMaker", "finisher", "character", "recaller", "reviver", "item", "recallingPlayer", "recalledPlayer"];
+        actors.forEach(key => {
+          if (e[key]) {
+            const char = e[key];
+            slim[key] = {
+              name: (typeof char === 'string' ? char : (char.name || char.characterName || char.itemId)),
+              accountId: char.accountId || char.playerId,
+              teamId: char.teamId,
+              location: normLoc(char.location),
+              vehicle: char.vehicle
+            };
+          }
+        });
+
+        if (e.recalledPlayers && Array.isArray(e.recalledPlayers)) {
+          slim.recalledPlayers = e.recalledPlayers.map((p: any) => ({
+            name: p.name || p.characterName,
+            accountId: p.accountId || p.playerId,
+            teamId: p.teamId,
+            location: normLoc(p.location)
+          }));
+        }
+
+        const keepFields = ["damage", "damageReason", "damageTypeCategory", "damageCauserName", "damageCauser", "distance", "weapon", "weaponId", "dBNOId", "phase", "isGame", "attackId", "killerDamageInfo", "finishDamageInfo", "dBNODamageInfo", "reviveType", "vehicle"];
+        keepFields.forEach(f => { if (e[f] !== undefined) slim[f] = e[f]; });
+
+        if (e.common?.isGame !== undefined) slim.common = { isGame: e.common.isGame };
+        else if (e.Common?.IsGame !== undefined) slim.Common = { IsGame: e.Common.IsGame };
+
+        if (e._T === "LogMatchEnd") {
+          if (e.allWeaponStats !== undefined) slim.allWeaponStats = e.allWeaponStats;
+          if (e.characters !== undefined) slim.characters = e.characters;
+        }
+
+        return slim;
+      });
+
+      await uploadToR2(analyzePath, JSON.stringify(telData), 'application/json');
+    }
+  }
+
+  const getMatchTier = (pct: number) => {
+    if (pct <= 0.1) return 'S';
+    if (pct <= 0.3) return 'A';
+    if (pct <= 0.6) return 'B';
+    return 'C';
+  };
+  const matchTier = getMatchTier(rankPct);
+
+  const { data: tierStats } = await supabase
+    .from('benchmark_stats_by_tier')
+    .select('*')
+    .eq('game_mode', matchAttr.gameMode)
+    .eq('tier', getBaseTier(matchTier))
+    .maybeSingle();
+
+  const bench = adaptBenchmark(tierStats);
+
+  const engine = new AnalysisEngine(
+    nickname, myParticipant.attributes.stats.playerId || myParticipant.attributes.accountId, teamNames, teamAccountIds,
+    new Set<string>(), new Set<string>(),
+    myRosterId
+  );
+
+  const result = engine.run(
+    telData,
+    matchAttr,
+    rosters,
+    participants,
+    myParticipant.attributes.stats,
+    teamStats,
+    bench
+  );
+
+  const defaultBenchmark = {
+    avg_damage: 200,
+    breakdown: { combat: 20, tactical: 20, survival: 20 }
+  };
+
+  const fullResult = {
+    ...result,
+    v: RESULT_VERSION,
+    matchId,
+    player_id: lowerNickname,
+    platform,
+    matchInfo: {
+      map: MAP_NAMES[matchAttr.mapId] || matchAttr.mapId,
+      mapId: MAP_IDS[matchAttr.mapId] || 'erangel',
+      date: matchAttr.createdAt,
+      mode: matchAttr.gameMode,
+      duration: matchAttr.duration,
+      rankPct,
+      tier: matchTier
+    },
+    benchmark: {
+      ...defaultBenchmark,
+      ...bench,
+      ...(result.benchmark || {})
+    }
+  };
+
+  const { mapData, ...tacticalResult } = fullResult;
+  const mapCachePath = `${matchId}_${lowerNickname}_v${TELEMETRY_VERSION}_map.json`;
+
+  await Promise.all([
+    uploadToR2(mapCachePath, JSON.stringify(mapData), 'application/json'),
+    supabase.from("processed_match_telemetry").upsert({
+      match_id: matchId,
+      player_id: lowerNickname,
+      data: { fullResult: tacticalResult },
+      updated_at: new Date().toISOString()
+    }),
+    supabase.from("match_master_telemetry").upsert({
+      match_id: matchId,
+      map_name: matchAttr.mapId,
+      game_mode: matchAttr.gameMode,
+      telemetry_version: TELEMETRY_VERSION,
+      storage_path: mapCachePath
+    }, { onConflict: 'match_id' })
+  ]);
+
+  fetch(`${new URL(requestUrl).origin}/api/pubg/ingest`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ 
+      matchId, 
+      playerNickname: lowerNickname, 
+      finalResult: tacticalResult,
+      matchAttr,
+      rawParticipants: participants 
+    })
+  }).catch(e => console.error("[MATCH-API] Ingest trigger failed:", e));
+
+  const allParticipantNames = participants
+    .filter((p: any) => !p.attributes.stats.playerId?.startsWith("ai."))
+    .map((p: any) => p.attributes.stats.name)
+    .filter((name: string) => normalizeName(name) !== lowerNickname);
+
+  const sampleParticipants = allParticipantNames
+    .sort(() => 0.5 - Math.random())
+    .slice(0, 5);
+
+  return {
+    ...fullResult,
+    sampleParticipants
+  };
 }

@@ -134,10 +134,26 @@ function getSignatureWeapon(weaponStats: Record<string, any>, matchCountStats: R
   let name = WEAPON_NAMES[bestId] || bestId.replace(/Item_Weapon_|Weap|_C/g, "");
   let isSpecial = false;
 
-  if (bestId.includes("BP_")) {
+  const lowerBestId = bestId.toLowerCase();
+  const isVehicle = bestId.includes("BP_") || 
+    lowerBestId.includes("vehicle") ||
+    lowerBestId.includes("uaz") ||
+    lowerBestId.includes("dacia") ||
+    lowerBestId.includes("coupe") ||
+    lowerBestId.includes("mirado") ||
+    lowerBestId.includes("pony") ||
+    lowerBestId.includes("porter") ||
+    lowerBestId.includes("zima") ||
+    lowerBestId.includes("brdm") ||
+    lowerBestId.includes("motorcycle") ||
+    lowerBestId.includes("motorbike") ||
+    lowerBestId.includes("pickup") ||
+    ["다시아", "uaz", "쿠페 rb", "오토바이", "지마", "포터", "포니 쿠페", "미라도", "툭툭", "로니", "픽업트럭", "brdm", "보급 트럭", "아쿠아레일", "보트", "차량"].includes(lowerBestId);
+
+  if (isVehicle) {
     name = "고라니 사냥꾼";
     isSpecial = true;
-  } else if (bestId.includes("Proj") || bestId.includes("Grenade") || bestId.includes("Molotov")) {
+  } else if (bestId.includes("Proj") || bestId.includes("Grenade") || bestId.includes("Molotov") || lowerBestId.includes("grenade") || lowerBestId.includes("molotov") || lowerBestId.includes("c4") || lowerBestId.includes("stickygrenade") || lowerBestId.includes("smokebomb") || lowerBestId.includes("flashbang")) {
     name = "폭파 전문가";
     isSpecial = true;
   } else if (bestId === "Unknown") {
@@ -272,8 +288,11 @@ export function classifyRole(stats: any, bench: any, overallTier: string): RoleI
   const ridingShotSum = (stats.totalRidingShotKnocks || 0) + (stats.totalRidingShotKills || 0);
   const leadShotSum = (stats.totalLeadShotKnocks || 0) + (stats.totalLeadShotKills || 0);
   const vehicleCombatSum = ridingShotSum + leadShotSum;
+  const vehicleCombatMatchCount = stats.vehicleCombatMatchCount || 0;
   
-  if (vehicleCombatSum >= 3) {
+  if (vehicleCombatMatchCount >= 5) {
+    title = `${prefix} 차량 전술 교전 마스터`;
+  } else if (vehicleCombatSum >= 3) {
     title = `${prefix} 아스팔트의 지배자`;
   } else if (ridingShotSum >= 2) {
     title = `${prefix} 도로 위의 저승사자`;

@@ -12,7 +12,7 @@
  *   파일 수준의 캐시 무효화를 수행합니다. (R2 파일명 기반, ISR 무관)
  */
 
-export const RESULT_VERSION = 60.0; // [V60.0] 고정밀 피격 데이터 및 LogMatchEnd Fallback 통합 보정
+export const RESULT_VERSION = 61.0; // [V61.0] 대응 사격 속도 3초 이상 차단 필터 적용에 따른 버전 범핑 및 캐시 무효화
 export const TELEMETRY_VERSION = 58.3;
 
 export const MAP_NAMES: Record<string, string> = {
@@ -86,7 +86,12 @@ export const WEAPON_NAMES: Record<string, string> = {
   // LMG / Others
   "WeapM249_C": "M249", "M249": "M249", "WeapDP28_C": "DP-28", "DP28": "DP-28", "DP-28": "DP-28",
   "WeapMG3_C": "MG3", "MG3": "MG3", "WeapOriginS12_C": "O12", "OriginS12": "O12", "O12": "O12",
-  "WeapPanzerFaust100M_C": "판처파우스트", "PanzerFaust100M_Projectile_C": "판처파우스트", "PanzerFaust100M_Projectile": "판처파우스트", "Panzerfaust": "판처파우스트", "WeapMortar_C": "박격포", "WeapCrossbow_C": "석궁",
+  "WeapPanzerFaust100M_C": "판처파우스트", "PanzerFaust100M_Projectile_C": "판처파우스트", "PanzerFaust100M_Projectile": "판처파우스트", "Panzerfaust": "판처파우스트", "PANZERFAUST100M": "판처파우스트", "PANZERFAUST100M_C": "판처파우스트", "PANZERFAUST": "판처파우스트", "WeapMortar_C": "박격포", "WeapCrossbow_C": "석궁",
+
+  // Pistols
+  "WeapP18C_C": "P18C", "P18C": "P18C", "WeapG18_C": "P18C", "G18": "P18C", "G18C": "P18C", "P18C_C": "P18C",
+  "WeapP92_C": "P92", "P92": "P92", "WeapP1911_C": "P1911", "P1911": "P1911", "WeapR45_C": "R45", "R45": "R45",
+  "WeapR1895_C": "R1895", "R1895": "R1895", "WeapDesertEagle_C": "디글", "Deagle": "디글", "DEAGLE": "디글", "DesertEagle": "디글",
   
   // Damage Types
   "Damage_BlueZone": "자기장", "Damage_Falling": "낙사", "Damage_Drowning": "익사", "Damage_Groggy": "출혈(기절)", "Damage_Gunshot": "총기", "Damage_Explosion": "폭발",
@@ -107,13 +112,20 @@ export const WEAPON_NAMES: Record<string, string> = {
   // Projectiles & Throwables
   "ProjGrenade_C": "수류탄", "ProjMolotov_C": "화염병", "ProjSmokeBomb_C": "연막탄", "ProjFlashBang_C": "섬광탄",
   "ProjBluezoneGrenade_C": "블루존 수류탄", "ProjStickyGrenade_C": "점착 폭탄", "ProjC4_C": "C4",
-  "Item_Weapon_Grenade_C": "수류탄", "item_weapon_grenade_c": "수류탄", "grenade": "수류탄",
-  "Item_Weapon_Molotov_C": "화염병", "item_weapon_molotov_c": "화염병", "molotov": "화염병",
-  "Item_Weapon_SmokeBomb_C": "연막탄", "item_weapon_smokebomb_c": "연막탄", "smoke": "연막탄",
-  "Item_Weapon_FlashBang_C": "섬광탄", "item_weapon_flashbang_c": "섬광탄", "flash": "섬광탄",
+  "PROJGRENADE_C": "수류탄", "PROJGRENADE": "수류탄", "GRENADE": "수류탄", "GRENADE_C": "수류탄", "grenade": "수류탄", "grenade_c": "수류탄",
+  "PROJMOLOTOV_C": "화염병", "PROJMOLOTOV": "화염병", "MOLOTOV": "화염병", "MOLOTOV_C": "화염병", "molotov": "화염병", "molotov_c": "화염병",
+  "PROJSMOKEBOMB_C": "연막탄", "PROJSMOKEBOMB": "연막탄", "SMOKEBOMB": "연막탄", "SMOKEBOMB_C": "연막탄", "SMOKE": "연막탄", "smoke": "연막탄", "smokebomb": "연막탄",
+  "PROJFLASHBANG_C": "섬광탄", "PROJFLASHBANG": "섬광탄", "FLASHBANG": "섬광탄", "FLASHBANG_C": "섬광탄", "FLASH": "섬광탄", "flash": "섬광탄", "flashbang": "섬광탄",
+  "PROJSTICKYGRENADE_C": "점착 폭탄", "PROJSTICKYGRENADE": "점착 폭탄", "STICKYGRENADE": "점착 폭탄", "STICKYGRENADE_C": "점착 폭탄", "stickygrenade": "점착 폭탄",
+  "PROJBLUEZONEGRENADE_C": "블루존 수류탄", "PROJBLUEZONEGRENADE": "블루존 수류탄", "BLUEZONEGRENADE": "블루존 수류탄", "BLUEZONEGRENADE_C": "블루존 수류탄", "bluezonegrenade": "블루존 수류탄",
+  "PROJC4_C": "C4", "PROJC4": "C4", "C4": "C4", "C4_C": "C4", "c4": "C4",
+  "Item_Weapon_Grenade_C": "수류탄", "item_weapon_grenade_c": "수류탄",
+  "Item_Weapon_Molotov_C": "화염병", "item_weapon_molotov_c": "화염병",
+  "Item_Weapon_SmokeBomb_C": "연막탄", "item_weapon_smokebomb_c": "연막탄",
+  "Item_Weapon_FlashBang_C": "섬광탄", "item_weapon_flashbang_c": "섬광탄",
   "Item_Weapon_BluezoneGrenade_C": "블루존 수류탄", "item_weapon_bluezonegrenade_c": "블루존 수류탄",
   "Item_Weapon_StickyGrenade_C": "점착 폭탄", "item_weapon_stickygrenade_c": "점착 폭탄",
-  "item_weapon_c4_c": "C4", "c4": "C4",
+  "item_weapon_c4_c": "C4",
   
   // New Utilities
   "Item_Weapon_M79_C": "M79 연막탄", "item_weapon_m79_c": "M79 연막탄",
@@ -142,7 +154,11 @@ export const IGNORE_WEAPON_PATTERNS = [
  * WEAPON_NAMES에 매핑되지 않은 변형(예: Uaz_B_01_esports)도 처리합니다.
  */
 export function getTranslatedWeaponName(wId: string): string {
+  if (!wId) return "없음";
   if (WEAPON_NAMES[wId]) return WEAPON_NAMES[wId];
+  
+  const wUpper = wId.toUpperCase();
+  if (WEAPON_NAMES[wUpper]) return WEAPON_NAMES[wUpper];
   
   const wLower = wId.toLowerCase();
   if (wLower.includes("uaz")) return "UAZ";
