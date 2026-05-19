@@ -12,7 +12,7 @@
  *   파일 수준의 캐시 무효화를 수행합니다. (R2 파일명 기반, ISR 무관)
  */
 
-export const RESULT_VERSION = 61.0; // [V61.0] 대응 사격 속도 3초 이상 차단 필터 적용에 따른 버전 범핑 및 캐시 무효화
+export const RESULT_VERSION = 62.0; // [V62.0] S+ 등급 신설 및 티어 컷라인 완화, 조기 탈락 시 폴백 방지 추가에 따른 버전 범핑
 export const TELEMETRY_VERSION = 58.3;
 
 export const MAP_NAMES: Record<string, string> = {
@@ -201,6 +201,7 @@ export const STORAGE_KEY_FAVORITES = "pubg_favorites_v2";
  * 전술 분석 티어 순위 (높을수록 숙련도 높음)
  */
 export const TIER_RANK = {
+  'S+': 14,
   'S': 13,
   'A+': 12, 'A': 11, 'A-': 10,
   'B+': 9,  'B': 8,  'B-': 7,
