@@ -93,7 +93,7 @@ function aggregateMatches(matches: any[], lowerNickname: string, myAccountId?: s
 
   const backupLatencies: number[] = [], reactionLatencies: number[] = [];
   const goldenTimeFinal = { early: 0, mid1: 0, mid2: 0, late: 0 };
-  const killContribFinal = { solo: 0, cleanup: 0 };
+  const killContribFinal = { solo: 0, cleanup: 0, assist: 0 }; // assist = 내 킬 중 팀원이 먼저 딜을 넣었던 킬 (KDA 어시스트와 무관)
   const weaponStatsFinal: Record<string, any> = {};
   const allBadges: any[] = [];
 
@@ -181,6 +181,7 @@ function aggregateMatches(matches: any[], lowerNickname: string, myAccountId?: s
     if (m.killContribution) {
       killContribFinal.solo += (m.killContribution.solo || 0);
       killContribFinal.cleanup += (m.killContribution.cleanup || 0);
+      killContribFinal.assist += (m.killContribution.assist || 0); // [V66.0] 팀원 기여 킬 누산 추가
     }
 
     totalKills += (m.stats?.kills || 0);
@@ -266,7 +267,8 @@ function aggregateMatches(matches: any[], lowerNickname: string, myAccountId?: s
     late: Math.round(goldenTimeFinal.late / mLen),
   };
 
-  const totalKillContrib = killContribFinal.solo + killContribFinal.cleanup;
+  // [V66.0] 분모에 assist(팀원 개입 킬) 포함 — ingest/route.ts의 solo_kill_rate 산출 방식과 동일하게 보정
+  const totalKillContrib = killContribFinal.solo + killContribFinal.cleanup + killContribFinal.assist;
   const soloKillRate = totalKillContrib > 0 ? Math.round((killContribFinal.solo / totalKillContrib) * 100) : 0;
 
   const matchTimes = matches.map((m: any) => {
