@@ -12,7 +12,7 @@
  *   파일 수준의 캐시 무효화를 수행합니다. (R2 파일명 기반, ISR 무관)
  */
 
-export const RESULT_VERSION = 63.0; // [V63.0] 트레이드 레이트 100% 캡핑 및 솔로킬 어시스트 판정 버그 수정에 따른 버전 범핑
+export const RESULT_VERSION = 64.0; // [V64.0] 본인 타격이 어시스트 셋에 유입되는 로직 오염 분리 패치 적용
 export const TELEMETRY_VERSION = 58.3;
 
 export const MAP_NAMES: Record<string, string> = {

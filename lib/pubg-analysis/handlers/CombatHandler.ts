@@ -170,8 +170,8 @@ export class CombatHandler extends BaseHandler {
       const currentVictimDamage = this.state.victimDamage.get(victimName) || 0;
       this.state.victimDamage.set(victimName, currentVictimDamage + damage);
 
-      // [BUG-FIX] 아군이 공격한 적 팀 Roster ID를 기록하여 Kill Contribution (solo vs assist) 판정이 가능하도록 보정
-      if (victimName && !isTeammateVictim) {
+      // [BUG-FIX] 나를 제외한 다른 아군(팀원)이 공격한 적 팀 Roster ID를 기록 (본인 단독 킬이 어시스트로 오해받지 않도록 보정)
+      if (victimName && !isTeammateVictim && !isMeAttacker) {
         const vRosterId = this.state.teamMapping.get(victimName) || this.state.teamMapping.get(e.victim?.accountId || "");
         if (vRosterId) {
           this.state.teamsUserHit.add(vRosterId);
