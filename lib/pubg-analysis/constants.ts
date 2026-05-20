@@ -12,7 +12,7 @@
  *   파일 수준의 캐시 무효화를 수행합니다. (R2 파일명 기반, ISR 무관)
  */
 
-export const RESULT_VERSION = 65.0; // [V65.0] 스쿼드/듀오 모드 내 정밀 1:1 솔로킬 판정을 위한 개별 캐릭터 트래킹 적용
+export const RESULT_VERSION = 66.0; // [V66.0] 1:1 솔로킬 판정 초정밀 고도화 (20 DMG & 2분 시간 제한 추가)
 export const TELEMETRY_VERSION = 58.3;
 
 export const MAP_NAMES: Record<string, string> = {
@@ -50,6 +50,8 @@ export const TACTICAL_THRESHOLDS = {
   EARLY_GAME_MIN: 5,             // 초반전 기준 (분)
   MID_GAME_1_MIN: 15,            // 중반전1 기준 (분)
   MID_GAME_2_MIN: 25,            // 중반전2 기준 (분)
+  ASSIST_DAMAGE_THRESHOLD: 20.0, // 아군의 누적 딜 기여가 최소 20 이상일 때만 어시스트 인정
+  ASSIST_TIME_LIMIT_MS: 120000,  // 아군의 마지막 타격으로부터 2분(120초) 이내여야 어시스트 인정
 };
 
 export const WEAPON_NAMES: Record<string, string> = {

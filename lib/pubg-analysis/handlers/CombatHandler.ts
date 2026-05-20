@@ -1,6 +1,6 @@
 import { AnalysisState } from "../types";
 import { normalizeName, calcDist3D, scaleCoordinate } from "../utils";
-import { WEAPON_NAMES, IGNORE_WEAPONS, IGNORE_WEAPON_PATTERNS } from "../constants";
+import { WEAPON_NAMES, IGNORE_WEAPONS, IGNORE_WEAPON_PATTERNS, TACTICAL_THRESHOLDS } from "../constants";
 import { BaseHandler } from "./BaseHandler";
 
 export class CombatHandler extends BaseHandler {
@@ -170,9 +170,17 @@ export class CombatHandler extends BaseHandler {
       const currentVictimDamage = this.state.victimDamage.get(victimName) || 0;
       this.state.victimDamage.set(victimName, currentVictimDamage + damage);
 
-      // [BUG-FIX] 나를 제외한 다른 아군(팀원)이 공격한 적 개별 플레이어 닉네임(victimName)을 기록 (스쿼드 모드에서도 순수 1:1 솔로킬을 발라내기 위함)
+      // [V66.0] 나를 제외한 아군(팀원)이 공격한 적 개별 플레이어의 누적 데미지 및 마지막 타격 시각을 Map에 기록
+      // teamsRosterHit: 전멸 판정용 Roster ID 별도 트랙
       if (victimName && !isTeammateVictim && !isMeAttacker) {
-        this.state.teamsUserHit.add(victimName);
+        const existing = this.state.teamsUserHit.get(victimName);
+        this.state.teamsUserHit.set(victimName, {
+          totalDamage: (existing?.totalDamage ?? 0) + damage,
+          lastHitTime: ts,
+        });
+        // 전멸 판정용 Roster 트래킹
+        const vRosterIdForHit = this.state.teamMapping.get(victimName);
+        if (vRosterIdForHit) this.state.teamsRosterHit.add(vRosterIdForHit);
       }
 
       if (isMeAttacker || isTeammateAttacker) {
@@ -512,7 +520,12 @@ export class CombatHandler extends BaseHandler {
       });
 
       if (victimName && !this.state.teamNames.has(victimName)) {
-        if (this.state.teamsUserHit.has(victimName)) this.state.killContribution.assist++;
+        const hitInfo = this.state.teamsUserHit.get(victimName);
+        const isAssist =
+          hitInfo !== undefined &&
+          hitInfo.totalDamage >= TACTICAL_THRESHOLDS.ASSIST_DAMAGE_THRESHOLD &&
+          (ts - hitInfo.lastHitTime) <= TACTICAL_THRESHOLDS.ASSIST_TIME_LIMIT_MS;
+        if (isAssist) this.state.killContribution.assist++;
         else this.state.killContribution.solo++;
       }
     } else if (isMeFinisher) {
@@ -551,7 +564,7 @@ export class CombatHandler extends BaseHandler {
         const members = this.state.teamAliveMembers.get(vRosterId);
         if (members) {
           members.delete(victimName);
-          if (members.size === 0 && (this.state.teamsUserHit.has(vRosterId) || killerName === this.state.lowerNickname)) {
+          if (members.size === 0 && (this.state.teamsRosterHit.has(vRosterId) || killerName === this.state.lowerNickname)) {
             this.state.wipedTeamsByUserParticipation.add(vRosterId);
           }
         }

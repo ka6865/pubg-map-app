@@ -286,7 +286,8 @@ export interface AnalysisState {
   goldenTimeDamage: { early: number, mid1: number, mid2: number, late: number };
   killContribution: { solo: number, cleanup: number, assist: number };
   wipedTeamsByUserParticipation: Set<string>;
-  teamsUserHit: Set<string>;
+  teamsUserHit: Map<string, { totalDamage: number; lastHitTime: number }>;
+  teamsRosterHit: Set<string>;
   myRecentDamageTaken: Map<string, number>;
   recentAttacksOnUser: any[];
   itemUseSummary: any;
