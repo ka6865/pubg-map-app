@@ -29,12 +29,12 @@ describe('AnalysisEngine 실데이터(Gold Match) 정밀 검증', () => {
     console.log("TEST BENCHMARK:", JSON.stringify(result.benchmark, null, 2));
   });
 
-  it('실제 경기에서의 선제 타격 효율(initiative_rate)이 약 14%여야 함', () => {
+  it('실제 경기에서의 선제 타격 효율(initiative_rate)이 약 17%여야 함', () => {
     const engine = new AnalysisEngine(nickname, myAccountId, teamNames, teamAccountIds, eliteNames, eliteAccountIds, myRosterId);
     const result = engine.run(telemetry, { id: "gold-match", createdAt: "2026-05-02T16:00:00Z", gameMode: "squad" }, [], [], { damageDealt: 500, kills: 3, timeSurvived: 1200 }, [], {});
     
-    expect(Math.round(result.initiative_rate)).toBe(14);
-    expect(result.initiativeSampleCount).toBe(7); // 7회 시도 중 1회 성공
+    expect(Math.round(result.initiative_rate)).toBe(17);
+    expect(result.initiativeSampleCount).toBe(6); // 6회 시도 중 1회 성공 (150m 초과 견제샷 필터링)
   });
 
   it('실제 경기에서의 자기장 끝선 플레이(edgePlay)가 8회여야 함', () => {
@@ -49,7 +49,7 @@ describe('AnalysisEngine 실데이터(Gold Match) 정밀 검증', () => {
     const result = engine.run(telemetry, { id: "gold-match", createdAt: "2026-05-02T16:00:00Z", gameMode: "squad" }, [], [], { damageDealt: 0, kills: 0 }, [], {});
     
     expect(result.duelStats.wins).toBe(1);
-    expect(result.duelStats.losses).toBe(2);
+    expect(result.duelStats.losses).toBe(1); // 150m 초과 패배 또는 팀원 어시스트 보정으로 정제됨
   });
 
   it('차량 전투 지표(리드샷/라이딩샷) 초기화 및 작동 정합성 검증', () => {
@@ -116,7 +116,11 @@ describe('티어 산정 및 조기 탈락 폴백 엔진 검증', () => {
       teamWipes: 3,
       reversalRate: 90,
       deathPhase: 8,
-      suppRate: 90
+      suppRate: 90,
+      survivalRankPct: 0.05,
+      myKnockCount: 0,
+      myDeathCount: 0,
+      winPlace: 2
     };
     const result = getBenchmarkTier(highInput, false);
     expect(result.tier).toBe('S+');
@@ -137,7 +141,11 @@ describe('티어 산정 및 조기 탈락 폴백 엔진 검증', () => {
       teamWipes: 2,
       reversalRate: 70,
       deathPhase: 7,
-      suppRate: 70
+      suppRate: 70,
+      survivalRankPct: 0.1,
+      myKnockCount: 1,
+      myDeathCount: 1,
+      winPlace: 5
     };
     const result = getBenchmarkTier(sInput, false);
     expect(result.tier).toBe('S');
@@ -168,7 +176,11 @@ describe('티어 산정 및 조기 탈락 폴백 엔진 검증', () => {
       teamWipes: 0,
       reversalRate: -1,
       deathPhase: 2,
-      suppRate: -1
+      suppRate: -1,
+      survivalRankPct: 0.8,
+      myKnockCount: 1,
+      myDeathCount: 1,
+      winPlace: 80
     };
 
     // 생존시간 700초(10분 이상), 사망페이즈 4 (정상 탈락)
@@ -186,7 +198,11 @@ describe('티어 산정 및 조기 탈락 폴백 엔진 검증', () => {
       teamWipes: 0,
       reversalRate: -1,
       deathPhase: 4,
-      suppRate: -1
+      suppRate: -1,
+      survivalRankPct: 0.6,
+      myKnockCount: 0,
+      myDeathCount: 1,
+      winPlace: 60
     };
 
     const earlyScore = calcBenchmarkScore(earlyDeathInput, false);

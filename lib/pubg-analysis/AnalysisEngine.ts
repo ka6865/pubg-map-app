@@ -316,11 +316,21 @@ export class AnalysisEngine {
     const avgHeightDiff = this.state.isolationSampleCount > 0 ? this.state.totalHeightDiffSum / this.state.isolationSampleCount : 0;
     const avgTeammateCount = this.state.isolationSampleCount > 0 ? this.state.totalNearbyTeammatesSum / this.state.isolationSampleCount : 0;
 
-    const avgReactLat = this.state.reactCount > 0 ? this.state.reactLatSum / this.state.reactCount : -1;
-    const avgTradeLat = this.state.tradeLatencies.length > 0 ? this.state.tradeLatencies.reduce((a, b) => a + b, 0) / this.state.tradeLatencies.length : -1;
-
     // 교전 및 선제 타격 지표 집계
     const pData = (this.state.playerCombatData.get(this.state.myAccountId) || this.state.playerCombatData.get(this.state.lowerNickname)) || { total: 0, success: 0, duelWins: 0, duelLosses: 0, reversalWins: 0, reversalAttempts: 0 };
+
+    // 대응사격 반응속도 정교화:
+    // 1) 3초 내 대응 사격 성공 이력이 있는 경우 -> 실제 평균 값 사용
+    // 2) 3초 내 성공은 없지만 기습당한 이력이 있는 경우 -> 기습 대응 실패로 보아 최대 패널티 3000ms 부여
+    // 3) 기습을 아예 안 당한 경우 -> -1 (기본 5점 폴백 유도)
+    let avgReactLat = -1;
+    if (this.state.reactCount > 0) {
+      avgReactLat = this.state.reactLatSum / this.state.reactCount;
+    } else if (pData.reversalAttempts > 0) {
+      avgReactLat = 3000;
+    }
+
+    const avgTradeLat = this.state.tradeLatencies.length > 0 ? this.state.tradeLatencies.reduce((a, b) => a + b, 0) / this.state.tradeLatencies.length : -1;
     const duelWinRate = (pData.duelWins + pData.duelLosses) > 0 ? (pData.duelWins / (pData.duelWins + pData.duelLosses)) * 100 : 0;
     const reversalRate = pData.reversalAttempts > 0 ? (pData.reversalWins / pData.reversalAttempts) * 100 : 0;
     const initiativeRate = pData.total > 0 ? (pData.success / pData.total) * 100 : -1;
@@ -451,14 +461,26 @@ export class AnalysisEngine {
         initiativeRate: initiativeRate,
         counterLatencyMs: avgReactLat,
         pressureIndex: Number((this.state.combatPressure.totalHits / Math.max(5, (this.state.myActionTimestamps.length / 10))).toFixed(2)),
-        smokeRate: this.state.totalTeammateKnocks > 0 ? (this.state.totalSmokeRescues / this.state.totalTeammateKnocks) * 100 : 0,
+        // [V68.0] 기회가 발생하지 않은 항목은 -1을 넘겨서 100% 만점 처리하도록 함.
+        smokeRate: this.state.totalTeammateKnocks > 0 ? (this.state.totalSmokeRescues / this.state.totalTeammateKnocks) * 100 : -1,
         suppCount: this.state.totalSuppCount,
-        reviveRate: this.state.totalTeammateKnocks > 0 ? (this.state.myReviveCount / this.state.totalTeammateKnocks) * 100 : 0,
-        tradeRate: this.state.totalTeammateKnocks > 0 ? (Math.min(this.state.totalTeammateKnocks, this.state.totalTradeKills) / this.state.totalTeammateKnocks) * 100 : 0,
+        reviveRate: this.state.totalTeammateKnocks > 0 ? (this.state.myReviveCount / this.state.totalTeammateKnocks) * 100 : -1,
+        tradeRate: this.state.totalTeammateKnocks > 0 ? (Math.min(this.state.totalTeammateKnocks, this.state.totalTradeKills) / this.state.totalTeammateKnocks) * 100 : -1,
         teamWipes: this.state.wipedTeamsByUserParticipation.size,
         reversalRate: reversalRate,
         deathPhase: this.state.deathPhaseSnapshot || this.state.currentPhase,
-        suppRate: this.state.totalTeammateKnocks > 0 ? (this.state.totalSuppCount / this.state.totalTeammateKnocks) * 100 : 0
+        suppRate: this.state.totalTeammateKnocks > 0 ? (this.state.totalSuppCount / this.state.totalTeammateKnocks) * 100 : -1,
+        // [V68.0] 스쿼드 모드용 고립 지수 추가
+        isolationIndex: avgIsolation,
+        // [V69.0] 생존 점수 고도화 필드 (0~1 범위 가드 적용)
+        survivalRankPct: (() => {
+          const maxPlace = rosters.length > 1 ? rosters.length : ((this.state.gameMode || "").includes("solo") ? 100 : 25);
+          const winPlace = myStats.winPlace || 100;
+          return Math.max(0, Math.min(1, winPlace / maxPlace));
+        })(),
+        myKnockCount: this.state.myDownedIntervals.length,
+        myDeathCount: myStats.deathType === 'alive' ? 0 : 1,
+        winPlace: myStats.winPlace || 100
       }, (this.state.gameMode || "").includes("solo")),
       isValidBenchmark: (myStats.timeSurvived || 0) >= 300,
       timeline: this.state.timeline.sort((a, b) => a.ts - b.ts),

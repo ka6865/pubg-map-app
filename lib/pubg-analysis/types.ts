@@ -284,7 +284,11 @@ export interface AnalysisState {
   zoneStrategy: { edgePlayCount: number, fatalDelayCount: number };
   bluezoneWaste: number;
   goldenTimeDamage: { early: number, mid1: number, mid2: number, late: number };
-  killContribution: { solo: number, cleanup: number, assist: number };
+  killContribution: { 
+    solo: number, 
+    cleanup: number, // [설명] 타 적 스쿼드가 기절시킨 적을 내가 확킬하여 킬을 획득한 경우 (킬 스틸/어부지리) - 향후 세분화 확장용
+    assist: number 
+  };
   wipedTeamsByUserParticipation: Set<string>;
   teamsUserHit: Map<string, { totalDamage: number; lastHitTime: number }>;
   teamsRosterHit: Set<string>;

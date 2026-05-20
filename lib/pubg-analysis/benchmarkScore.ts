@@ -12,6 +12,12 @@ export interface MatchTierInput {
   reversalRate: number;      // 역전 승률 (0~100)
   deathPhase: number;        // 사망 페이즈 (0~9)
   suppRate: number;          // 지원사격 확률 (0~100)
+  isolationIndex?: number;   // 고립 지수 (스쿼드 전용, 0~5)
+  // [V69.0] 생존 점수 고도화 필드
+  survivalRankPct: number;   // 생존 순위 비율 (0~1, winPlace / maxPlace)
+  myKnockCount: number;      // 내가 기절당한 횟수 (myKnockEvents.length)
+  myDeathCount: number;      // 내가 사망한 횟수 (0 또는 1)
+  winPlace: number;          // 최종 순위 (1~100)
 }
 
 /**
@@ -25,10 +31,12 @@ export function calcBenchmarkScore(input: MatchTierInput, isSolo: boolean): numb
 
   // 상황별 폴백 값 분기 대입
   const safeInitiative = input.initiativeRate < 0 ? 45 : input.initiativeRate;
-  const safeRevive = input.reviveRate < 0 ? (isEarlyDeath ? 30 : 80) : input.reviveRate;
-  const safeTrade = input.tradeRate < 0 ? (isEarlyDeath ? 30 : 80) : input.tradeRate;
+  // [V68.0] 기회 없음(-1)인 경우, 조기 광탈은 30%만 인정하되 정상 탈락은 무결점 우대로 100% 만점 처리.
+  const safeRevive = input.reviveRate < 0 ? (isEarlyDeath ? 30 : 100) : input.reviveRate;
+  const safeTrade = input.tradeRate < 0 ? (isEarlyDeath ? 30 : 100) : input.tradeRate;
+  const safeSmoke = input.smokeRate < 0 ? (isEarlyDeath ? 30 : 100) : input.smokeRate;
+  const safeSuppRate = input.suppRate < 0 ? (isEarlyDeath ? 30 : 100) : input.suppRate;
   const safeReversal = input.reversalRate < 0 ? (isEarlyDeath ? 10 : 50) : input.reversalRate;
-  const safeSmoke = input.smokeRate < 0 ? (isEarlyDeath ? 30 : 70) : input.smokeRate;
 
   const latencyScoreBase = input.counterLatencyMs < 0 ? 5
     : Math.max(0, Math.min(10, ((3000 - input.counterLatencyMs) / 2000) * 10));
@@ -46,9 +54,11 @@ export function calcBenchmarkScore(input: MatchTierInput, isSolo: boolean): numb
     const reversalScore = Math.min(5, (safeReversal / 100) * 5);
     tacticalScore = pressureScore + reversalScore;
 
-    const phaseScore = Math.min(20, (input.deathPhase / 9) * 20);
-    const timeScore = Math.min(15, (input.survivalTime / 1800) * 15);
-    survivalScore = phaseScore + timeScore;
+    // [V69.0] 솔로 생존 점수 개편 (사망페이즈/생존시간 중복 해소 및 맵 크기 왜곡 방지)
+    const safeSurvivalRankPct = Math.max(0, Math.min(1, input.survivalRankPct));
+    const rankScore = Math.min(30, (1 - safeSurvivalRankPct) * 30);
+    const top10Score = input.winPlace <= 10 ? 5 : 0;
+    survivalScore = rankScore + top10Score;
 
   } else {
     const damageScore = input.rankPct <= 0.10 ? 20 : input.rankPct <= 0.25 ? 15 : input.rankPct <= 0.50 ? 10 : 5;
@@ -57,13 +67,26 @@ export function calcBenchmarkScore(input: MatchTierInput, isSolo: boolean): numb
 
     const pressureScore = Math.min(10, (input.pressureIndex / 5) * 10);
     const utilityScore = Math.min(10, (safeSmoke / 100) * 5 + Math.min(5, input.suppCount / 1.2)); // 10회 -> 6회 완화
-    const teamScore = Math.min(10, (safeRevive / 100) * 4 + (safeTrade / 100) * 3 + Math.min(3, input.teamWipes * 1.5)); // 3회 -> 2회 완화
+    const teamScore = Math.min(10, (safeRevive / 100) * 3 + (safeTrade / 100) * 2 + (safeSuppRate / 100) * 2 + Math.min(3, input.teamWipes * 1.5));
     const reversalScore = Math.min(5, (safeReversal / 100) * 5);
     tacticalScore = pressureScore + utilityScore + teamScore + reversalScore;
 
-    const phaseScore = Math.min(15, (input.deathPhase / 9) * 15);
-    const timeScore = Math.min(10, (input.survivalTime / 1800) * 10);
-    survivalScore = phaseScore + timeScore;
+    // [V68.0] 스쿼드 모드 고립 지수 페널티 차감 (솔로 제외)
+    const isolationPenalty = (input.isolationIndex && input.isolationIndex >= 3.5)
+      ? Math.min(3, (input.isolationIndex - 3.5) * 2) : 0;
+    tacticalScore = Math.max(0, tacticalScore - isolationPenalty);
+
+    // [V69.0] 스쿼드 생존 점수 개편 (생존 순위 비율 20점 + 기절 후 생존 관리력 5점)
+    const safeSurvivalRankPct = Math.max(0, Math.min(1, input.survivalRankPct));
+    const rankScore = Math.min(20, (1 - safeSurvivalRankPct) * 20);
+    let groggyScore = 5;
+    if (input.myKnockCount > 0) {
+      const knockSurvivalRate = 1 - (input.myDeathCount / input.myKnockCount);
+      groggyScore = Math.min(5, knockSurvivalRate * 5);
+    } else if (input.myDeathCount === 1) {
+      groggyScore = 0; // 한 번도 기절 없이 바로 즉사한 경우
+    }
+    survivalScore = rankScore + groggyScore;
   }
 
   return combatScore + tacticalScore + survivalScore;
@@ -87,10 +110,12 @@ export function calcBenchmarkScoreDetails(input: MatchTierInput, isSolo: boolean
 
   // 상황별 폴백 값 분기 대입
   const safeInitiative = input.initiativeRate < 0 ? 45 : input.initiativeRate;
-  const safeRevive = input.reviveRate < 0 ? (isEarlyDeath ? 30 : 80) : input.reviveRate;
-  const safeTrade = input.tradeRate < 0 ? (isEarlyDeath ? 30 : 80) : input.tradeRate;
+  // [V68.0] 기회 없음(-1)인 경우, 조기 광탈은 30%만 인정하되 정상 탈락은 무결점 우대로 100% 만점 처리.
+  const safeRevive = input.reviveRate < 0 ? (isEarlyDeath ? 30 : 100) : input.reviveRate;
+  const safeTrade = input.tradeRate < 0 ? (isEarlyDeath ? 30 : 100) : input.tradeRate;
+  const safeSmoke = input.smokeRate < 0 ? (isEarlyDeath ? 30 : 100) : input.smokeRate;
+  const safeSuppRate = input.suppRate < 0 ? (isEarlyDeath ? 30 : 100) : input.suppRate;
   const safeReversal = input.reversalRate < 0 ? (isEarlyDeath ? 10 : 50) : input.reversalRate;
-  const safeSmoke = input.smokeRate < 0 ? (isEarlyDeath ? 30 : 70) : input.smokeRate;
 
   const latencyScoreBase = input.counterLatencyMs < 0 ? 5 :
     (input.counterLatencyMs === 0 ? 0 : Math.max(0, Math.min(10, ((3000 - input.counterLatencyMs) / 2000) * 10)));
@@ -108,9 +133,11 @@ export function calcBenchmarkScoreDetails(input: MatchTierInput, isSolo: boolean
     const reversalScore = Math.min(5, (safeReversal / 100) * 5);
     tacticalScore = Number((pressureScore + reversalScore).toFixed(1));
 
-    const phaseScore = Math.min(20, (input.deathPhase / 9) * 20);
-    const timeScore = Math.min(15, (input.survivalTime / 1800) * 15);
-    survivalScore = Number((phaseScore + timeScore).toFixed(1));
+    // [V69.0] 솔로 생존 점수 개편 (사망페이즈/생존시간 중복 해소 및 맵 크기 왜곡 방지)
+    const safeSurvivalRankPct = Math.max(0, Math.min(1, input.survivalRankPct));
+    const rankScore = Math.min(30, (1 - safeSurvivalRankPct) * 30);
+    const top10Score = input.winPlace <= 10 ? 5 : 0;
+    survivalScore = Number((rankScore + top10Score).toFixed(1));
 
   } else {
     const damageScore = input.rankPct <= 0.10 ? 20 : input.rankPct <= 0.25 ? 15 : input.rankPct <= 0.50 ? 10 : 5;
@@ -119,13 +146,28 @@ export function calcBenchmarkScoreDetails(input: MatchTierInput, isSolo: boolean
 
     const pressureScore = Math.min(10, (input.pressureIndex / 5) * 10);
     const utilityScore = Math.min(10, (safeSmoke / 100) * 5 + Math.min(5, input.suppCount / 1.2)); // 10회 -> 6회 완화
-    const teamScore = Math.min(10, (safeRevive / 100) * 4 + (safeTrade / 100) * 3 + Math.min(3, input.teamWipes * 1.5)); // 3회 -> 2회 완화
+    const teamScore = Math.min(10, (safeRevive / 100) * 3 + (safeTrade / 100) * 2 + (safeSuppRate / 100) * 2 + Math.min(3, input.teamWipes * 1.5));
     const reversalScore = Math.min(5, (safeReversal / 100) * 5);
-    tacticalScore = Number((pressureScore + utilityScore + teamScore + reversalScore).toFixed(1));
+    
+    let rawTactical = pressureScore + utilityScore + teamScore + reversalScore;
 
-    const phaseScore = Math.min(15, (input.deathPhase / 9) * 15);
-    const timeScore = Math.min(10, (input.survivalTime / 1800) * 10);
-    survivalScore = Number((phaseScore + timeScore).toFixed(1));
+    // [V68.0] 스쿼드 모드 고립 지수 페널티 차감 (솔로 제외)
+    const isolationPenalty = (input.isolationIndex && input.isolationIndex >= 3.5)
+      ? Math.min(3, (input.isolationIndex - 3.5) * 2) : 0;
+    
+    tacticalScore = Number(Math.max(0, rawTactical - isolationPenalty).toFixed(1));
+
+    // [V69.0] 스쿼드 생존 점수 개편 (생존 순위 비율 20점 + 기절 후 생존 관리력 5점)
+    const safeSurvivalRankPct = Math.max(0, Math.min(1, input.survivalRankPct));
+    const rankScore = Math.min(20, (1 - safeSurvivalRankPct) * 20);
+    let groggyScore = 5;
+    if (input.myKnockCount > 0) {
+      const knockSurvivalRate = 1 - (input.myDeathCount / input.myKnockCount);
+      groggyScore = Math.min(5, knockSurvivalRate * 5);
+    } else if (input.myDeathCount === 1) {
+      groggyScore = 0; // 한 번도 기절 없이 바로 즉사한 경우
+    }
+    survivalScore = Number((rankScore + groggyScore).toFixed(1));
   }
 
   return { combat: combatScore, tactical: tacticalScore, survival: survivalScore };

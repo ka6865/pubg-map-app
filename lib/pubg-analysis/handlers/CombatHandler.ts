@@ -331,6 +331,10 @@ export class CombatHandler extends BaseHandler {
       }
     }
 
+    if (this.isTeammate(attacker) && !isMeMaker && victimName) {
+      this.checkAndResolveInitiativeAssist(victimName);
+    }
+
     if (isMeMaker) {
       this.state.myActionTimestamps.push(ts);
       this.updateDuelOutcome(attacker, e.victim);
@@ -457,6 +461,10 @@ export class CombatHandler extends BaseHandler {
       }
     }
 
+    if (isTeammateKiller && !isMeKiller && victimName) {
+      this.checkAndResolveInitiativeAssist(victimName);
+    }
+
     if (isMeKiller || isTeammateKiller) {
       if (wId && wId !== "Unknown" && !isTeammateVictim) {
         const cleanWId = wId.replace(/Item_Weapon_|Weap|_Projectile|_C/g, "");
@@ -526,7 +534,11 @@ export class CombatHandler extends BaseHandler {
           hitInfo.totalDamage >= TACTICAL_THRESHOLDS.ASSIST_DAMAGE_THRESHOLD &&
           (ts - hitInfo.lastHitTime) <= TACTICAL_THRESHOLDS.ASSIST_TIME_LIMIT_MS;
         if (isAssist) this.state.killContribution.assist++;
-        else this.state.killContribution.solo++;
+        else {
+          // [유지 결정] 타 적 스쿼드가 기절시킨 적을 내가 가로채서 확킬한 경우(cleanup)도 현재는 게임 내 솔로 킬 수와 일치를 위해 solo++로 유지함.
+          // 향후 순수 1:1 교전 실력을 더 엄격히 구분하고자 할 경우, dBNOMaker!==나 && dBNOMaker!=="" 조건을 대조하여 cleanup++로 세분화 가능.
+          this.state.killContribution.solo++;
+        }
       }
     } else if (isMeFinisher) {
       this.state.timeline.push({
@@ -718,6 +730,18 @@ export class CombatHandler extends BaseHandler {
   }
 
   private processDuelData(e: any, ts: number, attacker: any, victim: any) {
+    if (!attacker || !victim) return;
+
+    // [거리 제한 가드] 150m를 초과하는 장거리 피격은 피지컬 대응사격 측정(교전 세션)에서 제외
+    const attackerLoc = attacker.location || attacker.loc;
+    const victimLoc = victim.location || victim.loc;
+    if (attackerLoc && victimLoc) {
+      const distMeters = calcDist3D(attackerLoc, victimLoc) / 100;
+      if (distMeters > TACTICAL_THRESHOLDS.REACTION_MAX_DISTANCE_METERS) {
+        return;
+      }
+    }
+
     const attackerName = normalizeName(attacker?.name || "");
     const victimName = normalizeName(victim?.name || "");
 
@@ -797,6 +821,25 @@ export class CombatHandler extends BaseHandler {
         }
       }
     });
+  }
+
+  private checkAndResolveInitiativeAssist(victimName: string) {
+    const isSoloMode = this.state.teamNames.size <= 1;
+    if (isSoloMode) return;
+
+    const pData = this.state.playerCombatData.get(this.state.myAccountId);
+    if (!pData) return;
+
+    const session = pData.sessions.get(victimName);
+    if (session && session.userStarted && !session.alreadySucceeded && !session.outcome) {
+      const myDmg = this.state.myVictimDamage.get(victimName) || 0;
+      if (myDmg >= TACTICAL_THRESHOLDS.ASSIST_DAMAGE_THRESHOLD) {
+        session.outcome = "win";
+        pData.duelWins++;
+        pData.success++;
+        session.alreadySucceeded = true;
+      }
+    }
   }
 
   private handleMatchEnd(e: any) {
