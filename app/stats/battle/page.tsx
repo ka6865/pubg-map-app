@@ -74,8 +74,16 @@ function BattleContent() {
   useEffect(() => {
     const savedRecent = localStorage.getItem(STORAGE_KEY_RECENT);
     const savedFavorites = localStorage.getItem(STORAGE_KEY_FAVORITES);
-    if (savedRecent) setRecentSearches(JSON.parse(savedRecent));
-    if (savedFavorites) setFavorites(JSON.parse(savedFavorites));
+    try {
+      if (savedRecent) setRecentSearches(JSON.parse(savedRecent));
+    } catch {
+      localStorage.removeItem(STORAGE_KEY_RECENT);
+    }
+    try {
+      if (savedFavorites) setFavorites(JSON.parse(savedFavorites));
+    } catch {
+      localStorage.removeItem(STORAGE_KEY_FAVORITES);
+    }
   }, []);
   
   // 즐겨찾기 데이터 저장

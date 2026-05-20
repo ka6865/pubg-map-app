@@ -12,6 +12,7 @@ export interface TelemetryEvent {
   vX?: number; 
   vY?: number; 
   vehicle?: string;
+  vehicleId?: string; // 🎯 실시간 차량 동기화 보정을 위한 차량 ID 필드 추가
   attacker?: string;
   victim?: string;
   detail?: string;
@@ -223,6 +224,15 @@ export function useTelemetry(matchId: string | null, nickname: string | null, ma
           s.x = ev.x; s.y = ev.y; s.health = ev.health ?? s.health; s.lastUpdateMs = ev.relativeTimeMs;
           historyPosRef.current[pname] = { x: ev.x, y: ev.y, time: ev.relativeTimeMs, health: s.health };
           futurePosRef.current[pname] = null;
+
+          // 🎯 차량 동승 유령 버그 해결: LogPlayerPosition 이벤트의 vehicleId 존재 여부에 맞춰 실시간 상태 보정
+          if (ev.vehicleId) {
+            s.isInVehicle = true;
+            s.vehicleId = ev.vehicleId;
+          } else {
+            s.isInVehicle = false;
+            s.vehicleId = undefined;
+          }
         } else if (ev.type === "ride" && ev.name === rawName) {
           s.isInVehicle = true; s.vehicleId = ev.vehicle;
         } else if (ev.type === "leave" && ev.name === rawName) {

@@ -427,7 +427,8 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
     : "bg-black/40 hover:bg-black/50";
 
   return (
-    <div className={`mb-4 rounded-[2rem] border transition-all duration-300 shadow-2xl relative overflow-hidden
+    <div className={`mb-4 rounded-[2rem] border transition-all duration-300 shadow-2xl relative
+      ${showTierTooltip ? 'overflow-visible' : 'overflow-hidden'}
       ${isWin ? 'border-amber-500/50' : isRanked ? 'border-amber-500/20 hover:border-amber-500/40' : 'border-white/10 hover:border-white/20'}
       ${isWin ? 'bg-gradient-to-br from-[#1a1200] via-black to-[#0d0d0d]' : isRanked ? 'bg-gradient-to-br from-black/80 via-black/60 to-[#1a1508]' : 'bg-black/40 hover:bg-black/50'}
       ${(isExpanded || showTierTooltip) ? 'ring-1 ring-white/20 z-[999] isolation-isolate' : 'z-10'} hover:z-[70]`}>

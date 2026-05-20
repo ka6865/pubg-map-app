@@ -47,13 +47,23 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
 
   const [recentSearches, setRecentSearches] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
-    const saved = localStorage.getItem(STORAGE_KEY_RECENT);
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_RECENT);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      localStorage.removeItem(STORAGE_KEY_RECENT);
+      return [];
+    }
   });
   const [favorites, setFavorites] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
-    const saved = localStorage.getItem(STORAGE_KEY_FAVORITES);
-    return saved ? JSON.parse(saved) : [];
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_FAVORITES);
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      localStorage.removeItem(STORAGE_KEY_FAVORITES);
+      return [];
+    }
   });
   const [showDropdown, setShowDropdown] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
