@@ -155,8 +155,8 @@ export const MatchTimeline = ({ events, nickname, onEventClick }: MatchTimelineP
                       {labelInfo.text}
                     </div>
 
-                    <div className="flex-1 flex items-center justify-between overflow-hidden min-w-0">
-                      <div className="flex items-center gap-1 md:gap-2 truncate text-[11px] md:text-sm font-bold tracking-tight">
+                    <div className="flex-1 flex items-center justify-between min-w-0">
+                      <div className="flex flex-wrap items-center gap-1 md:gap-2 text-[11px] md:text-sm font-bold tracking-tight break-keep">
                         {isMe && (
                           <span className="px-1 py-0.5 rounded-[4px] bg-blue-500/20 text-blue-400 text-[8px] md:text-[9px] font-black mr-0.5 border border-blue-500/30 shrink-0">
                             나
@@ -211,7 +211,7 @@ const renderEventText = (event: TimelineEvent, lowerNickname: string) => {
       );
     case 'KILL':
       return (
-        <div className="flex items-center gap-0.5 md:gap-1 min-w-0 flex-nowrap">
+        <div className="flex flex-wrap items-center gap-0.5 md:gap-1 min-w-0">
           <Nickname name="나" isMe={true} />
           <span className="text-[8px] md:text-[10px] text-gray-500 truncate shrink min-w-0 max-w-[20px] xs:max-w-[40px] md:max-w-none opacity-60">{weaponStr}</span>
           <ArrowRight size={10} className="text-gray-600 shrink-0 mx-0.5" />
@@ -221,7 +221,7 @@ const renderEventText = (event: TimelineEvent, lowerNickname: string) => {
       );
     case 'KNOCK':
       return (
-        <div className="flex items-center gap-0.5 md:gap-1 min-w-0 flex-nowrap">
+        <div className="flex flex-wrap items-center gap-0.5 md:gap-1 min-w-0">
           <Nickname name="나" isMe={true} />
           <span className="text-[8px] md:text-[10px] text-gray-500 truncate shrink min-w-0 max-w-[20px] xs:max-w-[40px] md:max-w-none opacity-60">{weaponStr}</span>
           <ArrowRight size={10} className="text-gray-600 shrink-0 mx-0.5" />
@@ -231,7 +231,7 @@ const renderEventText = (event: TimelineEvent, lowerNickname: string) => {
       );
     case 'TEAM_KILL':
       return (
-        <div className="flex items-center gap-0.5 md:gap-1 min-w-0 flex-nowrap">
+        <div className="flex flex-wrap items-center gap-0.5 md:gap-1 min-w-0">
           <Nickname name={event.attacker || ""} isMe={isAttackerMe} className="text-orange-300 font-bold" />
           <span className="text-[8px] md:text-[10px] text-gray-500 truncate shrink min-w-0 max-w-[20px] xs:max-w-[40px] md:max-w-none opacity-60">{weaponStr}</span>
           <ArrowRight size={10} className="text-gray-600 shrink-0 mx-0.5" />
@@ -240,7 +240,7 @@ const renderEventText = (event: TimelineEvent, lowerNickname: string) => {
       );
     case 'TEAM_KNOCK':
       return (
-        <div className="flex items-center gap-0.5 md:gap-1 min-w-0 flex-nowrap">
+        <div className="flex flex-wrap items-center gap-0.5 md:gap-1 min-w-0">
           <Nickname name={event.attacker || ""} isMe={isAttackerMe} className="text-orange-400 font-bold" />
           <span className="text-[8px] md:text-[10px] text-gray-500 truncate shrink min-w-0 max-w-[20px] xs:max-w-[40px] md:max-w-none opacity-60">{weaponStr}</span>
           <ArrowRight size={10} className="text-gray-600 shrink-0 mx-0.5" />
@@ -324,7 +324,7 @@ const renderEventText = (event: TimelineEvent, lowerNickname: string) => {
       );
     case 'DOWNED':
       return (
-        <div className="flex items-center gap-0.5 md:gap-1 min-w-0 flex-nowrap">
+        <div className="flex flex-wrap items-center gap-0.5 md:gap-1 min-w-0">
           <Nickname name={event.attacker || ""} isMe={isAttackerMe} className="text-red-400 font-medium" />
           <span className="text-[8px] md:text-[10px] text-gray-500 truncate shrink min-w-0 max-w-[20px] xs:max-w-[40px] md:max-w-none opacity-60">{weaponStr}</span>
           <ArrowRight size={10} className="text-gray-600 shrink-0 mx-0.5" />

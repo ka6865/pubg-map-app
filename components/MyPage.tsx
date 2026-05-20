@@ -162,7 +162,9 @@ export default function MyPage({ initialCurrentUser, initialUserProfile, initial
       maxWidth: "1350px", 
       margin: "0 auto", 
       padding: isMobile ? "24px 16px 120px" : "60px 40px",
-      fontFamily: 'inherit'
+      fontFamily: 'inherit',
+      boxSizing: 'border-box',
+      overflowX: 'hidden'
     }}>
       
       {/* 🧭 브레드크럼 (3열 그리드 밖 최상단 배치) */}
@@ -253,23 +255,23 @@ export default function MyPage({ initialCurrentUser, initialUserProfile, initial
 
               <div>
                 <label style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: 'rgba(255,255,255,0.3)', marginBottom: '10px' }}>PUBG 인게임 연동</label>
-                <div style={{ display: 'flex', gap: '12px' }}>
+                <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '12px' }}>
                   <input 
                     value={editPubgNickname}
                     onChange={(e) => setEditPubgNickname(e.target.value)}
                     placeholder="인게임 닉네임"
                     style={{ 
-                      flex: 1, padding: '18px', backgroundColor: '#000', border: '1px solid rgba(255,255,255,0.1)',
-                      borderRadius: '14px', color: 'white', outline: 'none', fontSize: '16px'
+                      flex: isMobile ? 'none' : 1, width: '100%', padding: '18px', backgroundColor: '#000', border: '1px solid rgba(255,255,255,0.1)',
+                      borderRadius: '14px', color: 'white', outline: 'none', fontSize: '16px', boxSizing: 'border-box'
                     }}
                   />
-                  <div style={{ display: 'flex', backgroundColor: '#000', borderRadius: '14px', padding: '5px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                  <div style={{ display: 'flex', backgroundColor: '#000', borderRadius: '14px', padding: '5px', border: '1px solid rgba(255,255,255,0.1)', width: isMobile ? '100%' : 'auto', boxSizing: 'border-box', justifyContent: 'center' }}>
                     {['steam', 'kakao'].map(p => (
                       <button 
                         key={p}
                         onClick={() => setEditPubgPlatform(p as any)}
                         style={{ 
-                          padding: '0 18px', borderRadius: '10px', border: 'none', backgroundColor: editPubgPlatform === p ? '#F2A900' : 'transparent',
+                          flex: isMobile ? 1 : 'none', padding: isMobile ? '12px 0' : '0 18px', borderRadius: '10px', border: 'none', backgroundColor: editPubgPlatform === p ? '#F2A900' : 'transparent',
                           color: editPubgPlatform === p ? 'black' : 'rgba(255,255,255,0.4)', fontWeight: 800, cursor: 'pointer', fontSize: '13px'
                         }}
                       >

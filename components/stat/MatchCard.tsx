@@ -108,9 +108,9 @@ const renderMarkdown = (text: string) => {
 
     if (isHeader) {
       return (
-        <div key={idx} className="flex items-center gap-2 mt-4 mb-2">
-          <div className="w-1 h-4 bg-indigo-500 rounded-full" />
-          <h3 className={`font-black text-white ${headerLevel === 1 ? 'text-lg' : 'text-md'}`}>
+        <div key={idx} className="flex items-center gap-2 mt-5 mb-3">
+          <div className="w-1 h-4 bg-indigo-500 rounded-full shrink-0" />
+          <h3 className={`font-black text-white ${headerLevel === 1 ? 'text-lg' : 'text-md'} break-keep`}>
             {elements}
           </h3>
         </div>
@@ -119,15 +119,15 @@ const renderMarkdown = (text: string) => {
 
     if (isList) {
       return (
-        <div key={idx} className="flex gap-2 mb-1 pl-2">
-          <span className="text-indigo-400">•</span>
-          <span className="text-gray-300 text-sm leading-relaxed">{elements}</span>
+        <div key={idx} className="flex gap-2 mb-2 pl-2">
+          <span className="text-indigo-400 shrink-0 mt-1">•</span>
+          <span className="text-gray-300 text-sm leading-relaxed break-keep">{elements}</span>
         </div>
       );
     }
 
     return (
-      <p key={idx} className="text-gray-400 text-sm leading-relaxed mb-2 pl-1">
+      <p key={idx} className="text-gray-400 text-sm leading-relaxed mb-3.5 pl-1 break-keep">
         {elements}
       </p>
     );
@@ -147,6 +147,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
   const [matchData, setMatchData] = useState<MatchData | null>(null);
   const [loading, setLoading] = useState(true);
   const [isExpanded, setIsExpanded] = useState(false);
+  const [isTimelineExpanded, setIsTimelineExpanded] = useState(false);
   const [coachingStyle, setCoachingStyle] = useState<"mild" | "spicy">("spicy");
   const [analysis, setAnalysis] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -231,11 +232,11 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
           e.stopPropagation();
           if (isMobile) setShowTierTooltip(!showTierTooltip);
         }}
-        className={`px-4 py-1.5 rounded-xl border flex items-center gap-2 transition-all cursor-help hover:scale-105 active:scale-95 ${getTierStyle(tier)}`}
+        className={`px-2.5 py-1 md:px-4 md:py-1.5 rounded-xl border flex items-center gap-1.5 md:gap-2 transition-all cursor-help hover:scale-105 active:scale-95 ${getTierStyle(tier)}`}
       >
-        <span className="text-sm font-black italic tracking-tighter">{tier} Tier</span>
-        <div className="w-px h-3 bg-current opacity-20" />
-        <span className="text-[11px] font-black">{score}pt</span>
+        <span className="text-xs md:text-sm font-black italic tracking-tighter">{tier} Tier</span>
+        <div className="w-px h-2.5 md:h-3 bg-current opacity-20" />
+        <span className="text-[10px] md:text-[11px] font-black">{score}pt</span>
       </button>
     );
   };
@@ -442,24 +443,24 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
       {/* ── 스코어카드 헤더 ─────────────────────────────── */}
       <div
         onClick={() => setIsExpanded(!isExpanded)}
-        className="relative p-4 md:p-5 cursor-pointer group"
+        className="relative p-3.5 md:p-5 cursor-pointer group"
       >
         {/* 상단 행: 순위 + 맵/모드/시간 + 티어 + 펼치기 */}
         <div className="flex items-center gap-3 md:gap-4">
 
           {/* 순위 박스 */}
-          <div className={`shrink-0 w-16 h-16 md:w-18 md:h-18 rounded-2xl flex flex-col items-center justify-center font-black transition-transform group-hover:scale-105 relative overflow-hidden
+          <div className={`shrink-0 w-13 h-13 md:w-18 md:h-18 rounded-2xl flex flex-col items-center justify-center font-black transition-transform group-hover:scale-105 relative overflow-hidden
             ${isWin
               ? 'bg-amber-500 text-black shadow-[0_0_30px_rgba(245,158,11,0.5)]'
               : isTop10
               ? 'bg-green-500/15 text-green-400 border border-green-500/30'
               : 'bg-white/5 text-white/50 border border-white/10'}`}>
             {isWin && <div className="absolute inset-0 bg-gradient-to-b from-white/20 to-transparent" />}
-            <span className="text-[9px] uppercase tracking-widest opacity-60 relative z-10">
+            <span className="text-[8px] md:text-[9px] uppercase tracking-widest opacity-60 relative z-10">
               {isWin ? '👑' : 'RANK'}
             </span>
-            <span className="text-2xl leading-none relative z-10">#{matchData.stats.winPlace}</span>
-            <span className="text-[8px] opacity-40 relative z-10">/ {totalScale}</span>
+            <span className="text-lg md:text-2xl leading-none relative z-10">#{matchData.stats.winPlace}</span>
+            <span className="text-[7px] md:text-[8px] opacity-40 relative z-10">/ {totalScale}</span>
           </div>
 
           {/* 맵명 + 모드 + 시간 */}
@@ -571,65 +572,65 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
         </div>
 
         {/* ── 수평 스탯 배지 행 ── */}
-        <div className="mt-3 pt-3 border-t border-white/5 flex items-center gap-2 md:gap-4 flex-wrap">
+        <div className="mt-2.5 pt-2.5 border-t border-white/5 flex items-center gap-1.5 md:gap-4 flex-wrap">
           {/* Kills */}
-          <div className="flex items-baseline gap-1">
-            <span className={`font-black text-xl leading-none ${matchData.stats.kills >= 10 ? 'text-red-400' : matchData.stats.kills >= 5 ? 'text-orange-400' : 'text-white/70'}`}>
+          <div className="flex items-baseline gap-0.5 md:gap-1">
+            <span className={`font-black text-base md:text-xl leading-none ${matchData.stats.kills >= 10 ? 'text-red-400' : matchData.stats.kills >= 5 ? 'text-orange-400' : 'text-white/70'}`}>
               {matchData.stats.kills}
             </span>
-            <span className="text-[10px] text-white/25 font-black uppercase">Kills</span>
+            <span className="text-[9px] md:text-[10px] text-white/25 font-black uppercase">Kills</span>
           </div>
 
-          <div className="w-px h-4 bg-white/10" />
+          <div className="w-px h-3 bg-white/10" />
 
           {/* Dmg */}
-          <div className="flex items-baseline gap-1">
-            <span className={`font-black text-xl leading-none ${Number(matchData.stats.damageDealt) >= 500 ? 'text-indigo-300' : 'text-indigo-400/70'}`}>
+          <div className="flex items-baseline gap-0.5 md:gap-1">
+            <span className={`font-black text-base md:text-xl leading-none ${Number(matchData.stats.damageDealt) >= 500 ? 'text-indigo-300' : 'text-indigo-400/70'}`}>
               {Math.floor(Number(matchData.stats.damageDealt) || 0)}
             </span>
-            <span className="text-[10px] text-white/25 font-black uppercase">Dmg</span>
+            <span className="text-[9px] md:text-[10px] text-white/25 font-black uppercase">Dmg</span>
           </div>
 
-          <div className="w-px h-4 bg-white/10" />
+          <div className="w-px h-3 bg-white/10" />
 
           {/* DBNO */}
-          <div className="flex items-baseline gap-1">
-            <span className="text-yellow-400/80 font-black text-base leading-none">
+          <div className="flex items-baseline gap-0.5 md:gap-1">
+            <span className="text-yellow-400/80 font-black text-sm md:text-base leading-none">
               {Number(matchData.stats.DBNOs) || 0}
             </span>
-            <span className="text-[10px] text-white/25 font-black uppercase">DBNO</span>
+            <span className="text-[9px] md:text-[10px] text-white/25 font-black uppercase">DBNO</span>
           </div>
 
-          <div className="w-px h-4 bg-white/10" />
+          <div className="w-px h-3 bg-white/10" />
 
           {/* 헤드샷율 */}
           {matchData.stats.kills > 0 && (
             <>
-              <div className="flex items-baseline gap-1">
-                <span className="text-rose-400/80 font-black text-base leading-none">
+              <div className="flex items-baseline gap-0.5 md:gap-1">
+                <span className="text-rose-400/80 font-black text-sm md:text-base leading-none">
                   {((Number(matchData.stats.headshotKills) / matchData.stats.kills) * 100).toFixed(0)}%
                 </span>
-                <span className="text-[10px] text-white/25 font-black uppercase">헤드샷 킬</span>
+                <span className="text-[9px] md:text-[10px] text-white/25 font-black uppercase">헤드샷 킬</span>
               </div>
-              <div className="w-px h-4 bg-white/10" />
+              <div className="w-px h-3 bg-white/10" />
             </>
           )}
 
           {/* 생존시간 */}
-          <div className="flex items-baseline gap-1">
-            <span className="text-emerald-400/70 font-black text-base leading-none">
+          <div className="flex items-baseline gap-0.5 md:gap-1">
+            <span className="text-emerald-400/70 font-black text-sm md:text-base leading-none">
               {Math.floor((Number(matchData.stats.timeSurvived) || 0) / 60)}분
             </span>
-            <span className="text-[10px] text-white/25 font-black uppercase">생존</span>
+            <span className="text-[9px] md:text-[10px] text-white/25 font-black uppercase">생존</span>
           </div>
 
           {/* 팀딜 비중 */}
           {(matchData.teamImpact?.teamDamageShare ?? 0) > 0 && (
             <>
-              <div className="w-px h-4 bg-white/10" />
-              <div className="flex items-center gap-1 bg-orange-500/10 px-2 py-0.5 rounded-full border border-orange-500/20">
-                <Flame size={10} className="text-orange-400" />
-                <span className="text-[10px] text-orange-400 font-black">
+              <div className="w-px h-3 bg-white/10" />
+              <div className="flex items-center gap-1 bg-orange-500/10 px-1.5 py-0.5 md:px-2 md:py-0.5 rounded-full border border-orange-500/20">
+                <Flame size={9} className="text-orange-400" />
+                <span className="text-[9px] md:text-[10px] text-orange-400 font-black">
                   팀 {Number(matchData.teamImpact?.teamDamageShare || 0).toFixed(1)}%
                 </span>
               </div>
@@ -659,13 +660,13 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
       </div>
 
       {/* Quick Action Bar (Floating) */}
-      <div className="px-5 pb-4 flex flex-wrap gap-3">
+      <div className="px-3.5 pb-3.5 md:px-5 md:pb-4 flex flex-wrap gap-2 md:gap-3">
         <button 
           onClick={handleInternalReplay}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-tighter transition-all hover:scale-105 active:scale-95
+          className={`flex items-center gap-1.5 px-3 py-1.5 md:px-4 md:py-2 rounded-xl text-[10px] md:text-[11px] font-black uppercase tracking-tighter transition-all hover:scale-105 active:scale-95
             ${isRanked ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20' : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'}`}
         >
-          <PlayCircle size={14} />
+          <PlayCircle size={12} className="md:w-3.5 md:h-3.5" />
           2D 리플레이
         </button>
 
@@ -674,9 +675,9 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
             e.stopPropagation();
             router.push(`/maps/${mapId}?playback=${matchId}&nickname=${nickname}&mode=full`);
           }}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl text-[11px] font-black uppercase tracking-tighter transition-all hover:scale-105 active:scale-95 bg-gradient-to-r from-yellow-500/20 to-orange-600/20 text-yellow-500 border border-yellow-500/30 shadow-[0_0_15px_rgba(245,158,11,0.1)]"
+          className="flex items-center gap-1.5 px-3 py-1.5 md:px-4 md:py-2 rounded-xl text-[10px] md:text-[11px] font-black uppercase tracking-tighter transition-all hover:scale-105 active:scale-95 bg-gradient-to-r from-yellow-500/20 to-orange-600/20 text-yellow-500 border border-yellow-500/30 shadow-[0_0_15px_rgba(245,158,11,0.1)]"
         >
-          <span className="text-sm">💎</span>
+          <span className="text-xs md:text-sm">💎</span>
           고정밀 리플레이 (원본 데이터)
         </button>
       </div>
@@ -977,62 +978,93 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
           )}
 
           {/* [V12.5] New Tactical Dashboard (Radar + Timeline) */}
-          <div className="mt-8">
-            <div className="flex items-center gap-2 mb-6">
-              <div className="w-8 h-8 bg-indigo-500/20 rounded-lg flex items-center justify-center">
-                <Target size={16} className="text-indigo-400" />
-              </div>
-              <div className="flex flex-col">
-                <span className="text-white font-black text-sm">전술 위치 분석</span>
-                <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">전술 위치 및 매치 타임라인</span>
-              </div>
-            </div>
-            
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 md:gap-6">
-              {/* Left: Mini Map */}
-              <div className="lg:col-span-5 xl:col-span-4 bg-white/2 border border-white/5 rounded-[2.5rem] overflow-hidden min-h-[300px] lg:min-h-0 lg:h-[500px] relative group/map">
-                <div className="absolute top-4 left-4 z-10 px-3 py-1 bg-black/60 backdrop-blur-md border border-white/10 rounded-full text-[9px] text-gray-400 font-black uppercase tracking-widest opacity-0 group-hover/map:opacity-100 transition-opacity">
-                  인터랙티브 전술 지도
+          <div className="mt-8 border border-white/5 rounded-[2.5rem] bg-white/[0.01] overflow-hidden">
+            <div 
+              onClick={() => setIsTimelineExpanded(!isTimelineExpanded)}
+              className="flex items-center justify-between p-5 cursor-pointer hover:bg-white/[0.03] active:bg-white/[0.05] transition-all duration-300"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 bg-indigo-500/20 rounded-xl flex items-center justify-center shrink-0">
+                  <Target size={18} className="text-indigo-400" />
                 </div>
-                <TimelineMiniMap 
-                  selectedEvent={selectedEvent}
-                  mapId={mapId} 
-                />
-                {!selectedEvent && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-[2px] pointer-events-none z-20">
-                    <div className="bg-black/80 backdrop-blur-xl px-5 py-3 rounded-2xl border border-white/10 flex flex-col items-center gap-2 shadow-2xl scale-90 md:scale-100">
-                      <div className="w-10 h-10 bg-blue-500/20 rounded-full flex items-center justify-center mb-1">
-                        <MousePointer2 size={20} className="text-blue-400 animate-bounce" />
-                      </div>
-                      <span className="text-[11px] text-white font-black tracking-tight">타임라인 이벤트를 클릭하여 위치 확인</span>
-                      <span className="text-[9px] text-gray-500 font-bold">전술 상황이 일어난 지점을 지도에 표시합니다</span>
-                    </div>
-                  </div>
+                <div className="flex flex-col">
+                  <span className="text-white font-black text-sm flex items-center gap-1.5">
+                    전술 위치 분석 및 타임라인
+                    {isMobile && !isTimelineExpanded && (
+                      <span className="text-[9px] text-indigo-400 font-bold bg-indigo-500/10 px-2 py-0.5 rounded-full animate-pulse">
+                        TAP TO VIEW
+                      </span>
+                    )}
+                  </span>
+                  <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">
+                    {isMobile ? "터치하여 인터랙티브 지도와 교전 기록 확인" : "전술 위치 및 매치 타임라인"}
+                  </span>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {isMobile && !isTimelineExpanded && (
+                  <span className="text-[10px] text-gray-400 font-black tracking-tighter">
+                    이벤트 {matchData!.timeline?.filter((e: any) => e.type !== 'PHASE_START').length || 0}개
+                  </span>
                 )}
-              </div>
-
-              {/* Right: Timeline */}
-              <div className="lg:col-span-7 xl:col-span-8 bg-white/2 border border-white/5 rounded-[2.5rem] p-2 md:p-6 lg:h-[500px] flex flex-col">
-                <div className="flex items-center justify-between mb-6 shrink-0">
-                  <div className="text-[10px] text-gray-500 font-black uppercase tracking-widest">매치 타임라인</div>
-                  <div className="flex items-center gap-1.5 px-3 py-1 bg-white/5 rounded-full border border-white/10 text-[10px] text-gray-400 font-bold">
-                    <Clock size={10} />
-                    <span>{Math.floor(matchData!.stats.timeSurvived / 60)}분 {matchData!.stats.timeSurvived % 60}초 생존</span>
-                  </div>
-                </div>
-                
-                <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
-                  <MatchTimeline 
-                    events={matchData!.timeline || []} 
-                    nickname={nickname}
-                    onEventClick={(event: any) => {
-                      console.log("Event Clicked:", event.type, "Coords:", event.x, event.y);
-                      setSelectedEvent(event);
-                    }}
+                <div className="p-1.5 bg-white/5 rounded-lg border border-white/5">
+                  <ChevronDown 
+                    size={14} 
+                    className={`text-gray-400 transition-transform duration-300 ${
+                      (!isMobile || isTimelineExpanded) ? 'rotate-180 text-white' : ''
+                    }`} 
                   />
                 </div>
               </div>
             </div>
+            
+            {(!isMobile || isTimelineExpanded) && (
+              <div className="p-4 md:p-6 pt-0 grid grid-cols-1 lg:grid-cols-12 gap-3 md:gap-6 animate-in slide-in-from-top-2 duration-300">
+                {/* Left: Mini Map */}
+                <div className="lg:col-span-5 xl:col-span-4 bg-white/2 border border-white/5 rounded-[2rem] overflow-hidden min-h-[300px] lg:min-h-0 lg:h-[500px] relative group/map">
+                  <div className="absolute top-4 left-4 z-10 px-3 py-1 bg-black/60 backdrop-blur-md border border-white/10 rounded-full text-[9px] text-gray-400 font-black uppercase tracking-widest opacity-0 group-hover/map:opacity-100 transition-opacity">
+                    인터랙티브 전술 지도
+                  </div>
+                  <TimelineMiniMap 
+                    selectedEvent={selectedEvent}
+                    mapId={mapId} 
+                  />
+                  {!selectedEvent && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-[2px] pointer-events-none z-20">
+                      <div className="bg-black/80 backdrop-blur-xl px-5 py-3 rounded-2xl border border-white/10 flex flex-col items-center gap-2 shadow-2xl scale-90 md:scale-100">
+                        <div className="w-10 h-10 bg-blue-500/20 rounded-full flex items-center justify-center mb-1">
+                          <MousePointer2 size={20} className="text-blue-400 animate-bounce" />
+                        </div>
+                        <span className="text-[11px] text-white font-black tracking-tight">이벤트를 클릭하여 위치 확인</span>
+                        <span className="text-[9px] text-gray-500 font-bold">지도에 교전 지점이 표시됩니다</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Right: Timeline */}
+                <div className="lg:col-span-7 xl:col-span-8 bg-white/2 border border-white/5 rounded-[2rem] p-4 md:p-6 lg:h-[500px] flex flex-col">
+                  <div className="flex items-center justify-between mb-6 shrink-0">
+                    <div className="text-[10px] text-gray-500 font-black uppercase tracking-widest">매치 타임라인</div>
+                    <div className="flex items-center gap-1.5 px-3 py-1 bg-white/5 rounded-full border border-white/10 text-[10px] text-gray-400 font-bold">
+                      <Clock size={10} />
+                      <span>{Math.floor(matchData!.stats.timeSurvived / 60)}분 {matchData!.stats.timeSurvived % 60}초 생존</span>
+                    </div>
+                  </div>
+                  
+                  <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+                    <MatchTimeline 
+                      events={matchData!.timeline || []} 
+                      nickname={nickname}
+                      onEventClick={(event: any) => {
+                        console.log("Event Clicked:", event.type, "Coords:", event.x, event.y);
+                        setSelectedEvent(event);
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* AI Analysis Section */}
