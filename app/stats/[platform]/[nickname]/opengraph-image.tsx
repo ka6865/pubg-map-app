@@ -170,7 +170,7 @@ export default async function OgImage({ params }: Props) {
             {/* 닉네임 */}
             <div
               style={{
-                fontSize: decodedNickname.length > 16 ? "52px" : "68px",
+                fontSize: decodedNickname.length > 16 ? "58px" : decodedNickname.length > 10 ? "72px" : "80px",
                 fontWeight: "900",
                 color: "#ffffff",
                 letterSpacing: "-3px",
