@@ -170,12 +170,9 @@ export class CombatHandler extends BaseHandler {
       const currentVictimDamage = this.state.victimDamage.get(victimName) || 0;
       this.state.victimDamage.set(victimName, currentVictimDamage + damage);
 
-      // [BUG-FIX] 나를 제외한 다른 아군(팀원)이 공격한 적 팀 Roster ID를 기록 (본인 단독 킬이 어시스트로 오해받지 않도록 보정)
+      // [BUG-FIX] 나를 제외한 다른 아군(팀원)이 공격한 적 개별 플레이어 닉네임(victimName)을 기록 (스쿼드 모드에서도 순수 1:1 솔로킬을 발라내기 위함)
       if (victimName && !isTeammateVictim && !isMeAttacker) {
-        const vRosterId = this.state.teamMapping.get(victimName) || this.state.teamMapping.get(e.victim?.accountId || "");
-        if (vRosterId) {
-          this.state.teamsUserHit.add(vRosterId);
-        }
+        this.state.teamsUserHit.add(victimName);
       }
 
       if (isMeAttacker || isTeammateAttacker) {
@@ -515,8 +512,7 @@ export class CombatHandler extends BaseHandler {
       });
 
       if (victimName && !this.state.teamNames.has(victimName)) {
-        const vRosterId = this.state.teamMapping.get(victimName);
-        if (vRosterId && this.state.teamsUserHit.has(vRosterId)) this.state.killContribution.assist++;
+        if (this.state.teamsUserHit.has(victimName)) this.state.killContribution.assist++;
         else this.state.killContribution.solo++;
       }
     } else if (isMeFinisher) {

@@ -12,7 +12,7 @@
  *   파일 수준의 캐시 무효화를 수행합니다. (R2 파일명 기반, ISR 무관)
  */
 
-export const RESULT_VERSION = 64.0; // [V64.0] 본인 타격이 어시스트 셋에 유입되는 로직 오염 분리 패치 적용
+export const RESULT_VERSION = 65.0; // [V65.0] 스쿼드/듀오 모드 내 정밀 1:1 솔로킬 판정을 위한 개별 캐릭터 트래킹 적용
 export const TELEMETRY_VERSION = 58.3;
 
 export const MAP_NAMES: Record<string, string> = {
