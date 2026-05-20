@@ -394,7 +394,7 @@ export class AnalysisEngine {
         coverRate: this.state.totalCoverAttempts > 0 ? (this.state.totalCoverSuccess / this.state.totalCoverAttempts) * 100 : 0,
         coverRateSampleCount: this.state.totalCoverAttempts,
         enemyTeamWipes: this.state.wipedTeamsByUserParticipation.size,
-        tradeRate: this.state.totalTeammateKnocks > 0 ? (this.state.totalTradeKills / this.state.totalTeammateKnocks) * 100 : 0,
+        tradeRate: this.state.totalTeammateKnocks > 0 ? (Math.min(this.state.totalTeammateKnocks, this.state.totalTradeKills) / this.state.totalTeammateKnocks) * 100 : 0,
         suppRate: this.state.totalTeammateKnocks > 0 ? (this.state.totalSuppCount / this.state.totalTeammateKnocks) * 100 : 0
       },
       initiative_rate: initiativeRate,
@@ -453,7 +453,7 @@ export class AnalysisEngine {
         smokeRate: this.state.totalTeammateKnocks > 0 ? (this.state.totalSmokeRescues / this.state.totalTeammateKnocks) * 100 : 0,
         suppCount: this.state.totalSuppCount,
         reviveRate: this.state.totalTeammateKnocks > 0 ? (this.state.myReviveCount / this.state.totalTeammateKnocks) * 100 : 0,
-        tradeRate: this.state.totalTeammateKnocks > 0 ? (this.state.totalTradeKills / this.state.totalTeammateKnocks) * 100 : 0,
+        tradeRate: this.state.totalTeammateKnocks > 0 ? (Math.min(this.state.totalTeammateKnocks, this.state.totalTradeKills) / this.state.totalTeammateKnocks) * 100 : 0,
         teamWipes: this.state.wipedTeamsByUserParticipation.size,
         reversalRate: reversalRate,
         deathPhase: this.state.deathPhaseSnapshot || this.state.currentPhase,

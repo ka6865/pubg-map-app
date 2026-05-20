@@ -12,7 +12,7 @@
  *   파일 수준의 캐시 무효화를 수행합니다. (R2 파일명 기반, ISR 무관)
  */
 
-export const RESULT_VERSION = 62.0; // [V62.0] S+ 등급 신설 및 티어 컷라인 완화, 조기 탈락 시 폴백 방지 추가에 따른 버전 범핑
+export const RESULT_VERSION = 63.0; // [V63.0] 트레이드 레이트 100% 캡핑 및 솔로킬 어시스트 판정 버그 수정에 따른 버전 범핑
 export const TELEMETRY_VERSION = 58.3;
 
 export const MAP_NAMES: Record<string, string> = {

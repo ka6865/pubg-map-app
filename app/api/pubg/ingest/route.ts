@@ -85,7 +85,7 @@ export async function POST(request: Request) {
           min_dist: finalResult.isolationData?.minDist || 0,
           height_diff: finalResult.isolationData?.heightDiff || 0,
           smoke_rate: ((finalResult.tradeStats?.smokeRescues || 0) / Math.max(1, finalResult.tradeStats?.teammateKnocks || 0)) * 100,
-          trade_rate: ((finalResult.tradeStats?.tradeKills || 0) / Math.max(1, finalResult.tradeStats?.teammateKnocks || 0)) * 100,
+          trade_rate: (Math.min(finalResult.tradeStats?.teammateKnocks || 0, finalResult.tradeStats?.tradeKills || 0) / Math.max(1, finalResult.tradeStats?.teammateKnocks || 0)) * 100,
           solo_kill_rate: ((finalResult.killContribution?.solo || 0) / Math.max(1, (finalResult.killContribution?.solo || 0) + (finalResult.killContribution?.assist || 0) + (finalResult.killContribution?.cleanup || 0))) * 100,
           reversal_rate: finalResult.duelStats?.reversalRate || 0,
           duel_win_rate: finalResult.duelStats?.duelWinRate || 0,

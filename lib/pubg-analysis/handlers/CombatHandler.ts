@@ -170,6 +170,14 @@ export class CombatHandler extends BaseHandler {
       const currentVictimDamage = this.state.victimDamage.get(victimName) || 0;
       this.state.victimDamage.set(victimName, currentVictimDamage + damage);
 
+      // [BUG-FIX] 아군이 공격한 적 팀 Roster ID를 기록하여 Kill Contribution (solo vs assist) 판정이 가능하도록 보정
+      if (victimName && !isTeammateVictim) {
+        const vRosterId = this.state.teamMapping.get(victimName) || this.state.teamMapping.get(e.victim?.accountId || "");
+        if (vRosterId) {
+          this.state.teamsUserHit.add(vRosterId);
+        }
+      }
+
       if (isMeAttacker || isTeammateAttacker) {
         // 0. 아군 공격(Friendly Fire) 및 자해 데미지는 본인/아군 무기 교전 통계에서 완벽 배제 (팀원 차량 박치기 딜량 오염 차단)
         if (isTeammateVictim || victimName === attackerName) {
