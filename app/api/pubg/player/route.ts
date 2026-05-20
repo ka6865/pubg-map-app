@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 
-// [V12.1] 네트워크 불안정 대응을 위한 재시도 헬퍼 함수
-async function withRetry<T>(fn: () => Promise<T>, retries = 3, delay = 1000): Promise<T> {
+// [V12.1] 네트워크 불안정 대응을 위한 재시도 헬퍼 함수 (전체 대기 시간 누적 방지)
+async function withRetry<T>(fn: () => Promise<T>, retries = 2, delay = 1000): Promise<T> {
   let lastError;
   for (let i = 0; i < retries; i++) {
     try {
@@ -55,13 +55,13 @@ export async function GET(request: Request) {
   }
 
   try {
-    // 2. PUBG API 호출 (캐시된 닉네임 우선 사용)
+    // 2. PUBG API 호출 (캐시된 닉네임 우선 사용, 개별 타임아웃 8초로 조정)
     let playerRes = await withRetry(() => fetch(
       `https://api.pubg.com/shards/${platform}/players?filter[playerNames]=${targetNickname}`,
       { 
         headers, 
         next: { revalidate: 60 },
-        signal: AbortSignal.timeout(15000)
+        signal: AbortSignal.timeout(8000)
       }
     ));
 
@@ -73,7 +73,7 @@ export async function GET(request: Request) {
         { 
           headers, 
           next: { revalidate: 60 },
-          signal: AbortSignal.timeout(15000)
+          signal: AbortSignal.timeout(8000)
         }
       ));
     }
@@ -111,7 +111,7 @@ export async function GET(request: Request) {
       { 
         headers, 
         next: { revalidate: 60 },
-        signal: AbortSignal.timeout(15000)
+        signal: AbortSignal.timeout(8000)
       }
     ));
     const seasonData = await seasonRes.json();
@@ -136,7 +136,7 @@ export async function GET(request: Request) {
           { 
             headers, 
             next: { revalidate: 60 },
-            signal: AbortSignal.timeout(15000)
+            signal: AbortSignal.timeout(8000)
           }
         ));
         if (checkRes.ok) {
@@ -169,11 +169,11 @@ export async function GET(request: Request) {
     const [rankedRes, normalRes] = await Promise.all([
       withRetry(() => fetch(
         `https://api.pubg.com/shards/${platform}/players/${accountId}/seasons/${targetSeasonId}/ranked`,
-        { headers, next: { revalidate: 60 }, signal: AbortSignal.timeout(15000) }
+        { headers, next: { revalidate: 60 }, signal: AbortSignal.timeout(8000) }
       )),
       withRetry(() => fetch(
         `https://api.pubg.com/shards/${platform}/players/${accountId}/seasons/${targetSeasonId}`,
-        { headers, next: { revalidate: 60 }, signal: AbortSignal.timeout(15000) }
+        { headers, next: { revalidate: 60 }, signal: AbortSignal.timeout(8000) }
       )),
     ]);
 

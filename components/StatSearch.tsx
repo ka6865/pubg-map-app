@@ -43,6 +43,7 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState("");
   const [selectedSeason, setSelectedSeason] = useState("");
+  const [hasPrefilled, setHasPrefilled] = useState(false);
 
   const [recentSearches, setRecentSearches] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
@@ -108,8 +109,16 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
       const res = await fetch(
         `/api/pubg/player?nickname=${searchName}&platform=${searchPlatform}&season=${targetSeason}`
       );
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
+      
+      let data: any;
+      const contentType = res.headers.get("content-type");
+      if (contentType && contentType.includes("application/json")) {
+        data = await res.json();
+      } else {
+        throw new Error(`서버 응답 지연이 발생했습니다. 잠시 후 다시 시도해 주세요. (HTTP ${res.status})`);
+      }
+
+      if (!res.ok) throw new Error(data?.error || `서버 에러가 발생했습니다. (HTTP ${res.status})`);
 
       setResult(data);
       setSelectedSeason(data.seasonId);
@@ -152,14 +161,14 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
       return;
     }
 
-    // 2. [Option B] 로그인 유저 — 자동 검색 제거, 닉네임 프리필만 수행
-    // 유저가 검색 버튼을 직접 눌러야 실행되어 탐색 자유도가 높아집니다.
-    if (userProfile?.pubg_nickname) {
+    // 2. [Option B] 로그인 유저 — 자동 검색 제거, 닉네임 프리필만 1회 수행
+    if (userProfile?.pubg_nickname && !hasPrefilled) {
       const userPlatform = userProfile.pubg_platform || "steam";
       setNickname(userProfile.pubg_nickname);
       setPlatform(userPlatform);
+      setHasPrefilled(true);
     }
-  }, [userProfile, result, loading, error, selectedSeason, handleSearch, initialNickname, initialPlatform]);
+  }, [userProfile, result, loading, error, selectedSeason, handleSearch, initialNickname, initialPlatform, hasPrefilled]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_FAVORITES, JSON.stringify(favorites));
