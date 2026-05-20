@@ -1,0 +1,252 @@
+// app/stats/[platform]/[nickname]/opengraph-image.tsx
+// Next.js 16 내장 ImageResponse를 사용한 동적 OG 이미지 생성
+// 배포 환경에서 실제 플레이어 전적 데이터를 조회하여 스탯 패널에 표시합니다.
+
+import { ImageResponse } from "next/og";
+
+export const contentType = "image/png";
+export const size = { width: 1200, height: 630 };
+
+interface Props {
+  params: Promise<{ platform: string; nickname: string }>;
+}
+
+const PLATFORM_LABEL: Record<string, string> = {
+  steam: "Steam",
+  kakao: "Kakao",
+  psn: "PlayStation",
+  xbox: "Xbox",
+};
+
+interface StatRow {
+  label: string;
+  value: string;
+  color: string;
+  border: string;
+  bg: string;
+}
+
+export default async function OgImage({ params }: Props) {
+  const { platform, nickname } = await params;
+  const decodedNickname = decodeURIComponent(nickname);
+  const platformLabel = PLATFORM_LABEL[platform] || platform;
+
+  // 실제 플레이어 스탯 조회 (배포 환경에서 동작)
+  let avgDamage = 0;
+  let kda = 0;
+  let avgSurvival = 0;
+  let winRate = 0;
+  let hasStats = false;
+
+  try {
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://bgms.kr";
+    const res = await fetch(
+      `${baseUrl}/api/pubg/player?nickname=${encodeURIComponent(decodedNickname)}&platform=${platform}`,
+      {
+        next: { revalidate: 3600 }, // 1시간 캐시
+        signal: AbortSignal.timeout(5000), // 5초 타임아웃
+      }
+    );
+
+    if (res.ok) {
+      const data = await res.json();
+      // 랭크 스쿼드 → 랭크 솔로 → 일반 스쿼드 → 일반 솔로 우선순위로 통계 선택
+      const s =
+        data.stats?.ranked?.squad ||
+        data.stats?.ranked?.solo ||
+        data.stats?.normal?.squad ||
+        data.stats?.normal?.solo;
+
+      if (s && s.roundsPlayed > 0) {
+        const rounds = s.roundsPlayed;
+        avgDamage = Math.round(s.damageDealt / rounds);
+        const deaths = Math.max(s.losses || rounds, 1);
+        kda = parseFloat(((s.kills + (s.assists || 0) * 0.5) / deaths).toFixed(2));
+        avgSurvival = Math.round((s.timeSurvived || 0) / rounds / 60);
+        winRate = parseFloat(((s.wins / rounds) * 100).toFixed(1));
+        hasStats = true;
+      }
+    }
+  } catch {
+    // 타임아웃 또는 오류 시 "—" 표시로 폴백
+  }
+
+  const statRows: StatRow[] = [
+    {
+      label: "평균 딜량",
+      value: hasStats ? `${avgDamage.toLocaleString()} dmg` : "—",
+      color: "#f87171",
+      border: "#f8717140",
+      bg: "#f8717110",
+    },
+    {
+      label: "KDA",
+      value: hasStats ? String(kda) : "—",
+      color: "#60a5fa",
+      border: "#60a5fa40",
+      bg: "#60a5fa10",
+    },
+    {
+      label: "평균 생존",
+      value: hasStats ? `${avgSurvival}분` : "—",
+      color: "#34d399",
+      border: "#34d39940",
+      bg: "#34d39910",
+    },
+    {
+      label: "승률",
+      value: hasStats ? `${winRate}%` : "—",
+      color: "#f59e0b",
+      border: "#f59e0b40",
+      bg: "#f59e0b10",
+    },
+  ];
+
+  return new ImageResponse(
+    (
+      <div
+        style={{
+          width: "1200px",
+          height: "630px",
+          background: "linear-gradient(135deg, #0a0a14 0%, #111827 50%, #0a0a14 100%)",
+          display: "flex",
+          flexDirection: "column",
+          position: "relative",
+          overflow: "hidden",
+          fontFamily: "sans-serif",
+        }}
+      >
+        {/* 배경 글로우 */}
+        <div style={{ position: "absolute", top: "-150px", left: "-80px", width: "550px", height: "550px", background: "radial-gradient(circle, #818cf820 0%, transparent 65%)", borderRadius: "50%" }} />
+        <div style={{ position: "absolute", bottom: "-120px", right: "200px", width: "450px", height: "450px", background: "radial-gradient(circle, #f59e0b12 0%, transparent 65%)", borderRadius: "50%" }} />
+
+        {/* 상단 브랜드 바 */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "32px 52px 0",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "14px" }}>
+            <div style={{ fontSize: "28px", fontWeight: "900", color: "#f59e0b" }}>🏆 BGMS</div>
+            <div style={{ fontSize: "13px", color: "#6b7280", fontWeight: "700", paddingLeft: "14px", borderLeft: "1px solid #374151", letterSpacing: "1px" }}>
+              AI 전적 분석
+            </div>
+          </div>
+          <div style={{ fontSize: "13px", color: "#4b5563", fontWeight: "700", letterSpacing: "1px" }}>bgms.kr</div>
+        </div>
+
+        {/* 메인 영역 */}
+        <div
+          style={{
+            display: "flex",
+            flex: 1,
+            alignItems: "center",
+            padding: "24px 52px 0",
+            gap: "40px",
+          }}
+        >
+          {/* 왼쪽: 닉네임 영역 */}
+          <div style={{ display: "flex", flexDirection: "column", flex: 1, gap: "18px" }}>
+            {/* 플랫폼 배지 */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                alignSelf: "flex-start",
+                background: "#1f2937",
+                border: "1px solid #374151",
+                borderRadius: "10px",
+                padding: "7px 16px",
+              }}
+            >
+              <span style={{ fontSize: "13px", color: "#9ca3af", fontWeight: "800", letterSpacing: "2px" }}>
+                🎮 {platformLabel.toUpperCase()}
+              </span>
+            </div>
+
+            {/* 닉네임 */}
+            <div
+              style={{
+                fontSize: decodedNickname.length > 16 ? "52px" : "68px",
+                fontWeight: "900",
+                color: "#ffffff",
+                letterSpacing: "-3px",
+                lineHeight: "1.0",
+              }}
+            >
+              {decodedNickname}
+            </div>
+
+            {/* 기능 배지 3개 */}
+            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              {[
+                { icon: "🔍", label: "AI 전술 분석", bg: "#ffffff08", border: "#ffffff15", color: "#d1d5db" },
+                { icon: "⚡", label: "2D 리플레이", bg: "#f59e0b10", border: "#f59e0b30", color: "#f59e0b" },
+                { icon: "🏅", label: "티어 평가", bg: "#818cf810", border: "#818cf830", color: "#818cf8" },
+              ].map((b) => (
+                <div
+                  key={b.label}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    background: b.bg,
+                    border: `1px solid ${b.border}`,
+                    borderRadius: "20px",
+                    padding: "8px 16px",
+                  }}
+                >
+                  <span style={{ fontSize: "14px" }}>{b.icon}</span>
+                  <span style={{ fontSize: "14px", color: b.color, fontWeight: "700" }}>{b.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* 구분선 */}
+          <div style={{ width: "1px", height: "280px", background: "linear-gradient(180deg, transparent, #374151 30%, #374151 70%, transparent)" }} />
+
+          {/* 오른쪽: 스탯 패널 */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px", minWidth: "320px" }}>
+            <div style={{ fontSize: "11px", color: "#4b5563", fontWeight: "800", letterSpacing: "3px", marginBottom: "4px" }}>
+              AI 분석 지표
+            </div>
+            {statRows.map((stat) => (
+              <div
+                key={stat.label}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  background: stat.bg,
+                  border: `1px solid ${stat.border}`,
+                  borderRadius: "12px",
+                  padding: "14px 20px",
+                }}
+              >
+                <span style={{ fontSize: "15px", color: "#9ca3af", fontWeight: "700" }}>{stat.label}</span>
+                <span style={{ fontSize: stat.value === "—" ? "22px" : "20px", fontWeight: "900", color: stat.color }}>
+                  {stat.value}
+                </span>
+              </div>
+            ))}
+            <div style={{ fontSize: "11px", color: "#374151", fontWeight: "600", marginTop: "4px", textAlign: "right" }}>
+              bgms.kr에서 전체 분석 보기 →
+            </div>
+          </div>
+        </div>
+
+        {/* 하단 바 */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "20px 52px 26px" }}>
+          <div style={{ fontSize: "11px", color: "#374151", fontWeight: "700", letterSpacing: "3px" }}>
+            BGMS · BATTLEGROUNDS GAMING MAP SERVICE · bgms.kr
+          </div>
+        </div>
+      </div>
+    ),
+    { ...size }
+  );
+}

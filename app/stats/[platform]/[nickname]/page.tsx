@@ -20,9 +20,22 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   return {
     ...seo,
     title: `${decodedNickname} 전적 분석 | BGMS`,
-    description: `${decodedNickname}님의 PUBG AI 정밀 전술 분석 리포트를 확인하세요.`,
+    description: `${decodedNickname}님의 PUBG AI 정밀 전술 분석 리포트를 확인하세요. KDA, 평균 딜량, 생존 시간, 전술 티어를 BGMS에서 분석합니다.`,
     alternates: {
       canonical: canonicalUrl,
+    },
+    openGraph: {
+      title: `${decodedNickname} 전적 분석 | BGMS`,
+      description: `${decodedNickname}님의 PUBG AI 전술 분석을 확인하세요.`,
+      url: canonicalUrl,
+      siteName: "BGMS",
+      locale: "ko_KR",
+      type: "profile",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title: `${decodedNickname} 전적 분석 | BGMS`,
+      description: `${decodedNickname}님의 PUBG AI 전술 분석 — bgms.kr`,
     },
   };
 }
