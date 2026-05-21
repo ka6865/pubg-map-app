@@ -7,25 +7,48 @@ import BattleClient from "./BattleClient";
 const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://bgms.kr";
 
 interface Props {
-  searchParams: Promise<{ nick1?: string; nick2?: string; matchType?: string }>;
+  searchParams: Promise<{
+    nick1?: string;
+    nick2?: string;
+    matchType?: string;
+    score1?: string;
+    score2?: string;
+    winner?: string;
+  }>;
 }
 
 export async function generateMetadata({ searchParams }: Props): Promise<Metadata> {
   const params = await searchParams;
   const nick1 = params?.nick1 || "";
   const nick2 = params?.nick2 || "";
+  const score1 = params?.score1 || "";
+  const score2 = params?.score2 || "";
+  const winner = params?.winner || "";
 
   const hasPlayers = nick1 && nick2;
+  const hasScore = score1 !== "" && score2 !== "";
+
   const title = hasPlayers
     ? `${nick1} vs ${nick2} 전적 비교 | BGMS`
     : "전적 비교 배틀 | BGMS";
-  const description = hasPlayers
+
+  const description = hasPlayers && hasScore
+    ? `${nick1} ${score1} : ${score2} ${nick2} — BGMS 전적 비교 결과. KDA, 딜량, 생존 시간 등 항목별 비교를 확인하세요.`
+    : hasPlayers
     ? `${nick1}과 ${nick2}의 PUBG 전적을 AI로 항목별 비교합니다. KDA, 딜량, 생존 시간 등을 BGMS에서 확인하세요.`
     : "두 플레이어의 PUBG 전적을 AI로 항목별 비교 대결합니다.";
 
-  const ogImageUrl = hasPlayers
-    ? `${baseUrl}/api/og/battle?nick1=${encodeURIComponent(nick1)}&nick2=${encodeURIComponent(nick2)}`
-    : `${baseUrl}/api/og/battle`;
+  // OG 이미지 API Route에 score, winner 포함
+  const ogParams = new URLSearchParams();
+  if (nick1) ogParams.set("nick1", nick1);
+  if (nick2) ogParams.set("nick2", nick2);
+  if (hasScore) {
+    ogParams.set("score1", score1);
+    ogParams.set("score2", score2);
+  }
+  if (winner) ogParams.set("winner", winner);
+
+  const ogImageUrl = `${baseUrl}/api/og/battle?${ogParams.toString()}`;
 
   return {
     title,

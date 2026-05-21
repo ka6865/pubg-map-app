@@ -118,12 +118,23 @@ function BattleContent() {
     });
   }, []);
 
-  const buildShareUrl = (player1: string, player2: string, mode: string) => {
+  const buildShareUrl = (
+    player1: string,
+    player2: string,
+    mode: string,
+    score?: { nick1: number; nick2: number },
+    winner?: string
+  ) => {
     if (typeof window === "undefined") return "";
     const url = new URL("/stats/battle", window.location.origin);
     url.searchParams.set("nick1", player1);
     url.searchParams.set("nick2", player2);
     url.searchParams.set("matchType", mode);
+    if (score !== undefined) {
+      url.searchParams.set("score1", String(score.nick1));
+      url.searchParams.set("score2", String(score.nick2));
+    }
+    if (winner) url.searchParams.set("winner", winner);
     return url.toString();
   };
 
@@ -236,7 +247,9 @@ function BattleContent() {
     if (!result) return;
     try {
       setShareBusy("copy");
-      await navigator.clipboard.writeText(buildShareUrl(result.nick1, result.nick2, matchType));
+      await navigator.clipboard.writeText(
+        buildShareUrl(result.nick1, result.nick2, matchType, result.score, result.overallWinner)
+      );
       setShareMessage("공유 링크를 복사했어요.");
       clearShareMessageLater();
     } catch {
@@ -248,7 +261,13 @@ function BattleContent() {
 
   const handleShareLink = async () => {
     if (!result) return;
-    const shareUrl = buildShareUrl(result.nick1, result.nick2, matchType);
+    const shareUrl = buildShareUrl(
+      result.nick1,
+      result.nick2,
+      matchType,
+      result.score,
+      result.overallWinner
+    );
 
     try {
       setShareBusy("share");
