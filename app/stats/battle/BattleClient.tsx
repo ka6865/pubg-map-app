@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Camera, Copy, Download, ImageDown, Share2, Star, Clock, User, X } from "lucide-react";
 import { STORAGE_KEY_RECENT, STORAGE_KEY_FAVORITES } from "../../../lib/pubg-analysis/constants";
+import { trackEvent } from "@/lib/analytics";
 
 interface Comparison {
   key: string;
@@ -160,8 +161,21 @@ function BattleContent() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "알 수 없는 오류");
       setResult(data);
-      
-      // [NEW] 정확한 대소문자 닉네임으로 UI 동기화
+
+      // [Analytics] 대결 완료
+      trackEvent({
+        name: "battle_completed",
+        params: {
+          nick1: data.nick1,
+          nick2: data.nick2,
+          match_type: mode,
+          winner: data.overallWinner === "draw" ? "draw" : data.overallWinner,
+          score1: data.score.nick1,
+          score2: data.score.nick2,
+        },
+      });
+
+      // [V54.7] 정확한 대소문자 닉네임으로 UI 동기화
       if (data.nick1 && data.nick1 !== n1) setNick1(data.nick1);
       if (data.nick2 && data.nick2 !== n2) setNick2(data.nick2);
 
@@ -250,6 +264,8 @@ function BattleContent() {
       await navigator.clipboard.writeText(
         buildShareUrl(result.nick1, result.nick2, matchType, result.score, result.overallWinner)
       );
+      // [Analytics]
+      trackEvent({ name: "share_clicked", params: { method: "link_copy", page: "battle" } });
       setShareMessage("공유 링크를 복사했어요.");
       clearShareMessageLater();
     } catch {
@@ -276,6 +292,8 @@ function BattleContent() {
           title: `${result.nick1} vs ${result.nick2} 전적 비교 | BGMS`,
           url: shareUrl,
         });
+        // [Analytics]
+        trackEvent({ name: "share_clicked", params: { method: "link_share", page: "battle" } });
         setShareMessage("공유 시트를 열었어요.");
       } else {
         await navigator.clipboard.writeText(shareUrl);
@@ -303,6 +321,8 @@ function BattleContent() {
       link.download = `bgms-battle-${result.nick1}-vs-${result.nick2}.png`;
       link.click();
       URL.revokeObjectURL(url);
+      // [Analytics]
+      trackEvent({ name: "share_clicked", params: { method: "image_download", page: "battle" } });
       setShareMessage("비교 이미지를 저장했어요.");
       clearShareMessageLater();
     } catch {
@@ -325,6 +345,8 @@ function BattleContent() {
             [blob.type]: blob,
           }),
         ]);
+        // [Analytics]
+        trackEvent({ name: "share_clicked", params: { method: "image_copy", page: "battle" } });
         setShareMessage("비교 이미지를 클립보드에 복사했어요.");
       } else {
         const url = URL.createObjectURL(blob);
@@ -357,6 +379,8 @@ function BattleContent() {
           text: `${result.nick1} vs ${result.nick2} 전적 비교 결과`,
           files: [file],
         });
+        // [Analytics]
+        trackEvent({ name: "share_clicked", params: { method: "image_share", page: "battle" } });
         setShareMessage("이미지 공유 시트를 열었어요.");
       } else {
         const url = URL.createObjectURL(blob);

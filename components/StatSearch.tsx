@@ -1,5 +1,6 @@
 // 파일 위치: components/StatSearch.tsx
 "use client";
+import { trackEvent } from "@/lib/analytics";
 
 import React, { useState, useEffect, useId, useCallback, useRef } from "react";
 import { MatchCard } from "./stat/MatchCard";
@@ -136,6 +137,17 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
       const actualName = data.nickname;
       setNickname(actualName);
 
+      // [Analytics] 전적 검색 성공
+      trackEvent({
+        name: "stats_searched",
+        params: {
+          nickname: actualName,
+          platform: searchPlatform,
+          has_data: true,
+          season_id: data.seasonId,
+        },
+      });
+
       setRecentSearches((prev) => {
         const updated = [
           actualName,
@@ -150,6 +162,15 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
       }
     } catch (err: any) {
       setError(err.message);
+      // [Analytics] 검색 실패 (닉네임 없음 등)
+      trackEvent({
+        name: "stats_searched",
+        params: {
+          nickname: nickname,
+          platform: searchPlatform,
+          has_data: false,
+        },
+      });
     } finally {
       setLoading(false);
       setTimeout(() => setCooldown(false), 3000);
