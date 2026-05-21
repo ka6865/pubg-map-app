@@ -67,10 +67,11 @@ export default async function OgImage({ params }: Props) {
           1
         );
 
-        // ranked API에 kda 필드가 있으면 우선 사용
-        kda = s.kda != null
-          ? parseFloat(s.kda.toFixed(2))
-          : parseFloat(((s.kills + (s.assists || 0) * 0.5) / deaths).toFixed(2));
+        // PUBG ranked API의 kda 필드가 0을 반환하는 버그가 있어 직접 계산
+        // (kills + assists×0.5) / deaths 공식 사용
+        kda = parseFloat(
+          ((s.kills + (s.assists || 0) * 0.5) / deaths).toFixed(2)
+        );
 
         // ranked avgSurvivalTime이 0이면 데이터 없음 → — 표시 유지
         const rawSurvival =
