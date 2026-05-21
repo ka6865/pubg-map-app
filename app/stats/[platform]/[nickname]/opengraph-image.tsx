@@ -60,12 +60,32 @@ export default async function OgImage({ params }: Props) {
       if (s && s.roundsPlayed > 0) {
         const rounds = s.roundsPlayed;
         avgDamage = Math.round(s.damageDealt / rounds);
-        const deaths = Math.max(s.losses || rounds, 1);
-        kda = parseFloat(((s.kills + (s.assists || 0) * 0.5) / deaths).toFixed(2));
-        avgSurvival = Math.round((s.timeSurvived || 0) / rounds / 60);
+
+        // ranked: deaths 필드 / normal: losses 필드
+        const deaths = Math.max(
+          s.deaths ?? s.losses ?? (rounds - (s.wins ?? 0)),
+          1
+        );
+
+        // ranked API에 kda 필드가 있으면 우선 사용
+        kda = s.kda != null
+          ? parseFloat(s.kda.toFixed(2))
+          : parseFloat(((s.kills + (s.assists || 0) * 0.5) / deaths).toFixed(2));
+
+        // ranked avgSurvivalTime이 0이면 데이터 없음 → — 표시 유지
+        const rawSurvival =
+          s.timeSurvived != null && s.timeSurvived > 0
+            ? s.timeSurvived / rounds
+            : s.avgSurvivalTime != null && s.avgSurvivalTime > 0
+            ? s.avgSurvivalTime
+            : 0;
+        avgSurvival = Math.round(rawSurvival / 60);
+
         winRate = parseFloat(((s.wins / rounds) * 100).toFixed(1));
         hasStats = true;
       }
+
+
     }
   } catch {
     // 타임아웃 또는 오류 시 "—" 표시로 폴백
@@ -88,7 +108,7 @@ export default async function OgImage({ params }: Props) {
     },
     {
       label: "평균 생존",
-      value: hasStats ? `${avgSurvival}분` : "—",
+      value: hasStats && avgSurvival > 0 ? `${avgSurvival}분` : "—",
       color: "#34d399",
       border: "#34d39940",
       bg: "#34d39910",
@@ -167,17 +187,24 @@ export default async function OgImage({ params }: Props) {
               </span>
             </div>
 
-            {/* 닉네임 */}
+            {/* 닉네임 — 길이별 폰트 자동 조정 */}
             <div
               style={{
-                fontSize: decodedNickname.length > 16 ? "58px" : decodedNickname.length > 10 ? "72px" : "80px",
+                fontSize:
+                  decodedNickname.length > 20 ? "44px" :
+                  decodedNickname.length > 16 ? "56px" :
+                  decodedNickname.length > 10 ? "70px" : "80px",
                 fontWeight: "900",
                 color: "#ffffff",
-                letterSpacing: "-3px",
+                letterSpacing: "-2px",
                 lineHeight: "1.0",
+                maxWidth: "560px",
+                overflow: "hidden",
               }}
             >
-              {decodedNickname}
+              {decodedNickname.length > 22
+                ? decodedNickname.slice(0, 22) + "..."
+                : decodedNickname}
             </div>
 
             {/* 기능 배지 3개 */}
@@ -209,9 +236,9 @@ export default async function OgImage({ params }: Props) {
           {/* 구분선 */}
           <div style={{ width: "1px", height: "280px", background: "linear-gradient(180deg, transparent, #374151 30%, #374151 70%, transparent)" }} />
 
-          {/* 오른쪽: 스탯 패널 */}
-          <div style={{ display: "flex", flexDirection: "column", gap: "10px", minWidth: "320px" }}>
-            <div style={{ fontSize: "11px", color: "#4b5563", fontWeight: "800", letterSpacing: "3px", marginBottom: "4px" }}>
+          {/* 오른쪽: 스탯 패널 — 폰트 크기 대폭 증가 */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px", minWidth: "360px" }}>
+            <div style={{ fontSize: "11px", color: "#4b5563", fontWeight: "800", letterSpacing: "3px", marginBottom: "2px" }}>
               AI 분석 지표
             </div>
             {statRows.map((stat) => (
@@ -223,17 +250,17 @@ export default async function OgImage({ params }: Props) {
                   justifyContent: "space-between",
                   background: stat.bg,
                   border: `1px solid ${stat.border}`,
-                  borderRadius: "12px",
-                  padding: "14px 20px",
+                  borderRadius: "14px",
+                  padding: "16px 24px",
                 }}
               >
-                <span style={{ fontSize: "15px", color: "#9ca3af", fontWeight: "700" }}>{stat.label}</span>
-                <span style={{ fontSize: stat.value === "—" ? "22px" : "20px", fontWeight: "900", color: stat.color }}>
+                <span style={{ fontSize: "18px", color: "#9ca3af", fontWeight: "700" }}>{stat.label}</span>
+                <span style={{ fontSize: stat.value === "—" ? "26px" : "28px", fontWeight: "900", color: stat.color }}>
                   {stat.value}
                 </span>
               </div>
             ))}
-            <div style={{ fontSize: "11px", color: "#374151", fontWeight: "600", marginTop: "4px", textAlign: "right" }}>
+            <div style={{ fontSize: "11px", color: "#374151", fontWeight: "600", marginTop: "2px", textAlign: "right" }}>
               bgms.kr에서 전체 분석 보기 →
             </div>
           </div>
