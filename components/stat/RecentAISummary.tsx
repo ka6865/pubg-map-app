@@ -156,16 +156,38 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
   const textBufferRef = useRef("");
   const lineBufferRef = useRef("");
   const abortControllerRef = useRef<AbortController | null>(null);
-  // [MOBILE-FIX] reader.read()가 abort 신호를 무시하는 모바일 버그 대응
   const readerRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
   const isLoadingRef = useRef(false);
+  // [AUTO-RETRY] 일시적 Gemini 스트림 오류 자동 재시도
+  const retryCountRef = useRef(0);
+  const MAX_AUTO_RETRIES = 2;
+  const [retryMessage, setRetryMessage] = useState<string | null>(null);
   const { isAnalyzing: isGlobalAnalyzing, activeId } = useAIStatus();
+
+  /** 일시적 오류 판별 (Failed to parse stream, 네트워크 순단, 서버 과부하 등) */
+  const isTransientError = (msg: string) => {
+    const lower = msg.toLowerCase();
+    return (
+      lower.includes('parse stream') ||
+      lower.includes('network') ||
+      lower.includes('fetch') ||
+      lower.includes('timeout') ||
+      lower.includes('overloaded') ||
+      lower.includes('503') ||
+      lower.includes('502') ||
+      lower.includes('500')
+    );
+  };
 
   const handleFetchSummary = async (force = false) => {
     // [V46.1] 전역 락 체크 및 중복 실행 방지
     if (isGlobalAnalyzing || loading || isLoadingRef.current || (!force && debateData)) return;
 
     if (!aiManager.startAnalysis("summary")) return;
+
+    // 수동 시작 시 재시도 카운트 초기화
+    if (!retryCountRef.current) retryCountRef.current = 0;
+    setRetryMessage(null);
 
     setLoading(true);
     isLoadingRef.current = true;
@@ -187,10 +209,21 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
         console.warn("[AI-SUMMARY] Safety timeout triggered. Forcing cleanup.");
         readerRef.current?.cancel().catch(() => {});
         abortController.abort();
-        setError("네트워크 지연으로 분석이 중단됐습니다. 다시 시도해주세요.");
-        setLoading(false);
-        isLoadingRef.current = false;
-        aiManager.stopAnalysis("summary");
+        // 타임아웃도 자동 재시도 대상
+        if (retryCountRef.current < MAX_AUTO_RETRIES) {
+          retryCountRef.current++;
+          setRetryMessage(`AI 서버 응답이 느려요. 잠깐만요... (${retryCountRef.current}/${MAX_AUTO_RETRIES})`);
+          setLoading(false);
+          isLoadingRef.current = false;
+          aiManager.stopAnalysis("summary");
+          setTimeout(() => { setRetryMessage(null); handleFetchSummary(true); }, 2500);
+        } else {
+          retryCountRef.current = 0;
+          setError("분석 서버 응답이 너무 느립니다. 잠시 후 다시 시도해주세요.");
+          setLoading(false);
+          isLoadingRef.current = false;
+          aiManager.stopAnalysis("summary");
+        }
       }
     }, 25000);
 
@@ -256,8 +289,16 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
                   fullText = parsed.data;
                 } else if (parsed.type === "done") {
                   if (parsed.valid === false) {
-                    console.error("[AI-SUMMARY] Server reported failure:", parsed.error);
-                    setError(parsed.error || "서버 분석 도중 오류가 발생했습니다.");
+                    const errMsg = parsed.error || "서버 분석 도중 오류가 발생했습니다.";
+                    console.error("[AI-SUMMARY] Server reported failure:", errMsg);
+                    if (isTransientError(errMsg) && retryCountRef.current < MAX_AUTO_RETRIES) {
+                      retryCountRef.current++;
+                      setRetryMessage(`AI 서버가 잠깐 바빴어요. 자동으로 재시도 중이에요. (${retryCountRef.current}/${MAX_AUTO_RETRIES})`);
+                      setTimeout(() => { setRetryMessage(null); handleFetchSummary(true); }, 2500);
+                    } else {
+                      retryCountRef.current = 0;
+                      setError("AI 분석 중 오류가 발생했어요. 다시 시도해주세요.");
+                    }
                   } else {
                     try {
                       let cleanJson = fullText.trim();
@@ -299,7 +340,16 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
     } catch (err: any) {
       if (err.name !== 'AbortError') {
         console.error("[AI-SUMMARY] Critical Error:", err);
-        setError(err.message || "알 수 없는 오류가 발생했습니다.");
+        const errMsg = err.message || "알 수 없는 오류가 발생했습니다.";
+        // Failed to parse stream 등 일시적 에러 → 자동 재시도
+        if (isTransientError(errMsg) && retryCountRef.current < MAX_AUTO_RETRIES) {
+          retryCountRef.current++;
+          setRetryMessage(`AI 서버가 잠깐 바빴어요. 자동으로 재시도 중이에요. (${retryCountRef.current}/${MAX_AUTO_RETRIES})`);
+          setTimeout(() => { setRetryMessage(null); handleFetchSummary(true); }, 2500);
+        } else {
+          retryCountRef.current = 0;
+          setError("AI 분석 중 오류가 발생했어요. 다시 시도해주세요.");
+        }
       }
     } finally {
       clearTimeout(safetyTimeout);
@@ -358,11 +408,29 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
     };
   }, [nickname]);
 
+  // [AUTO-RETRY] 재시도 중 메시지 표시
+  if (retryMessage) {
+    return (
+      <div className="p-8 bg-white/5 rounded-3xl border border-white/10 text-center">
+        <div className="w-10 h-10 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin mx-auto mb-4" />
+        <p className="text-indigo-300 text-sm font-medium">{retryMessage}</p>
+        <p className="text-gray-600 text-xs mt-2">잠시만 기다려주세요</p>
+      </div>
+    );
+  }
+
   if (error) {
     return (
-      <div className="p-6 bg-red-500/10 border border-red-500/30 rounded-2xl text-center">
-        <p className="text-red-400 mb-4">{error}</p>
-        <button onClick={() => { setError(null); setDebateData(null); }} className="text-indigo-400 underline">재시도</button>
+      <div className="p-6 bg-white/5 border border-white/10 rounded-2xl text-center">
+        <p className="text-2xl mb-3">😅</p>
+        <p className="text-gray-300 text-sm mb-1">AI 분석이 잠깐 막혔어요.</p>
+        <p className="text-gray-500 text-xs mb-4">서버가 바쁘거나 네트워크가 불안정할 때 가끔 생겨요.</p>
+        <button
+          onClick={() => { retryCountRef.current = 0; setError(null); setDebateData(null); }}
+          className="px-5 py-2 bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 rounded-xl text-sm hover:bg-indigo-500/30 transition-colors"
+        >
+          다시 시도하기
+        </button>
       </div>
     );
   }
