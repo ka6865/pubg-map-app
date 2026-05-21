@@ -37,6 +37,7 @@ export default async function OgImage({ params }: Props) {
   let avgSurvival = 0;
   let winRate = 0;
   let hasStats = false;
+  let modeLabel = ""; // 선택된 게임 모드 레이블
 
   try {
     const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://bgms.kr";
@@ -50,12 +51,25 @@ export default async function OgImage({ params }: Props) {
 
     if (res.ok) {
       const data = await res.json();
-      // 랭크 스쿼드 → 랭크 솔로 → 일반 스쿼드 → 일반 솔로 우선순위로 통계 선택
-      const s =
-        data.stats?.ranked?.squad ||
-        data.stats?.ranked?.solo ||
-        data.stats?.normal?.squad ||
-        data.stats?.normal?.solo;
+
+      // 6개 모드 중 roundsPlayed 가장 많은 모드를 자동 선택
+      const candidates: { s: any; label: string }[] = [
+        { s: data.stats?.ranked?.squad, label: "랭크 스쿼드" },
+        { s: data.stats?.ranked?.duo,   label: "랭크 듀오" },
+        { s: data.stats?.ranked?.solo,  label: "랭크 솔로" },
+        { s: data.stats?.normal?.squad, label: "일반 스쿼드" },
+        { s: data.stats?.normal?.duo,   label: "일반 듀오" },
+        { s: data.stats?.normal?.solo,  label: "일반 솔로" },
+      ].filter((c) => c.s?.roundsPlayed > 0);
+
+      const best = candidates.reduce<{ s: any; label: string } | null>(
+        (acc, cur) =>
+          (cur.s?.roundsPlayed ?? 0) > (acc?.s?.roundsPlayed ?? 0) ? cur : acc,
+        null
+      );
+
+      const s = best?.s ?? null;
+      modeLabel = best?.label ?? "";
 
       if (s && s.roundsPlayed > 0) {
         const rounds = s.roundsPlayed;
@@ -73,20 +87,18 @@ export default async function OgImage({ params }: Props) {
           ((s.kills + (s.assists || 0) * 0.5) / deaths).toFixed(2)
         );
 
-        // ranked avgSurvivalTime이 0이면 데이터 없음 → — 표시 유지
-        const rawSurvival =
-          s.timeSurvived != null && s.timeSurvived > 0
-            ? s.timeSurvived / rounds
-            : s.avgSurvivalTime != null && s.avgSurvivalTime > 0
-            ? s.avgSurvivalTime
-            : 0;
-        avgSurvival = Math.round(rawSurvival / 60);
+        // TOP10률 — ranked: top10Ratio 직접 / normal: top10s / roundsPlayed
+        const top10Rate = s.top10Ratio != null && s.top10Ratio > 0
+          ? parseFloat((s.top10Ratio * 100).toFixed(1))
+          : s.top10s != null
+          ? parseFloat(((s.top10s / rounds) * 100).toFixed(1))
+          : 0;
 
         winRate = parseFloat(((s.wins / rounds) * 100).toFixed(1));
         hasStats = true;
+
+        avgSurvival = top10Rate;
       }
-
-
     }
   } catch {
     // 타임아웃 또는 오류 시 "—" 표시로 폴백
@@ -108,8 +120,8 @@ export default async function OgImage({ params }: Props) {
       bg: "#60a5fa10",
     },
     {
-      label: "평균 생존",
-      value: hasStats && avgSurvival > 0 ? `${avgSurvival}분` : "—",
+      label: "TOP10률",
+      value: hasStats && avgSurvival > 0 ? `${avgSurvival}%` : "—",
       color: "#34d399",
       border: "#34d39940",
       bg: "#34d39910",
@@ -239,8 +251,25 @@ export default async function OgImage({ params }: Props) {
 
           {/* 오른쪽: 스탯 패널 — 폰트 크기 대폭 증가 */}
           <div style={{ display: "flex", flexDirection: "column", gap: "10px", minWidth: "360px" }}>
-            <div style={{ fontSize: "11px", color: "#4b5563", fontWeight: "800", letterSpacing: "3px", marginBottom: "2px" }}>
-              AI 분석 지표
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "2px" }}>
+              <div style={{ fontSize: "11px", color: "#4b5563", fontWeight: "800", letterSpacing: "3px" }}>
+                AI 분석 지표
+              </div>
+              {modeLabel ? (
+                <div style={{
+                  display: "flex",
+                  fontSize: "10px",
+                  fontWeight: "900",
+                  color: modeLabel.startsWith("랭크") ? "#818cf8" : "#9ca3af",
+                  background: modeLabel.startsWith("랭크") ? "rgba(99,102,241,0.15)" : "rgba(255,255,255,0.07)",
+                  border: modeLabel.startsWith("랭크") ? "1px solid rgba(99,102,241,0.35)" : "1px solid rgba(255,255,255,0.1)",
+                  borderRadius: "6px",
+                  padding: "2px 8px",
+                  letterSpacing: "1px",
+                }}>
+                  {modeLabel}
+                </div>
+              ) : null}
             </div>
             {statRows.map((stat) => (
               <div
