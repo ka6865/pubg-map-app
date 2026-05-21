@@ -67,6 +67,7 @@ export async function GET(request: NextRequest) {
   const lowerNickname = normalizeName(nickname || "");
   const force = searchParams.get("force") === "true";
   const secret = searchParams.get("secret");
+  const source = searchParams.get("source") || "user"; // 'user' | 'scraper'
 
   // [MOCK] 로컬 DB 장애 및 시뮬레이션을 위한 골드 매치 모킹
   if (matchId === "match-gold-simulation-1234") {
@@ -154,7 +155,7 @@ export async function GET(request: NextRequest) {
           const reanalyzePromise = reanalyzeAndSave(
             matchId, nickname, platform, lowerNickname, matchData, teamNames, teamAccountIds,
             myRosterId, myParticipant, teamStats, rankPct, matchAttr, rosters, participants, request.url,
-            true
+            true, source
           ).catch(err => {
             console.error(`[SWR-BACKGROUND-ERROR] Background reanalysis failed for ${matchId}:`, err.message);
           });
@@ -185,7 +186,7 @@ export async function GET(request: NextRequest) {
     const finalResponse = await reanalyzeAndSave(
       matchId, nickname, platform, lowerNickname, matchData, teamNames, teamAccountIds,
       myRosterId, myParticipant, teamStats, rankPct, matchAttr, rosters, participants, request.url,
-      shouldForce
+      shouldForce, source
     );
 
     return NextResponse.json(finalResponse);
@@ -215,7 +216,8 @@ async function reanalyzeAndSave(
   rosters: any[],
   participants: any[],
   requestUrl: string,
-  force: boolean = false
+  force: boolean = false,
+  source: string = 'user'  // 'user' | 'scraper'
 ) {
   const telemetryAsset = matchData.included.find((it: any) => it.type === "asset");
   let telData: any[] = [];
@@ -401,7 +403,8 @@ async function reanalyzeAndSave(
       playerNickname: lowerNickname, 
       finalResult: tacticalResult,
       matchAttr,
-      rawParticipants: participants 
+      rawParticipants: participants,
+      source  // 'user' | 'scraper' — global_benchmarks 출처 구분
     })
   }).catch(e => console.error("[MATCH-API] Ingest trigger failed:", e));
 

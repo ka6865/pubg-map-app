@@ -11,7 +11,7 @@ import { normalizeName } from "@/lib/pubg-analysis/utils";
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { matchId, playerNickname, finalResult, telData, matchAttr, rawParticipants } = body;
+    const { matchId, playerNickname, finalResult, telData, matchAttr, rawParticipants, source } = body;
 
     if (!matchId || !playerNickname || !finalResult) {
       return NextResponse.json({ error: "Missing required data" }, { status: 400 });
@@ -111,7 +111,8 @@ export async function POST(request: Request) {
           team_wipes: finalResult.tradeStats?.enemyTeamWipes || 0,
           match_type: finalResult.matchType || 'Official',
           death_phase: finalResult.deathPhase || 0,
-          filter_version: 8
+          filter_version: 8,
+          source: source || 'user'   // 'user' | 'scraper' — 출처 구분
         }, { onConflict: 'match_id,player_id' })
       );
     }

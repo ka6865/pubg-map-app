@@ -125,7 +125,7 @@ async function scrapeEliteData() {
 
         try {
           // [Step 3] 로컬/원격 서버 API 호출 (동기적으로 대기)
-          const res = await axios.get(`${MATCH_API_URL}?matchId=${matchId}&nickname=${encodeURIComponent(nickname.trim())}&platform=steam${forceParam}`);
+          const res = await axios.get(`${MATCH_API_URL}?matchId=${matchId}&nickname=${encodeURIComponent(nickname.trim())}&platform=steam&source=scraper${forceParam}`);
           
           if (res.status === 200) {
             const d = res.data;
