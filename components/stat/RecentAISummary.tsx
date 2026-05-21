@@ -156,7 +156,9 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
   const textBufferRef = useRef("");
   const lineBufferRef = useRef("");
   const abortControllerRef = useRef<AbortController | null>(null);
-  const isLoadingRef = useRef(false); // [V46.0] 클로저 세이프 로딩 추적
+  // [MOBILE-FIX] reader.read()가 abort 신호를 무시하는 모바일 버그 대응
+  const readerRef = useRef<ReadableStreamDefaultReader<Uint8Array> | null>(null);
+  const isLoadingRef = useRef(false);
   const { isAnalyzing: isGlobalAnalyzing, activeId } = useAIStatus();
 
   const handleFetchSummary = async (force = false) => {
@@ -179,17 +181,18 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
 
-    // [V46.2] 클라이언트 측 세이프티 타임아웃 (45초) - useRef를 사용하여 클로저 이슈 해결
+    // [MOBILE-FIX] 타임아웃을 25초로 단축 + reader.cancel() 직접 호출
     const safetyTimeout = setTimeout(() => {
       if (isLoadingRef.current) {
-        console.warn("[AI-SUMMARY] Safety timeout triggered. Forced cleanup.");
+        console.warn("[AI-SUMMARY] Safety timeout triggered. Forcing cleanup.");
+        readerRef.current?.cancel().catch(() => {});
         abortController.abort();
-        setError("네트워크 지연으로 인해 분석이 중단되었습니다. (Safety Timeout)");
+        setError("네트워크 지연으로 분석이 중단됐습니다. 다시 시도해주세요.");
         setLoading(false);
         isLoadingRef.current = false;
         aiManager.stopAnalysis("summary");
       }
-    }, 45000);
+    }, 25000);
 
     try {
       const response = await fetch('/api/pubg/ai-summary', {
@@ -210,6 +213,8 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
       }
 
       const reader = response.body?.getReader();
+      // [MOBILE-FIX] ref에 저장해 safety timeout에서도 cancel() 호출 가능하게
+      readerRef.current = reader ?? null;
       const decoder = new TextDecoder();
       let fullText = "";
 
@@ -287,6 +292,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
           setStreamingText(textBufferRef.current);
           setLoading(false);
           isLoadingRef.current = false;
+          readerRef.current = null; // ref 정리
         }
       }
 
@@ -299,6 +305,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
       clearTimeout(safetyTimeout);
       setLoading(false);
       isLoadingRef.current = false;
+      readerRef.current = null; // ref 정리
       aiManager.stopAnalysis("summary");
       abortControllerRef.current = null;
     }
@@ -341,7 +348,10 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
 
     return () => {
       if (abortControllerRef.current) {
-        console.log("[AI-CLEANUP] Unmounting RecentAISummary, aborting analysis...");
+        console.log("[AI-CLEANUP] Unmounting, aborting + cancelling reader...");
+        // [MOBILE-FIX] reader도 명시적으로 cancel
+        readerRef.current?.cancel().catch(() => {});
+        readerRef.current = null;
         abortControllerRef.current.abort();
         aiManager.stopAnalysis("summary");
       }
