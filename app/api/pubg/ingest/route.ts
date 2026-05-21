@@ -46,11 +46,22 @@ export async function POST(request: Request) {
           updated_at: new Date().toISOString()
         }));
 
-      // 개수가 많으므로 별도 분리하여 실행 (실패해도 메인 로직 영향 없음)
-      supabase.from("pubg_player_cache").upsert(playerCacheInserts, { onConflict: 'id' })
-        .then(({ error }) => {
-          if (error) console.warn("[INGEST] Player cache upsert failed:", error.message);
-        });
+      // [V55.1] 25개 배치로 분할하여 Supabase statement_timeout 방지
+      // (한번에 100개 upsert → DB timeout 간헐적 발생)
+      const BATCH_SIZE = 25;
+      const batches: typeof playerCacheInserts[] = [];
+      for (let i = 0; i < playerCacheInserts.length; i += BATCH_SIZE) {
+        batches.push(playerCacheInserts.slice(i, i + BATCH_SIZE));
+      }
+      // fire-and-forget — 실패해도 메인 로직 영향 없음
+      (async () => {
+        for (const batch of batches) {
+          const { error } = await supabase
+            .from("pubg_player_cache")
+            .upsert(batch, { onConflict: "id" });
+          if (error) console.warn("[INGEST] Player cache batch upsert failed:", error.message);
+        }
+      })();
     }
 
     // 3. global_benchmarks 저장 (고성과자 지표)
