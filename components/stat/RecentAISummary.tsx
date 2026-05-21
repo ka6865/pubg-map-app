@@ -415,9 +415,10 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
   };
 
   return (
-    <div className="@container flex flex-col gap-6 animate-in fade-in duration-700 [transform-style:flat]">
+    <div className="w-full flex flex-col gap-6">
+      {/* [MOBILE-FIX] @container + animate-in 조합이 모바일 Chrome에서 전체 회전 유발 → 제거 */}
       {/* [V55.0] Premium Summary Dashboard & Toggle */}
-      <div className="relative overflow-hidden bg-gradient-to-br from-indigo-500/10 via-purple-500/5 to-transparent border border-white/10 rounded-[32px] p-1 shadow-2xl [transform-style:flat]">
+      <div className="relative overflow-hidden bg-gradient-to-br from-indigo-500/10 via-purple-500/5 to-transparent border border-white/10 rounded-[32px] p-1 shadow-2xl">
         <div className={`${isMobile ? "bg-[#161616]/95 backdrop-blur-none" : "bg-black/40 backdrop-blur-xl"} rounded-[30px] p-6 md:p-8 flex flex-col gap-6`}>
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
             {/* Left: Role & Title */}
