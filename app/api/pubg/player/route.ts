@@ -80,9 +80,34 @@ export async function GET(request: Request) {
 
     if (!playerRes.ok) {
       if (playerRes.status === 404) {
+        let suggestions: any[] = [];
+        try {
+          // [V60.1] pg_trgm 유사도 매칭 RPC 호출로 대소문자가 다르거나 유사한 닉네임 획득
+          const { data, error: rpcError } = await supabase.rpc("suggest_similar_players", {
+            search_name: nickname,
+            search_platform: platform,
+            limit_val: 3
+          });
+          if (rpcError) {
+            console.error("[suggest_similar_players RPC Error]:", rpcError);
+            throw rpcError;
+          }
+          if (data) suggestions = data;
+        } catch (rpcErr) {
+          console.error("[SUGGEST_SIMILAR_PLAYERS_ERROR]", rpcErr);
+        }
+
         return NextResponse.json(
-          { error: "존재하지 않는 닉네임입니다. (닉네임 대소문자를 확인해주세요)" },
-          { status: 404 }
+          { 
+            error: "존재하지 않는 닉네임입니다. (닉네임 대소문자를 확인해주세요)",
+            suggestions 
+          },
+          { 
+            status: 404,
+            headers: {
+              "Cache-Control": "no-store, max-age=0, must-revalidate"
+            }
+          }
         );
       }
       throw new Error(`PUBG API 에러: ${playerRes.status}`);

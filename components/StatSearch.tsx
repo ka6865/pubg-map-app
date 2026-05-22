@@ -45,6 +45,7 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
   const [error, setError] = useState("");
   const [selectedSeason, setSelectedSeason] = useState("");
   const [hasPrefilled, setHasPrefilled] = useState(false);
+  const [suggestedUsers, setSuggestedUsers] = useState<{ nickname: string; platform: string }[]>([]);
 
   const [recentSearches, setRecentSearches] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
@@ -113,12 +114,14 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
     setLoading(true);
     setResult(null); // 새로운 검색 시작 시 기존 결과 초기화 (버그 수정 및 cascading render 방지)
     setError("");
+    setSuggestedUsers([]);
     setCooldown(true);
     setShowDropdown(false);
 
     try {
       const res = await fetch(
-        `/api/pubg/player?nickname=${searchName}&platform=${searchPlatform}&season=${targetSeason}`
+        `/api/pubg/player?nickname=${searchName}&platform=${searchPlatform}&season=${targetSeason}&_t=${Date.now()}`,
+        { cache: 'no-store' }
       );
       
       let data: any;
@@ -129,7 +132,23 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
         throw new Error(`서버 응답 지연이 발생했습니다. 잠시 후 다시 시도해 주세요. (HTTP ${res.status})`);
       }
 
-      if (!res.ok) throw new Error(data?.error || `서버 에러가 발생했습니다. (HTTP ${res.status})`);
+      if (!res.ok) {
+        if (data?.suggestions) {
+          setSuggestedUsers(data.suggestions);
+        }
+        setError(data?.error || `서버 에러가 발생했습니다. (HTTP ${res.status})`);
+        
+        // [Analytics] 검색 실패 (닉네임 없음 등)
+        trackEvent({
+          name: "stats_searched",
+          params: {
+            nickname: nickname,
+            platform: searchPlatform,
+            has_data: false,
+          },
+        });
+        return;
+      }
 
       setResult(data);
       setSelectedSeason(data.seasonId);
@@ -408,8 +427,28 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
       </div>
 
       {error && (
-        <div style={{ color: "#ff4d4d", marginBottom: "20px", padding: "15px", backgroundColor: "rgba(255, 77, 77, 0.1)", borderRadius: "6px", textAlign: "center" }}>
-          {error}
+        <div style={{ color: "#ff4d4d", marginBottom: "20px", padding: "15px", backgroundColor: "rgba(255, 77, 77, 0.1)", borderRadius: "12px", textAlign: "center" }}>
+          <div>{error}</div>
+          {suggestedUsers.length > 0 && (
+            <div className="mt-3 pt-3 border-t border-red-500/20">
+              <p className="text-xs text-gray-400 mb-2">혹시 이 플레이어를 찾으시나요?</p>
+              <div className="flex justify-center gap-2 flex-wrap">
+                {suggestedUsers.map((user) => (
+                  <button
+                    key={`${user.nickname}-${user.platform}`}
+                    onClick={() => {
+                      setNickname(user.nickname);
+                      setPlatform(user.platform);
+                      handleSearch(selectedSeason, user.nickname, user.platform);
+                    }}
+                    className="px-3 py-1.5 bg-amber-500/10 border border-amber-500/20 text-amber-500 text-xs font-black rounded-full hover:bg-amber-500 hover:text-black transition-all cursor-pointer"
+                  >
+                    {user.nickname} ({user.platform === "steam" ? "스팀" : "카카오"})
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
