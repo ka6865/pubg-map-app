@@ -161,6 +161,11 @@ export class CombatHandler extends BaseHandler {
 
 
     if (isTeammateAttacker) {
+      // 야생 곰 등 비플레이어 몬스터에게 가해진 피해 제외 (딜량 오염 방지)
+      if (victimName.toLowerCase().includes("bear")) {
+        return;
+      }
+
       if (isMeAttacker) {
         this.state.myActionTimestamps.push(ts);
         this.state.totalCombatIsolationSum += (this.state.isolationData?.isolationIndex || 0);
@@ -201,8 +206,7 @@ export class CombatHandler extends BaseHandler {
         if (!this.isIgnoredWeapon(wId, cleanWId, e.damageTypeCategory)) {
           // 2. 피해자가 이미 기절(groggy) 상태이거나 사망(false) 상태인 경우 딜량 가산 제외 (확킬 딜량 오염 방지)
           const victimStatus = this.state.playerAliveStatus.get(victimName);
-          const isAI = victimName.startsWith("ai.");
-          const isVictimGroggy = !isAI && (victimStatus === "groggy" || victimStatus === false);
+          const isVictimGroggy = victimStatus === "groggy" || victimStatus === false;
 
           if (!isVictimGroggy) {
             if (isMeAttacker) {

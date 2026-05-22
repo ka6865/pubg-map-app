@@ -390,7 +390,7 @@ async function reanalyzeAndSave(
       match_id: matchId,
       map_name: matchAttr.mapId,
       game_mode: matchAttr.gameMode,
-      telemetry_version: TELEMETRY_VERSION,
+      telemetry_version: Math.floor(TELEMETRY_VERSION),
       storage_path: mapCachePath
     }, { onConflict: 'match_id' })
   ]);

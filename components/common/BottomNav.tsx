@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
-import { Map, BarChart2, MessageSquare, Menu } from 'lucide-react';
+import { Map, BarChart2, MessageSquare, Trophy, Menu } from 'lucide-react';
 import GlobalMobileMenu from './GlobalMobileMenu';
 
 export default function BottomNav() {
@@ -36,6 +36,13 @@ export default function BottomNav() {
       icon: BarChart2,
       onClick: () => router.push('/stats'),
       active: pathname === '/stats' && !isMenuOpen,
+    },
+    {
+      id: 'Rankings',
+      label: '랭킹',
+      icon: Trophy,
+      onClick: () => router.push('/rankings'),
+      active: pathname.startsWith('/rankings') && !isMenuOpen,
     },
     {
       id: 'Board',

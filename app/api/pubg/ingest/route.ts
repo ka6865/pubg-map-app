@@ -109,7 +109,7 @@ export async function POST(request: Request) {
           survival_score: finalResult.benchmark?.breakdown?.survival || 0,
           supp_count: finalResult.tradeStats?.suppCount || 0,
           team_wipes: finalResult.tradeStats?.enemyTeamWipes || 0,
-          match_type: finalResult.matchType || 'Official',
+          match_type: (finalResult.matchType || 'official').toLowerCase(),
           death_phase: finalResult.deathPhase || 0,
           filter_version: 8,
           source: source || 'user'   // 'user' | 'scraper' — 출처 구분
