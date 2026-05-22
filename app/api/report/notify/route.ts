@@ -1,10 +1,15 @@
 // app/api/report/notify/route.ts
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { withAuthGuard } from "@/utils/supabase/guard";
 import { supabase } from "../../../../lib/supabase";
 
 export async function POST(request: Request) {
   try {
+    // 🔒 [보안] JWT 인증 가드 — 로그인된 사용자만 마커 제보 알림 발송 허용
+    const auth = await withAuthGuard();
+    if (auth.error) return auth.error;
+    const { supabaseAdmin } = auth;
+
     // type이 "up"(추천 통과)이거나 "down"(비추천 통과) 문자열로 들어옵니다.
     const { markerId, type = "up" } = await request.json(); 
     if (!markerId)
@@ -110,11 +115,7 @@ export async function POST(request: Request) {
 
     if (!discordRes.ok) throw new Error("디스코드 알림 발송 실패");
 
-    // 6. DB Lock 잠금 (타입에 맞춰 boolean 교체)
-    const supabaseAdmin = createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
-    );
+    // 6. DB Lock 잠금 (타입에 맞춰 boolean 교체 — withAuthGuard에서 받은 supabaseAdmin 재사용)
 
     const updatePayload = type === "down" ? { is_down_notified: true } : { is_notified: true };
     const { error: updateError } = await supabaseAdmin

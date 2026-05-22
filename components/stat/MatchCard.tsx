@@ -31,6 +31,8 @@ import type { MatchData } from "../../types/stat";
 import { getTranslatedWeaponName } from "@/lib/pubg-analysis/constants";
 import { estimateUserTier } from "@/lib/pubg-analysis/benchmarkScore";
 import { useAIStatus, aiManager } from "@/lib/ai-management";
+import { useAuth } from "@/components/AuthProvider";
+import { toast } from "sonner";
 
 const TimelineMiniMap = dynamic(
   () => import("./TimelineMiniMap").then((mod) => mod.TimelineMiniMap),
@@ -158,6 +160,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
   const abortControllerRef = useRef<AbortController | null>(null);
   const isAnalyzingRef = useRef(false); // [V46.0] 클로저 세이프 로딩 추적
   const { isAnalyzing: isGlobalAnalyzing, activeId } = useAIStatus();
+  const { user } = useAuth();
   const router = useRouter();
 
   const leadKills = matchData ? (matchData.stats?.leadShotKills ?? matchData.leadShotKills ?? 0) : 0;
@@ -319,6 +322,18 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
 
   const handleAnalyze = async (e: React.MouseEvent) => {
     e.stopPropagation();
+
+    // 🔒 [보안] 비로그인 유저 AI 분석 차단 — 로그인 유도 토스트
+    if (!user) {
+      toast.error("AI 전술 분석은 로그인 후 이용할 수 있습니다.", {
+        action: {
+          label: "로그인",
+          onClick: () => router.push("/login"),
+        },
+      });
+      return;
+    }
+
     // [V45.9] 전역 락 체크: 내가 분석 중인 게 아니면 다른 분석 시작 금지
     if (isGlobalAnalyzing || isAnalyzing || analysis) return;
 

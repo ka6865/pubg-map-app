@@ -1,18 +1,12 @@
 import { NextResponse } from "next/server";
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
-import { createClient } from "@supabase/supabase-js";
 import { WEAPON_NAMES } from "@/lib/pubg-analysis/constants";
 import { estimateUserTier, getBaseTier } from "@/lib/pubg-analysis/benchmarkScore";
 import { classifyRole } from "@/lib/pubg-analysis/roleClassifier";
 import { normalizeName } from "@/lib/pubg-analysis/utils";
 import { adaptBenchmark } from "@/lib/pubg-analysis/benchmarkAdapter";
 import { jsonrepair } from "jsonrepair";
-
-// ✅ Server Route에서는 SERVICE_ROLE_KEY 기반 서버 클라이언트 사용 (RLS 우회)
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+import { withAuthGuard } from "@/utils/supabase/guard";
 
 export const maxDuration = 60;
 
@@ -311,6 +305,11 @@ function aggregateMatches(matches: any[], lowerNickname: string, myAccountId?: s
 
 export async function POST(request: Request) {
   try {
+    // 🔒 [보안] JWT 인증 가드 — 로그인된 사용자만 AI 요약 실행 허용 (Gemini API 비용 방어)
+    const auth = await withAuthGuard();
+    if (auth.error) return auth.error;
+    const { supabaseAdmin: supabase } = auth;
+
     const { matchIds, nickname, platform, force = false } = await request.json();
     const lowerNickname = normalizeName(nickname);
     console.log(`[AI-SUMMARY-SYNC-CHECK] Original: ${nickname}, Normalized: ${lowerNickname}`);

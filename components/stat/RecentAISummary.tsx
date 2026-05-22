@@ -9,6 +9,10 @@ import { SpiderChart } from "./SpiderChart";
 import { MapKingCard } from "./MapKingCard";
 import { useEffect, useRef } from "react";
 import { useAIStatus, aiManager } from "@/lib/ai-management";
+import { useAuth } from "@/components/AuthProvider";
+import { toast } from "sonner";
+import { useRouter } from "next/navigation";
+import { LogIn } from "lucide-react";
 
 interface DebateStat {
   label: string;
@@ -163,6 +167,8 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
   const MAX_AUTO_RETRIES = 2;
   const [retryMessage, setRetryMessage] = useState<string | null>(null);
   const { isAnalyzing: isGlobalAnalyzing, activeId } = useAIStatus();
+  const { user } = useAuth();
+  const router = useRouter();
 
   /** 일시적 오류 판별 (Failed to parse stream, 네트워크 순단, 서버 과부하 등) */
   const isTransientError = (msg: string) => {
@@ -180,6 +186,17 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
   };
 
   const handleFetchSummary = async (force = false) => {
+    // 🔒 [보안] 비로그인 유저 AI 요약 차단 — 로그인 유도 토스트
+    if (!user) {
+      toast.error("AI 전술 분석은 로그인 후 이용할 수 있습니다.", {
+        action: {
+          label: "로그인",
+          onClick: () => router.push("/login"),
+        },
+      });
+      return;
+    }
+
     // [V46.1] 전역 락 체크 및 중복 실행 방지
     if (isGlobalAnalyzing || loading || isLoadingRef.current || (!force && debateData)) return;
 
@@ -436,6 +453,22 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
   }
 
   if (!debateData && !loading) {
+    // 🔒 비로그인 유저에게는 로그인 유도 CTA 표시
+    if (!user) {
+      return (
+        <button
+          onClick={() => router.push("/login")}
+          className="w-full p-8 rounded-3xl font-bold flex flex-col items-center gap-4 transition-all active:scale-[0.98] bg-indigo-500/5 border-2 border-dashed border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/10"
+        >
+          <LogIn size={40} />
+          <div className="flex flex-col items-center gap-2">
+            <span>로그인 후 AI 전술 분석을 이용할 수 있습니다</span>
+            <span className="text-xs font-normal opacity-60">카카오/구글 로그인으로 간편하게 시작하세요</span>
+          </div>
+        </button>
+      );
+    }
+
     return (
       <button
         onClick={() => handleFetchSummary(true)}

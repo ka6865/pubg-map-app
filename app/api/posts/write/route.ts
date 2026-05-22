@@ -1,12 +1,10 @@
-import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
-
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+import { withAuthGuard } from "@/utils/supabase/guard";
 
 /**
- * @fileoverview 게시판 저장을 서버사이드에서 우회(Bypass) 처리하는 API입니다.
- * 브라우저 직접 통신 시 발생하는 원인 모를 타임아웃 문제를 해결하기 위해 도입되었습니다.
+ * @fileoverview 게시판 저장을 서버사이드에서 처리하는 API입니다.
+ * [보안] JWT 인증 가드를 적용하여 로그인된 사용자만 글쓰기/수정이 가능하며,
+ * 요청의 user_id와 JWT 토큰에서 추출한 실제 사용자 ID를 교차 대조합니다.
  */
 
 // 🌟 디스코드 서버 검증 상수
@@ -43,6 +41,11 @@ async function validateDiscordUrl(url: string): Promise<boolean> {
 
 export async function POST(request: Request) {
   try {
+    // 🔒 [보안] JWT 인증 가드 — 로그인된 사용자만 글쓰기/수정 허용
+    const auth = await withAuthGuard();
+    if (auth.error) return auth.error;
+    const { user, supabaseAdmin } = auth;
+
     const body = await request.json();
     const {
       title,
@@ -61,6 +64,24 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: "필수 입력 데이터가 누락되었습니다." },
         { status: 400 }
+      );
+    }
+
+    // 🔒 [보안] JWT에서 추출한 실제 사용자 ID와 요청의 user_id 교차 대조
+    // 관리자가 아닌 일반 사용자는 본인의 user_id만 사용 가능
+    const { data: requesterProfile } = await supabaseAdmin
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+
+    const isRequesterAdmin = requesterProfile?.role === "admin";
+
+    if (user_id !== user.id && !isRequesterAdmin) {
+      console.warn(`⚠️ [Auth Guard] JWT user ${user.id} tried to impersonate ${user_id}`);
+      return NextResponse.json(
+        { error: "인증된 사용자와 요청자가 일치하지 않습니다." },
+        { status: 403 }
       );
     }
 
@@ -83,9 +104,6 @@ export async function POST(request: Request) {
       }
     }
 
-    // 관리자(Service Role) 권한으로 DB 클라이언트 초기화 (RLS 우회)
-    const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
-
     if (editingPostId) {
       // 1. [보안] 수정 시 실제 소유자 확인 및 이전 데이터 로드 (이미지 정리용)
       const { data: existingPost, error: fetchError } = await supabaseAdmin
@@ -101,24 +119,16 @@ export async function POST(request: Request) {
         );
       }
 
-      // 🌟 [권한 확인] 요청자 프로필 로드 (관리자 여부 확인용)
-      const { data: requesterProfile } = await supabaseAdmin
-        .from("profiles")
-        .select("role")
-        .eq("id", user_id)
-        .single();
-
-      const isRequesterAdmin = requesterProfile?.role === "admin";
-
-      if (existingPost.user_id !== user_id && !isRequesterAdmin) {
-        console.warn(`⚠️ [Permission Denied] User ${user_id} tried to edit post ${editingPostId} owned by ${existingPost.user_id}`);
+      // 🔒 [권한 확인] 게시글 소유자 검증 (JWT 가드에서 이미 추출한 isRequesterAdmin 재사용)
+      if (existingPost.user_id !== user.id && !isRequesterAdmin) {
+        console.warn(`⚠️ [Permission Denied] User ${user.id} tried to edit post ${editingPostId} owned by ${existingPost.user_id}`);
         return NextResponse.json(
           { error: "게시글 수정 권한이 없습니다." },
           { status: 403 }
         );
       }
 
-      console.log(`✅ [Permission Granted] User ${user_id} (Admin: ${isRequesterAdmin}) editing post ${editingPostId}`);
+      console.log(`✅ [Permission Granted] User ${user.id} (Admin: ${isRequesterAdmin}) editing post ${editingPostId}`);
 
       // 🌟 [서버사이드 이미지 정리] 삭제된 이미지 감지 및 스토리지 폐기
       try {

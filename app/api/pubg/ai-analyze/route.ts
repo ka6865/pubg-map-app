@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
+import { withAuthGuard } from "@/utils/supabase/guard";
 
 export async function POST(request: Request) {
   try {
+    // 🔒 [보안] JWT 인증 가드 — 로그인된 사용자만 AI 분석 실행 허용 (Gemini API 비용 방어)
+    const auth = await withAuthGuard();
+    if (auth.error) return auth.error;
+
     const body = await request.json();
     const { matchData, nickname, coachingStyle = "spicy" } = body;
     const isMild = coachingStyle === "mild";
