@@ -121,6 +121,7 @@ export default function GlobalHeader() {
   const isWeaponsActive = pathname.startsWith("/weapons");
   const isBackpackActive = pathname.startsWith("/backpack");
   const isRankingsActive = pathname.startsWith("/rankings");
+  const isCratesActive = pathname.startsWith("/crates");
 
   const displayName = userProfile?.nickname || "익명";
   const isAdmin = userProfile?.role === "admin";
@@ -260,6 +261,17 @@ export default function GlobalHeader() {
               }`}>
                 가방 시뮬
                 {isBackpackActive && (
+                  <span className="absolute bottom-[3px] left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-[#F2A900]" />
+                )}
+              </button>
+            </Link>
+
+            <Link href="/crates" className="shrink-0">
+              <button className={`relative h-8 px-3 rounded-lg font-extrabold text-[11px] uppercase whitespace-nowrap transition-all tracking-wide ${
+                isCratesActive ? "bg-black/90 text-[#F2A900] shadow-sm" : "text-black/60 hover:bg-black/10 hover:text-black/80"
+              }`}>
+                상자 시뮬
+                {isCratesActive && (
                   <span className="absolute bottom-[3px] left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-[#F2A900]" />
                 )}
               </button>

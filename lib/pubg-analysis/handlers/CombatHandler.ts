@@ -223,7 +223,7 @@ export class CombatHandler extends BaseHandler {
               else if (elapsedSec < 1500) this.state.goldenTimeDamage.mid2 += damage;
               else this.state.goldenTimeDamage.late += damage;
             } else {
-              let squadWMap = this.state.squadWeaponStats;
+              const squadWMap = this.state.squadWeaponStats;
               let pStats = squadWMap.get(attackerName);
               if (!pStats) {
                 pStats = new Map();
@@ -320,7 +320,7 @@ export class CombatHandler extends BaseHandler {
             this.updateHitDetails(wStat, e.damageReason, 0, false, true, false);
             this.state.weaponStats.set(cleanWId, wStat);
           } else {
-            let squadWMap = this.state.squadWeaponStats;
+            const squadWMap = this.state.squadWeaponStats;
             let pStats = squadWMap.get(makerName);
             if (!pStats) {
               pStats = new Map();
@@ -479,7 +479,7 @@ export class CombatHandler extends BaseHandler {
             this.updateHitDetails(wStat, e.damageReason || (e.killerDamageInfo && e.killerDamageInfo.damageReason), 0, false, false, true);
             this.state.weaponStats.set(cleanWId, wStat);
           } else {
-            let squadWMap = this.state.squadWeaponStats;
+            const squadWMap = this.state.squadWeaponStats;
             let pStats = squadWMap.get(killerName);
             if (!pStats) {
               pStats = new Map();
