@@ -79,6 +79,12 @@ export async function GET(request: Request) {
     }
 
     if (!playerRes.ok) {
+      if (playerRes.status === 429) {
+        return NextResponse.json(
+          { error: "PUBG API 호출 한도가 일시적으로 초과되었습니다. 약 1분 후 다시 시도해 주세요." },
+          { status: 429 }
+        );
+      }
       if (playerRes.status === 404) {
         let suggestions: any[] = [];
         try {
@@ -246,9 +252,15 @@ export async function GET(request: Request) {
       recentMatches,
     });
   } catch (error: any) {
+    const isRateLimit = error.message?.includes("429") || error.status === 429;
+    const status = isRateLimit ? 429 : 500;
+    const errorMsg = isRateLimit
+      ? "PUBG API 호출 한도가 일시적으로 초과되었습니다. 약 1분 후 다시 시도해 주세요."
+      : (error.message || "오류가 발생했습니다.");
+
     return NextResponse.json(
-      { error: error.message || "오류가 발생했습니다." },
-      { status: 500 }
+      { error: errorMsg },
+      { status }
     );
   }
 }

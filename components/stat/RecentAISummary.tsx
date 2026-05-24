@@ -10,6 +10,7 @@ import { MapKingCard } from "./MapKingCard";
 import { useEffect, useRef } from "react";
 import { useAIStatus, aiManager } from "@/lib/ai-management";
 import { useAuth } from "@/components/AuthProvider";
+import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { LogIn } from "lucide-react";
@@ -195,6 +196,13 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
         },
       });
       return;
+    }
+
+    // 🔄 [세션 동기화] API fetch 전 브라우저 쿠키를 최신 세션 토큰으로 강제 동기화 (401 방지)
+    try {
+      await supabase.auth.getSession();
+    } catch (e) {
+      console.warn("[AI-SUMMARY] Session refresh failed (ignored):", e);
     }
 
     // [V46.1] 전역 락 체크 및 중복 실행 방지

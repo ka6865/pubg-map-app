@@ -96,7 +96,15 @@ export async function GET(request: NextRequest) {
       signal: AbortSignal.timeout(15000)
     });
 
-    if (!res.ok) throw new Error(`PUBG API Match Load Failed: ${res.status}`);
+    if (!res.ok) {
+      if (res.status === 429) {
+        return NextResponse.json(
+          { error: "PUBG API 호출 한도가 일시적으로 초과되었습니다. 약 1분 후 다시 시도해 주세요." },
+          { status: 429 }
+        );
+      }
+      throw new Error(`PUBG API Match Load Failed: ${res.status}`);
+    }
     const matchData = await res.json();
     const matchAttr = matchData.data.attributes;
 
@@ -193,7 +201,12 @@ export async function GET(request: NextRequest) {
 
   } catch (err: any) {
     console.error(`[CRITICAL-FAILURE]`, err);
-    return NextResponse.json({ error: err.message }, { status: 500 });
+    const isRateLimit = err.message?.includes("429") || err.status === 429;
+    const status = isRateLimit ? 429 : 500;
+    const errorMsg = isRateLimit
+      ? "PUBG API 호출 한도가 일시적으로 초과되었습니다. 약 1분 후 다시 시도해 주세요."
+      : err.message;
+    return NextResponse.json({ error: errorMsg }, { status });
   }
 }
 
