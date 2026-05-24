@@ -192,3 +192,32 @@ export async function listR2Files(limit: number = 1000): Promise<{ key: string; 
     throw error;
   }
 }
+
+/**
+ * Downloads a binary file as a Buffer from Cloudflare R2 bucket
+ * @param key The filename/key of the file to retrieve
+ */
+export async function downloadBufferFromR2(key: string): Promise<Buffer | null> {
+  if (!process.env.CLOUDFLARE_R2_ENDPOINT) {
+    console.warn('[R2 Warning] Cloudflare R2 Credentials are not configured. Returning null.');
+    return null;
+  }
+
+  const command = new GetObjectCommand({
+    Bucket: getBucketName(),
+    Key: key,
+  });
+
+  try {
+    const response = await getR2Client().send(command);
+    if (!response.Body) return null;
+    const byteArray = await response.Body.transformToByteArray();
+    return Buffer.from(byteArray);
+  } catch (error: any) {
+    if (error.name === 'NoSuchKey' || error.$metadata?.httpStatusCode === 404) {
+      return null;
+    }
+    console.error(`[R2 Error] Failed to download buffer from R2: ${key}`, error);
+    throw error;
+  }
+}

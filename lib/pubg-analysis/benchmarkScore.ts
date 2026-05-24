@@ -149,7 +149,7 @@ export function calcBenchmarkScoreDetails(input: MatchTierInput, isSolo: boolean
     const teamScore = Math.min(10, (safeRevive / 100) * 3 + (safeTrade / 100) * 2 + (safeSuppRate / 100) * 2 + Math.min(3, input.teamWipes * 1.5));
     const reversalScore = Math.min(5, (safeReversal / 100) * 5);
     
-    let rawTactical = pressureScore + utilityScore + teamScore + reversalScore;
+    const rawTactical = pressureScore + utilityScore + teamScore + reversalScore;
 
     // [V68.0] 스쿼드 모드 고립 지수 페널티 차감 (솔로 제외)
     const isolationPenalty = (input.isolationIndex && input.isolationIndex >= 3.5)

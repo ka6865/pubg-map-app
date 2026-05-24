@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { X, User, LogOut, Sword, Package, Trophy } from 'lucide-react';
+import { X, User, LogOut, Sword, Package, Trophy, Box } from 'lucide-react';
 import { useAuth } from '../AuthProvider';
 import { supabase } from '@/lib/supabase';
 import { Drawer } from 'vaul';
@@ -134,10 +134,10 @@ export default function GlobalMobileMenu({ isOpen, setIsOpen, activeMapId }: Glo
                 {/* Tools Section */}
                 <div className="flex flex-col gap-4">
                   <h3 className="text-[#666] text-[11px] font-black uppercase tracking-widest ml-1">Tactical Tools</h3>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     <button 
                       onClick={() => { router.push('/weapons'); setIsOpen(false); }}
-                      className="bg-[#1a1a1a] p-3 rounded-2xl border border-[#333] flex flex-col gap-2 items-center text-center active:bg-[#222] transition-colors"
+                      className="bg-[#1a1a1a] p-3.5 rounded-2xl border border-[#333] flex flex-col gap-2.5 items-center text-center active:bg-[#222] transition-colors"
                     >
                       <div className="p-2 bg-blue-500/10 rounded-xl">
                         <Sword size={20} className="text-blue-500" />
@@ -150,7 +150,7 @@ export default function GlobalMobileMenu({ isOpen, setIsOpen, activeMapId }: Glo
 
                     <button 
                       onClick={() => { router.push('/backpack'); setIsOpen(false); }}
-                      className="bg-[#1a1a1a] p-3 rounded-2xl border border-[#333] flex flex-col gap-2 items-center text-center active:bg-[#222] transition-colors"
+                      className="bg-[#1a1a1a] p-3.5 rounded-2xl border border-[#333] flex flex-col gap-2.5 items-center text-center active:bg-[#222] transition-colors"
                     >
                       <div className="p-2 bg-green-500/10 rounded-xl">
                         <Package size={20} className="text-green-500" />
@@ -163,7 +163,7 @@ export default function GlobalMobileMenu({ isOpen, setIsOpen, activeMapId }: Glo
 
                     <button 
                       onClick={() => { router.push('/rankings'); setIsOpen(false); }}
-                      className="bg-[#1a1a1a] p-3 rounded-2xl border border-[#333] flex flex-col gap-2 items-center text-center active:bg-[#222] transition-colors"
+                      className="bg-[#1a1a1a] p-3.5 rounded-2xl border border-[#333] flex flex-col gap-2.5 items-center text-center active:bg-[#222] transition-colors"
                     >
                       <div className="p-2 bg-yellow-500/10 rounded-xl">
                         <Trophy size={20} className="text-yellow-500" />
@@ -171,6 +171,19 @@ export default function GlobalMobileMenu({ isOpen, setIsOpen, activeMapId }: Glo
                       <div className="flex flex-col items-center">
                         <span className="text-white font-bold text-xs">랭킹</span>
                         <span className="text-[#666] text-[9px] mt-0.5 leading-none">주간 순위</span>
+                      </div>
+                    </button>
+
+                    <button 
+                      onClick={() => { router.push('/crates'); setIsOpen(false); }}
+                      className="bg-[#1a1a1a] p-3.5 rounded-2xl border border-[#333] flex flex-col gap-2.5 items-center text-center active:bg-[#222] transition-colors"
+                    >
+                      <div className="p-2 bg-amber-500/10 rounded-xl">
+                        <Box size={20} className="text-amber-500" />
+                      </div>
+                      <div className="flex flex-col items-center">
+                        <span className="text-white font-bold text-xs">상자 시뮬</span>
+                        <span className="text-[#666] text-[9px] mt-0.5 leading-none">상자깡 및 확률</span>
                       </div>
                     </button>
                   </div>

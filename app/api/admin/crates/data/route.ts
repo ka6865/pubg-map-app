@@ -1,0 +1,241 @@
+import { NextResponse } from "next/server";
+import { createClient as createSupabaseAdminClient } from "@supabase/supabase-js";
+import { createClient } from "@/utils/supabase/server";
+import { revalidateTag } from "next/cache";
+
+// 관리자 권한 검증 및 Supabase Admin 클라이언트 반환
+async function verifyAdmin() {
+  const supabaseServer = await createClient();
+  const { data: { user } } = await supabaseServer.auth.getUser();
+  if (!user) return null;
+
+  const { data: profile } = await supabaseServer
+    .from("profiles")
+    .select("role")
+    .eq("id", user.id)
+    .single();
+  
+  if (profile?.role === "admin") {
+    const supabaseAdmin = createSupabaseAdminClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!
+    );
+    return { user, supabaseAdmin };
+  }
+  return null;
+}
+
+// 1. GET: 은신처 상점 목록 및 세부 정보 로드
+export async function GET(request: Request) {
+  const adminContext = await verifyAdmin();
+  if (!adminContext) {
+    return NextResponse.json({ error: "🔒 관리자 권한이 없습니다." }, { status: 403 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const id = searchParams.get("id");
+
+  try {
+    // 특정 상자의 상세 구성품 목록 로드
+    if (id) {
+      const { data: template, error: tErr } = await adminContext.supabaseAdmin
+        .from("crate_templates")
+        .select("*")
+        .eq("id", id)
+        .single();
+      
+      if (tErr || !template) {
+        throw new Error(tErr?.message || "상자 템플릿을 찾을 수 없습니다.");
+      }
+
+      // 1차 구성품 조회
+      const { data: items } = await adminContext.supabaseAdmin
+        .from("crate_items")
+        .select("*")
+        .eq("crate_template_id", id)
+        .order("probability", { ascending: false });
+
+      // 2차 최고급 꾸러미 구성품 조회
+      const { data: primeItems } = await adminContext.supabaseAdmin
+        .from("prime_parcel_items")
+        .select("*")
+        .eq("crate_template_id", id)
+        .order("probability", { ascending: false });
+
+      // 보너스 아이템 조회
+      const { data: bonusItems } = await adminContext.supabaseAdmin
+        .from("bonus_items")
+        .select("*")
+        .eq("crate_template_id", id)
+        .order("probability", { ascending: false });
+
+      return NextResponse.json({
+        template,
+        items: items || [],
+        prime_parcel_items: primeItems || [],
+        bonus_items: bonusItems || []
+      });
+    }
+
+    // 전체 상자 템플릿 목록 로드
+    const { data: templates, error: tErr } = await adminContext.supabaseAdmin
+      .from("crate_templates")
+      .select("*")
+      .order("created_at", { ascending: false });
+
+    if (tErr) throw new Error(tErr.message);
+
+    return NextResponse.json(templates || []);
+
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+// 2. POST: 은신처 상자 및 하위 아이템 일괄 Upsert
+export async function POST(request: Request) {
+  const adminContext = await verifyAdmin();
+  if (!adminContext) {
+    return NextResponse.json({ error: "🔒 관리자 권한이 없습니다." }, { status: 403 });
+  }
+
+  try {
+    const body = await request.json();
+    const { template, items, prime_parcel_items, bonus_items } = body;
+
+    if (!template || !template.name) {
+      return NextResponse.json({ error: "상자 기본 정보가 누락되었습니다." }, { status: 400 });
+    }
+
+    const templateId = template.id;
+
+    // A. 상자 템플릿 정보 저장
+    const { error: tErr } = await adminContext.supabaseAdmin
+      .from("crate_templates")
+      .upsert({
+        id: templateId,
+        name: template.name,
+        type: template.type,
+        price_gcoin: Number(template.price_gcoin || 0),
+        bundle_price_gcoin: Number(template.bundle_price_gcoin || 0),
+        image_url: template.image_url,
+        description: template.description || "",
+        active: template.active === true || template.active === "true",
+        end_date: template.end_date || null
+      });
+
+    if (tErr) throw new Error(`상자 정보 저장 실패: ${tErr.message}`);
+
+    // B. 1차 구성품 (crate_items) 동기화 (기존 데이터 일괄 삭제 후 새 데이터 Insert)
+    await adminContext.supabaseAdmin
+      .from("crate_items")
+      .delete()
+      .eq("crate_template_id", templateId);
+
+    if (items && items.length > 0) {
+      const itemsToInsert = items.map((item: any) => ({
+        crate_template_id: templateId,
+        name: item.name,
+        rarity: item.rarity,
+        probability: Number(item.probability),
+        image_url: item.image_url || "",
+        is_prime_parcel: item.is_prime_parcel === true || item.is_prime_parcel === "true",
+        token_count: Number(item.token_count || 0)
+      }));
+
+      const { error: itemsErr } = await adminContext.supabaseAdmin
+        .from("crate_items")
+        .insert(itemsToInsert);
+      
+      if (itemsErr) throw new Error(`1차 구성품 저장 실패: ${itemsErr.message}`);
+    }
+
+    // C. 2차 최고급 꾸러미 (prime_parcel_items) 동기화 (전리품 상자일 때만 수행)
+    await adminContext.supabaseAdmin
+      .from("prime_parcel_items")
+      .delete()
+      .eq("crate_template_id", templateId);
+
+    if (template.type === "loot_crate" && prime_parcel_items && prime_parcel_items.length > 0) {
+      const primeToInsert = prime_parcel_items.map((pItem: any) => ({
+        crate_template_id: templateId,
+        name: pItem.name,
+        rarity: pItem.rarity,
+        probability: Number(pItem.probability),
+        image_url: pItem.image_url || ""
+      }));
+
+      const { error: primeErr } = await adminContext.supabaseAdmin
+        .from("prime_parcel_items")
+        .insert(primeToInsert);
+
+      if (primeErr) throw new Error(`최고급 꾸러미 구성품 저장 실패: ${primeErr.message}`);
+    }
+
+    // D. 보너스 구성품 (bonus_items) 동기화
+    await adminContext.supabaseAdmin
+      .from("bonus_items")
+      .delete()
+      .eq("crate_template_id", templateId);
+
+    if (bonus_items && bonus_items.length > 0) {
+      const bonusToInsert = bonus_items.map((bItem: any) => ({
+        crate_template_id: templateId,
+        name: bItem.name,
+        probability: Number(bItem.probability),
+        token_count: Number(bItem.token_count || 0),
+        is_prime_parcel: bItem.is_prime_parcel === true || bItem.is_prime_parcel === "true",
+        is_extra_crate: bItem.is_extra_crate === true || bItem.is_extra_crate === "true",
+        image_url: bItem.image_url || ""
+      }));
+
+      const { error: bonusErr } = await adminContext.supabaseAdmin
+        .from("bonus_items")
+        .insert(bonusToInsert);
+
+      if (bonusErr) throw new Error(`보너스 구성품 저장 실패: ${bonusErr.message}`);
+    }
+
+    // E. Next.js ISR 캐시 강제 만료 처리
+    revalidateTag("crate-data", "max");
+
+    return NextResponse.json({ success: true, id: templateId });
+
+  } catch (error: any) {
+    console.error("Crates save error:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+// 3. DELETE: 은신처 상자 삭제 (ON DELETE CASCADE로 하위 데이터는 자동 제거됨)
+export async function DELETE(request: Request) {
+  const adminContext = await verifyAdmin();
+  if (!adminContext) {
+    return NextResponse.json({ error: "🔒 관리자 권한이 없습니다." }, { status: 403 });
+  }
+
+  const { searchParams } = new URL(request.url);
+  const id = searchParams.get("id");
+
+  if (!id) {
+    return NextResponse.json({ error: "삭제할 상자의 ID가 필요합니다." }, { status: 400 });
+  }
+
+  try {
+    const { error } = await adminContext.supabaseAdmin
+      .from("crate_templates")
+      .delete()
+      .eq("id", id);
+
+    if (error) throw new Error(error.message);
+
+    // Next.js ISR 캐시 무효화
+    revalidateTag("crate-data", "max");
+
+    return NextResponse.json({ success: true });
+
+  } catch (error: any) {
+    console.error("Crates delete error:", error);
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
