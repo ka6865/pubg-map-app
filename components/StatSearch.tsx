@@ -180,7 +180,11 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
         router.push(`/stats/${searchPlatform}/${actualName}`);
       }
     } catch (err: any) {
-      setError(err.message);
+      const isRateLimit = err.message?.includes("429") || err.message?.toLowerCase().includes("too many requests");
+      setError(isRateLimit 
+        ? "PUBG API 호출 한도가 일시적으로 초과되었습니다. 약 1분 후 다시 시도해 주세요."
+        : err.message
+      );
       // [Analytics] 검색 실패 (닉네임 없음 등)
       trackEvent({
         name: "stats_searched",

@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 
 // Clean utility to safely strip any accidental quotes or trailing spaces from Vercel envs
 const clean = (val: string | undefined) =>
-  (val || "").replace(/['";\\s]+/g, "").trim();
+  (val || "").replace(/['";\s]+/g, "").trim();
 
 /**
  * @fileoverview Supabase JWT 인증 기반 하이브리드 서버 가드
