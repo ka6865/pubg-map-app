@@ -55,6 +55,13 @@ const MapController = ({ event }: { event?: any }) => {
   const map = useMap();
 
   useEffect(() => {
+    // Leaflet의 tap 핸들러가 모바일에서 click 이벤트를 삼키는 현상을 방지
+    if ((map as any).tap) {
+      (map as any).tap.disable();
+    }
+  }, [map]);
+
+  useEffect(() => {
     if (event && event.x !== undefined && event.y !== undefined) {
       const centerLat = 8192 - event.y;
       const centerLng = event.x;

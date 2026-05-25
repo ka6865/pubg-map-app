@@ -172,6 +172,11 @@ const MapInteraction = ({
 const MapResizer = () => {
   const map = useMap();
   useEffect(() => {
+    // Leaflet의 tap 핸들러가 모바일에서 click 이벤트를 삼키는 현상을 방지
+    if ((map as any).tap) {
+      (map as any).tap.disable();
+    }
+
     const container = map.getContainer();
     const resizeObserver = new ResizeObserver(() => {
       // 컨테이너가 화면에 있고 크기가 유효할 때만 실행 (IndexSizeError 방지)
