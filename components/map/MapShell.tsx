@@ -190,6 +190,7 @@ const MapShell = memo(({
                         <button onClick={() => setIsGridOn(!isGridOn)} className={`pointer-events-auto flex items-center gap-2.5 px-5 py-3.5 border border-white/10 rounded-xl font-black text-xs shadow-2xl transition-all active:scale-95 ${isGridOn ? "bg-[#F2A900] text-black" : "bg-[#1a1a1a] text-[#777]"}`}><MapIcon size={16} strokeWidth={3} /><span className="uppercase tracking-tighter">그리드 {isGridOn ? "ON" : "OFF"}</span></button>
                         <button onClick={() => handleModeToggle("simulate")} className={`pointer-events-auto flex items-center gap-2.5 px-5 py-3.5 border border-blue-500/30 rounded-xl font-black text-xs shadow-2xl transition-all active:scale-95 ${activeMode === "simulate" ? "bg-blue-600 text-white" : "bg-[#1a1a1a] text-blue-400 hover:text-blue-300"}`}><Target size={16} strokeWidth={3} /><span className="uppercase tracking-tighter">시뮬레이터</span></button>
                         <button onClick={() => handleModeToggle("mortar")} className={`pointer-events-auto flex items-center gap-2.5 px-5 py-3.5 border border-white/10 rounded-xl font-black text-xs shadow-2xl transition-all active:scale-95 ${activeMode === "mortar" ? "bg-[#ea4335] text-white" : "bg-[#1a1a1a] text-[#777]"}`}><Crosshair size={16} strokeWidth={3} /><span className="uppercase tracking-tighter">박격포</span></button>
+                        <button onClick={() => handleModeToggle("report")} className={`pointer-events-auto flex items-center gap-2.5 px-5 py-3.5 border border-emerald-500/30 rounded-xl font-black text-xs shadow-2xl transition-all active:scale-95 ${activeMode === "report" ? "bg-emerald-600 text-white border-emerald-500" : "bg-[#1a1a1a] text-emerald-400 hover:text-emerald-300"}`}><MapPin size={16} strokeWidth={3} /><span className="uppercase tracking-tighter">차량 제보</span></button>
                       </div>
                     )}
                   </div>
@@ -220,6 +221,15 @@ const MapShell = memo(({
               setIsVehicleFilterOn={setIsVehicleFilterOn}
               simulatorPhases={simulatorPhases}
             />
+
+            {activeMode !== "none" && (
+              <div className={`absolute left-1/2 -translate-x-1/2 z-[1000] bg-black/80 text-white px-5 py-2.5 rounded-full text-xs pointer-events-none font-bold border border-white/10 shadow-2xl flex items-center gap-2 whitespace-nowrap ${isMobile ? 'top-[60px]' : 'top-4'}`}>
+                {activeMode === "mortar" && "🎯 [박격포] 지도 위에 내 위치와 타겟 지점을 순서대로 클릭하세요."}
+                {activeMode === "simulate" && "🎲 [시뮬레이터] 지도를 클릭해 서클 및 가상 경로 지점을 추가하세요."}
+                {activeMode === "report" && "🚨 [차량 제보] 지도 위에 차량을 제보할 위치를 클릭하세요!"}
+                <span className="text-[#F2A900] ml-1.5">(우클릭: 취소)</span>
+              </div>
+            )}
 
             <MapView
               activeMapId={activeMapId} currentMap={currentMap} bounds={bounds} icons={icons} imageHeight={imageHeight} imageWidth={imageWidth}
