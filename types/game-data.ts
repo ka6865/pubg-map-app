@@ -4,7 +4,23 @@
  */
 
 /** 게임 내 아이템의 대분류 카테고리 */
-export type ItemCategory = "weapons" | "consumables" | "throwables" | "attachments" | "ammo" | "vehicles" | "crates" | "system";
+export type ItemCategory = "weapons" | "consumables" | "throwables" | "attachments" | "ammo" | "vehicles" | "crates" | "system" | "users";
+
+export interface UserProfile {
+  id: string;
+  nickname: string | null;
+  avatar_url: string | null;
+  role: string | null;
+  pubg_nickname: string | null;
+  pubg_platform: string | null;
+  updated_at: string | null;
+  email?: string;
+  created_at?: string;
+  last_sign_in_at?: string;
+  provider?: string;
+  email_confirmed?: boolean;
+  is_missing_profile?: boolean;
+}
 
 export interface BaseGameItem {
   id: string;
@@ -36,4 +52,5 @@ export interface Ammo extends BaseGameItem {
   type: string;
 }
 
-export type GameItem = BaseGameItem | Weapon | Vehicle | Consumable | Ammo;
+export type GameItem = BaseGameItem | Weapon | Vehicle | Consumable | Ammo | UserProfile;
+

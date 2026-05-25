@@ -7,6 +7,7 @@ import { normalizeName } from "@/lib/pubg-analysis/utils";
 import { adaptBenchmark } from "@/lib/pubg-analysis/benchmarkAdapter";
 import { jsonrepair } from "jsonrepair";
 import { withAuthGuard } from "@/utils/supabase/guard";
+import { trackAiUsage } from "@/lib/pubg-analysis/aiUsageTracker";
 
 export const maxDuration = 60;
 
@@ -735,6 +736,7 @@ export async function POST(request: Request) {
       "gemini-2.5-flash"
     ];
     let streamResult = null;
+    let selectedModelName = "";
 
     const safetySettings = [
       { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
@@ -763,6 +765,7 @@ export async function POST(request: Request) {
         ]) as any;
 
         if (streamResult) {
+          selectedModelName = modelName;
           console.log(`[AI-SUMMARY] Selected Model: ${modelName}`);
           break;
         }
@@ -842,6 +845,20 @@ export async function POST(request: Request) {
               aiResponseText += chunkText;
               controller.enqueue(encoder.encode(JSON.stringify({ type: "chunk", data: chunkText }) + "\n"));
             }
+
+            // 비동기로 사용량 메타데이터 획득 후 로깅
+            streamResult.response.then((res: any) => {
+              if (res.usageMetadata) {
+                trackAiUsage(
+                  auth.user?.id,
+                  selectedModelName,
+                  res.usageMetadata.promptTokenCount,
+                  res.usageMetadata.candidatesTokenCount,
+                  "summary"
+                );
+              }
+            }).catch((err: any) => console.error("[AI-SUMMARY] Usage fetch error:", err));
+
           } else {
             aiResponseText = generateFallbackContent();
           }
