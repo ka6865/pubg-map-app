@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import { withAuthGuard } from "@/utils/supabase/guard";
+import { trackAiUsage } from "@/lib/pubg-analysis/aiUsageTracker";
 
 export async function POST(request: Request) {
   try {
@@ -109,6 +110,8 @@ export async function POST(request: Request) {
 
     let streamResult = null;
     let fallbackText = null;
+    let selectedModelName = "";
+    let nonStreamRes: any = null;
 
     for (const modelName of modelsToTry) {
       try {
@@ -117,14 +120,17 @@ export async function POST(request: Request) {
         try {
           streamResult = await model.generateContentStream(promptLines.join("\n") + "\n\n[분석 데이터]\n" + playerReportSummary);
           if (streamResult) {
-            // console.log(`[AI-ANALYZE] Successfully initiated stream with ${modelName}`);
+            selectedModelName = modelName;
             break;
           }
         } catch (streamErr: any) {
           console.error(`[AI-ANALYZE] Stream failed for ${modelName}, trying non-stream fallback:`, streamErr.message || streamErr);
-          const nonStreamRes = await model.generateContent(promptLines.join("\n") + "\n\n[분석 데이터]\n" + playerReportSummary);
+          nonStreamRes = await model.generateContent(promptLines.join("\n") + "\n\n[분석 데이터]\n" + playerReportSummary);
           fallbackText = nonStreamRes.response.text();
-          if (fallbackText) break;
+          if (fallbackText) {
+            selectedModelName = modelName;
+            break;
+          }
         }
       } catch (err: any) { 
         console.error(`[AI-ANALYZE] Model ${modelName} initialization failed:`, err.message || err);
@@ -146,8 +152,32 @@ export async function POST(request: Request) {
               }
               controller.enqueue(encoder.encode(JSON.stringify({ type: "chunk", data: chunk.text() }) + "\n")); 
             }
+
+            // 비동기로 사용량 메타데이터 획득 후 로깅
+            streamResult.response.then((res: any) => {
+              if (res.usageMetadata) {
+                trackAiUsage(
+                  auth.user?.id,
+                  selectedModelName,
+                  res.usageMetadata.promptTokenCount,
+                  res.usageMetadata.candidatesTokenCount,
+                  "analyze"
+                );
+              }
+            }).catch((err: any) => console.error("[AI-ANALYZE] Usage fetch error:", err));
+
           } else if (fallbackText) { 
             controller.enqueue(encoder.encode(JSON.stringify({ type: "chunk", data: fallbackText }) + "\n")); 
+            
+            if (nonStreamRes?.response?.usageMetadata) {
+              trackAiUsage(
+                auth.user?.id,
+                selectedModelName,
+                nonStreamRes.response.usageMetadata.promptTokenCount,
+                nonStreamRes.response.usageMetadata.candidatesTokenCount,
+                "analyze"
+              );
+            }
           }
           controller.enqueue(encoder.encode(JSON.stringify({ type: "done" }) + "\n"));
         } catch (e) { controller.error(e); } finally { controller.close(); }

@@ -11,12 +11,121 @@ export default function GameDataEditor() {
   const router = useRouter();
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [activeCategory, setActiveCategory] = useState<ItemCategory>("weapons");
-  const [items, setItems] = useState<GameItem[]>([]);
-  const [selectedItem, setSelectedItem] = useState<GameItem | null>(null);
+  const [items, setItems] = useState<any[]>([]);
+  const [selectedItem, setSelectedItem] = useState<any | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [flushNickname, setFlushNickname] = useState("");
   const [flushMatchId, setFlushMatchId] = useState("");
+
+  const [dashboardData, setDashboardData] = useState<any>(null);
+  const [isLoadingDashboard, setIsLoadingDashboard] = useState(false);
+
+  const fetchDashboardData = useCallback(async () => {
+    setIsLoadingDashboard(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch("/api/admin/dashboard", {
+        headers: {
+          "Authorization": `Bearer ${session?.access_token}`
+        }
+      });
+      if (!response.ok) throw new Error("대시보드 데이터 로드 실패");
+      const data = await response.json();
+      setDashboardData(data);
+    } catch (err: any) {
+      console.error("[Dashboard Load Error]", err.message);
+    } finally {
+      setIsLoadingDashboard(false);
+    }
+  }, []);
+
+  const timeAgo = useCallback((dateStr: string | null) => {
+    if (!dateStr) return "접속 기록 없음";
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+
+    if (diffMins < 1) return "방금 전";
+    if (diffMins < 60) return `${diffMins}분 전`;
+    if (diffHours < 24) return `${diffHours}시간 전`;
+    return `${diffDays}일 전`;
+  }, []);
+
+  const formatBytes = useCallback((bytes: number) => {
+    if (bytes === 0) return "0 Bytes";
+    const k = 1024;
+    const sizes = ["Bytes", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+  }, []);
+
+  const userStats = useMemo(() => {
+    if (activeCategory !== "users" || !items || items.length === 0) return null;
+    
+    const total = items.length;
+    const missing = items.filter(u => u.is_missing_profile).length;
+    const emailConfirmed = items.filter(u => u.email_confirmed).length;
+    
+    const providers: Record<string, number> = {};
+    const platforms: Record<string, number> = {};
+    
+    items.forEach(u => {
+      const prov = u.provider || "unknown";
+      providers[prov] = (providers[prov] || 0) + 1;
+      
+      const plat = u.pubg_platform || "unlinked";
+      platforms[plat] = (platforms[plat] || 0) + 1;
+    });
+    
+    const recent = [...items]
+      .filter(u => u.last_sign_in_at)
+      .sort((a, b) => new Date(b.last_sign_in_at).getTime() - new Date(a.last_sign_in_at).getTime())
+      .slice(0, 5);
+      
+    return {
+      total,
+      missing,
+      emailConfirmed,
+      providers,
+      platforms,
+      recent
+    };
+  }, [items, activeCategory]);
+
+  const missingProfilesCount = useMemo(() => {
+    if (activeCategory !== "users") return 0;
+    return items.filter(item => (item as any).is_missing_profile).length;
+  }, [items, activeCategory]);
+
+  const handleSyncMissingProfiles = async () => {
+    setIsSaving(true);
+    const toastId = toast.loading("누락된 회원 프로필 동기화 중...");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch("/api/admin/users", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session?.access_token}`
+        },
+        body: JSON.stringify({ action: "sync" })
+      });
+
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "동기화 실패");
+      
+      toast.success(`✅ ${result.count}명의 누락된 회원 프로필이 성공적으로 복구되었습니다!`, { id: toastId });
+      fetchItems();
+    } catch (err: any) {
+      toast.error("동기화 오류: " + err.message, { id: toastId });
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   // 은신처 상점 전용 상태 선언
   const [selectedCrateDetail, setSelectedCrateDetail] = useState<{
@@ -127,6 +236,7 @@ export default function GameDataEditor() {
         return;
       }
       setIsAuthorized(true);
+      fetchDashboardData();
     };
     checkAdmin();
   }, [router]);
@@ -134,6 +244,27 @@ export default function GameDataEditor() {
   const fetchItems = useCallback(async () => {
     if (activeCategory === "system") {
       setItems([]);
+      fetchDashboardData();
+      return;
+    }
+
+    if (activeCategory === "users") {
+      fetchDashboardData();
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        const response = await fetch("/api/admin/users", {
+          headers: {
+            "Authorization": `Bearer ${session?.access_token}`
+          }
+        });
+        if (!response.ok) throw new Error("유저 목록 로드 실패");
+        const data = await response.json();
+        setItems(data || []);
+        setSelectedCrateDetail(null);
+        setSelectedItem(null);
+      } catch (err: any) {
+        toast.error(err.message);
+      }
       return;
     }
 
@@ -177,11 +308,15 @@ export default function GameDataEditor() {
   }, [isAuthorized, activeCategory, fetchItems]);
 
   const filteredItems = useMemo(() => {
-    return items.filter(item => 
-      item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (item.id && item.id.toLowerCase().includes(searchTerm.toLowerCase()))
-    );
-  }, [items, searchTerm]);
+    return items.filter(item => {
+      const matchText = activeCategory === "users"
+        ? ((item as any).nickname || "")
+        : ((item as any).name || "");
+      const matchId = item.id || "";
+      return matchText.toLowerCase().includes(searchTerm.toLowerCase()) ||
+             matchId.toLowerCase().includes(searchTerm.toLowerCase());
+    });
+  }, [items, searchTerm, activeCategory]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -190,6 +325,28 @@ export default function GameDataEditor() {
     setIsSaving(true);
     try {
       const { data: { session } } = await supabase.auth.getSession();
+
+      if (activeCategory === "users") {
+        const response = await fetch("/api/admin/users", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${session?.access_token}`
+          },
+          body: JSON.stringify({
+            id: selectedItem.id,
+            role: (selectedItem as any).role,
+            pubg_nickname: (selectedItem as any).pubg_nickname,
+            pubg_platform: (selectedItem as any).pubg_platform
+          })
+        });
+
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "유저 정보 저장 실패");
+        toast.success("✅ 유저 프로필이 성공적으로 변경되었습니다.");
+        fetchItems();
+        return;
+      }
 
       if (activeCategory === "crates") {
         if (!selectedCrateDetail) return;
@@ -232,10 +389,29 @@ export default function GameDataEditor() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("정말 삭제하시겠습니까? 관련 시뮬레이션에 영향이 있을 수 있습니다.")) return;
+    const confirmMsg = activeCategory === "users"
+      ? "해당 유저를 강제 탈퇴(삭제) 처리하시겠습니까? 모든 프로필 정보가 영구히 소멸됩니다."
+      : "정말 삭제하시겠습니까? 관련 시뮬레이션에 영향이 있을 수 있습니다.";
+      
+    if (!confirm(confirmMsg)) return;
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
+
+      if (activeCategory === "users") {
+        const response = await fetch(`/api/admin/users?id=${id}`, {
+          method: "DELETE",
+          headers: {
+            "Authorization": `Bearer ${session?.access_token}`
+          }
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "유저 삭제 실패");
+
+        toast.success("유저 계정이 성공적으로 강제 탈퇴/삭제 처리되었습니다.");
+        fetchItems();
+        return;
+      }
 
       if (activeCategory === "crates") {
         const response = await fetch(`/api/admin/crates/data?id=${id}`, {
@@ -271,6 +447,10 @@ export default function GameDataEditor() {
   };
 
   const createNewItem = () => {
+    if (activeCategory === "users") {
+      toast.warning("유저 추가는 소셜 로그인을 통한 회원가입으로만 자동 생성됩니다.");
+      return;
+    }
     const newId = `new_${Date.now()}`;
     
     if (activeCategory === "crates") {
@@ -351,6 +531,7 @@ export default function GameDataEditor() {
               { id: "ammo", label: "탄약" },
               { id: "vehicles", label: "차량" },
               { id: "crates", label: "📦 은신처 상점" },
+              { id: "users", label: "👥 유저 관리" },
               { id: "system", label: "⚙️ 시스템/캐시" }
             ].map(cat => (
               <button
@@ -462,10 +643,23 @@ export default function GameDataEditor() {
                   }
                 }}
                 className={`p-4 border-b border-[#222] cursor-pointer transition-colors hover:bg-[#1a1a1a] ${
-                  selectedItem?.id === item.id ? "bg-[#1a1a1a] border-l-4 border-l-[#F2A900]" : ""
+                  selectedItem?.id === item.id 
+                    ? "bg-[#1a1a1a] border-l-4 border-l-[#F2A900]" 
+                    : (activeCategory === "users" && (item as any).is_missing_profile)
+                      ? "bg-red-950/20 border-l-4 border-l-red-500/50"
+                      : ""
                 }`}
               >
-                <div className="font-bold text-sm">{item.name}</div>
+                <div className="font-bold text-sm flex items-center justify-between gap-2">
+                  <span className="truncate">
+                    {activeCategory === "users" ? ((item as any).nickname || "닉네임 없음") : (item as any).name}
+                  </span>
+                  {activeCategory === "users" && (item as any).is_missing_profile && (
+                    <span className="text-[9px] bg-red-950 text-red-400 border border-red-900/60 px-1.5 py-0.5 rounded font-bold shrink-0">
+                      ⚠️ 누락
+                    </span>
+                  )}
+                </div>
                 <div className="text-[10px] text-gray-500 font-mono mt-1">{item.id}</div>
               </div>
             ))}
@@ -473,11 +667,506 @@ export default function GameDataEditor() {
         </aside>
 
         <main className="flex-1 bg-[#0d0d0d] p-8 overflow-y-auto">
-          {activeCategory === "system" ? (
-            <div className="max-w-[700px] mx-auto">
-              <h2 className="text-2xl font-black text-white mb-8">⚙️ 시스템 및 데이터 캐시 관리</h2>
+          {activeCategory === "users" ? (
+            <>
+              {missingProfilesCount > 0 && (
+                <div className="max-w-[700px] mx-auto mb-6 bg-red-950/20 border border-red-900/40 p-4 rounded-xl flex items-center justify-between gap-4 animate-pulse animate-duration-1000">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">⚠️</span>
+                    <div>
+                      <h4 className="text-sm font-bold text-red-400">데이터 불일치 (프로필 누락 가입자 감지)</h4>
+                      <p className="text-xs text-gray-400 mt-1">
+                        가입 계정은 있으나 DB 프로필 테이블에 생성되지 않은 유저가 <strong>{missingProfilesCount}명</strong> 존재합니다.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSyncMissingProfiles}
+                    disabled={isSaving}
+                    className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-gray-800 text-white text-xs font-bold rounded-lg shadow-lg shadow-red-950/40 transition-all shrink-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isSaving ? "⏳ 동기화 중..." : "🔄 일괄 복구 동기화"}
+                  </button>
+                </div>
+              )}
+
+              {selectedItem ? (
+                <div className="max-w-[650px] mx-auto pb-10">
+                  <div className="flex justify-between items-center mb-8 border-b border-[#333] pb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-full overflow-hidden border border-[#444] bg-[#222] flex items-center justify-center shrink-0">
+                        {(selectedItem as any).avatar_url ? (
+                          <img src={(selectedItem as any).avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+                        ) : (
+                          <span className="text-[#F2A900] font-black text-lg">👤</span>
+                        )}
+                      </div>
+                      <div>
+                        <span className="text-[9px] bg-amber-950 text-amber-400 border border-amber-900 px-2 py-0.5 rounded-full font-bold mr-2">회원 상세</span>
+                        <h2 className="text-2xl font-black text-white inline-block">{(selectedItem as any).nickname || "닉네임 없음"}</h2>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleDelete(selectedItem.id)}
+                      className="bg-red-500/10 hover:bg-red-500/20 text-red-500 text-xs font-bold px-4 py-2 rounded border border-red-500/30 transition-all"
+                    >
+                      강제 탈퇴
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleSave} className="space-y-6">
+                    <div className="bg-[#1a1a1a] p-6 rounded-2xl border border-[#333] space-y-4">
+                      <h3 className="text-sm font-black text-[#F2A900] uppercase tracking-wider">프로필 및 로그인 연동</h3>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-bold text-gray-500 mb-2">가입 계정 (ID)</label>
+                          <input
+                            type="text"
+                            className="w-full bg-[#111] border border-[#222] rounded px-3 py-2 text-sm text-gray-400 cursor-not-allowed font-mono text-[11px]"
+                            value={selectedItem.id}
+                            disabled
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-gray-500 mb-2">이메일 주소</label>
+                          <input
+                            type="text"
+                            className="w-full bg-[#111] border border-[#222] rounded px-3 py-2 text-sm text-gray-400 cursor-not-allowed"
+                            value={(selectedItem as any).email || "소셜 간편 로그인"}
+                            disabled
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-gray-500 mb-2">닉네임</label>
+                          <input
+                            type="text"
+                            className="w-full bg-[#111] border border-[#222] rounded px-3 py-2 text-sm text-gray-400 cursor-not-allowed"
+                            value={(selectedItem as any).nickname || "이름 없음"}
+                            disabled
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-gray-500 mb-2">가입 일자</label>
+                          <input
+                            type="text"
+                            className="w-full bg-[#111] border border-[#222] rounded px-3 py-2 text-sm text-gray-400 cursor-not-allowed"
+                            value={
+                              (selectedItem as any).created_at 
+                                ? new Date((selectedItem as any).created_at).toLocaleString() 
+                                : "기록 없음"
+                            }
+                            disabled
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-gray-500 mb-2">마지막 로그인</label>
+                          <input
+                            type="text"
+                            className="w-full bg-[#111] border border-[#222] rounded px-3 py-2 text-sm text-gray-400 cursor-not-allowed"
+                            value={
+                              (selectedItem as any).last_sign_in_at 
+                                ? new Date((selectedItem as any).last_sign_in_at).toLocaleString() 
+                                : "기록 없음"
+                            }
+                            disabled
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-gray-500 mb-2">계정 상태 및 연동</label>
+                          <div className="flex flex-wrap gap-2 pt-1">
+                            {/* 로그인 제공처 뱃지 */}
+                            {(() => {
+                              const p = (selectedItem as any).provider;
+                              if (p === "google") {
+                                return <span className="text-[10px] bg-red-950/40 text-red-400 border border-red-900/50 px-2.5 py-1 rounded-full font-bold">Google 로그인</span>;
+                              } else if (p === "kakao") {
+                                return <span className="text-[10px] bg-amber-950/40 text-[#F2A900] border border-amber-900/60 px-2.5 py-1 rounded-full font-bold">Kakao 로그인</span>;
+                              } else {
+                                return <span className="text-[10px] bg-gray-900 text-gray-400 border border-gray-800 px-2.5 py-1 rounded-full font-bold">{p || "unknown"} 로그인</span>;
+                              }
+                            })()}
+
+                            {/* 이메일 인증 여부 뱃지 */}
+                            {(selectedItem as any).email_confirmed ? (
+                              <span className="text-[10px] bg-emerald-950/40 text-emerald-400 border border-emerald-900/50 px-2.5 py-1 rounded-full font-bold font-sans">✉️ 이메일 인증완료</span>
+                            ) : (
+                              <span className="text-[10px] bg-amber-950/40 text-amber-500 border border-amber-900/50 px-2.5 py-1 rounded-full font-bold font-sans">⚠️ 이메일 미인증</span>
+                            )}
+
+                            {/* 프로필 존재 여부 뱃지 */}
+                            {(selectedItem as any).is_missing_profile ? (
+                              <span className="text-[10px] bg-rose-950/50 text-rose-400 border border-rose-900/60 px-2.5 py-1 rounded-full font-bold font-sans">⚠️ DB 프로필 누락</span>
+                            ) : (
+                              <span className="text-[10px] bg-indigo-950/40 text-indigo-400 border border-indigo-900/50 px-2.5 py-1 rounded-full font-bold font-sans">✓ DB 프로필 정상</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="bg-[#1a1a1a] p-6 rounded-2xl border border-[#333] space-y-4">
+                      <h3 className="text-sm font-black text-[#F2A900] uppercase tracking-wider">인프라 관리 및 게임 연동</h3>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-xs font-bold text-gray-500 mb-2">관리자 권한 (Role)</label>
+                          <select
+                            className="w-full bg-[#222] border border-[#333] rounded px-3 py-2 text-sm focus:border-[#F2A900] focus:outline-none"
+                            value={(selectedItem as any).role || "user"}
+                            onChange={(e) => {
+                              setSelectedItem({
+                                ...selectedItem,
+                                role: e.target.value
+                              });
+                            }}
+                          >
+                            <option value="user">일반 유저 (user)</option>
+                            <option value="admin">관제탑 관리자 (admin)</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-gray-500 mb-2">배그 연동 닉네임</label>
+                          <input
+                            type="text"
+                            className="w-full bg-[#222] border border-[#333] rounded px-3 py-2 text-sm focus:border-[#F2A900] focus:outline-none"
+                            placeholder="배틀그라운드 닉네임"
+                            value={(selectedItem as any).pubg_nickname || ""}
+                            onChange={(e) => {
+                              setSelectedItem({
+                                ...selectedItem,
+                                pubg_nickname: e.target.value
+                              });
+                            }}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-gray-500 mb-2">배그 연동 플랫폼</label>
+                          <select
+                            className="w-full bg-[#222] border border-[#333] rounded px-3 py-2 text-sm focus:border-[#F2A900] focus:outline-none"
+                            value={(selectedItem as any).pubg_platform || ""}
+                            onChange={(e) => {
+                              setSelectedItem({
+                                ...selectedItem,
+                                pubg_platform: e.target.value
+                              });
+                            }}
+                          >
+                            <option value="">연동 안함</option>
+                            <option value="steam">Steam (PC)</option>
+                            <option value="kakao">Kakao (PC)</option>
+                            <option value="xbox">Xbox (Console)</option>
+                            <option value="psn">PlayStation (Console)</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-4">
+                      <button
+                        type="submit"
+                        disabled={isSaving}
+                        className="flex-1 py-3 bg-[#F2A900] hover:bg-[#d99700] text-black font-extrabold rounded-lg shadow-lg active:scale-95 transition-all text-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {isSaving ? "⏳ 저장 중..." : "💾 유저 연동정보 저장"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedItem(null)}
+                        className="py-3 px-6 bg-transparent border border-[#555] hover:bg-[#222] text-gray-400 hover:text-white font-bold rounded-lg transition-colors text-sm"
+                      >
+                        취소
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              ) : (
+                <div className="max-w-[750px] mx-auto space-y-8">
+                  <div className="flex justify-between items-center border-b border-[#333] pb-4">
+                    <div>
+                      <h2 className="text-2xl font-black text-white">👥 종합 회원 인사이트 대시보드</h2>
+                      <p className="text-xs text-gray-500 mt-1">회원가입 현황, 프로필 누락 복구 상태 및 최근 가입 유저 요약</p>
+                    </div>
+                  </div>
+
+                  {/* 3종 메트릭 카드 */}
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="bg-[#1a1a1a] p-5 rounded-2xl border border-[#333] relative overflow-hidden">
+                      <div className="text-2xl absolute top-4 right-4 opacity-10">👥</div>
+                      <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">총 가입 회원</span>
+                      <div className="text-3xl font-black text-white mt-2 font-mono">{userStats?.total || 0}명</div>
+                    </div>
+                    <div className={`p-5 rounded-2xl border relative overflow-hidden ${
+                      (userStats?.missing || 0) > 0 
+                        ? "bg-red-950/10 border-red-500/20 shadow-lg shadow-red-950/10" 
+                        : "bg-[#1a1a1a] border-[#333]"
+                    }`}>
+                      <div className="text-2xl absolute top-4 right-4 opacity-10">⚠️</div>
+                      <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">프로필 누락 경고</span>
+                      <div className={`text-3xl font-black mt-2 font-mono ${
+                        (userStats?.missing || 0) > 0 ? "text-red-400" : "text-white"
+                      }`}>{userStats?.missing || 0}명</div>
+                      {(userStats?.missing || 0) > 0 && (
+                        <span className="absolute top-4 right-4 flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                        </span>
+                      )}
+                    </div>
+                    <div className="bg-[#1a1a1a] p-5 rounded-2xl border border-[#333] relative overflow-hidden">
+                      <div className="text-2xl absolute top-4 right-4 opacity-10">✉️</div>
+                      <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">이메일 인증률</span>
+                      <div className="text-3xl font-black text-white mt-2 font-mono">
+                        {userStats?.total ? Math.round((userStats.emailConfirmed / userStats.total) * 100) : 0}%
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 비율 가로형 HSL 바 차트 */}
+                  <div className="grid grid-cols-2 gap-6">
+                    {/* 소셜 로그인 제공처 비율 */}
+                    <div className="bg-[#1a1a1a] p-6 rounded-2xl border border-[#333] space-y-4">
+                      <h3 className="text-sm font-black text-[#F2A900] uppercase tracking-wider">소셜 로그인 제공처 비율</h3>
+                      <div className="space-y-4 pt-2">
+                        {(() => {
+                          const google = userStats?.providers["google"] || 0;
+                          const kakao = userStats?.providers["kakao"] || 0;
+                          const total = google + kakao || 1;
+                          const googlePct = Math.round((google / total) * 100);
+                          const kakaoPct = Math.round((kakao / total) * 100);
+                          return (
+                            <div className="space-y-3">
+                              {/* 바 그래프 */}
+                              <div className="w-full h-4 rounded-full overflow-hidden flex border border-[#222]">
+                                <div className="bg-red-650 transition-all" style={{ width: `${googlePct}%` }} title={`Google: ${googlePct}%`} />
+                                <div className="bg-amber-400 transition-all" style={{ width: `${kakaoPct}%` }} title={`Kakao: ${kakaoPct}%`} />
+                              </div>
+                              {/* 라벨 */}
+                              <div className="flex justify-between text-xs">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="w-2.5 h-2.5 bg-red-650 rounded-full inline-block" />
+                                  <span className="text-gray-400">Google:</span>
+                                  <span className="font-bold text-white">{googlePct}% ({google}명)</span>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  <span className="w-2.5 h-2.5 bg-amber-400 rounded-full inline-block" />
+                                  <span className="text-gray-400">Kakao:</span>
+                                  <span className="font-bold text-white">{kakaoPct}% ({kakao}명)</span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+
+                    {/* 배그 플랫폼 연동 비율 */}
+                    <div className="bg-[#1a1a1a] p-6 rounded-2xl border border-[#333] space-y-4">
+                      <h3 className="text-sm font-black text-[#F2A900] uppercase tracking-wider">배그 연동 플랫폼 비율</h3>
+                      <div className="space-y-4 pt-2">
+                        {(() => {
+                          const steam = userStats?.platforms["steam"] || 0;
+                          const kakao = userStats?.platforms["kakao"] || 0;
+                          const unlinked = userStats?.platforms["unlinked"] || 0;
+                          const total = steam + kakao + unlinked || 1;
+                          
+                          const steamPct = Math.round((steam / total) * 100);
+                          const kakaoPct = Math.round((kakao / total) * 100);
+                          const unlinkedPct = 100 - steamPct - kakaoPct;
+                          
+                          return (
+                            <div className="space-y-3">
+                              <div className="w-full h-4 rounded-full overflow-hidden flex border border-[#222]">
+                                <div className="bg-sky-500 transition-all" style={{ width: `${steamPct}%` }} />
+                                <div className="bg-amber-500 transition-all" style={{ width: `${kakaoPct}%` }} />
+                                <div className="bg-gray-700 transition-all" style={{ width: `${unlinkedPct}%` }} />
+                              </div>
+                              <div className="grid grid-cols-3 gap-1 text-[10px] text-gray-455">
+                                <div className="flex items-center gap-1">
+                                  <span className="w-2 h-2 bg-sky-500 rounded-full inline-block" />
+                                  <span>Steam: {steamPct}%</span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <span className="w-2 h-2 bg-amber-500 rounded-full inline-block" />
+                                  <span>Kakao: {kakaoPct}%</span>
+                                </div>
+                                <div className="flex items-center gap-1">
+                                  <span className="w-2 h-2 bg-gray-700 rounded-full inline-block" />
+                                  <span>미연동: {unlinkedPct}%</span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 최근 로그인 유저 Top 5 */}
+                  <div className="bg-[#1a1a1a] p-6 rounded-2xl border border-[#333] space-y-4">
+                    <h3 className="text-sm font-black text-[#F2A900] uppercase tracking-wider">실시간 최근 로그인 유저 Top 5</h3>
+                    <div className="divide-y divide-[#222]">
+                      {userStats?.recent && userStats.recent.length > 0 ? (
+                        userStats.recent.map((u: any, idx: number) => (
+                          <div key={idx} className="py-3 flex items-center justify-between first:pt-0 last:pb-0">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-full overflow-hidden border border-[#333] bg-[#222] flex items-center justify-center shrink-0">
+                                {u.avatar_url ? (
+                                  <img src={u.avatar_url} alt="Avatar" className="w-full h-full object-cover" />
+                                ) : (
+                                  <span className="text-[#F2A900] font-black text-sm">👤</span>
+                                )}
+                              </div>
+                              <div>
+                                <div className="text-sm font-bold text-white flex items-center gap-2">
+                                  {u.nickname || "닉네임 없음"}
+                                  {u.role === "admin" && (
+                                    <span className="text-[8px] bg-red-950 text-red-400 border border-red-900/60 px-1 py-0.2 rounded font-black">ADMIN</span>
+                                  )}
+                                </div>
+                                <div className="text-[10px] text-gray-500">{u.email}</div>
+                              </div>
+                            </div>
+                            
+                            <div className="text-right flex flex-col items-end gap-1">
+                              <span className="text-xs text-gray-400 font-bold">{timeAgo(u.last_sign_in_at)}</span>
+                              {u.pubg_nickname ? (
+                                <span className="text-[9px] bg-sky-950/40 text-sky-400 border border-sky-900/50 px-1.5 py-0.5 rounded font-mono">
+                                  🎮 {u.pubg_nickname} ({u.pubg_platform})
+                                </span>
+                              ) : (
+                                <span className="text-[9px] text-gray-600">배그 연동 정보 없음</span>
+                              )}
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="text-xs text-gray-600 italic py-4 text-center">최근 로그인 기록이 존재하지 않습니다.</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : activeCategory === "system" ? (
+            <div className="max-w-[750px] mx-auto space-y-8">
+              <h2 className="text-2xl font-black text-white border-b border-[#333] pb-4">⚙️ 시스템 통합 관제탑 및 캐시 관리</h2>
               
-              <div className="grid grid-cols-1 gap-6">
+              {/* 시스템 모니터링 대시보드 */}
+              {isLoadingDashboard && !dashboardData ? (
+                <div className="bg-[#1a1a1a] p-8 rounded-2xl border border-[#333] flex flex-col items-center justify-center gap-3">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#F2A900]"></div>
+                  <span className="text-xs text-gray-400">실시간 시스템 메트릭 조회 중...</span>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-4">
+                  {/* R2 스토리지 정보 */}
+                  <div className="bg-[#1a1a1a] p-6 rounded-2xl border border-[#333] space-y-4">
+                    <h3 className="text-xs font-black text-gray-500 uppercase tracking-wider">⚡ R2 텔레메트리 캐시 스토리지</h3>
+                    <div className="space-y-2 pt-2">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-gray-400">캐시 파일 수</span>
+                        <span className="font-bold font-mono text-white">{dashboardData?.r2Cache?.fileCount || 0} 개</span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-gray-400">총 누적 용량</span>
+                        <span className="font-bold font-mono text-white">{formatBytes(dashboardData?.r2Cache?.totalSizeBytes || 0)}</span>
+                      </div>
+                      <div className="text-[10px] text-gray-500 mt-4 leading-relaxed">
+                        * 원본 텔레메트리 리플레이 및 경기 분석 임시 캐시 데이터입니다.
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 마커 제보 승인 대기 */}
+                  <div className="bg-[#1a1a1a] p-6 rounded-2xl border border-[#333] flex flex-col justify-between">
+                    <div>
+                      <h3 className="text-xs font-black text-gray-500 uppercase tracking-wider">📍 마커 제보 승인 대기</h3>
+                      <div className="text-3xl font-black font-mono text-white mt-4">
+                        {dashboardData?.pendingMarkersCount || 0} <span className="text-xs text-gray-500 font-normal">건</span>
+                      </div>
+                      <p className="text-[10px] text-gray-550 mt-2">
+                        유저들이 지도 시뮬레이터에 등록한 전술 마커가 승인 대기 중입니다.
+                      </p>
+                    </div>
+                    {dashboardData?.pendingMarkersCount > 0 && (
+                      <button
+                        onClick={() => router.push("/admin/review")}
+                        className="w-full mt-4 py-2 bg-amber-600/20 text-[#F2A900] border border-[#F2A900]/30 hover:bg-amber-600/30 text-[11px] font-bold rounded transition-all text-center"
+                      >
+                        📝 제보 검토하러 가기
+                      </button>
+                    )}
+                  </div>
+
+                  {/* PUBG API Rate Limit */}
+                  <div className="bg-[#1a1a1a] p-6 rounded-2xl border border-[#333] space-y-4">
+                    <h3 className="text-xs font-black text-gray-500 uppercase tracking-wider">📊 PUBG API Rate Limit 상태</h3>
+                    <div className="pt-2">
+                      {dashboardData?.pubgApi ? (
+                        <div className="space-y-3">
+                          <div className="flex justify-between text-xs">
+                            <span className="text-gray-400">남은 호출 횟수</span>
+                            <span className="font-bold font-mono">
+                              {dashboardData.pubgApi.remaining} / {dashboardData.pubgApi.limit}
+                            </span>
+                          </div>
+                          {(() => {
+                            const pct = (dashboardData.pubgApi.remaining / dashboardData.pubgApi.limit) * 100;
+                            const color = pct > 50 ? "bg-emerald-500" : pct > 20 ? "bg-amber-500" : "bg-red-500";
+                            return (
+                              <div className="w-full bg-[#111] h-2 rounded-full overflow-hidden border border-[#222]">
+                                <div className={`h-full ${color} transition-all duration-500`} style={{ width: `${pct}%` }} />
+                              </div>
+                            );
+                          })()}
+                          <div className="grid grid-cols-2 gap-2 text-[9px] text-gray-500 font-mono mt-2">
+                            <div>리셋: {new Date(dashboardData.pubgApi.resetAt).toLocaleTimeString()}</div>
+                            <div className="text-right">갱신: {timeAgo(dashboardData.pubgApi.updatedAt)}</div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="text-xs text-gray-600 italic py-4 text-center">PUBG API 트래킹 정보가 아직 없습니다.</div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* AI 사용량 및 누적 비용 */}
+                  <div className="bg-[#1a1a1a] p-6 rounded-2xl border border-[#333] space-y-4">
+                    <h3 className="text-xs font-black text-gray-500 uppercase tracking-wider">🤖 AI (Gemini) 토큰 분석 비용 (최근 7일)</h3>
+                    {dashboardData?.aiUsage && (
+                      <div className="space-y-2 pt-2">
+                        <div className="text-xs font-bold text-gray-400 flex justify-between">
+                          <span>누적 소요 비용:</span>
+                          <span className="text-[#34A853] font-black">${dashboardData.aiUsage.reduce((sum: number, u: any) => sum + u.cost, 0).toFixed(4)} USD</span>
+                        </div>
+                        <div className="flex items-end gap-1.5 h-16 pt-2 px-1">
+                          {dashboardData.aiUsage.map((u: any, idx: number) => {
+                            const maxCost = Math.max(...dashboardData.aiUsage.map((x: any) => x.cost), 0.001);
+                            const percent = Math.min((u.cost / maxCost) * 100, 100);
+                            return (
+                              <div key={idx} className="flex-1 flex flex-col items-center group relative h-full justify-end">
+                                <div className="absolute bottom-full mb-1 bg-black text-[9px] text-white p-1.5 rounded border border-[#333] hidden group-hover:block whitespace-nowrap z-10">
+                                  {u.date}<br/>
+                                  비용: ${u.cost.toFixed(4)}<br/>
+                                  토큰: {u.promptTokens + u.completionTokens}T
+                                </div>
+                                <div 
+                                  className="w-full rounded-t bg-gradient-to-t from-emerald-600/30 to-emerald-500 transition-all hover:brightness-125" 
+                                  style={{ height: `${percent}%` }}
+                                />
+                                <span className="text-[7px] text-gray-600 mt-1 font-mono">{u.date.substring(5)}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* 기존 데이터 조작 카드 목록 */}
+              <div className="grid grid-cols-1 gap-6 pt-4">
                 <div className="bg-[#1a1a1a] p-6 rounded-xl border border-[#333]">
                   <h3 className="text-lg font-bold text-[#F2A900] mb-2">전체 분석 캐시 초기화</h3>
                   <p className="text-sm text-gray-400 mb-4">
@@ -560,7 +1249,7 @@ export default function GameDataEditor() {
                       <button
                         onClick={async () => {
                           if (!flushNickname) return toast.error("닉네임을 입력하세요.");
-                          if (!confirm(`${flushNickname}님의 모든 분석 데이터를 삭제하시겠습니까?`)) return;
+                          if (!confirm(flushNickname + "님의 모든 분석 데이터를 삭제하시겠습니까?")) return;
                           setIsSaving(true);
                           try {
                             const res = await fetch("/api/admin/system", {
@@ -597,7 +1286,7 @@ export default function GameDataEditor() {
                       <button
                         onClick={async () => {
                           if (!flushMatchId) return toast.error("매치 ID를 입력하세요.");
-                          if (!confirm(`해당 매치(${flushMatchId})의 모든 분석 데이터를 삭제하시겠습니까?`)) return;
+                          if (!confirm("해당 매치(" + flushMatchId + ")의 모든 분석 데이터를 삭제하시겠습니까?")) return;
                           setIsSaving(true);
                           try {
                             const res = await fetch("/api/admin/system", {

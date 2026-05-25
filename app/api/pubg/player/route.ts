@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
+import { trackPubgRateLimit } from "@/lib/pubg-analysis/pubgApiTracker";
 
 // [V12.1] 네트워크 불안정 대응을 위한 재시도 헬퍼 함수 (전체 대기 시간 누적 방지)
 async function withRetry<T>(fn: () => Promise<T>, retries = 2, delay = 1000): Promise<T> {
@@ -64,6 +65,7 @@ export async function GET(request: Request) {
         signal: AbortSignal.timeout(8000)
       }
     ));
+    trackPubgRateLimit(playerRes.headers);
 
     // 3. 캐시된 이름으로 실패 시 원본 입력으로 재시도 (Fallback)
     if (!playerRes.ok && playerRes.status === 404 && targetNickname !== nickname) {
@@ -145,6 +147,7 @@ export async function GET(request: Request) {
         signal: AbortSignal.timeout(8000)
       }
     ));
+    trackPubgRateLimit(seasonRes.headers);
     const seasonData = await seasonRes.json();
     // 🚀 [FIX] pc- 필터링을 완화하여 콘솔(Xbox, PSN) 시즌 데이터도 처리 가능하도록 수정
     const availableSeasons = seasonData.data
@@ -207,6 +210,8 @@ export async function GET(request: Request) {
         { headers, next: { revalidate: 60 }, signal: AbortSignal.timeout(8000) }
       )),
     ]);
+    trackPubgRateLimit(rankedRes.headers);
+    trackPubgRateLimit(normalRes.headers);
 
     const rankedStats = { solo: null as any, duo: null as any, squad: null as any };
     if (rankedRes.ok) {

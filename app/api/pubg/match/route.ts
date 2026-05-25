@@ -7,6 +7,7 @@ import { RESULT_VERSION, TELEMETRY_VERSION } from "@/lib/pubg-analysis/constants
 import { normalizeName } from "@/lib/pubg-analysis/utils";
 import { adaptBenchmark } from "@/lib/pubg-analysis/benchmarkAdapter";
 import { uploadToR2, downloadFromR2 } from "@/lib/pubg-analysis/r2Service";
+import { trackPubgRateLimit } from "@/lib/pubg-analysis/pubgApiTracker";
 
 // [ISR V1.0] force-dynamic 유지: PUBG API 호출, R2 업로드, DB Upsert 등 부수효과 보호
 // unstable_cache는 DB 읽기(캐시 조회) 전용 프록시로만 사용
@@ -95,6 +96,7 @@ export async function GET(request: NextRequest) {
       cache: "no-store",
       signal: AbortSignal.timeout(15000)
     });
+    trackPubgRateLimit(res.headers);
 
     if (!res.ok) {
       if (res.status === 429) {
