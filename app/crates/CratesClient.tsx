@@ -861,77 +861,125 @@ export default function CratesClient({ initialCrates, exchangeRate }: CratesClie
                 {/* 2-C. 개봉 버튼바 */}
                 <div className="mt-4 border-t border-slate-850/80 pt-4 shrink-0">
                   {selectedInventoryItem === "coupon" ? (
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="flex flex-wrap gap-2 justify-center w-full">
                       <button
                         onClick={() => handleOpenContrabandWithCoupons("one")}
                         disabled={isDrawing || coupons < 10}
-                        className="py-3 bg-slate-850 hover:bg-slate-800 text-white font-extrabold rounded-xl border border-slate-700 active:scale-95 transition-all text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="flex-1 min-w-[100px] py-3 bg-slate-850 hover:bg-slate-800 text-white font-extrabold rounded-xl border border-slate-700 active:scale-95 transition-all text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed text-center"
                       >
                         1개 열기 (10장)
                       </button>
-                      <button
-                        onClick={() => handleOpenContrabandWithCoupons("five")}
-                        disabled={isDrawing || coupons < 50}
-                        className="py-3 bg-slate-850 hover:bg-slate-800 text-white font-extrabold rounded-xl border border-slate-700 active:scale-95 transition-all text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        5개 열기 (50장)
-                      </button>
-                      <button
-                        onClick={() => handleOpenContrabandWithCoupons("ten")}
-                        disabled={isDrawing || coupons < 100}
-                        className="py-3 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-black rounded-xl active:scale-95 transition-all text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        10개 열기 (100장)
-                      </button>
+                      {coupons >= 50 && coupons < 100 && (
+                        <button
+                          onClick={() => handleOpenContrabandWithCoupons("five")}
+                          disabled={isDrawing}
+                          className="flex-1 min-w-[100px] py-3 bg-slate-850 hover:bg-slate-800 text-white font-extrabold rounded-xl border border-slate-700 active:scale-95 transition-all text-xs cursor-pointer text-center"
+                        >
+                          5개 열기 (50장)
+                        </button>
+                      )}
+                      {coupons >= 100 && (
+                        <button
+                          onClick={() => handleOpenContrabandWithCoupons("ten")}
+                          disabled={isDrawing}
+                          className="flex-1 min-w-[100px] py-3 bg-slate-850 hover:bg-slate-800 text-white font-extrabold rounded-xl border border-slate-700 active:scale-95 transition-all text-xs cursor-pointer text-center"
+                        >
+                          10개 열기 (100장)
+                        </button>
+                      )}
+                      {coupons >= 20 && (
+                        <button
+                          onClick={() => handleOpenContrabandWithCoupons("all")}
+                          disabled={isDrawing}
+                          className="flex-1 min-w-[120px] py-3 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-black rounded-xl active:scale-95 transition-all text-xs cursor-pointer text-center"
+                        >
+                          전체 열기 ({Math.floor(coupons / 10)}개)
+                        </button>
+                      )}
                     </div>
                   ) : selectedInventoryItem === "loot_crate" ? (
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="flex flex-wrap gap-2 justify-center w-full">
                       <button
                         onClick={() => handleOpenInventoryCrates("one")}
                         disabled={isDrawing || (inventoryCrates[activeCrate.id] || 0) < 1}
-                        className="py-3 bg-slate-850 hover:bg-slate-800 text-white font-extrabold rounded-xl border border-slate-700 active:scale-95 transition-all text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="flex-1 min-w-[100px] py-3 bg-slate-850 hover:bg-slate-800 text-white font-extrabold rounded-xl border border-slate-700 active:scale-95 transition-all text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed text-center"
                       >
                         1개 열기 (1개)
                       </button>
-                      <button
-                        onClick={() => handleOpenInventoryCrates("five")}
-                        disabled={isDrawing || (inventoryCrates[activeCrate.id] || 0) < 5}
-                        className="py-3 bg-slate-850 hover:bg-slate-800 text-white font-extrabold rounded-xl border border-slate-700 active:scale-95 transition-all text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        5개 열기 (5개)
-                      </button>
-                      <button
-                        onClick={() => handleOpenInventoryCrates("ten")}
-                        disabled={isDrawing || (inventoryCrates[activeCrate.id] || 0) < 10}
-                        className="py-3 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-slate-950 font-black rounded-xl active:scale-95 transition-all text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        10개 열기 (10개)
-                      </button>
+                      {(inventoryCrates[activeCrate.id] || 0) >= 5 && (inventoryCrates[activeCrate.id] || 0) < 10 && (
+                        <button
+                          onClick={() => handleOpenInventoryCrates("five")}
+                          disabled={isDrawing}
+                          className="flex-1 min-w-[100px] py-3 bg-slate-850 hover:bg-slate-800 text-white font-extrabold rounded-xl border border-slate-700 active:scale-95 transition-all text-xs cursor-pointer text-center"
+                        >
+                          5개 열기 (5개)
+                        </button>
+                      )}
+                      {(inventoryCrates[activeCrate.id] || 0) >= 10 && (
+                        <button
+                          onClick={() => handleOpenInventoryCrates("ten")}
+                          disabled={isDrawing}
+                          className="flex-1 min-w-[100px] py-3 bg-slate-850 hover:bg-slate-800 text-white font-extrabold rounded-xl border border-slate-700 active:scale-95 transition-all text-xs cursor-pointer text-center"
+                        >
+                          10개 열기 (10개)
+                        </button>
+                      )}
+                      {(inventoryCrates[activeCrate.id] || 0) >= 55 && (
+                        <button
+                          onClick={() => handleOpenInventoryCrates("fiftyfive")}
+                          disabled={isDrawing}
+                          className="flex-1 min-w-[100px] py-3 bg-slate-850 hover:bg-slate-800 text-white font-extrabold rounded-xl border border-slate-700 active:scale-95 transition-all text-xs cursor-pointer text-center"
+                        >
+                          55개 열기 (55개)
+                        </button>
+                      )}
+                      {(inventoryCrates[activeCrate.id] || 0) >= 2 && (
+                        <button
+                          onClick={() => handleOpenInventoryCrates("all")}
+                          disabled={isDrawing}
+                          className="flex-1 min-w-[120px] py-3 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-slate-950 font-black rounded-xl active:scale-95 transition-all text-xs cursor-pointer text-center"
+                        >
+                          전체 열기 ({(inventoryCrates[activeCrate.id] || 0)}개)
+                        </button>
+                      )}
                     </div>
                   ) : (
                     /* 최고급 꾸러미 */
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="flex flex-wrap gap-2 justify-center w-full">
                       <button
                         onClick={() => handleOpenPrimeParcel(1)}
                         disabled={isDrawing || primeParcels < 1}
-                        className="py-3 bg-slate-850 hover:bg-slate-800 text-white font-extrabold rounded-xl border border-slate-700 active:scale-95 transition-all text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="flex-1 min-w-[100px] py-3 bg-slate-850 hover:bg-slate-800 text-white font-extrabold rounded-xl border border-slate-700 active:scale-95 transition-all text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed text-center"
                       >
                         1개 열기 (1개)
                       </button>
-                      <button
-                        onClick={() => handleOpenPrimeParcel(5)}
-                        disabled={isDrawing || primeParcels < 5}
-                        className="py-3 bg-slate-850 hover:bg-slate-800 text-white font-extrabold rounded-xl border border-slate-700 active:scale-95 transition-all text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        5개 열기 (5개)
-                      </button>
-                      <button
-                        onClick={() => handleOpenPrimeParcel(10)}
-                        disabled={isDrawing || primeParcels < 10}
-                        className="py-3 bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 text-white font-black rounded-xl active:scale-95 transition-all text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        10개 열기 (10개)
-                      </button>
+                      {primeParcels >= 5 && primeParcels < 10 && (
+                        <button
+                          onClick={() => handleOpenPrimeParcel(5)}
+                          disabled={isDrawing}
+                          className="flex-1 min-w-[100px] py-3 bg-slate-850 hover:bg-slate-800 text-white font-extrabold rounded-xl border border-slate-700 active:scale-95 transition-all text-xs cursor-pointer text-center"
+                        >
+                          5개 열기 (5개)
+                        </button>
+                      )}
+                      {primeParcels >= 10 && (
+                        <button
+                          onClick={() => handleOpenPrimeParcel(10)}
+                          disabled={isDrawing}
+                          className="flex-1 min-w-[100px] py-3 bg-slate-850 hover:bg-slate-800 text-white font-extrabold rounded-xl border border-slate-700 active:scale-95 transition-all text-xs cursor-pointer text-center"
+                        >
+                          10개 열기 (10개)
+                        </button>
+                      )}
+                      {primeParcels >= 2 && (
+                        <button
+                          onClick={() => handleOpenPrimeParcel("all")}
+                          disabled={isDrawing}
+                          className="flex-1 min-w-[120px] py-3 bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 text-white font-black rounded-xl active:scale-95 transition-all text-xs cursor-pointer text-center"
+                        >
+                          전체 열기 ({primeParcels}개)
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>

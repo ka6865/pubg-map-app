@@ -491,22 +491,32 @@ export function useCratesState({ initialCrates, selectedCrateId, exchangeRate }:
       setDrawSubTab("inventory");
       setSelectedInventoryItem("loot_crate");
     } else {
-      // 밀수품 상자(패키지): 바로 개봉하지 않고 보관함으로 밀수품 쿠폰 및 토큰을 적립
-      const couponReward = crateReward * 10;
-      setCoupons((prev) => prev + couponReward);
-      setTokens((prev) => prev + tokenReward);
+      // 밀수품 상자(contraband)
+      if (paymentMethod === "bp") {
+        // BP로 쿠폰만 구매 시: 재화로 누적
+        const couponReward = crateReward * 10;
+        setCoupons((prev) => prev + couponReward);
+        setTokens((prev) => prev + tokenReward);
 
-      alert(
-        `구매가 완료되었습니다!\n밀수품 쿠폰 ${couponReward}장, 토큰 ${tokenReward}개가 내 보관함에 추가되었습니다.`
-      );
+        alert(
+          `구매가 완료되었습니다!\n밀수품 쿠폰 ${couponReward}장, 토큰 ${tokenReward}개가 내 보관함에 추가되었습니다.`
+        );
 
-      // 개봉 화면(Inventory)으로 즉시 강제 전환하여 직관적 피드백 제공 (가챠는 미실행)
-      setDrawSubTab("inventory");
-      setSelectedInventoryItem("coupon");
+        setDrawSubTab("inventory");
+        setSelectedInventoryItem("coupon");
+      } else {
+        // G코인으로 구매 시: 즉시 개봉 실행 및 토큰 지급
+        setTokens((prev) => prev + tokenReward);
+        drawContrabandCratesDirect(crateReward);
+
+        alert(
+          `구매가 완료되었습니다!\n즉시 ${crateReward}회 개봉 연출이 진행됩니다. (토큰 ${tokenReward}개 획득)`
+        );
+      }
     }
   };
 
-  const handleOpenInventoryCrates = (mode: "one" | "five" | "ten") => {
+  const handleOpenInventoryCrates = (mode: "one" | "five" | "ten" | "fiftyfive" | "all") => {
     if (!activeCrate) return;
     const currentCrateCount = inventoryCrates[activeCrate.id] || 0;
     
@@ -517,6 +527,10 @@ export function useCratesState({ initialCrates, selectedCrateId, exchangeRate }:
       countToOpen = 5;
     } else if (mode === "ten") {
       countToOpen = 10;
+    } else if (mode === "fiftyfive") {
+      countToOpen = 55;
+    } else if (mode === "all") {
+      countToOpen = currentCrateCount;
     }
 
     if (countToOpen <= 0) {
@@ -611,8 +625,10 @@ export function useCratesState({ initialCrates, selectedCrateId, exchangeRate }:
   };
 
   // 최고급 꾸러미 개봉 (이중 가챠 2단계 - 다량 개봉 지원)
-  const handleOpenPrimeParcel = (count: number) => {
-    if (primeParcels < count || !activeCrate || activeCrate.prime_parcel_items.length === 0) return;
+  const handleOpenPrimeParcel = (count: number | "all") => {
+    const countToOpen = count === "all" ? primeParcels : count;
+    if (countToOpen <= 0) return;
+    if (primeParcels < countToOpen || !activeCrate || activeCrate.prime_parcel_items.length === 0) return;
 
     // 이전 뽑기 결과 중 뒤집히지 않은 카드 또는 타이머가 남아있는지 판별
     const needsCollect = hasPendingOrUnrevealedCards();
@@ -626,10 +642,10 @@ export function useCratesState({ initialCrates, selectedCrateId, exchangeRate }:
       setIsDrawing(true);
       setDrawMode("prime");
       setHasBonusEffect(false); // 꾸러미 개봉은 일반 금색 연출 제외
-      setPrimeParcels((prev) => prev - count);
+      setPrimeParcels((prev) => prev - countToOpen);
 
       const results: DrawnCard[] = [];
-      for (let i = 0; i < count; i++) {
+      for (let i = 0; i < countToOpen; i++) {
         const result = drawSinglePrimeItem(activeCrate.prime_parcel_items);
         results.push({
           id: crypto.randomUUID(),
@@ -650,7 +666,7 @@ export function useCratesState({ initialCrates, selectedCrateId, exchangeRate }:
         // 오픈전 스포방지: 등급 통계 및 히스토리/컬렉션은 뒤집는 시점에 가산하고, 총 꾸러미 개봉횟수만 즉시 반영
         setStats((prev) => ({
           ...prev,
-          primeParcelOpens: prev.primeParcelOpens + count,
+          primeParcelOpens: prev.primeParcelOpens + countToOpen,
         }));
       }, 1500);
     };
@@ -727,28 +743,10 @@ export function useCratesState({ initialCrates, selectedCrateId, exchangeRate }:
     });
   };
 
-  // 밀수품 상자 G-Coin 직접 즉시 개봉 핸들러
-  const handleOpenContrabandCrateWithGCoin = (mode: "one" | "ten") => {
+  // 밀수품 상자 G-Coin 직접 즉시 개봉용 공통 드롭 연출 헬퍼
+  const drawContrabandCratesDirect = (countToOpen: number) => {
     if (!activeCrate) return;
-    
-    let price = 0;
-    let countToOpen = 0;
-    
-    if (mode === "one") {
-      price = 200;
-      countToOpen = 1;
-    } else if (mode === "ten") {
-      const isCompleted = contrabandTenDrawCompleted[activeCrate.id] || false;
-      price = isCompleted ? 1800 : 1000;
-      countToOpen = 10;
-    }
 
-    if (gcoin < price) {
-      alert("보유 가상 G-Coin이 부족합니다. 상단의 충전 버튼을 이용해주세요.");
-      return;
-    }
-
-    // 이전 뽑기 결과 중 뒤집히지 않은 카드 또는 타이머가 남아있는지 판별
     const needsCollect = hasPendingOrUnrevealedCards();
     if (needsCollect) {
       collectRemainingCards(1500);
@@ -757,16 +755,6 @@ export function useCratesState({ initialCrates, selectedCrateId, exchangeRate }:
     const startDraw = () => {
       setIsDrawing(true);
       setDrawMode("standard");
-      
-      // G-Coin 및 소모액 차감
-      setGcoin((prev) => prev - price);
-      setSpentGcoin((prev) => prev + price);
-      if (mode === "ten") {
-        setContrabandTenDrawCompleted((prev) => ({
-          ...prev,
-          [activeCrate.id]: true
-        }));
-      }
 
       const results: DrawnCard[] = [];
       let hasBonusWon = false;
@@ -826,11 +814,44 @@ export function useCratesState({ initialCrates, selectedCrateId, exchangeRate }:
     startDraw();
   };
 
-  // 밀수품 쿠폰 개봉 핸들러 (1회, 5회, 10회 지원)
-  const handleOpenContrabandWithCoupons = (mode: "one" | "five" | "ten") => {
+  // 밀수품 상자 G-Coin 직접 즉시 개봉 핸들러
+  const handleOpenContrabandCrateWithGCoin = (mode: "one" | "ten") => {
     if (!activeCrate) return;
     
-    // 밀수품 쿠폰은 오로지 밀수품 상자(contraband) 유형에서만 사용 가능하도록 제한
+    let price = 0;
+    let countToOpen = 0;
+    
+    if (mode === "one") {
+      price = 200;
+      countToOpen = 1;
+    } else if (mode === "ten") {
+      const isCompleted = contrabandTenDrawCompleted[activeCrate.id] || false;
+      price = isCompleted ? 1800 : 1000;
+      countToOpen = 10;
+    }
+
+    if (gcoin < price) {
+      alert("보유 가상 G-Coin이 부족합니다. 상단의 충전 버튼을 이용해주세요.");
+      return;
+    }
+
+    // G-Coin 및 소모액 차감
+    setGcoin((prev) => prev - price);
+    setSpentGcoin((prev) => prev + price);
+    if (mode === "ten") {
+      setContrabandTenDrawCompleted((prev) => ({
+        ...prev,
+        [activeCrate.id]: true
+      }));
+    }
+
+    drawContrabandCratesDirect(countToOpen);
+  };
+
+  // 밀수품 쿠폰 개봉 핸들러 (1회, 5회, 10회, 전체 지원)
+  const handleOpenContrabandWithCoupons = (mode: "one" | "five" | "ten" | "all") => {
+    if (!activeCrate) return;
+    
     if (activeCrate.type !== "contraband") {
       alert("밀수품 쿠폰은 밀수품 상자(Contraband Crate) 개봉에만 사용할 수 있습니다. 상점 라인업에서 밀수품 상자를 선택해 주세요.");
       return;
@@ -845,6 +866,14 @@ export function useCratesState({ initialCrates, selectedCrateId, exchangeRate }:
     } else if (mode === "ten") {
       couponsNeeded = 100;
       countToOpen = 10;
+    } else if (mode === "all") {
+      countToOpen = Math.floor(coupons / 10);
+      couponsNeeded = countToOpen * 10;
+    }
+
+    if (countToOpen <= 0) {
+      alert("개봉할 수 있는 밀수품 쿠폰이 부족합니다. (최소 10장 필요)");
+      return;
     }
 
     if (coupons < couponsNeeded) {
