@@ -44,6 +44,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  // 🌟 [추가] 최근 활동 시각(last_active_at) 트래킹 (10분 쿨다운)
+  useEffect(() => {
+    if (!user) return;
+
+    const trackLastActive = async () => {
+      try {
+        const storageKey = `last_active_tracked_${user.id}`;
+        const lastTracked = localStorage.getItem(storageKey);
+        const now = Date.now();
+
+        // 10분(600,000ms) 이내에 이미 업데이트했다면 차단 (Throttle)
+        if (lastTracked && now - parseInt(lastTracked) < 10 * 60 * 1000) {
+          return;
+        }
+
+        await supabase
+          .from("profiles")
+          .update({ last_active_at: new Date().toISOString() })
+          .eq("id", user.id);
+
+        localStorage.setItem(storageKey, now.toString());
+      } catch (err) {
+        console.error("Failed to track user activity:", err);
+      }
+    };
+
+    // 브라우저 렌더링을 차단하지 않도록 다음 틱(tick)에 실행
+    const timer = setTimeout(trackLastActive, 100);
+    return () => clearTimeout(timer);
+  }, [user]);
+
   return (
     <AuthContext.Provider value={{ session, user, loading }}>
       {children}
