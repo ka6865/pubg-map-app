@@ -10,6 +10,14 @@ export interface Comment {
   parent_id: number | null;
 }
 
+export interface ClanInfo {
+  id: string;
+  name: string;
+  tag: string;
+  level: number;
+  memberCount: number;
+}
+
 export interface Post {
   id: number;
   title: string;
@@ -26,4 +34,5 @@ export interface Post {
   likes: number;
   comment_count?: number;
   comments?: { count: number }[];
+  clan_info?: ClanInfo | null; // 🌟 클랜 정보 첨부 필드 추가
 }
