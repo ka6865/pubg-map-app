@@ -82,9 +82,13 @@ export default function GameDataEditor() {
     });
     
     const recent = [...items]
-      .filter(u => u.last_sign_in_at)
-      .sort((a, b) => new Date(b.last_sign_in_at).getTime() - new Date(a.last_sign_in_at).getTime())
-      .slice(0, 5);
+      .filter(u => u.last_active_at || u.last_sign_in_at)
+      .sort((a, b) => {
+        const timeA = new Date(a.last_active_at || a.last_sign_in_at).getTime();
+        const timeB = new Date(b.last_active_at || b.last_sign_in_at).getTime();
+        return timeB - timeA;
+      })
+      .slice(0, 10);
       
     return {
       total,
@@ -773,6 +777,21 @@ export default function GameDataEditor() {
                           />
                         </div>
                         <div>
+                          <label className="block text-xs font-bold text-gray-500 mb-2">최근 활동 시각</label>
+                          <input
+                            type="text"
+                            className="w-full bg-[#111] border border-[#222] rounded px-3 py-2 text-sm text-gray-400 cursor-not-allowed"
+                            value={
+                              (selectedItem as any).last_active_at 
+                                ? new Date((selectedItem as any).last_active_at).toLocaleString() 
+                                : (selectedItem as any).last_sign_in_at
+                                  ? new Date((selectedItem as any).last_sign_in_at).toLocaleString() + " (로그인 시점)"
+                                  : "기록 없음"
+                            }
+                            disabled
+                          />
+                        </div>
+                        <div>
                           <label className="block text-xs font-bold text-gray-500 mb-2">계정 상태 및 연동</label>
                           <div className="flex flex-wrap gap-2 pt-1">
                             {/* 로그인 제공처 뱃지 */}
@@ -1001,9 +1020,9 @@ export default function GameDataEditor() {
                     </div>
                   </div>
 
-                  {/* 최근 로그인 유저 Top 5 */}
+                  {/* 최근 활동 유저 Top 10 */}
                   <div className="bg-[#1a1a1a] p-6 rounded-2xl border border-[#333] space-y-4">
-                    <h3 className="text-sm font-black text-[#F2A900] uppercase tracking-wider">실시간 최근 로그인 유저 Top 5</h3>
+                    <h3 className="text-sm font-black text-[#F2A900] uppercase tracking-wider">실시간 최근 활동 유저 Top 10</h3>
                     <div className="divide-y divide-[#222]">
                       {userStats?.recent && userStats.recent.length > 0 ? (
                         userStats.recent.map((u: any, idx: number) => (
@@ -1028,7 +1047,7 @@ export default function GameDataEditor() {
                             </div>
                             
                             <div className="text-right flex flex-col items-end gap-1">
-                              <span className="text-xs text-gray-400 font-bold">{timeAgo(u.last_sign_in_at)}</span>
+                              <span className="text-xs text-gray-400 font-bold">{timeAgo(u.last_active_at || u.last_sign_in_at)}</span>
                               {u.pubg_nickname ? (
                                 <span className="text-[9px] bg-sky-950/40 text-sky-400 border border-sky-900/50 px-1.5 py-0.5 rounded font-mono">
                                   🎮 {u.pubg_nickname} ({u.pubg_platform})
@@ -1040,7 +1059,7 @@ export default function GameDataEditor() {
                           </div>
                         ))
                       ) : (
-                        <div className="text-xs text-gray-600 italic py-4 text-center">최근 로그인 기록이 존재하지 않습니다.</div>
+                         <div className="text-xs text-gray-600 italic py-4 text-center">최근 활동 기록이 존재하지 않습니다.</div>
                       )}
                     </div>
                   </div>

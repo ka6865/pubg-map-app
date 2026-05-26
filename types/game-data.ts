@@ -17,6 +17,7 @@ export interface UserProfile {
   email?: string;
   created_at?: string;
   last_sign_in_at?: string;
+  last_active_at?: string | null; // 🌟 실시간 접속/활동 시각 추가
   provider?: string;
   email_confirmed?: boolean;
   is_missing_profile?: boolean;
