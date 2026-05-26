@@ -229,6 +229,34 @@ export default function BoardDetailClient({
                 </a>
               </div>
             )}
+
+            {post.clan_info && (
+              <div className="mt-[20px] bg-gradient-to-r from-amber-500/10 via-[#F2A900]/5 to-transparent border border-[#F2A900]/30 rounded-xl p-5 flex items-center gap-4 shadow-xl max-w-2xl">
+                {/* 클랜 마크/로고 데코레이션 */}
+                <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-[#F2A900] to-amber-600 flex items-center justify-center text-black font-black text-lg shadow-[0_0_15px_rgba(242,169,0,0.3)] shrink-0">
+                  {post.clan_info.tag.substring(0, 3).toUpperCase()}
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="px-2 py-0.5 bg-[#F2A900] text-black text-[11px] font-extrabold rounded">
+                      [{post.clan_info.tag}]
+                    </span>
+                    <h3 className="text-white text-base font-bold leading-none">{post.clan_info.name}</h3>
+                    <span className="text-white/40 text-[11px]">Lv. {post.clan_info.level}</span>
+                  </div>
+                  {/* 멤버 현황 프로그레스 바 */}
+                  <div className="mt-2.5 flex items-center gap-2">
+                    <div className="w-28 bg-white/5 h-1.5 rounded-full overflow-hidden">
+                      <div 
+                        className="bg-[#F2A900] h-full rounded-full" 
+                        style={{ width: `${Math.min(100, (post.clan_info.memberCount / 100) * 100)}%` }}
+                      />
+                    </div>
+                    <span className="text-white/50 text-[11px] font-medium">멤버 {post.clan_info.memberCount} / 100명</span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="border-y border-[#333] py-[30px] min-h-[200px] text-[#e5e5e5]">

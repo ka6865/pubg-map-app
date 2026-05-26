@@ -7,7 +7,7 @@ import { useAuth } from "../AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { validatePost, extractImageUrl, sanitizeTitle } from "@/lib/board-utils";
 import { toast } from "sonner";
-import type { Post } from "@/types/board";
+import type { Post, ClanInfo } from "@/types/board";
 
 export default function BoardWriteClient() {
   const router = useRouter();
@@ -21,6 +21,7 @@ export default function BoardWriteClient() {
   const [newDiscordUrl, setNewDiscordUrl] = useState("");
   const [newDiscordChannelId, setNewDiscordChannelId] = useState("");
   const [newIsNotice, setNewIsNotice] = useState(false);
+  const [newClanInfo, setNewClanInfo] = useState<ClanInfo | null>(null); // 🌟 추가
   const [isLoading, setIsLoading] = useState(false);
   
   const [isAdmin, setIsAdmin] = useState(false);
@@ -56,6 +57,7 @@ export default function BoardWriteClient() {
           setNewDiscordUrl(data.discord_url || "");
           setNewDiscordChannelId(data.discord_channel_id || "");
           setNewIsNotice(data.is_notice);
+          setNewClanInfo(data.clan_info || null); // 🌟 추가
         }
       });
     }
@@ -89,6 +91,7 @@ export default function BoardWriteClient() {
         editingPostId: editPostId ? Number(editPostId) : null,
         discord_url: newDiscordUrl,
         discord_channel_id: newDiscordChannelId,
+        clan_info: newClanInfo, // 🌟 추가
       };
 
       const response = await fetch("/api/posts/write", {
@@ -145,6 +148,8 @@ export default function BoardWriteClient() {
           setNewDiscordChannelId={setNewDiscordChannelId}
           newIsNotice={newIsNotice}
           setNewIsNotice={setNewIsNotice}
+          newClanInfo={newClanInfo} // 🌟 추가
+          setNewClanInfo={setNewClanInfo} // 🌟 추가
           handleSavePost={handleSavePost}
           setIsWriting={handleSetIsWriting}
           isAdmin={isAdmin}

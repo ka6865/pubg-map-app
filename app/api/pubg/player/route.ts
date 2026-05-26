@@ -2,6 +2,16 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 import { trackPubgRateLimit } from "@/lib/pubg-analysis/pubgApiTracker";
 
+// ─────────────────────────────────────────────────────────────
+// [CACHE] PUBG API 호출 절약을 위한 서버 측 인메모리 캐싱 레이어 (3분 TTL)
+// ─────────────────────────────────────────────────────────────
+interface CacheEntry {
+  timestamp: number;
+  data: any;
+}
+const playerResponseCache = new Map<string, CacheEntry>();
+const CACHE_TTL_MS = 3 * 60 * 1000; // 3분 쿨다운
+
 // [V12.1] 네트워크 불안정 대응을 위한 재시도 헬퍼 함수 (전체 대기 시간 누적 방지)
 async function withRetry<T>(fn: () => Promise<T>, retries = 2, delay = 1000): Promise<T> {
   let lastError;
@@ -31,6 +41,14 @@ export async function GET(request: Request) {
       { error: "닉네임을 입력해주세요." },
       { status: 400 }
     );
+
+  // 1. 서버 인메모리 캐시 조회 (3분 TTL)
+  const cacheKey = `${platform}:${nickname.toLowerCase()}:${reqSeason || 'current'}`;
+  const cachedEntry = playerResponseCache.get(cacheKey);
+  if (cachedEntry && (Date.now() - cachedEntry.timestamp < CACHE_TTL_MS)) {
+    console.log(`[IN-MEMORY CACHE HIT] ${cacheKey}`);
+    return NextResponse.json(cachedEntry.data);
+  }
 
   // 환경 변수에서 불필요한 공백 및 텍스트(예: "Rate Limit 10 RPM...")를 제거하고 진짜 토큰만 추출
   const apiKey = (process.env.PUBG_API_KEY || "").split(" ")[0];
@@ -143,7 +161,8 @@ export async function GET(request: Request) {
       `https://api.pubg.com/shards/${platform}/seasons`,
       { 
         headers, 
-        next: { revalidate: 60 },
+        // Seasons change at most once per patch (months) — cache aggressively to save rate limit
+        next: { revalidate: 43200 },
         signal: AbortSignal.timeout(8000)
       }
     ));
@@ -200,7 +219,11 @@ export async function GET(request: Request) {
       }
     }
 
-    const [rankedRes, normalRes] = await Promise.all([
+    // Retrieve clanId from player attributes (NOT relationships — PUBG API spec)
+    const clanId: string | null = playerData.data[0].attributes?.clanId ?? null;
+
+    // Parallel fetch: ranked, normal season stats + clan info + weapon mastery
+    const [rankedRes, normalRes, clanRes, masteryRes] = await Promise.all([
       withRetry(() => fetch(
         `https://api.pubg.com/shards/${platform}/players/${accountId}/seasons/${targetSeasonId}/ranked`,
         { headers, next: { revalidate: 60 }, signal: AbortSignal.timeout(8000) }
@@ -209,6 +232,15 @@ export async function GET(request: Request) {
         `https://api.pubg.com/shards/${platform}/players/${accountId}/seasons/${targetSeasonId}`,
         { headers, next: { revalidate: 60 }, signal: AbortSignal.timeout(8000) }
       )),
+      // Clan API — only call if clanId exists, otherwise resolve to null immediately
+      clanId
+        ? fetch(`https://api.pubg.com/shards/${platform}/clans/${clanId}`, { headers, next: { revalidate: 3600 }, signal: AbortSignal.timeout(6000) }).catch(() => null)
+        : Promise.resolve(null),
+      // Weapon Mastery API — season-independent lifetime stats
+      fetch(
+        `https://api.pubg.com/shards/${platform}/players/${accountId}/weapon_mastery`,
+        { headers, next: { revalidate: 3600 }, signal: AbortSignal.timeout(8000) }
+      ).catch(() => null),
     ]);
     trackPubgRateLimit(rankedRes.headers);
     trackPubgRateLimit(normalRes.headers);
@@ -245,7 +277,74 @@ export async function GET(request: Request) {
       normalStats.squad = pickMode(allStats["squad-fpp"], allStats["squad"]);
     }
 
-    return NextResponse.json({
+    // Parse clan info
+    let clan: any = null;
+    if (clanRes && (clanRes as Response).ok) {
+      try {
+        const clanJson = await (clanRes as Response).json();
+        const attr = clanJson.data?.attributes ?? {};
+        clan = {
+          id: clanId,
+          name: attr.clanName ?? "",
+          tag: attr.clanTag ?? "",
+          level: attr.clanLevel ?? 0,
+          memberCount: attr.clanMemberCount ?? 0,
+        };
+      } catch {
+        clan = null;
+      }
+    }
+
+    // Parse weapon mastery — PUBG API v18.2+:
+    // StatsTotal is FROZEN (no longer updated).
+    // Use OfficialStatsTotal for normal mode, CompetitiveStatsTotal for ranked mode.
+    let weaponMastery: any[] = [];
+    if (masteryRes && (masteryRes as Response).ok) {
+      try {
+        const masteryJson = await (masteryRes as Response).json();
+        const summaries: Record<string, any> = masteryJson.data?.attributes?.weaponSummaries ?? {};
+        weaponMastery = Object.entries(summaries)
+          .map(([weaponId, data]: [string, any]) => {
+            const official = data.OfficialStatsTotal ?? data.StatsTotal ?? {};
+            const competitive = data.CompetitiveStatsTotal ?? {};
+            return {
+              weaponId,
+              // LevelCurrent is directly available (up to 100)
+              level: data.LevelCurrent ?? 0,
+              xp: data.XPTotal ?? 0,
+              // Official (normal mode) stats
+              kills: official.Kills ?? 0,
+              damagePlayer: official.DamagePlayer ?? 0,
+              headShots: official.HeadShots ?? 0,
+              longestDefeat: official.LongestKill ?? official.LongestDefeat ?? 0,
+              mostDefeatsInAGame: official.MostKillsInAGame ?? official.MostDefeatsInAGame ?? 0,
+              // Competitive (ranked mode) stats
+              rankKills: competitive.Kills ?? 0,
+              rankDamagePlayer: competitive.DamagePlayer ?? 0,
+              rankHeadShots: competitive.HeadShots ?? 0,
+              rankLongestDefeat: competitive.LongestKill ?? competitive.LongestDefeat ?? 0,
+              rankMostDefeatsInAGame: competitive.MostKillsInAGame ?? competitive.MostDefeatsInAGame ?? 0,
+            };
+          })
+          // Sort: Total Kills DESC (Official + Competitive) -> Level DESC -> XP DESC
+          .sort((a, b) => {
+            const totalKillsA = (a.kills ?? 0) + (a.rankKills ?? 0);
+            const totalKillsB = (b.kills ?? 0) + (b.rankKills ?? 0);
+            if (totalKillsB !== totalKillsA) {
+              return totalKillsB - totalKillsA;
+            }
+            if (b.level !== a.level) {
+              return b.level - a.level;
+            }
+            return b.xp - a.xp;
+          })
+          .slice(0, 5);
+      } catch {
+        weaponMastery = [];
+      }
+    }
+
+    const responseBody = {
       nickname: actualNickname,
       platform,
       seasonId: targetSeasonId,
@@ -255,7 +354,17 @@ export async function GET(request: Request) {
       })),
       stats: { ranked: rankedStats, normal: normalStats },
       recentMatches,
+      clan,
+      weaponMastery,
+    };
+
+    // 인메모리 캐시 업데이트
+    playerResponseCache.set(cacheKey, {
+      timestamp: Date.now(),
+      data: responseBody
     });
+
+    return NextResponse.json(responseBody);
   } catch (error: any) {
     const isRateLimit = error.message?.includes("429") || error.status === 429;
     const status = isRateLimit ? 429 : 500;

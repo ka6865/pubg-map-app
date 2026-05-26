@@ -6,12 +6,13 @@ import { supabase } from "../lib/supabase";
 import "react-quill-new/dist/quill.snow.css";
 import imageCompression from "browser-image-compression";
 import { toast } from "sonner";
+import { ClanInfo } from "@/types/board"; // 🌟 추가
 
 const ReactQuill = dynamic(() => import("react-quill-new"), {
   ssr: false,
 }) as any;
 
-const BOARD_CATEGORIES = ["패치노트", "자유", "듀오/스쿼드 모집", "클럽홍보", "제보/문의"];
+const BOARD_CATEGORIES = ["패치노트", "자유", "듀오/스쿼드 모집", "클랜홍보", "제보/문의"];
 const IMAGE_CONFIG = {
   MAX_FILE_SIZE_MB: 20,
   COMPRESSION_MAX_SIZE_MB: 1,
@@ -60,6 +61,8 @@ interface BoardWriteProps {
   setNewDiscordChannelId: (id: string) => void; // 🌟 추가
   newIsNotice: boolean;
   setNewIsNotice: (isNotice: boolean) => void;
+  newClanInfo: ClanInfo | null; // 🌟 추가
+  setNewClanInfo: (clanInfo: ClanInfo | null) => void; // 🌟 추가
   handleSavePost: () => Promise<boolean>;
   setIsWriting: (isWriting: boolean) => void;
   isAdmin: boolean;
@@ -81,6 +84,8 @@ export default function BoardWrite({
   setNewDiscordChannelId,
   newIsNotice,
   setNewIsNotice,
+  newClanInfo, // 🌟 추가
+  setNewClanInfo, // 🌟 추가
   handleSavePost,
   setIsWriting,
   isAdmin,
@@ -92,6 +97,45 @@ export default function BoardWrite({
   const uploadedImagesRef = useRef<string[]>([]);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [isCreatingRoom, setIsCreatingRoom] = useState(false); // 🌟 디스코드 방 생성 로딩 상태
+  const [searchNickname, setSearchNickname] = useState(""); // 🌟 클랜 검색용 닉네임
+  const [searchPlatform, setSearchPlatform] = useState("steam"); // 🌟 플랫폼
+  const [isSearchingClan, setIsSearchingClan] = useState(false); // 🌟 로딩 상태
+
+  // 🌟 클랜 검색 API 연동 함수
+  const handleSearchClan = async () => {
+    if (!searchNickname.trim()) {
+      toast.warning("배틀그라운드 닉네임을 입력해 주세요.");
+      return;
+    }
+    setIsSearchingClan(true);
+    const toastId = toast.loading("PUBG API에서 클랜 정보를 조회하는 중...");
+    try {
+      const res = await fetch(`/api/pubg/player?nickname=${encodeURIComponent(searchNickname.trim())}&platform=${searchPlatform}`);
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "플레이어 조회 실패");
+      }
+      const data = await res.json();
+      if (!data.clan) {
+        toast.error("가입된 클랜이 없는 플레이어입니다.", { id: toastId });
+        setNewClanInfo(null);
+      } else {
+        setNewClanInfo({
+          id: data.clan.id,
+          name: data.clan.name,
+          tag: data.clan.tag,
+          level: data.clan.level,
+          memberCount: data.clan.memberCount,
+        });
+        toast.success("클랜 정보를 성공적으로 조회하고 첨부했습니다!", { id: toastId });
+      }
+    } catch (err: any) {
+      console.error("Clan Search Error:", err);
+      toast.error(err.message || "클랜 조회 중 오류가 발생했습니다.", { id: toastId });
+    } finally {
+      setIsSearchingClan(false);
+    }
+  };
 
   // 🌟 디스코드 음성 채널 자동 생성 함수
   const createDiscordRoom = async (type: "duo" | "squad") => {
@@ -530,6 +574,125 @@ export default function BoardWrite({
                 </div>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🌟 클랜 정보 첨부 섹션 (클랜홍보 카테고리 전용) */}
+      {newCategory === "클랜홍보" && (
+        <div style={{ marginBottom: "20px", display: "flex", flexDirection: "column", gap: "8px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <span style={{ color: "#F2A900", fontWeight: "bold", fontSize: "14px" }}>🎖️ PUBG 클랜 정보 첨부</span>
+            <div 
+              style={{ 
+                position: "relative", 
+                cursor: "help",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: "18px",
+                height: "18px",
+                borderRadius: "50%",
+                backgroundColor: "#444",
+                color: "#ddd",
+                fontSize: "12px"
+              }}
+              className="group"
+            >
+              ?
+              <div className="invisible group-hover:visible absolute left-[25px] top-0 w-[300px] p-4 bg-[#333] text-white text-[12px] rounded-lg shadow-2xl border border-[#444] z-[3000] leading-relaxed">
+                <p style={{ fontWeight: "bold", color: "#F2A900", marginBottom: "8px", fontSize: "13px" }}>🛡️ 클랜 정보 첨부하는 법</p>
+                <div>
+                  1. 클랜원 또는 클랜 마스터 본인의 배틀그라운드 인게임 닉네임을 입력합니다.<br/>
+                  2. 계정이 존재하는 플랫폼(Steam/Kakao 등)을 선택한 뒤 [클랜 조회]를 클릭합니다.<br/>
+                  3. 검색된 클랜 정보가 있으면 게시글에 자동으로 첨부됩니다.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <div className="flex gap-2">
+              <select
+                value={searchPlatform}
+                onChange={(e) => setSearchPlatform(e.target.value)}
+                style={{ padding: "8px 10px", backgroundColor: "#252525", color: "white", border: "1px solid #333", borderRadius: "4px", fontSize: "14px" }}
+              >
+                <option value="steam">Steam</option>
+                <option value="kakao">Kakao</option>
+                <option value="xbox">Xbox</option>
+                <option value="psn">PlayStation</option>
+              </select>
+              <input
+                type="text"
+                placeholder="클랜 소속 유저 닉네임을 입력해 주세요."
+                value={searchNickname}
+                onChange={(e) => setSearchNickname(e.target.value)}
+                style={{ flex: 1, padding: "8px 10px", backgroundColor: "#252525", color: "white", border: "1px solid #333", borderRadius: "4px", fontSize: "14px" }}
+              />
+              <button
+                type="button"
+                onClick={handleSearchClan}
+                disabled={isSearchingClan}
+                style={{ padding: "0 15px", backgroundColor: "#F2A900", color: "black", border: "none", borderRadius: "4px", fontSize: "14px", fontWeight: "bold", cursor: "pointer" }}
+              >
+                {isSearchingClan ? "조회 중..." : "클랜 조회"}
+              </button>
+            </div>
+
+            {newClanInfo ? (
+              <div 
+                style={{ 
+                  display: "flex", 
+                  justifyContent: "space-between", 
+                  alignItems: "center", 
+                  padding: "12px 15px", 
+                  backgroundColor: "#252525", 
+                  border: "1px solid #F2A900", 
+                  borderRadius: "4px" 
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                  <span style={{ 
+                    padding: "2px 8px", 
+                    backgroundColor: "#F2A900", 
+                    color: "black", 
+                    fontSize: "12px", 
+                    fontWeight: "bold", 
+                    borderRadius: "4px" 
+                  }}>
+                    [{newClanInfo.tag}]
+                  </span>
+                  <span style={{ color: "white", fontWeight: "bold", fontSize: "14px" }}>
+                    {newClanInfo.name}
+                  </span>
+                  <span style={{ color: "#aaa", fontSize: "12px" }}>
+                    Lv. {newClanInfo.level}
+                  </span>
+                  <span style={{ color: "#888", fontSize: "12px" }}>
+                    멤버: {newClanInfo.memberCount}명
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setNewClanInfo(null)}
+                  style={{ 
+                    backgroundColor: "transparent", 
+                    color: "#ff4444", 
+                    border: "none", 
+                    fontSize: "12px", 
+                    fontWeight: "bold", 
+                    cursor: "pointer" 
+                  }}
+                >
+                  첨부 취소
+                </button>
+              </div>
+            ) : (
+              <div style={{ color: "#888", fontSize: "12px", padding: "4px" }}>
+                * 첨부된 클랜 정보가 없습니다. 닉네임 조회를 통해 클랜을 첨부해 주세요.
+              </div>
+            )}
           </div>
         </div>
       )}

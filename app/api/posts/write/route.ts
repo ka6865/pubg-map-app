@@ -58,6 +58,7 @@ export async function POST(request: Request) {
       editingPostId,
       discord_url, // 🌟 추가
       discord_channel_id, // 🌟 추가
+      clan_info, // 🌟 추가
     } = body;
 
     if (!title || !content || !user_id) {
@@ -167,6 +168,7 @@ export async function POST(request: Request) {
           is_notice,
           discord_url, // 🌟 필드 업데이트 추가
           discord_channel_id, // 🌟 필드 업데이트 추가
+          clan_info, // 🌟 클랜 정보 업데이트 추가
         })
         .eq("id", editingPostId)
         .select();
@@ -191,6 +193,7 @@ export async function POST(request: Request) {
             discord_url, // 🌟 필드 삽입 추가
             discord_channel_id, // 🌟 필드 삽입 추가
             is_notice,
+            clan_info, // 🌟 클랜 정보 삽입 추가
           },
         ])
         .select();

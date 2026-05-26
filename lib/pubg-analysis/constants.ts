@@ -58,7 +58,7 @@ export const TACTICAL_THRESHOLDS = {
 export const WEAPON_NAMES: Record<string, string> = {
   // AR
   "WeapM416_C": "M416", "WeapHK416_C": "M416", "HK416": "M416", "M416": "M416",
-  "WeapSCAR-L_C": "SCAR-L", "SCAR-L": "SCAR-L", "WeapAKM_C": "AKM", "AKM": "AKM", 
+  "WeapSCAR-L_C": "SCAR-L", "SCAR-L": "SCAR-L", "WeapAKM_C": "AKM", "AKM": "AKM", "WeapAK47_C": "AKM", "AK47": "AKM", 
   "WeapBerylM762_C": "베릴 M762", "BerylM762": "베릴 M762", "Beryl": "베릴 M762",
   "WeapM16A4_C": "M16A4", "M16A4": "M16A4", "WeapMk47Mutant_C": "뮤턴트", "Mk47Mutant": "뮤턴트", "Mutant": "뮤턴트",
   "WeapG36C_C": "G36C", "G36C": "G36C", "WeapK2_C": "K2", "K2": "K2", "WeapACE32_C": "ACE32", "ACE32": "ACE32",
@@ -71,7 +71,7 @@ export const WEAPON_NAMES: Record<string, string> = {
   "WeapL6_C": "링스 AMR", "L6": "링스 AMR", "LynxAMR": "링스 AMR", "l6": "링스 AMR", "weapL6_C": "링스 AMR",
   
   // DMR
-  "WeapSKS_C": "SKS", "SKS": "SKS", "WeapSLR_C": "SLR", "SLR": "SLR", 
+  "WeapSKS_C": "SKS", "SKS": "SKS", "WeapSLR_C": "SLR", "SLR": "SLR", "WeapFNFal_C": "SLR", "FNFal": "SLR", 
   "WeapMini14_C": "Mini14", "Mini14": "Mini14", "WeapMk14_C": "Mk14", "Mk14": "Mk14", 
   "WeapQBU88_C": "QBU", "QBU88": "QBU", "QBU": "QBU", "WeapVSS_C": "VSS", "VSS": "VSS", 
   "WeapDragunov_C": "드라구노프", "Dragunov": "드라구노프",

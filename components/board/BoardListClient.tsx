@@ -9,7 +9,7 @@ import PostItem from "./PostItem";
 import BoardSearch from "./BoardSearch";
 import BoardPagination from "./BoardPagination";
 
-const BOARD_CATEGORIES = ["패치노트", "자유", "듀오/스쿼드 모집", "클럽홍보", "제보/문의"];
+const BOARD_CATEGORIES = ["패치노트", "자유", "듀오/스쿼드 모집", "클랜홍보", "제보/문의"];
 const POSTS_PER_PAGE = 10;
 const MAX_VISIBLE_PAGES = 5;
 
