@@ -20,6 +20,23 @@ export default function GameDataEditor() {
 
   const [dashboardData, setDashboardData] = useState<any>(null);
   const [isLoadingDashboard, setIsLoadingDashboard] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [showUserListOnMobile, setShowUserListOnMobile] = useState(false);
+
+  // 카테고리 변경 시 모바일 유저 목록 보기 상태 초기화
+  useEffect(() => {
+    setShowUserListOnMobile(false);
+  }, [activeCategory]);
+
+  // 모바일 해상도 감지
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   const fetchDashboardData = useCallback(async () => {
     setIsLoadingDashboard(true);
@@ -322,6 +339,26 @@ export default function GameDataEditor() {
     });
   }, [items, searchTerm, activeCategory]);
 
+  // 모바일/데스크탑 레이아웃 노출 플래그 연산
+  const shouldShowAside = useMemo(() => {
+    if (activeCategory === "system") return false;
+    if (!isMobile) return true;
+    if (activeCategory === "users") {
+      return showUserListOnMobile && !selectedItem;
+    }
+    return !selectedItem;
+  }, [activeCategory, isMobile, showUserListOnMobile, selectedItem]);
+
+  const shouldShowMain = useMemo(() => {
+    if (activeCategory === "system") return true;
+    if (!isMobile) return true;
+    if (selectedItem) return true;
+    if (activeCategory === "users") {
+      return !showUserListOnMobile;
+    }
+    return false;
+  }, [activeCategory, isMobile, selectedItem, showUserListOnMobile]);
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedItem) return;
@@ -523,102 +560,91 @@ export default function GameDataEditor() {
 
   return (
     <div className="flex flex-col h-screen text-gray-200">
-      <header className="flex items-center justify-between h-[60px] px-6 bg-[#1a1a1a] border-b border-[#333]">
-        <div className="flex items-center gap-6">
-          <div className="text-xl font-black text-[#F2A900] italic">배그<span className="text-white"> 데이터 관리자</span></div>
-          <nav className="flex gap-2">
-            {[
-              { id: "weapons", label: "무기" },
-              { id: "consumables", label: "회복템" },
-              { id: "throwables", label: "투척무기" },
-              { id: "attachments", label: "파츠" },
-              { id: "ammo", label: "탄약" },
-              { id: "vehicles", label: "차량" },
-              { id: "crates", label: "📦 은신처 상점" },
-              { id: "users", label: "👥 유저 관리" },
-              { id: "system", label: "⚙️ 시스템/캐시" }
-            ].map(cat => (
-              <button
-                key={cat.id}
-                onClick={() => setActiveCategory(cat.id as ItemCategory)}
-                className={`px-3 py-1.5 rounded text-xs font-bold transition-all ${
-                  activeCategory === cat.id ? "bg-[#F2A900] text-black" : "bg-[#252525] text-gray-400 hover:bg-[#333]"
-                }`}
-              >
-                {cat.label}
-              </button>
-            ))}
-          </nav>
+      <header className="flex flex-col md:flex-row items-center justify-between min-h-[60px] py-3 md:py-0 px-6 bg-[#1a1a1a] border-b border-[#333] gap-3 md:gap-0">
+        <div className="flex flex-col md:flex-row items-center gap-3 md:gap-6 w-full md:w-auto">
+          <div className="text-xl font-black text-[#F2A900] italic self-start md:self-auto">배그<span className="text-white"> 데이터 관리자</span></div>
+          {isMobile ? (
+            <select
+              value={activeCategory}
+              onChange={(e) => setActiveCategory(e.target.value as ItemCategory)}
+              className="w-full bg-[#252525] text-white border border-[#444] rounded px-3 py-2 text-xs font-bold focus:outline-none focus:border-[#F2A900]"
+            >
+              {[
+                { id: "weapons", label: "무기" },
+                { id: "consumables", label: "회복템" },
+                { id: "throwables", label: "투척무기" },
+                { id: "attachments", label: "파츠" },
+                { id: "ammo", label: "탄약" },
+                { id: "vehicles", label: "차량" },
+                { id: "crates", label: "📦 은신처 상점" },
+                { id: "users", label: "👥 유저 관리" },
+                { id: "system", label: "⚙️ 시스템/캐시" }
+              ].map(cat => (
+                <option key={cat.id} value={cat.id}>
+                  {cat.label}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <nav className="flex flex-wrap gap-2">
+              {[
+                { id: "weapons", label: "무기" },
+                { id: "consumables", label: "회복템" },
+                { id: "throwables", label: "투척무기" },
+                { id: "attachments", label: "파츠" },
+                { id: "ammo", label: "탄약" },
+                { id: "vehicles", label: "차량" },
+                { id: "crates", label: "📦 은신처 상점" },
+                { id: "users", label: "👥 유저 관리" },
+                { id: "system", label: "⚙️ 시스템/캐시" }
+              ].map(cat => (
+                <button
+                  key={cat.id}
+                  onClick={() => setActiveCategory(cat.id as ItemCategory)}
+                  className={`px-3 py-1.5 rounded text-xs font-bold transition-all ${
+                    activeCategory === cat.id ? "bg-[#F2A900] text-black" : "bg-[#252525] text-gray-400 hover:bg-[#333]"
+                  }`}
+                >
+                  {cat.label}
+                </button>
+              ))}
+            </nav>
+          )}
         </div>
-        <div className="flex items-center gap-4">
-        <div className="flex items-center gap-2">
-          <input
-            id="manual-sync-url"
-            name="manual_url"
-            type="text"
-            placeholder="수동 동기화 뉴스 URL (선택사항)"
-            className="w-[240px] bg-[#222] border border-[#333] rounded px-3 py-1.5 text-[11px] focus:outline-none focus:border-blue-500"
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                const btn = document.getElementById("sync-btn");
-                if (btn) btn.click();
-              }
-            }}
-          />
-          <button 
-            id="sync-btn"
-            onClick={async () => {
-              const urlInput = document.getElementById("manual-sync-url") as HTMLInputElement;
-              const manualUrl = urlInput?.value.trim();
-              
-              const confirmMsg = manualUrl 
-                ? `입력하신 URL(${manualUrl})로 강제 동기화를 진행할까요?`
-                : "모든 공식 뉴스를 훑어보고 최신 패치노트 전 내용을 동기화할까요?";
-                
-              if (!confirm(confirmMsg)) return;
-              
-              setIsSaving(true);
-              try {
-                const apiUrl = `/api/admin/patch-notes/sync`;
-                const res = await fetch(apiUrl, { 
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ url: manualUrl })
-                });
-                const result = await res.json();
-                
-                if (result.success) {
-                  toast.success("✅ 동기화 완료! (" + (result.details?.join(", ") || "내역 없음") + ")");
-                  if (urlInput) urlInput.value = ""; // 성공 시 비우기
-                  router.push("/board");
+        <div className="flex items-center justify-between w-full md:w-auto md:justify-end gap-4 shrink-0">
+          {isMobile && (selectedItem || (activeCategory === "users" && showUserListOnMobile)) && (
+            <button
+              onClick={() => {
+                if (selectedItem) {
+                  setSelectedItem(null);
                 } else {
-                  toast.error("❌ 동기화 실패: " + (result.error || result.message || "알 수 없는 오류"));
+                  setShowUserListOnMobile(false);
                 }
-              } catch (err) {
-                console.error("Sync error:", err);
-                toast.error("연동 통신 중 오류가 발생했습니다.");
-              } finally {
-                setIsSaving(false);
-              }
-            }}
-            disabled={isSaving}
-            className={`px-3 py-1.5 rounded text-[11px] font-bold border transition-all ${
-              isSaving 
-                ? "bg-gray-800 border-gray-700 text-gray-500 cursor-not-allowed" 
-                : "bg-blue-600/10 border-blue-600/30 text-blue-400 hover:bg-blue-600/20"
-            }`}
-          >
-            {isSaving ? "⏳ 동기화 중..." : "🔄 패치노트 데이터 동기화"}
-          </button>
-          </div>
-          <button onClick={() => router.push("/")} className="text-sm font-bold text-gray-400 hover:text-white transition-colors">
+              }}
+              className="text-xs font-bold text-[#F2A900] border border-[#F2A900]/30 bg-[#F2A900]/10 px-3 py-1.5 rounded hover:bg-[#F2A900]/20 transition-all"
+            >
+              {selectedItem ? "← 리스트 보기" : "← 대시보드"}
+            </button>
+          )}
+          <button onClick={() => router.push("/")} className="text-sm font-bold text-gray-400 hover:text-white transition-colors ml-auto md:ml-0">
             나가기
           </button>
         </div>
       </header>
 
       <div className="flex flex-1 overflow-hidden">
-        <aside className="w-[300px] bg-[#141414] border-r border-[#333] flex flex-col">
+        <aside className={`w-full md:w-[300px] bg-[#141414] border-r border-[#333] flex-col ${shouldShowAside ? 'flex' : 'hidden'}`}>
+          {isMobile && activeCategory === "users" && showUserListOnMobile && (
+            <div className="px-4 pt-4">
+              <button
+                type="button"
+                onClick={() => setShowUserListOnMobile(false)}
+                className="w-full py-2 bg-[#252525] border border-[#333] hover:bg-[#333] text-gray-400 hover:text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1"
+              >
+                ← 대시보드로 돌아가기
+              </button>
+            </div>
+          )}
           <div className="p-4 border-b border-[#222]">
             <input
               id="admin-search"
@@ -670,7 +696,29 @@ export default function GameDataEditor() {
           </div>
         </aside>
 
-        <main className="flex-1 bg-[#0d0d0d] p-8 overflow-y-auto">
+        <main className={`flex-1 bg-[#0d0d0d] p-4 md:p-8 overflow-y-auto ${shouldShowMain ? 'block' : 'hidden'}`}>
+          {isMobile && selectedItem && (
+            <div className="mb-6">
+              <button
+                type="button"
+                onClick={() => setSelectedItem(null)}
+                className="w-full py-2.5 bg-[#252525] border border-[#333] hover:bg-[#333] text-gray-400 hover:text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1"
+              >
+                ← 리스트로 돌아가기
+              </button>
+            </div>
+          )}
+          {isMobile && !selectedItem && activeCategory === "users" && (
+            <div className="mb-6 max-w-[750px] mx-auto">
+              <button
+                type="button"
+                onClick={() => setShowUserListOnMobile(true)}
+                className="w-full py-3 bg-[#F2A900] text-black hover:bg-[#d99700] rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 shadow-lg shadow-amber-950/20"
+              >
+                👥 전체 회원 목록 및 검색 보기
+              </button>
+            </div>
+          )}
           {activeCategory === "users" ? (
             <>
               {missingProfilesCount > 0 && (
@@ -707,8 +755,39 @@ export default function GameDataEditor() {
                         )}
                       </div>
                       <div>
-                        <span className="text-[9px] bg-amber-950 text-amber-400 border border-amber-900 px-2 py-0.5 rounded-full font-bold mr-2">회원 상세</span>
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <span className="text-[9px] bg-amber-950 text-amber-400 border border-amber-900 px-2 py-0.5 rounded-full font-bold">회원 상세</span>
+                          {(selectedItem as any).role === "admin" && (
+                            <span className="text-[9px] bg-red-950 text-red-400 border border-red-900 px-2 py-0.5 rounded-full font-bold">ADMIN</span>
+                          )}
+                        </div>
                         <h2 className="text-2xl font-black text-white inline-block">{(selectedItem as any).nickname || "닉네임 없음"}</h2>
+                        
+                        {/* 관리자 퀵 액션 */}
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {(selectedItem as any).pubg_nickname ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                router.push(`/stats/${(selectedItem as any).pubg_platform}/${(selectedItem as any).pubg_nickname}`);
+                              }}
+                              className="text-[10px] bg-sky-950 hover:bg-sky-900 text-sky-400 border border-sky-850 px-2.5 py-1 rounded-lg font-bold transition-colors flex items-center gap-1"
+                            >
+                              🎮 배그 전적 조회
+                            </button>
+                          ) : (
+                            <span className="text-[10px] text-gray-600 border border-gray-800/40 px-2.5 py-1 rounded-lg">배그 연동 대기중</span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              router.push(`/board?q=${(selectedItem as any).nickname || ''}`);
+                            }}
+                            className="text-[10px] bg-emerald-950 hover:bg-emerald-900 text-emerald-400 border border-emerald-850 px-2.5 py-1 rounded-lg font-bold transition-colors flex items-center gap-1"
+                          >
+                            💬 작성한 글 검색
+                          </button>
+                        </div>
                       </div>
                     </div>
                     <button
@@ -722,7 +801,7 @@ export default function GameDataEditor() {
                   <form onSubmit={handleSave} className="space-y-6">
                     <div className="bg-[#1a1a1a] p-6 rounded-2xl border border-[#333] space-y-4">
                       <h3 className="text-sm font-black text-[#F2A900] uppercase tracking-wider">프로필 및 로그인 연동</h3>
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-xs font-bold text-gray-500 mb-2">가입 계정 (ID)</label>
                           <input
@@ -908,7 +987,7 @@ export default function GameDataEditor() {
                   </div>
 
                   {/* 3종 메트릭 카드 */}
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="bg-[#1a1a1a] p-5 rounded-2xl border border-[#333] relative overflow-hidden">
                       <div className="text-2xl absolute top-4 right-4 opacity-10">👥</div>
                       <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">총 가입 회원</span>
@@ -941,7 +1020,7 @@ export default function GameDataEditor() {
                   </div>
 
                   {/* 비율 가로형 HSL 바 차트 */}
-                  <div className="grid grid-cols-2 gap-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                     {/* 소셜 로그인 제공처 비율 */}
                     <div className="bg-[#1a1a1a] p-6 rounded-2xl border border-[#333] space-y-4">
                       <h3 className="text-sm font-black text-[#F2A900] uppercase tracking-wider">소셜 로그인 제공처 비율</h3>
@@ -1026,7 +1105,11 @@ export default function GameDataEditor() {
                     <div className="divide-y divide-[#222]">
                       {userStats?.recent && userStats.recent.length > 0 ? (
                         userStats.recent.map((u: any, idx: number) => (
-                          <div key={idx} className="py-3 flex items-center justify-between first:pt-0 last:pb-0">
+                          <div 
+                            key={idx} 
+                            onClick={() => setSelectedItem(u)}
+                            className="py-3 flex items-center justify-between first:pt-0 last:pb-0 cursor-pointer hover:bg-white/5 px-2 rounded-xl transition-all"
+                          >
                             <div className="flex items-center gap-3">
                               <div className="w-8 h-8 rounded-full overflow-hidden border border-[#333] bg-[#222] flex items-center justify-center shrink-0">
                                 {u.avatar_url ? (
@@ -1077,7 +1160,7 @@ export default function GameDataEditor() {
                   <span className="text-xs text-gray-400">실시간 시스템 메트릭 조회 중...</span>
                 </div>
               ) : (
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {/* R2 스토리지 정보 */}
                   <div className="bg-[#1a1a1a] p-6 rounded-2xl border border-[#333] space-y-4">
                     <h3 className="text-xs font-black text-gray-500 uppercase tracking-wider">⚡ R2 텔레메트리 캐시 스토리지</h3>
@@ -1186,6 +1269,74 @@ export default function GameDataEditor() {
 
               {/* 기존 데이터 조작 카드 목록 */}
               <div className="grid grid-cols-1 gap-6 pt-4">
+                {/* 패치노트 데이터 동기화 관리 */}
+                <div className="bg-[#1a1a1a] p-6 rounded-xl border border-[#333] space-y-4">
+                  <h3 className="text-lg font-bold text-[#F2A900]">🔄 패치노트 데이터 수동 동기화</h3>
+                  <p className="text-sm text-gray-400">
+                    공식 PUBG 패치노트 뉴스를 크롤링하여 무기 및 아이템 스탯 데이터를 동기화합니다.<br/>
+                    특정 뉴스 URL을 입력하거나 빈칸으로 제출하여 전체 자동 동기화를 진행할 수 있습니다.
+                  </p>
+                  <div className="flex flex-col sm:flex-row gap-3 max-w-[600px]">
+                    <input
+                      id="manual-sync-url"
+                      name="manual_url"
+                      type="text"
+                      placeholder="수동 동기화 뉴스 URL (선택사항)"
+                      className="flex-1 bg-[#222] border border-[#333] rounded px-4 py-2.5 text-sm focus:outline-none focus:border-[#F2A900]"
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          const btn = document.getElementById("sync-btn");
+                          if (btn) btn.click();
+                        }
+                      }}
+                    />
+                    <button
+                      id="sync-btn"
+                      onClick={async () => {
+                        const urlInput = document.getElementById("manual-sync-url") as HTMLInputElement;
+                        const manualUrl = urlInput?.value.trim();
+                        
+                        const confirmMsg = manualUrl 
+                          ? `입력하신 URL(${manualUrl})로 강제 동기화를 진행할까요?`
+                          : "모든 공식 뉴스를 훑어보고 최신 패치노트 전 내용을 동기화할까요?";
+                          
+                        if (!confirm(confirmMsg)) return;
+                        
+                        setIsSaving(true);
+                        try {
+                          const apiUrl = `/api/admin/patch-notes/sync`;
+                          const res = await fetch(apiUrl, { 
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ url: manualUrl })
+                          });
+                          const result = await res.json();
+                          
+                          if (result.success) {
+                            toast.success("✅ 동기화 완료! (" + (result.details?.join(", ") || "내역 없음") + ")");
+                            if (urlInput) urlInput.value = ""; // 성공 시 비우기
+                            router.push("/board");
+                          } else {
+                            toast.error("❌ 동기화 실패: " + (result.error || result.message || "알 수 없는 오류"));
+                          }
+                        } catch (err) {
+                          console.error("Sync error:", err);
+                          toast.error("연동 통신 중 오류가 발생했습니다.");
+                        } finally {
+                          setIsSaving(false);
+                        }
+                      }}
+                      disabled={isSaving}
+                      className={`px-6 py-2.5 rounded-lg text-sm font-bold border transition-all whitespace-nowrap cursor-pointer ${
+                        isSaving 
+                          ? "bg-gray-800 border-gray-700 text-gray-500 cursor-not-allowed" 
+                          : "bg-blue-600/20 border-blue-600/30 text-blue-400 hover:bg-blue-600/30"
+                      }`}
+                    >
+                      {isSaving ? "⏳ 동기화 중..." : "🔄 데이터 동기화 실행"}
+                    </button>
+                  </div>
+                </div>
                 <div className="bg-[#1a1a1a] p-6 rounded-xl border border-[#333]">
                   <h3 className="text-lg font-bold text-[#F2A900] mb-2">전체 분석 캐시 초기화</h3>
                   <p className="text-sm text-gray-400 mb-4">
@@ -1353,7 +1504,7 @@ export default function GameDataEditor() {
                 <form onSubmit={handleSave} className="space-y-8">
                   <div className="bg-[#1a1a1a] p-6 rounded-2xl border border-[#333] space-y-4">
                     <h3 className="text-sm font-black text-[#F2A900] uppercase tracking-wider">상자 기본 정보</h3>
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
                         <label className="block text-xs font-bold text-gray-500 mb-2">상자 이름</label>
                         <input
@@ -1546,7 +1697,7 @@ export default function GameDataEditor() {
                                 삭제
                               </button>
                               <div className="grid grid-cols-12 gap-3 items-end">
-                                <div className="col-span-4">
+                                <div className="col-span-12 md:col-span-4">
                                   <label className="block text-[10px] text-gray-500 mb-1 font-bold">아이템 명칭</label>
                                   <input
                                     type="text"
@@ -1559,7 +1710,7 @@ export default function GameDataEditor() {
                                     className="w-full bg-[#1c1c1c] border border-[#333] rounded px-3 py-1.5 text-xs text-slate-200"
                                   />
                                 </div>
-                                <div className="col-span-2">
+                                <div className="col-span-6 md:col-span-2">
                                   <label className="block text-[10px] text-gray-500 mb-1 font-bold">등급</label>
                                   <select
                                     value={item.rarity}
@@ -1575,7 +1726,7 @@ export default function GameDataEditor() {
                                     ))}
                                   </select>
                                 </div>
-                                <div className="col-span-2">
+                                <div className="col-span-6 md:col-span-2">
                                   <label className="block text-[10px] text-gray-500 mb-1 font-bold">확률</label>
                                   <input
                                     type="number"
@@ -1589,7 +1740,7 @@ export default function GameDataEditor() {
                                     className="w-full bg-[#1c1c1c] border border-[#333] rounded px-3 py-1.5 text-xs text-slate-200"
                                   />
                                 </div>
-                                <div className="col-span-2">
+                                <div className="col-span-6 md:col-span-2">
                                   <label className="block text-[10px] text-gray-500 mb-1 font-bold">토큰 보상</label>
                                   <input
                                     type="number"
@@ -1602,7 +1753,7 @@ export default function GameDataEditor() {
                                     className="w-full bg-[#1c1c1c] border border-[#333] rounded px-3 py-1.5 text-xs text-slate-200"
                                   />
                                 </div>
-                                <div className="col-span-2 flex items-center h-full pb-2">
+                                <div className="col-span-6 md:col-span-2 flex items-center h-full pb-2">
                                   <label className="flex items-center gap-1 cursor-pointer">
                                     <input
                                       type="checkbox"
@@ -1668,7 +1819,7 @@ export default function GameDataEditor() {
                                 삭제
                               </button>
                               <div className="grid grid-cols-12 gap-3 items-end">
-                                <div className="col-span-5">
+                                <div className="col-span-12 md:col-span-5">
                                   <label className="block text-[10px] text-gray-500 mb-1 font-bold">꾸러미 획득품 명칭</label>
                                   <input
                                     type="text"
@@ -1681,7 +1832,7 @@ export default function GameDataEditor() {
                                     className="w-full bg-[#1c1c1c] border border-[#333] rounded px-3 py-1.5 text-xs text-slate-200"
                                   />
                                 </div>
-                                <div className="col-span-3">
+                                <div className="col-span-6 md:col-span-3">
                                   <label className="block text-[10px] text-gray-500 mb-1 font-bold">등급</label>
                                   <select
                                     value={pItem.rarity}
@@ -1697,7 +1848,7 @@ export default function GameDataEditor() {
                                     ))}
                                   </select>
                                 </div>
-                                <div className="col-span-4">
+                                <div className="col-span-6 md:col-span-4">
                                   <label className="block text-[10px] text-gray-500 mb-1 font-bold">확률</label>
                                   <input
                                     type="number"
@@ -1762,7 +1913,7 @@ export default function GameDataEditor() {
                                 삭제
                               </button>
                               <div className="grid grid-cols-12 gap-3 items-end">
-                                <div className="col-span-5">
+                                <div className="col-span-12 md:col-span-5">
                                   <label className="block text-[10px] text-gray-500 mb-1 font-bold">보너스 아이템 명칭</label>
                                   <input
                                     type="text"
@@ -1775,7 +1926,7 @@ export default function GameDataEditor() {
                                     className="w-full bg-[#1c1c1c] border border-[#333] rounded px-3 py-1.5 text-xs text-slate-200"
                                   />
                                 </div>
-                                <div className="col-span-3">
+                                <div className="col-span-6 md:col-span-3">
                                   <label className="block text-[10px] text-gray-500 mb-1 font-bold">확률</label>
                                   <input
                                     type="number"
@@ -1789,7 +1940,7 @@ export default function GameDataEditor() {
                                     className="w-full bg-[#1c1c1c] border border-[#333] rounded px-3 py-1.5 text-xs text-slate-200"
                                   />
                                 </div>
-                                <div className="col-span-2">
+                                <div className="col-span-6 md:col-span-2">
                                   <label className="block text-[10px] text-gray-500 mb-1 font-bold">토큰 보상</label>
                                   <input
                                     type="number"
@@ -1802,7 +1953,7 @@ export default function GameDataEditor() {
                                     className="w-full bg-[#1c1c1c] border border-[#333] rounded px-3 py-1.5 text-xs text-slate-200"
                                   />
                                 </div>
-                                <div className="col-span-2 flex flex-col gap-1 items-start justify-center h-full pb-1">
+                                <div className="col-span-6 md:col-span-2 flex flex-col gap-1 items-start justify-center h-full pb-1">
                                   <label className="flex items-center gap-1 cursor-pointer">
                                     <input
                                       type="checkbox"
@@ -1901,7 +2052,7 @@ export default function GameDataEditor() {
                 </button>
               </div>
 
-              <form onSubmit={handleSave} className="grid grid-cols-2 gap-6">
+              <form onSubmit={handleSave} className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="col-span-1">
                   <label className="block text-xs font-bold text-gray-500 mb-2">항목 ID</label>
                   <input

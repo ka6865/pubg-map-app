@@ -1,9 +1,11 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { Map, BarChart2, MessageSquare, Trophy, Menu } from 'lucide-react';
 import GlobalMobileMenu from './GlobalMobileMenu';
+import { useAuth } from '../AuthProvider';
+import { supabase } from '@/lib/supabase';
 
 export default function BottomNav() {
   const router = useRouter();
@@ -13,8 +15,26 @@ export default function BottomNav() {
     ? pathname.replace('/maps/', '').charAt(0).toUpperCase() + pathname.replace('/maps/', '').slice(1)
     : (searchParams?.get('tab') || 'Erangel');
   
+  const { user } = useAuth();
+  const [isAdmin, setIsAdmin] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [prevPathname, setPrevPathname] = useState(pathname);
+
+  useEffect(() => {
+    if (!user) {
+      setIsAdmin(false);
+      return;
+    }
+    const checkAdmin = async () => {
+      const { data } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', user.id)
+        .single();
+      setIsAdmin(data?.role === 'admin');
+    };
+    checkAdmin();
+  }, [user]);
 
   // 라우트 변경 시 메뉴 자동 닫기
   if (pathname !== prevPathname) {
@@ -120,7 +140,7 @@ export default function BottomNav() {
           ))}
         </div>
       </nav>
-      <GlobalMobileMenu isOpen={isMenuOpen} setIsOpen={setIsMenuOpen} activeMapId={activeTab} />
+      <GlobalMobileMenu isOpen={isMenuOpen} setIsOpen={setIsMenuOpen} activeMapId={activeTab} isAdmin={isAdmin} />
     </>
   );
 }

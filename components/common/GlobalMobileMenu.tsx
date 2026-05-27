@@ -10,9 +10,10 @@ interface GlobalMobileMenuProps {
   isOpen: boolean;
   setIsOpen: (v: boolean) => void;
   activeMapId: string;
+  isAdmin?: boolean;
 }
 
-export default function GlobalMobileMenu({ isOpen, setIsOpen, activeMapId }: GlobalMobileMenuProps) {
+export default function GlobalMobileMenu({ isOpen, setIsOpen, activeMapId, isAdmin }: GlobalMobileMenuProps) {
   const router = useRouter();
   const { user } = useAuth();
   
@@ -188,6 +189,44 @@ export default function GlobalMobileMenu({ isOpen, setIsOpen, activeMapId }: Glo
                     </button>
                   </div>
                 </div>
+
+                {/* Admin Console Section (관리자 전용) */}
+                {isAdmin && (
+                  <div className="flex flex-col gap-4">
+                    <h3 className="text-red-500 text-[11px] font-black uppercase tracking-widest ml-1">Admin Console</h3>
+                    <div className="grid grid-cols-3 gap-2">
+                      <button 
+                        onClick={() => { router.push('/admin/game-data'); setIsOpen(false); }}
+                        className="bg-[#1a1a1a] p-3.5 rounded-2xl border border-red-900/30 flex flex-col gap-2.5 items-center text-center active:bg-[#222] transition-colors"
+                      >
+                        <div className="p-2 bg-green-500/10 rounded-xl">
+                          <Box size={20} className="text-green-500" />
+                        </div>
+                        <span className="text-white font-bold text-xs">데이터 관리</span>
+                      </button>
+
+                      <button 
+                        onClick={() => { router.push('/map-editor'); setIsOpen(false); }}
+                        className="bg-[#1a1a1a] p-3.5 rounded-2xl border border-red-900/30 flex flex-col gap-2.5 items-center text-center active:bg-[#222] transition-colors"
+                      >
+                        <div className="p-2 bg-amber-500/10 rounded-xl">
+                          <Sword size={20} className="text-amber-500" />
+                        </div>
+                        <span className="text-white font-bold text-xs">맵 에디터</span>
+                      </button>
+
+                      <button 
+                        onClick={() => { router.push('/admin/map-settings'); setIsOpen(false); }}
+                        className="bg-[#1a1a1a] p-3.5 rounded-2xl border border-red-900/30 flex flex-col gap-2.5 items-center text-center active:bg-[#222] transition-colors"
+                      >
+                        <div className="p-2 bg-blue-500/10 rounded-xl">
+                          <Trophy size={20} className="text-blue-500" />
+                        </div>
+                        <span className="text-white font-bold text-xs">맵 설정</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
 
                 {/* Support Section */}
                 <div className="flex flex-col gap-4 mb-4">
