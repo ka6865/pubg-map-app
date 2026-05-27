@@ -24,6 +24,17 @@ export default function MapSettingsEditor() {
   const [dbSettings, setDbSettings] = useState<Record<string, string[]>>({});
   const [currentCategories, setCurrentCategories] = useState<string[]>([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  // 모바일 화면 크기 감지
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   // 관리자 권한 확인
   useEffect(() => {
@@ -108,7 +119,7 @@ export default function MapSettingsEditor() {
 
   return (
     <div className="flex flex-col h-screen text-gray-200">
-      <header className="flex items-center justify-between h-[60px] px-6 bg-[#1a1a1a] border-b border-[#333]">
+      <header className="flex flex-col md:flex-row items-center justify-between min-h-[60px] px-6 py-4 md:py-0 bg-[#1a1a1a] border-b border-[#333] gap-2">
         <div className="flex items-center gap-6">
           <div className="text-xl font-black text-[#F2A900] italic">배그<span className="text-white"> 맵 설정 관리자</span></div>
         </div>
@@ -119,7 +130,7 @@ export default function MapSettingsEditor() {
 
       <div className="flex flex-1 overflow-hidden">
         {/* 사이드바: 맵 리스트 */}
-        <aside className="w-[280px] bg-[#141414] border-r border-[#333] flex flex-col">
+        <aside className="hidden md:flex w-[280px] bg-[#141414] border-r border-[#333] flex-col">
           <div className="p-4 border-b border-[#222] bg-[#1a1a1a]">
             <h3 className="text-sm font-bold text-gray-400">대상 맵 선택</h3>
           </div>
@@ -140,17 +151,35 @@ export default function MapSettingsEditor() {
         </aside>
 
         {/* 메인: 카테고리 체크박스 목록 */}
-        <main className="flex-1 bg-[#0d0d0d] p-10 overflow-y-auto">
+        <main className="flex-1 bg-[#0d0d0d] p-4 md:p-10 overflow-y-auto">
           <div className="max-w-[800px] mx-auto">
-            <div className="flex justify-between items-center mb-10">
+            {/* 모바일 맵 선택 드롭다운 */}
+            {isMobile && (
+              <div className="mb-6 bg-[#141414] p-4 rounded-xl border border-[#333]">
+                <label className="block text-xs font-bold text-gray-400 mb-2">대상 맵 선택</label>
+                <select
+                  value={selectedMap}
+                  onChange={(e) => setSelectedMap(e.target.value)}
+                  className="w-full bg-[#1a1a1a] border border-[#333] rounded-xl p-3 text-white font-bold outline-none focus:border-[#F2A900]"
+                >
+                  {MAP_LIST.map((map) => (
+                    <option key={map.id} value={map.id}>
+                      {map.label} ({map.id})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8 md:mb-10">
               <div>
-                <h2 className="text-3xl font-black text-white">{MAP_LIST.find(m => m.id === selectedMap)?.label} 맵 노출 설정</h2>
-                <p className="text-gray-500 mt-2">해당 맵의 사이드바 필터 및 제보 폼에 표시될 카테고리를 선택하세요.</p>
+                <h2 className="text-2xl md:text-3xl font-black text-white">{MAP_LIST.find(m => m.id === selectedMap)?.label} 맵 노출 설정</h2>
+                <p className="text-xs md:text-sm text-gray-500 mt-1 md:mt-2">해당 맵의 사이드바 필터 및 제보 폼에 표시될 카테고리를 선택하세요.</p>
               </div>
               <button
                 onClick={handleSave}
                 disabled={isSaving}
-                className={`px-8 py-3 rounded-xl font-black text-lg shadow-lg transition-all ${
+                className={`w-full md:w-auto px-6 md:px-8 py-3 rounded-xl font-black text-base md:text-lg shadow-lg transition-all ${
                   isSaving ? "bg-gray-700 text-gray-500 cursor-not-allowed" : "bg-[#F2A900] text-black hover:bg-[#cc8b00] active:scale-[0.98]"
                 }`}
               >

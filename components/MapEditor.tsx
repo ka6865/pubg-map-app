@@ -130,6 +130,18 @@ const MapEditorComponent = () => {
   const [isSaving, setIsSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isImporting, setIsImporting] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+
+  // 모바일 화면 감지
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   const currentMap = MAP_LIST.find((m) => m.id === activeMapId);
 
@@ -439,22 +451,47 @@ const MapEditorComponent = () => {
     );
 
   return (
-    <div className="flex w-full h-screen bg-[#0b0f19] overflow-hidden">
+    <div className="flex w-full h-screen bg-[#0b0f19] overflow-hidden relative">
+      {/* 모바일 화면용 사이드바 배경 Overlay */}
+      {isMobile && isSidebarOpen && (
+        <div 
+          onClick={() => setIsSidebarOpen(false)}
+          className="fixed inset-0 bg-black/60 z-[5500] backdrop-blur-sm transition-opacity duration-300"
+        />
+      )}
+
       {/* 🌟 사이드바 개편 */}
-      <aside className="w-[340px] flex flex-col bg-[#111827]/95 backdrop-blur-xl border-r border-white/5 z-[5000] shadow-2xl">
+      <aside className={`
+        ${isMobile 
+          ? `fixed left-0 top-0 bottom-0 z-[6000] w-[300px] transition-transform duration-300 shadow-2xl ${isSidebarOpen ? 'translate-x-0' : 'translate-x-[-100%]'}` 
+          : 'w-[340px]'
+        } 
+        flex flex-col bg-[#111827]/95 backdrop-blur-xl border-r border-white/5 shadow-2xl h-full
+      `}>
         {/* 사이드바 헤더 */}
         <div className="p-6 border-b border-white/5">
           <div className="flex items-center justify-between mb-6">
             <div className="text-2xl font-black italic text-[#F2A900] tracking-tighter">
               PUBG<span className="text-white">EDITOR</span>
             </div>
-            <button 
-              onClick={() => router.push("/")}
-              className="p-2 text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-all"
-              title="나가기"
-            >
-              <LogOut size={20} />
-            </button>
+            <div className="flex items-center gap-1">
+              <button 
+                onClick={() => router.push("/")}
+                className="p-2 text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-all"
+                title="나가기"
+              >
+                <LogOut size={20} />
+              </button>
+              {isMobile && (
+                <button 
+                  onClick={() => setIsSidebarOpen(false)}
+                  className="p-2 text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-all"
+                  title="닫기"
+                >
+                  <X size={20} />
+                </button>
+              )}
+            </div>
           </div>
           
           {/* 검색창 추가 */}
@@ -655,6 +692,16 @@ const MapEditorComponent = () => {
           accept=".json"
           className="hidden"
         />
+
+        {/* 모바일 전용 에디터 메뉴 플로팅 버튼 */}
+        {isMobile && (
+          <button
+            onClick={() => setIsSidebarOpen(true)}
+            className="absolute top-4 left-4 z-[4000] flex items-center gap-2 px-4 py-2.5 bg-[#F2A900] text-black font-black text-xs rounded-xl shadow-lg active:scale-[0.95] transition-all"
+          >
+            <span>🛠️</span> 에디터 메뉴
+          </button>
+        )}
 
         <MapContainer
           center={initialCenter}
