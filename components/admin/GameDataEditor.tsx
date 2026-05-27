@@ -21,6 +21,12 @@ export default function GameDataEditor() {
   const [dashboardData, setDashboardData] = useState<any>(null);
   const [isLoadingDashboard, setIsLoadingDashboard] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [showUserListOnMobile, setShowUserListOnMobile] = useState(false);
+
+  // 카테고리 변경 시 모바일 유저 목록 보기 상태 초기화
+  useEffect(() => {
+    setShowUserListOnMobile(false);
+  }, [activeCategory]);
 
   // 모바일 해상도 감지
   useEffect(() => {
@@ -333,6 +339,26 @@ export default function GameDataEditor() {
     });
   }, [items, searchTerm, activeCategory]);
 
+  // 모바일/데스크탑 레이아웃 노출 플래그 연산
+  const shouldShowAside = useMemo(() => {
+    if (activeCategory === "system") return false;
+    if (!isMobile) return true;
+    if (activeCategory === "users") {
+      return showUserListOnMobile && !selectedItem;
+    }
+    return !selectedItem;
+  }, [activeCategory, isMobile, showUserListOnMobile, selectedItem]);
+
+  const shouldShowMain = useMemo(() => {
+    if (activeCategory === "system") return true;
+    if (!isMobile) return true;
+    if (selectedItem) return true;
+    if (activeCategory === "users") {
+      return !showUserListOnMobile;
+    }
+    return false;
+  }, [activeCategory, isMobile, selectedItem, showUserListOnMobile]);
+
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedItem) return;
@@ -586,12 +612,18 @@ export default function GameDataEditor() {
           )}
         </div>
         <div className="flex items-center justify-between w-full md:w-auto md:justify-end gap-4 shrink-0">
-          {isMobile && selectedItem && (
+          {isMobile && (selectedItem || (activeCategory === "users" && showUserListOnMobile)) && (
             <button
-              onClick={() => setSelectedItem(null)}
+              onClick={() => {
+                if (selectedItem) {
+                  setSelectedItem(null);
+                } else {
+                  setShowUserListOnMobile(false);
+                }
+              }}
               className="text-xs font-bold text-[#F2A900] border border-[#F2A900]/30 bg-[#F2A900]/10 px-3 py-1.5 rounded hover:bg-[#F2A900]/20 transition-all"
             >
-              ← 리스트 보기
+              {selectedItem ? "← 리스트 보기" : "← 대시보드"}
             </button>
           )}
           <button onClick={() => router.push("/")} className="text-sm font-bold text-gray-400 hover:text-white transition-colors ml-auto md:ml-0">
@@ -601,7 +633,18 @@ export default function GameDataEditor() {
       </header>
 
       <div className="flex flex-1 overflow-hidden">
-        <aside className={`w-full md:w-[300px] bg-[#141414] border-r border-[#333] flex-col ${isMobile && selectedItem ? 'hidden' : 'flex'}`}>
+        <aside className={`w-full md:w-[300px] bg-[#141414] border-r border-[#333] flex-col ${shouldShowAside ? 'flex' : 'hidden'}`}>
+          {isMobile && activeCategory === "users" && showUserListOnMobile && (
+            <div className="px-4 pt-4">
+              <button
+                type="button"
+                onClick={() => setShowUserListOnMobile(false)}
+                className="w-full py-2 bg-[#252525] border border-[#333] hover:bg-[#333] text-gray-400 hover:text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1"
+              >
+                ← 대시보드로 돌아가기
+              </button>
+            </div>
+          )}
           <div className="p-4 border-b border-[#222]">
             <input
               id="admin-search"
@@ -653,7 +696,7 @@ export default function GameDataEditor() {
           </div>
         </aside>
 
-        <main className={`flex-1 bg-[#0d0d0d] p-4 md:p-8 overflow-y-auto ${isMobile && !selectedItem ? 'hidden' : 'block'}`}>
+        <main className={`flex-1 bg-[#0d0d0d] p-4 md:p-8 overflow-y-auto ${shouldShowMain ? 'block' : 'hidden'}`}>
           {isMobile && selectedItem && (
             <div className="mb-6">
               <button
@@ -662,6 +705,17 @@ export default function GameDataEditor() {
                 className="w-full py-2.5 bg-[#252525] border border-[#333] hover:bg-[#333] text-gray-400 hover:text-white rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-1"
               >
                 ← 리스트로 돌아가기
+              </button>
+            </div>
+          )}
+          {isMobile && !selectedItem && activeCategory === "users" && (
+            <div className="mb-6 max-w-[750px] mx-auto">
+              <button
+                type="button"
+                onClick={() => setShowUserListOnMobile(true)}
+                className="w-full py-3 bg-[#F2A900] text-black hover:bg-[#d99700] rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 shadow-lg shadow-amber-950/20"
+              >
+                👥 전체 회원 목록 및 검색 보기
               </button>
             </div>
           )}
@@ -701,8 +755,39 @@ export default function GameDataEditor() {
                         )}
                       </div>
                       <div>
-                        <span className="text-[9px] bg-amber-950 text-amber-400 border border-amber-900 px-2 py-0.5 rounded-full font-bold mr-2">회원 상세</span>
+                        <div className="flex items-center gap-2 mb-1.5">
+                          <span className="text-[9px] bg-amber-950 text-amber-400 border border-amber-900 px-2 py-0.5 rounded-full font-bold">회원 상세</span>
+                          {(selectedItem as any).role === "admin" && (
+                            <span className="text-[9px] bg-red-950 text-red-400 border border-red-900 px-2 py-0.5 rounded-full font-bold">ADMIN</span>
+                          )}
+                        </div>
                         <h2 className="text-2xl font-black text-white inline-block">{(selectedItem as any).nickname || "닉네임 없음"}</h2>
+                        
+                        {/* 관리자 퀵 액션 */}
+                        <div className="flex flex-wrap gap-2 mt-2">
+                          {(selectedItem as any).pubg_nickname ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                router.push(`/stats/${(selectedItem as any).pubg_platform}/${(selectedItem as any).pubg_nickname}`);
+                              }}
+                              className="text-[10px] bg-sky-950 hover:bg-sky-900 text-sky-400 border border-sky-850 px-2.5 py-1 rounded-lg font-bold transition-colors flex items-center gap-1"
+                            >
+                              🎮 배그 전적 조회
+                            </button>
+                          ) : (
+                            <span className="text-[10px] text-gray-600 border border-gray-800/40 px-2.5 py-1 rounded-lg">배그 연동 대기중</span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              router.push(`/board?q=${(selectedItem as any).nickname || ''}`);
+                            }}
+                            className="text-[10px] bg-emerald-950 hover:bg-emerald-900 text-emerald-400 border border-emerald-850 px-2.5 py-1 rounded-lg font-bold transition-colors flex items-center gap-1"
+                          >
+                            💬 작성한 글 검색
+                          </button>
+                        </div>
                       </div>
                     </div>
                     <button
@@ -1020,7 +1105,11 @@ export default function GameDataEditor() {
                     <div className="divide-y divide-[#222]">
                       {userStats?.recent && userStats.recent.length > 0 ? (
                         userStats.recent.map((u: any, idx: number) => (
-                          <div key={idx} className="py-3 flex items-center justify-between first:pt-0 last:pb-0">
+                          <div 
+                            key={idx} 
+                            onClick={() => setSelectedItem(u)}
+                            className="py-3 flex items-center justify-between first:pt-0 last:pb-0 cursor-pointer hover:bg-white/5 px-2 rounded-xl transition-all"
+                          >
                             <div className="flex items-center gap-3">
                               <div className="w-8 h-8 rounded-full overflow-hidden border border-[#333] bg-[#222] flex items-center justify-center shrink-0">
                                 {u.avatar_url ? (
