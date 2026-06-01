@@ -6,6 +6,7 @@ import React, { useState, useEffect, useId, useCallback, useRef } from "react";
 import { MatchCard } from "./stat/MatchCard";
 import { StatSummaryPanel } from "./stat/StatSummaryPanel";
 import { RecentAISummary } from "./stat/RecentAISummary";
+import SquadAnalysisPanel from "./stat/SquadAnalysisPanel";
 import { Shield, ChevronDown, Swords, Star, Clock, User, X, Zap, MapPin, LogIn, Trophy, Crosshair } from "lucide-react";
 
 import { STORAGE_KEY_RECENT, STORAGE_KEY_FAVORITES } from "../lib/pubg-analysis/constants";
@@ -46,6 +47,7 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
   const [selectedSeason, setSelectedSeason] = useState("");
   const [hasPrefilled, setHasPrefilled] = useState(false);
   const [suggestedUsers, setSuggestedUsers] = useState<{ nickname: string; platform: string }[]>([]);
+  const [activeTab, setActiveTab] = useState<"overview" | "squad">("overview");
 
   const [recentSearches, setRecentSearches] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
@@ -152,6 +154,7 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
 
       setResult(data);
       setSelectedSeason(data.seasonId);
+      setActiveTab("overview");
 
       const actualName = data.nickname;
       setNickname(actualName);
@@ -431,8 +434,8 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
       </div>
 
       {error && (
-        <div style={{ color: "#ff4d4d", marginBottom: "20px", padding: "15px", backgroundColor: "rgba(255, 77, 77, 0.1)", borderRadius: "12px", textAlign: "center" }}>
-          <div>{error}</div>
+        <div className="mb-5 p-4 rounded-xl text-center bg-red-500/10 border border-red-500/25 backdrop-blur-md shadow-lg shadow-red-950/20">
+          <div className="text-red-400 font-extrabold text-sm tracking-tight">{error}</div>
           {suggestedUsers.length > 0 && (
             <div className="mt-3 pt-3 border-t border-red-500/20">
               <p className="text-xs text-gray-400 mb-2">혹시 이 플레이어를 찾으시나요?</p>
@@ -516,133 +519,163 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
             </select>
           </div>
 
-          {/* 주력 총기 TOP 5 무기 마스터리 */}
-          {result.weaponMastery && result.weaponMastery.length > 0 && (
-            <WeaponArsenal weapons={result.weaponMastery} />
-          )}
-
-          {/* 경쟁전 / 일반전 통합 탭 패널 */}
-          <StatSummaryPanel stats={result.stats} isMobile={isMobile} />
-
-          {/* BGMS AI 전술 분석 시스템 설명 (토글형으로 최적화) */}
-          <div className="mt-4 mb-6">
-            <button 
-              onClick={() => setShowGuideline(!showGuideline)}
-              className="w-full flex items-center justify-between p-4 bg-amber-500/5 border border-amber-500/20 rounded-2xl hover:bg-amber-500/10 transition-all group"
+          {/* 탭 네비게이션 */}
+          <div className="flex border-b border-white/5 gap-2">
+            <button
+              onClick={() => setActiveTab("overview")}
+              className={`pb-3 px-4 text-xs font-black border-b-2 transition-all cursor-pointer ${
+                activeTab === "overview"
+                  ? "border-amber-500 text-amber-500"
+                  : "border-transparent text-gray-500 hover:text-gray-300"
+              }`}
             >
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-amber-500 rounded-lg shadow-[0_0_15px_rgba(245,158,11,0.3)]">
-                  <Shield size={18} className="text-black" />
-                </div>
-                <div className="flex flex-col items-start">
-                  <h3 className="text-sm font-black text-amber-500 tracking-tight">BGMS AI 전술 분석 가이드 (V7.0)</h3>
-                  <span className="text-[10px] text-amber-500/60 font-bold">지표 산출 공식 및 시스템 안내 확인하기</span>
-                </div>
-              </div>
-              <ChevronDown 
-                size={20} 
-                className={`text-amber-500/50 group-hover:text-amber-500 transition-transform duration-300 ${showGuideline ? 'rotate-180' : ''}`} 
-              />
+              개인 분석 개요
             </button>
-
-            {showGuideline && (
-              <div className="mt-3 p-6 bg-black/40 border border-white/5 rounded-[2rem] backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-300">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-                  <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
-                    <div className="text-amber-500 text-[11px] font-black mb-1">01. 상황 입체 분석</div>
-                    <div className="text-gray-400 text-xs leading-relaxed">단순 킬/딜을 넘어 교전 거리, 지형 고도차, 아군과의 거리 등 텔레메트리를 입체적으로 분석합니다.</div>
-                  </div>
-                  <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
-                    <div className="text-amber-500 text-[11px] font-black mb-1">02. 공정한 평가</div>
-                    <div className="text-gray-400 text-xs leading-relaxed">불가항력적인 자기장 피해나 교전 기회가 없던 상황(N/A)은 지표 계산에서 제외하여 억울한 비난을 방지합니다.</div>
-                  </div>
-                  <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
-                    <div className="text-amber-500 text-[11px] font-black mb-1">03. 티어 판별 엔진</div>
-                    <div className="text-gray-400 text-xs leading-relaxed">프로급(Elite) 유저들의 전술 데이터를 기준으로 당신의 현재 실력을 S~C 티어로 정밀 판별합니다.</div>
-                  </div>
-                </div>
-
-                <div className="border-t border-white/5 pt-6">
-                  <div className="flex items-center gap-2 mb-4">
-                    <div className="w-1 h-3 bg-amber-500 rounded-full" />
-                    <span className="text-xs font-black text-white uppercase tracking-wider">전술 지표 사전</span>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
-                    <div className="flex gap-3">
-                      <span className="text-amber-500/30 font-black italic">01</span>
-                      <div>
-                        <div className="text-gray-200 text-xs font-bold mb-1">평균 반응 속도</div>
-                        <div className="text-gray-500 text-[11px] leading-relaxed">피격 시점부터 적에게 반격을 가하기까지의 시간. 당신의 순수 피지컬과 위기 대처 능력을 측정합니다.</div>
-                      </div>
-                    </div>
-                    <div className="flex gap-3">
-                      <span className="text-amber-500/30 font-black italic">02</span>
-                      <div>
-                        <div className="text-gray-200 text-xs font-bold mb-1">백업 소요 속도 (트레이드)</div>
-                        <div className="text-gray-500 text-[11px] leading-relaxed">아군이 기절한 후 당신이 해당 적을 처치하기까지의 시간. 팀워크와 커버 능력을 측정합니다.</div>
-                      </div>
-                    </div>
-                    <div className="flex gap-3">
-                      <span className="text-amber-500/30 font-black italic">03</span>
-                      <div>
-                        <div className="text-gray-200 text-xs font-bold mb-1">전투 주도권</div>
-                        <div className="text-gray-500 text-[11px] leading-relaxed">교전 시작 시 먼저 선제 타격을 가한 비율. 능동적으로 교전을 리드하는 성향을 분석합니다.</div>
-                      </div>
-                    </div>
-                    <div className="flex gap-3">
-                      <span className="text-amber-500/30 font-black italic">04</span>
-                      <div>
-                        <div className="text-gray-200 text-xs font-bold mb-1">팀 내 화력 지분</div>
-                        <div className="text-gray-500 text-[11px] leading-relaxed">팀 전체 데미지 중 당신의 지분. 단순 킬 수를 넘어 교전에서 실제로 얼마나 화력을 담당했는지 측정합니다.</div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+            <button
+              onClick={() => setActiveTab("squad")}
+              className={`pb-3 px-4 text-xs font-black border-b-2 transition-all cursor-pointer ${
+                activeTab === "squad"
+                  ? "border-purple-500 text-purple-400"
+                  : "border-transparent text-gray-500 hover:text-gray-300"
+              }`}
+            >
+              스쿼드 시너지
+            </button>
           </div>
 
-          {/* 최근 10경기 AI 종합 분석 섹션 추가 - 닉네임이 바뀔 때마다 리셋되도록 key 부여 */}
-          {result.recentMatches && result.recentMatches.length > 0 && (
-            <RecentAISummary 
-              key={result.nickname}
-              matchIds={result.recentMatches} 
-              nickname={result.nickname} 
-              platform={result.platform} 
-              isMobile={isMobile}
-            />
-          )}
+          {activeTab === "overview" ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: "30px" }}>
+              {/* 주력 총기 TOP 5 무기 마스터리 */}
+              {result.weaponMastery && result.weaponMastery.length > 0 && (
+                <WeaponArsenal weapons={result.weaponMastery} />
+              )}
 
-          <div style={{ marginTop: "20px" }}>
-            <h3 style={{ fontSize: "20px", fontWeight: "bold", marginBottom: "15px", borderBottom: "1px solid #333", paddingBottom: "10px" }}>
-              ⚔️ 최근 매치 (최대 20게임)
-            </h3>
+              {/* 경쟁전 / 일반전 통합 탭 패널 */}
+              <StatSummaryPanel stats={result.stats} isMobile={isMobile} />
 
-            {result.recentMatches && result.recentMatches.length > 0 ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
-                {result.recentMatches.slice(0, 20).map((matchId: string, index: number) => (
-                  <MatchCard
-                    key={matchId}
-                    matchId={matchId}
-                    nickname={result.nickname}
-                    platform={result.platform}
-                    isMobile={isMobile}
-                    index={index}
-                    onNicknameClick={(clickedName) => {
-                      setNickname(clickedName);
-                      // handleSearch는 platform을 필요로 하므로 현재 선택된 platform 전달
-                      handleSearch(selectedSeason, clickedName, platform);
-                      window.scrollTo({ top: 0, behavior: "smooth" });
-                    }}
+              {/* BGMS AI 전술 분석 시스템 설명 (토글형으로 최적화) */}
+              <div className="mt-4 mb-6">
+                <button 
+                  onClick={() => setShowGuideline(!showGuideline)}
+                  className="w-full flex items-center justify-between p-4 bg-amber-500/5 border border-amber-500/20 rounded-2xl hover:bg-amber-500/10 transition-all group"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-amber-500 rounded-lg shadow-[0_0_15px_rgba(245,158,11,0.3)]">
+                      <Shield size={18} className="text-black" />
+                    </div>
+                    <div className="flex flex-col items-start">
+                      <h3 className="text-sm font-black text-amber-500 tracking-tight">BGMS AI 전술 분석 가이드 (V7.0)</h3>
+                      <span className="text-[10px] text-amber-500/60 font-bold">지표 산출 공식 및 시스템 안내 확인하기</span>
+                    </div>
+                  </div>
+                  <ChevronDown 
+                    size={20} 
+                    className={`text-amber-500/50 group-hover:text-amber-500 transition-transform duration-300 ${showGuideline ? 'rotate-180' : ''}`} 
                   />
-                ))}
+                </button>
+
+                {showGuideline && (
+                  <div className="mt-3 p-6 bg-black/40 border border-white/5 rounded-[2rem] backdrop-blur-xl animate-in fade-in slide-in-from-top-2 duration-300">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                      <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
+                        <div className="text-amber-500 text-[11px] font-black mb-1">01. 상황 입체 분석</div>
+                        <div className="text-gray-400 text-xs leading-relaxed">단순 킬/딜을 넘어 교전 거리, 지형 고도차, 아군과의 거리 등 텔레메트리를 입체적으로 분석합니다.</div>
+                      </div>
+                      <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
+                        <div className="text-amber-500 text-[11px] font-black mb-1">02. 공정한 평가</div>
+                        <div className="text-gray-400 text-xs leading-relaxed">불가항력적인 자기장 피해나 교전 기회가 없던 상황(N/A)은 지표 계산에서 제외하여 억울한 비난을 방지합니다.</div>
+                      </div>
+                      <div className="bg-white/5 p-4 rounded-2xl border border-white/5">
+                        <div className="text-amber-500 text-[11px] font-black mb-1">03. 티어 판별 엔진</div>
+                        <div className="text-gray-400 text-xs leading-relaxed">프로급(Elite) 유저들의 전술 데이터를 기준으로 당신의 현재 실력을 S~C 티어로 정밀 판별합니다.</div>
+                      </div>
+                    </div>
+
+                    <div className="border-t border-white/5 pt-6">
+                      <div className="flex items-center gap-2 mb-4">
+                        <div className="w-1 h-3 bg-amber-500 rounded-full" />
+                        <span className="text-xs font-black text-white uppercase tracking-wider">전술 지표 사전</span>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+                        <div className="flex gap-3">
+                          <span className="text-amber-500/30 font-black italic">01</span>
+                          <div>
+                            <div className="text-gray-200 text-xs font-bold mb-1">평균 반응 속도</div>
+                            <div className="text-gray-500 text-[11px] leading-relaxed">피격 시점부터 적에게 반격을 가하기까지의 시간. 당신의 순수 피지컬과 위기 대처 능력을 측정합니다.</div>
+                          </div>
+                        </div>
+                        <div className="flex gap-3">
+                          <span className="text-amber-500/30 font-black italic">02</span>
+                          <div>
+                            <div className="text-gray-200 text-xs font-bold mb-1">백업 소요 속도 (트레이드)</div>
+                            <div className="text-gray-500 text-[11px] leading-relaxed">아군이 기절한 후 당신이 해당 적을 처치하기까지의 시간. 팀워크와 커버 능력을 측정합니다.</div>
+                          </div>
+                        </div>
+                        <div className="flex gap-3">
+                          <span className="text-amber-500/30 font-black italic">03</span>
+                          <div>
+                            <div className="text-gray-200 text-xs font-bold mb-1">전투 주도권</div>
+                            <div className="text-gray-500 text-[11px] leading-relaxed">교전 시작 시 먼저 선제 타격을 가한 비율. 능동적으로 교전을 리드하는 성향을 분석합니다.</div>
+                          </div>
+                        </div>
+                        <div className="flex gap-3">
+                          <span className="text-amber-500/30 font-black italic">04</span>
+                          <div>
+                            <div className="text-gray-200 text-xs font-bold mb-1">팀 내 화력 지분</div>
+                            <div className="text-gray-500 text-[11px] leading-relaxed">팀 전체 데미지 중 당신의 지분. 단순 킬 수를 넘어 교전에서 실제로 얼마나 화력을 담당했는지 측정합니다.</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
-            ) : (
-              <div style={{ padding: "40px", backgroundColor: "#1a1a1a", border: "1px solid #333", borderRadius: "12px", textAlign: "center", color: "#888" }}>
-                최근 14일 이내에 플레이한 매치 기록이 없습니다.
+
+              {/* 최근 10경기 AI 종합 분석 섹션 추가 - 닉네임이 바뀔 때마다 리셋되도록 key 부여 */}
+              {result.recentMatches && result.recentMatches.length > 0 && (
+                <RecentAISummary 
+                  key={result.nickname}
+                  matchIds={result.recentMatches} 
+                  nickname={result.nickname} 
+                  platform={result.platform} 
+                  isMobile={isMobile}
+                />
+              )}
+
+              <div style={{ marginTop: "20px" }}>
+                <h3 style={{ fontSize: "20px", fontWeight: "bold", marginBottom: "15px", borderBottom: "1px solid #333", paddingBottom: "10px" }}>
+                  ⚔️ 최근 매치 (최대 20게임)
+                </h3>
+
+                {result.recentMatches && result.recentMatches.length > 0 ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+                    {result.recentMatches.slice(0, 20).map((matchId: string, index: number) => (
+                      <MatchCard
+                        key={matchId}
+                        matchId={matchId}
+                        nickname={result.nickname}
+                        platform={result.platform}
+                        isMobile={isMobile}
+                        index={index}
+                        onNicknameClick={(clickedName) => {
+                          setNickname(clickedName);
+                          // handleSearch는 platform을 필요로 하므로 현재 선택된 platform 전달
+                          handleSearch(selectedSeason, clickedName, platform);
+                          window.scrollTo({ top: 0, behavior: "smooth" });
+                        }}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <div style={{ padding: "40px", backgroundColor: "#1a1a1a", border: "1px solid #333", borderRadius: "12px", textAlign: "center", color: "#888" }}>
+                    최근 14일 이내에 플레이한 매치 기록이 없습니다.
+                  </div>
+                )}
               </div>
-            )}
-          </div>
+            </div>
+          ) : (
+            <SquadAnalysisPanel nickname={result.nickname} platform={result.platform} />
+          )}
         </div>
       )}
     </div>
