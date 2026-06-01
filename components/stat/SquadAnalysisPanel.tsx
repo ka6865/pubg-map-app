@@ -159,6 +159,16 @@ export default function SquadAnalysisPanel({ nickname, platform }: SquadAnalysis
         const data = await res.json();
         if (data && !data.error) {
           setAnalysisData(data);
+          // [GA4 Analytics] 스쿼드 시너지 전술 데이터 로드 완료
+          trackEvent({
+            name: "squad_synergy_completed",
+            params: {
+              nickname,
+              platform,
+              match_count: data.matchCount || 0,
+              members_count: data.roleProfiles ? data.roleProfiles.length : 0,
+            },
+          });
         }
       } catch (err) {
         console.error("Failed to load squad details:", err);
@@ -201,6 +211,15 @@ export default function SquadAnalysisPanel({ nickname, platform }: SquadAnalysis
       });
       const data = await res.json();
       setAiFeedback(data);
+      // [GA4 Analytics] AI 스쿼드 코칭 생성 완료
+      trackEvent({
+        name: "ai_squad_coaching_requested",
+        params: {
+          nickname,
+          coaching_style: coachingStyle,
+          squad_grade: data.squadGrade || analysisData.squadGrade,
+        },
+      });
     } catch (err) {
       console.error("AI coaching request failed:", err);
     } finally {
@@ -239,7 +258,7 @@ export default function SquadAnalysisPanel({ nickname, platform }: SquadAnalysis
     try {
       setShareBusy("copy");
       await navigator.clipboard.writeText(buildShareUrl());
-      trackEvent({ name: "share_clicked", params: { method: "link_copy", page: "stats" } });
+      trackEvent({ name: "share_clicked", params: { method: "link_copy", page: "squad" } });
       setShareMessage("공유 링크를 복사했어요.");
       clearShareMessageLater();
     } catch {
@@ -258,7 +277,7 @@ export default function SquadAnalysisPanel({ nickname, platform }: SquadAnalysis
           title: `${nickname} AI 스쿼드 분석 리포트 | BGMS`,
           url: shareUrl,
         });
-        trackEvent({ name: "share_clicked", params: { method: "link_share", page: "stats" } });
+        trackEvent({ name: "share_clicked", params: { method: "link_share", page: "squad" } });
         setShareMessage("공유 시트를 열었어요.");
       } else {
         await navigator.clipboard.writeText(shareUrl);
@@ -284,7 +303,7 @@ export default function SquadAnalysisPanel({ nickname, platform }: SquadAnalysis
       link.download = `bgms-ai-squad-${nickname}.png`;
       link.click();
       URL.revokeObjectURL(url);
-      trackEvent({ name: "share_clicked", params: { method: "image_download", page: "stats" } });
+      trackEvent({ name: "share_clicked", params: { method: "image_download", page: "squad" } });
       setShareMessage("분석 리포트 이미지를 저장했어요.");
       clearShareMessageLater();
     } catch (err) {
@@ -307,7 +326,7 @@ export default function SquadAnalysisPanel({ nickname, platform }: SquadAnalysis
           text: `${nickname}님의 AI 스쿼드 전술 분석 결과`,
           files: [file],
         });
-        trackEvent({ name: "share_clicked", params: { method: "image_share", page: "stats" } });
+        trackEvent({ name: "share_clicked", params: { method: "image_share", page: "squad" } });
         setShareMessage("이미지 공유 시트를 열었어요.");
       } else {
         const url = URL.createObjectURL(blob);

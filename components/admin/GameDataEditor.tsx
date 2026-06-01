@@ -1264,6 +1264,62 @@ export default function GameDataEditor() {
                       </div>
                     )}
                   </div>
+
+                  {/* 스쿼드 시너지 분석 통계 */}
+                  <div className="bg-[#1a1a1a] p-6 rounded-2xl border border-[#333] space-y-4">
+                    <h3 className="text-xs font-black text-gray-500 uppercase tracking-wider">👥 스쿼드 시너지 분석 통계</h3>
+                    <div className="space-y-3 pt-2">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-gray-400">총 매치 / 스쿼드 매치</span>
+                        <span className="font-bold font-mono text-white">
+                          {dashboardData?.squadStats?.totalMatches || 0} / {dashboardData?.squadStats?.squadMatches || 0}
+                        </span>
+                      </div>
+                      {(() => {
+                        const total = dashboardData?.squadStats?.totalMatches || 0;
+                        const squad = dashboardData?.squadStats?.squadMatches || 0;
+                        const pct = total > 0 ? (squad / total) * 100 : 0;
+                        return (
+                          <div className="space-y-1">
+                            <div className="w-full bg-[#111] h-2 rounded-full overflow-hidden border border-[#222]">
+                              <div className="h-full bg-purple-500 transition-all duration-500" style={{ width: `${pct}%` }} />
+                            </div>
+                            <div className="text-[10px] text-gray-500 text-right font-mono">
+                              스쿼드 매치 비율: {pct.toFixed(1)}%
+                            </div>
+                          </div>
+                        );
+                      })()}
+                      <div className="flex justify-between text-xs pt-1 border-t border-[#222]">
+                        <span className="text-gray-400">고유 파티 수 (최근 100경기 기준)</span>
+                        <span className="font-bold font-mono text-white">
+                          {dashboardData?.squadStats?.estimatedSquadGroups || 0} 개 조합
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* API 최적화 세이브 */}
+                  <div className="bg-[#1a1a1a] p-6 rounded-2xl border border-[#333] space-y-4">
+                    <h3 className="text-xs font-black text-gray-500 uppercase tracking-wider">⚡ PUBG API 효율성 및 트래픽 절약</h3>
+                    <div className="space-y-3 pt-2">
+                      <div className="flex justify-between text-xs">
+                        <span className="text-gray-400">누적 절약 API 호출 횟수</span>
+                        <span className="font-bold font-mono text-emerald-400">
+                          {dashboardData?.squadStats?.savedApiCalls || 0} 회 절약
+                        </span>
+                      </div>
+                      <div className="flex justify-between text-xs">
+                        <span className="text-gray-400">누적 절약 트래픽 대역폭</span>
+                        <span className="font-bold font-mono text-emerald-400">
+                          {formatBytes(dashboardData?.squadStats?.savedBandwidthBytes || 0)}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-gray-500 mt-2 leading-relaxed">
+                        * Telemetry 2차 가공 적재 및 캐싱 처리를 통해 PUBG Rate Limit 제한을 예방하고 있으며, 프로덕션 키 심사 증빙 수치로 활용 가능합니다.
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
 
