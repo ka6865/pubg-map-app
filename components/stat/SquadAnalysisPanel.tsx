@@ -1,8 +1,21 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { Loader2, Flame, ShieldAlert, Award, ChevronDown } from "lucide-react";
+import React, { useState, useEffect, useRef } from "react";
+import { useSearchParams } from "next/navigation";
+import {
+  Loader2,
+  Flame,
+  ShieldAlert,
+  Award,
+  ChevronDown,
+  ChevronUp,
+  Share2,
+  Copy,
+  Camera,
+  Download,
+} from "lucide-react";
 import dynamic from "next/dynamic";
+import { trackEvent } from "@/lib/analytics";
 
 const Squad2DMap = dynamic(() => import("./Squad2DMap"), { ssr: false });
 
@@ -51,6 +64,15 @@ interface SquadAnalysisData {
     focusFire: number;
     teamWipe: number;
   };
+  squadGrade: string;
+  benchmarkStats?: {
+    tier: string;
+    avgIsolation: number;
+    avgTradeLatency: number;
+    avgReviveRate: number;
+    avgSmokeRate: number;
+    avgTeamWipes: number;
+  };
   roleProfiles: Teammate[];
 }
 
@@ -77,6 +99,9 @@ interface SquadAnalysisPanelProps {
 }
 
 export default function SquadAnalysisPanel({ nickname, platform }: SquadAnalysisPanelProps) {
+  const searchParams = useSearchParams();
+  const urlGroupKey = searchParams.get("groupKey");
+
   const [groups, setGroups] = useState<any[]>([]);
   const [selectedGroupKey, setSelectedGroupKey] = useState<string>("");
   const [loadingList, setLoadingList] = useState<boolean>(true);
@@ -90,6 +115,13 @@ export default function SquadAnalysisPanel({ nickname, platform }: SquadAnalysis
 
   // 2D Map Selected Match State
   const [selectedMapMatchId, setSelectedMapMatchId] = useState<string>("");
+  // 2D Map Collapse State
+  const [showMap, setShowMap] = useState<boolean>(false);
+
+  // 공유 상태 및 Ref
+  const resultCardRef = useRef<HTMLDivElement | null>(null);
+  const [shareBusy, setShareBusy] = useState<"share" | "copy" | "download" | "image" | null>(null);
+  const [shareMessage, setShareMessage] = useState<string | null>(null);
 
   // 1. Fetch detected squad list on mount
   useEffect(() => {
@@ -101,7 +133,8 @@ export default function SquadAnalysisPanel({ nickname, platform }: SquadAnalysis
         
         if (data.groups && data.groups.length > 0) {
           setGroups(data.groups);
-          setSelectedGroupKey(data.groups[0].groupKey);
+          const targetGroup = data.groups.find((g: any) => g.groupKey === urlGroupKey) || data.groups[0];
+          setSelectedGroupKey(targetGroup.groupKey);
         }
       } catch (err) {
         console.error("Failed to load squad list:", err);
@@ -110,7 +143,7 @@ export default function SquadAnalysisPanel({ nickname, platform }: SquadAnalysis
       }
     }
     fetchSquadGroups();
-  }, [nickname, platform]);
+  }, [nickname, platform, urlGroupKey]);
 
   // 2. Fetch detailed analysis when selected group changes
   useEffect(() => {
@@ -161,7 +194,9 @@ export default function SquadAnalysisPanel({ nickname, platform }: SquadAnalysis
           scores: analysisData.scores,
           roleProfiles: analysisData.roleProfiles,
           nickname,
-          coachingStyle
+          coachingStyle,
+          squadGrade: analysisData.squadGrade,
+          benchmarkStats: analysisData.benchmarkStats
         })
       });
       const data = await res.json();
@@ -170,6 +205,126 @@ export default function SquadAnalysisPanel({ nickname, platform }: SquadAnalysis
       console.error("AI coaching request failed:", err);
     } finally {
       setLoadingAi(false);
+    }
+  };
+
+  // 공유 기능 및 유틸리티
+  const buildShareUrl = () => {
+    if (typeof window === "undefined") return "";
+    const url = new URL(`/stats/${platform}/${encodeURIComponent(nickname)}`, window.location.origin);
+    url.searchParams.set("tab", "squad");
+    if (selectedGroupKey) {
+      url.searchParams.set("groupKey", selectedGroupKey);
+    }
+    return url.toString();
+  };
+
+  const clearShareMessageLater = () => {
+    window.setTimeout(() => setShareMessage(null), 2500);
+  };
+
+  const createShareImageBlob = async () => {
+    if (!resultCardRef.current) throw new Error("공유할 결과 카드가 없습니다.");
+    const { toPng } = await import("html-to-image");
+    const dataUrl = await toPng(resultCardRef.current, {
+      cacheBust: true,
+      pixelRatio: 2,
+      backgroundColor: "#0c0a1f",
+    });
+    const response = await fetch(dataUrl);
+    return response.blob();
+  };
+
+  const handleCopyLink = async () => {
+    try {
+      setShareBusy("copy");
+      await navigator.clipboard.writeText(buildShareUrl());
+      trackEvent({ name: "share_clicked", params: { method: "link_copy", page: "stats" } });
+      setShareMessage("공유 링크를 복사했어요.");
+      clearShareMessageLater();
+    } catch {
+      setShareMessage("링크 복사에 실패했습니다.");
+    } finally {
+      setShareBusy(null);
+    }
+  };
+
+  const handleShareLink = async () => {
+    const shareUrl = buildShareUrl();
+    try {
+      setShareBusy("share");
+      if (navigator.share) {
+        await navigator.share({
+          title: `${nickname} AI 스쿼드 분석 리포트 | BGMS`,
+          url: shareUrl,
+        });
+        trackEvent({ name: "share_clicked", params: { method: "link_share", page: "stats" } });
+        setShareMessage("공유 시트를 열었어요.");
+      } else {
+        await navigator.clipboard.writeText(shareUrl);
+        setShareMessage("공유 기능이 없어 링크를 대신 복사했어요.");
+      }
+      clearShareMessageLater();
+    } catch (error: any) {
+      if (error?.name !== "AbortError") {
+        setShareMessage("링크 공유에 실패했습니다.");
+      }
+    } finally {
+      setShareBusy(null);
+    }
+  };
+
+  const handleDownloadImage = async () => {
+    try {
+      setShareBusy("download");
+      const blob = await createShareImageBlob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `bgms-ai-squad-${nickname}.png`;
+      link.click();
+      URL.revokeObjectURL(url);
+      trackEvent({ name: "share_clicked", params: { method: "image_download", page: "stats" } });
+      setShareMessage("분석 리포트 이미지를 저장했어요.");
+      clearShareMessageLater();
+    } catch (err) {
+      console.error(err);
+      setShareMessage("이미지 저장에 실패했습니다.");
+    } finally {
+      setShareBusy(null);
+    }
+  };
+
+  const handleShareImage = async () => {
+    try {
+      setShareBusy("image");
+      const blob = await createShareImageBlob();
+      const file = new File([blob], `bgms-ai-squad-${nickname}.png`, { type: "image/png" });
+
+      if (navigator.share && navigator.canShare?.({ files: [file] })) {
+        await navigator.share({
+          title: "BGMS AI 스쿼드 분석 리포트",
+          text: `${nickname}님의 AI 스쿼드 전술 분석 결과`,
+          files: [file],
+        });
+        trackEvent({ name: "share_clicked", params: { method: "image_share", page: "stats" } });
+        setShareMessage("이미지 공유 시트를 열었어요.");
+      } else {
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = file.name;
+        link.click();
+        URL.revokeObjectURL(url);
+        setShareMessage("이미지 공유가 지원되지 않아 파일로 저장했어요.");
+      }
+      clearShareMessageLater();
+    } catch (error: any) {
+      if (error?.name !== "AbortError") {
+        setShareMessage("이미지 공유에 실패했습니다.");
+      }
+    } finally {
+      setShareBusy(null);
     }
   };
 
@@ -335,7 +490,7 @@ export default function SquadAnalysisPanel({ nickname, platform }: SquadAnalysis
             </div>
  
             {/* Synergy metrics key-value list */}
-            <div className="rounded-lg bg-zinc-950/60 p-3 space-y-2 text-xs border border-zinc-800/40">
+            <div className="rounded-lg bg-zinc-950/60 p-3.5 space-y-3.5 text-xs border border-zinc-800/40">
               {(() => {
                 const normalizedSearchName = nickname.toLowerCase().replace(/[^a-zA-Z0-9_]/g, "");
                 const myProfile = analysisData.roleProfiles.find(
@@ -350,44 +505,90 @@ export default function SquadAnalysisPanel({ nickname, platform }: SquadAnalysis
 
                 return (
                   <>
-                    <div className="flex justify-between border-b border-zinc-900 pb-1.5 mb-1.5">
+                    <div className="flex justify-between border-b border-zinc-900 pb-2">
+                      <span className="text-zinc-400 font-medium flex items-center gap-1.5">
+                        🏆 스쿼드 협동 등급
+                      </span>
+                      <span className="text-purple-400 font-black text-sm tracking-wide bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/15">
+                        {analysisData.squadGrade} Grade
+                      </span>
+                    </div>
+                    <div className="flex justify-between border-b border-zinc-900 pb-2">
                       <span className="text-zinc-400 font-medium">내 평균 딜량 / 킬</span>
                       <span className="text-purple-300 font-bold">
                         {myProfile ? `${Math.round(myProfile.avgDamage)}딜 / ${myProfile.avgKills}킬` : "N/A"}
                       </span>
                     </div>
-                    <div className="flex justify-between border-b border-zinc-900 pb-1.5 mb-1.5">
+                    <div className="flex justify-between border-b border-zinc-900 pb-2">
                       <span className="text-zinc-400 font-medium">스쿼드 평균 딜량 / 킬</span>
                       <span className="text-zinc-100 font-bold">{squadAvgDamage}딜 / {squadAvgKills}킬</span>
                     </div>
                   </>
                 );
               })()}
-              <div className="flex justify-between">
-                <span className="text-zinc-400">평균 대열 이탈율 (고립)</span>
-                <span className={`font-bold ${analysisData.stats.avgIsolation > 3.5 ? "text-red-400" : "text-zinc-100"}`}>
-                  {analysisData.stats.avgIsolation} (평균)
-                </span>
+              
+              <div className="flex flex-col gap-1 border-b border-zinc-900 pb-2">
+                <div className="flex justify-between">
+                  <span className="text-zinc-400 font-medium">평균 대열 이탈율 (고립)</span>
+                  <span className={`font-bold ${analysisData.stats.avgIsolation > 3.5 ? "text-red-400" : "text-zinc-100"}`}>
+                    {analysisData.stats.avgIsolation} (평균)
+                  </span>
+                </div>
+                {analysisData.benchmarkStats && (
+                  <div className="text-[10px] text-zinc-500 text-right -mt-0.5">
+                    {analysisData.benchmarkStats.tier}티어 기준치: {analysisData.benchmarkStats.avgIsolation} (낮을수록 우수)
+                  </div>
+                )}
               </div>
-              <div className="flex justify-between">
-                <span className="text-zinc-400">평균 백업 반응 속도</span>
-                <span className="text-zinc-100 font-bold">
-                  {analysisData.stats.avgTradeLatency > 0
-                    ? `${(analysisData.stats.avgTradeLatency / 1000).toFixed(2)}초`
-                    : "측정 불가"}
-                </span>
+
+              <div className="flex flex-col gap-1 border-b border-zinc-900 pb-2">
+                <div className="flex justify-between">
+                  <span className="text-zinc-400 font-medium">평균 백업 반응 속도 (트레이드)</span>
+                  <span className="text-zinc-100 font-bold">
+                    {analysisData.stats.avgTradeLatency > 0
+                      ? `${(analysisData.stats.avgTradeLatency / 1000).toFixed(2)}초`
+                      : "측정 불가"}
+                  </span>
+                </div>
+                {analysisData.benchmarkStats && (
+                  <div className="text-[10px] text-zinc-500 text-right -mt-0.5">
+                    {analysisData.benchmarkStats.tier}티어 기준치: {(analysisData.benchmarkStats.avgTradeLatency / 1000).toFixed(2)}초 (빠를수록 우수)
+                  </div>
+                )}
               </div>
-              <div className="flex justify-between">
-                <span className="text-zinc-400">누적 세이브 (연막/소생)</span>
-                <span className="text-zinc-100 font-bold">{analysisData.stats.totalSmokeRescues}회 / {analysisData.stats.totalRevives}회</span>
+
+              <div className="flex flex-col gap-1 border-b border-zinc-900 pb-2">
+                <div className="flex justify-between">
+                  <span className="text-zinc-400 font-medium">누적 세이브 (연막/소생)</span>
+                  <span className="text-zinc-100 font-bold">{analysisData.stats.totalSmokeRescues}회 / {analysisData.stats.totalRevives}회</span>
+                </div>
+                {analysisData.benchmarkStats && (
+                  <div className="text-[10px] text-zinc-500 text-right -mt-0.5">
+                    {analysisData.benchmarkStats.tier}티어 기준치 (경기당 평균): 부활 {analysisData.benchmarkStats.avgReviveRate}% / 연막 {analysisData.benchmarkStats.avgSmokeRate}%
+                  </div>
+                )}
               </div>
-              <div className="flex justify-between">
-                <span className="text-zinc-400">평균 아군 집중사격 커버율</span>
-                <span className="text-zinc-100 font-bold">{Math.round(analysisData.stats.avgCoverRate * 100)}%</span>
+
+              <div className="flex flex-col gap-1 border-b border-zinc-900 pb-2">
+                <div className="flex justify-between">
+                  <span className="text-zinc-400 font-medium">평균 아군 집중사격 커버율</span>
+                  <span className="text-zinc-100 font-bold">{Math.round(analysisData.stats.avgCoverRate * 100)}%</span>
+                </div>
+                <div className="text-[10px] text-zinc-500 text-right -mt-0.5">
+                  글로벌 권장 기준치: 30% 이상
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span className="text-zinc-400">적 스쿼드 전멸 유발 수</span>
-                <span className="text-purple-300 font-bold">{analysisData.stats.totalTeamWipes}회 전멸</span>
+
+              <div className="flex flex-col gap-1">
+                <div className="flex justify-between">
+                  <span className="text-zinc-400 font-medium">적 스쿼드 전멸 유발 수</span>
+                  <span className="text-purple-300 font-bold">{analysisData.stats.totalTeamWipes}회 전멸</span>
+                </div>
+                {analysisData.benchmarkStats && (
+                  <div className="text-[10px] text-zinc-500 text-right -mt-0.5">
+                    {analysisData.benchmarkStats.tier}티어 기준치: 경기당 평균 {analysisData.benchmarkStats.avgTeamWipes}회
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -481,134 +682,210 @@ export default function SquadAnalysisPanel({ nickname, platform }: SquadAnalysis
  
           {/* AI Result View */}
           {aiFeedback && (
-            <div className="grid grid-cols-1 md:grid-cols-12 gap-6 pt-4 border-t border-purple-500/10">
-              
-              {/* Grade Shield */}
-              <div className="md:col-span-3 flex flex-col items-center justify-center text-center p-5 rounded-2xl bg-purple-950/15 border border-purple-500/10 h-fit w-full min-w-0 md:min-w-[180px] shrink-0">
-                <span className="text-xs text-purple-400 font-bold tracking-wide">Squad Grade</span>
-                <div className="relative flex items-center justify-center h-20 w-20 my-3">
-                  <Award className="h-16 w-16 text-purple-500" />
-                  <span className="absolute text-xl font-black text-white">{aiFeedback.squadGrade}</span>
-                </div>
-                <p className="text-xs text-zinc-200 font-semibold max-w-[200px] break-keep text-center leading-relaxed">{aiFeedback.summary}</p>
-              </div>
- 
-              {/* Detail Content */}
-              <div className="md:col-span-9 w-full min-w-0 space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="rounded-lg bg-zinc-950/40 p-4 border border-zinc-800/40">
-                    <h5 className="text-xs font-bold text-green-400 mb-1 flex items-center gap-1.5">
-                      <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
-                      스쿼드 협동 강점
-                    </h5>
-                    <p className="text-xs text-zinc-200 leading-relaxed font-medium">{aiFeedback.strength}</p>
+            <div className="space-y-4 pt-4 border-t border-purple-500/10">
+              {/* 캡처 타겟 박스 (resultCardRef) */}
+              <div
+                ref={resultCardRef}
+                className="p-6 rounded-2xl bg-[#0c0a1f] border border-purple-500/20 shadow-xl flex flex-col gap-6"
+              >
+                <div className="flex flex-col md:grid md:grid-cols-12 gap-6">
+                  {/* Grade Shield */}
+                  <div className="w-full md:col-span-3 flex flex-col items-center justify-center text-center p-5 rounded-2xl bg-purple-950/15 border border-purple-500/10 h-fit min-w-0 md:min-w-[180px] shrink-0">
+                    <span className="text-xs text-purple-400 font-bold tracking-wide">Squad Grade</span>
+                    <div className="relative flex items-center justify-center h-20 w-20 my-3">
+                      <Award className="h-16 w-16 text-purple-500" />
+                      <span className="absolute text-xl font-black text-white">{aiFeedback.squadGrade}</span>
+                    </div>
+                    <p className="text-xs text-zinc-200 font-semibold max-w-[200px] break-keep text-center leading-relaxed">{aiFeedback.summary}</p>
                   </div>
-                  <div className="rounded-lg bg-zinc-950/40 p-4 border border-zinc-800/40">
-                    <h5 className="text-xs font-bold text-red-400 mb-1 flex items-center gap-1.5">
-                      <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
-                      스쿼드 취약점
-                    </h5>
-                    <p className="text-xs text-zinc-200 leading-relaxed font-medium">{aiFeedback.weakness}</p>
-                  </div>
-                </div>
- 
-                <div className="rounded-lg bg-purple-950/10 p-4 border border-purple-500/10">
-                  <h5 className="text-xs font-bold text-purple-300 mb-1">💡 전술적 개선 코칭 제안</h5>
-                  <p className="text-xs text-zinc-100 leading-relaxed font-medium">{aiFeedback.coaching}</p>
-                </div>
-              </div>
-
-              {/* 팀원 개별 피드백 */}
-              {aiFeedback.memberFeedbacks && aiFeedback.memberFeedbacks.length > 0 && (
-                <div className="col-span-12 border-t border-purple-500/10 pt-6 space-y-4">
-                  <h5 className="font-bold text-zinc-200 text-xs flex items-center gap-2">
-                    <span className="h-1.5 w-1.5 rounded-full bg-purple-500" />
-                    👥 팀원 개별 AI 평가 및 피드백
-                  </h5>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    {aiFeedback.memberFeedbacks.map((member: any) => (
-                      <div key={member.name} className="rounded-xl border border-zinc-800/50 bg-zinc-950/40 p-4 space-y-3.5 shadow-sm">
-                        <div className="flex justify-between items-center border-b border-zinc-900 pb-2">
-                          <span className="font-bold text-purple-300 text-xs">{member.name}</span>
-                          <span className="text-[9px] bg-purple-500/15 border border-purple-500/20 text-purple-400 font-black px-2 py-0.5 rounded uppercase tracking-wider">Teammate</span>
-                        </div>
-                        
-                        <div className="space-y-2.5">
-                          {/* 칭찬할 점 */}
-                          <div className="text-[11px] leading-relaxed">
-                            <div className="font-bold text-green-400 flex items-center gap-1 mb-0.5">👍 칭찬할 점</div>
-                            <p className="text-zinc-300 pl-1 font-medium">{member.praise}</p>
-                          </div>
-                          
-                          {/* 못한 점 */}
-                          <div className="text-[11px] leading-relaxed">
-                            <div className="font-bold text-red-400 flex items-center gap-1 mb-0.5">👎 못한 점</div>
-                            <p className="text-zinc-300 pl-1 font-medium">{member.fault}</p>
-                          </div>
-                          
-                          {/* 피드백 */}
-                          <div className="text-[11px] leading-relaxed">
-                            <div className="font-bold text-purple-400 flex items-center gap-1 mb-0.5">💡 개인 피드백</div>
-                            <p className="text-zinc-300 pl-1 font-medium">{member.advice}</p>
-                          </div>
-                        </div>
+     
+                  {/* Detail Content */}
+                  <div className="w-full md:col-span-9 space-y-4 min-w-0">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="rounded-lg bg-zinc-950/40 p-4 border border-zinc-800/40">
+                        <h5 className="text-xs font-bold text-green-400 mb-1 flex items-center gap-1.5">
+                          <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
+                          스쿼드 협동 강점
+                        </h5>
+                        <p className="text-xs text-zinc-200 leading-relaxed font-medium">{aiFeedback.strength}</p>
                       </div>
-                    ))}
+                      <div className="rounded-lg bg-zinc-950/40 p-4 border border-zinc-800/40">
+                        <h5 className="text-xs font-bold text-red-400 mb-1 flex items-center gap-1.5">
+                          <span className="h-1.5 w-1.5 rounded-full bg-red-400" />
+                          스쿼드 취약점
+                        </h5>
+                        <p className="text-xs text-zinc-200 leading-relaxed font-medium">{aiFeedback.weakness}</p>
+                      </div>
+                    </div>
+     
+                    <div className="rounded-lg bg-purple-950/10 p-4 border border-purple-500/10">
+                      <h5 className="text-xs font-bold text-purple-300 mb-1">💡 전술적 개선 코칭 제안</h5>
+                      <p className="text-xs text-zinc-100 leading-relaxed font-medium">{aiFeedback.coaching}</p>
+                    </div>
                   </div>
-                </div>
-              )}
 
-              {/* 팀 전체 총평 */}
-              {aiFeedback.overallOpinion && (
-                <div className="col-span-12 border-t border-purple-500/10 pt-4">
-                  <div className="rounded-xl bg-gradient-to-r from-purple-950/20 to-zinc-950/60 p-5 border border-purple-500/15 shadow-md">
-                    <h5 className="text-xs font-bold text-purple-300 mb-2 flex items-center gap-2">
-                      <Flame className="h-4 w-4 text-purple-400 fill-purple-400/20" />
-                      📢 팀 전체 총평 (AI 코치의 한마디)
-                    </h5>
-                    <p className="text-xs text-zinc-200 leading-relaxed font-semibold">{aiFeedback.overallOpinion}</p>
-                  </div>
+                  {/* 팀원 개별 피드백 */}
+                  {aiFeedback.memberFeedbacks && aiFeedback.memberFeedbacks.length > 0 && (
+                    <div className="col-span-12 border-t border-purple-500/10 pt-6 space-y-4">
+                      <h5 className="font-bold text-zinc-200 text-xs flex items-center gap-2">
+                        <span className="h-1.5 w-1.5 rounded-full bg-purple-500" />
+                        👥 팀원 개별 AI 평가 및 피드백
+                      </h5>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {aiFeedback.memberFeedbacks.map((member: any) => (
+                          <div key={member.name} className="rounded-xl border border-zinc-800/50 bg-zinc-950/40 p-4 space-y-3.5 shadow-sm">
+                            <div className="flex justify-between items-center border-b border-zinc-900 pb-2">
+                              <span className="font-bold text-purple-300 text-xs">{member.name}</span>
+                              <span className="text-[9px] bg-purple-500/15 border border-purple-500/20 text-purple-400 font-black px-2 py-0.5 rounded uppercase tracking-wider">Teammate</span>
+                            </div>
+                            
+                            <div className="space-y-2.5">
+                              {/* 칭찬할 점 */}
+                              <div className="text-[11px] leading-relaxed">
+                                <div className="font-bold text-green-400 flex items-center gap-1 mb-0.5">👍 칭찬할 점</div>
+                                <p className="text-zinc-300 pl-1 font-medium">{member.praise}</p>
+                              </div>
+                              
+                              {/* 못한 점 */}
+                              <div className="text-[11px] leading-relaxed">
+                                <div className="font-bold text-red-400 flex items-center gap-1 mb-0.5">👎 못한 점</div>
+                                <p className="text-zinc-300 pl-1 font-medium">{member.fault}</p>
+                              </div>
+                              
+                              {/* 피드백 */}
+                              <div className="text-[11px] leading-relaxed">
+                                <div className="font-bold text-purple-400 flex items-center gap-1 mb-0.5">💡 개인 피드백</div>
+                                <p className="text-zinc-300 pl-1 font-medium">{member.advice}</p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 팀 전체 총평 */}
+                  {aiFeedback.overallOpinion && (
+                    <div className="col-span-12 border-t border-purple-500/10 pt-4">
+                      <div className="rounded-xl bg-gradient-to-r from-purple-950/20 to-zinc-950/60 p-5 border border-purple-500/15 shadow-md">
+                        <h5 className="text-xs font-bold text-purple-300 mb-2 flex items-center gap-2">
+                          <Flame className="h-4 w-4 text-purple-400 fill-purple-400/20" />
+                          📢 팀 전체 총평 (AI 코치의 한마디)
+                        </h5>
+                        <p className="text-xs text-zinc-200 leading-relaxed font-semibold">{aiFeedback.overallOpinion}</p>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              )}
+                
+                {/* 브랜딩 워터마크 추가 */}
+                <div className="text-center text-[10px] font-black tracking-[0.2em] text-purple-400/35 border-t border-purple-500/10 pt-4 mt-2">
+                  BGMS AI SQUAD PERFORMANCE REPORT
+                </div>
+              </div>
+
+              {/* 공유 버튼 그룹 */}
+              <div className="rounded-2xl border border-purple-500/10 bg-purple-950/[0.03] p-5 backdrop-blur-xl">
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <div>
+                    <div className="text-sm font-black text-zinc-200">분석결과 공유하기</div>
+                    <div className="text-xs text-zinc-500 mt-1">스쿼드 보고서를 링크로 공유하거나, 이미지로 캡처하여 소장할 수 있습니다.</div>
+                  </div>
+                  {shareMessage && (
+                    <div className="text-xs font-bold text-emerald-400 animate-pulse">{shareMessage}</div>
+                  )}
+                </div>
+
+                <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <button
+                    onClick={handleShareLink}
+                    disabled={shareBusy !== null}
+                    className="h-10 rounded-xl border border-sky-500/20 bg-sky-500/10 text-sky-300 hover:bg-sky-500/20 transition-all font-bold text-xs flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                  >
+                    <Share2 size={14} />
+                    {shareBusy === "share" ? "공유 중..." : "링크 공유"}
+                  </button>
+                  <button
+                    onClick={handleCopyLink}
+                    disabled={shareBusy !== null}
+                    className="h-10 rounded-xl border border-zinc-800 bg-zinc-900/50 text-zinc-300 hover:bg-zinc-800 transition-all font-bold text-xs flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                  >
+                    <Copy size={14} />
+                    {shareBusy === "copy" ? "복사 중..." : "링크 복사"}
+                  </button>
+                  <button
+                    onClick={handleShareImage}
+                    disabled={shareBusy !== null}
+                    className="h-10 rounded-xl border border-rose-500/20 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20 transition-all font-bold text-xs flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                  >
+                    <Camera size={14} />
+                    {shareBusy === "image" ? "생성 중..." : "이미지 공유"}
+                  </button>
+                  <button
+                    onClick={handleDownloadImage}
+                    disabled={shareBusy !== null}
+                    className="h-10 rounded-xl border border-amber-500/20 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 transition-all font-bold text-xs flex items-center justify-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                  >
+                    <Download size={14} />
+                    {shareBusy === "download" ? "저장 중..." : "이미지 저장"}
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </div>
       )}
 
-      {/* 2D Map Trajectory Section (V3.1) */}
+      {/* 2D Map Trajectory Section (V3.2) */}
       {analysisData && analysisData.matchesSummary && analysisData.matchesSummary.length > 0 && (
         <div className="rounded-xl border border-zinc-800/60 bg-zinc-900/10 p-5 space-y-4">
-          <div>
-            <h4 className="font-bold text-zinc-200">교전 동선 2D 맵 피드백</h4>
-            <p className="text-xs text-zinc-400">아군 최초 기절 당시의 대열 배치를 2D 지도로 분석합니다. 경기 칩을 선택해 다른 매치를 확인해 보세요.</p>
-          </div>
+          <button
+            onClick={() => setShowMap(!showMap)}
+            className="w-full flex items-center justify-between text-left cursor-pointer group focus:outline-none"
+          >
+            <div>
+              <h4 className="font-bold text-zinc-200 group-hover:text-purple-400 transition-colors flex items-center gap-2 text-sm sm:text-base">
+                🗺️ 교전 동선 2D 맵 피드백
+              </h4>
+              <p className="text-xs text-zinc-400 mt-0.5">아군 최초 기절 당시의 대열 배치를 2D 지도로 분석합니다.</p>
+            </div>
+            <div className="flex items-center gap-1.5 rounded-lg border border-zinc-850 bg-zinc-950 px-2.5 py-1.5 text-xs text-zinc-400 font-semibold group-hover:border-purple-500 group-hover:text-purple-400 transition-all shrink-0">
+              {showMap ? "지도 접기" : "지도 펼치기"}
+              {showMap ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+            </div>
+          </button>
 
-          {/* Match Selector Chips (Scrollable on Mobile) */}
-          <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none whitespace-nowrap -mx-4 px-4 sm:mx-0 sm:px-0">
-            {analysisData.matchesSummary.map((m) => (
-              <button
-                key={m.matchId}
-                onClick={() => setSelectedMapMatchId(m.matchId)}
-                className={`inline-block rounded-full px-4 py-1.5 text-xs font-bold transition-all border cursor-pointer ${
-                  selectedMapMatchId === m.matchId
-                    ? "bg-purple-600 border-purple-500 text-white shadow-md shadow-purple-500/10"
-                    : "bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-zinc-200"
-                }`}
-              >
-                {m.mapDisplayName} ({m.winPlace}등)
-              </button>
-            ))}
-          </div>
+          {/* Collapsible Content */}
+          {showMap && (
+            <div className="space-y-4 pt-4 border-t border-zinc-800/40">
+              {/* Match Selector Chips (Scrollable on Mobile) */}
+              <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-none whitespace-nowrap -mx-4 px-4 sm:mx-0 sm:px-0">
+                {analysisData.matchesSummary.map((m) => (
+                  <button
+                    key={m.matchId}
+                    onClick={() => setSelectedMapMatchId(m.matchId)}
+                    className={`inline-block rounded-full px-4 py-1.5 text-xs font-bold transition-all border cursor-pointer ${
+                      selectedMapMatchId === m.matchId
+                        ? "bg-purple-600 border-purple-500 text-white shadow-md shadow-purple-500/10"
+                        : "bg-zinc-950 border-zinc-800 text-zinc-400 hover:text-zinc-200"
+                    }`}
+                  >
+                    {m.mapDisplayName} ({m.winPlace}등)
+                  </button>
+                ))}
+              </div>
 
-          {/* 2D Map Component */}
-          {selectedMapMatchId && (
-            <Squad2DMap
-              key={selectedMapMatchId}
-              matchId={selectedMapMatchId}
-              nickname={nickname}
-              platform={platform}
-              mapName={analysisData.matchesSummary.find((m) => m.matchId === selectedMapMatchId)?.mapName || "Baltic_Main"}
-            />
+              {/* 2D Map Component */}
+              {selectedMapMatchId && (
+                <Squad2DMap
+                  key={selectedMapMatchId}
+                  matchId={selectedMapMatchId}
+                  nickname={nickname}
+                  platform={platform}
+                  mapName={analysisData.matchesSummary.find((m) => m.matchId === selectedMapMatchId)?.mapName || "Baltic_Main"}
+                />
+              )}
+            </div>
           )}
         </div>
       )}

@@ -98,7 +98,7 @@ export async function GET(request: Request) {
     const targetMatches = squadMatches.filter(m => targetMatchIds.has(m.match_id));
     const matchCount = targetMatches.length;
 
-        // Accumulators for squad metrics
+    // Accumulators for squad metrics
     let accumIsolation = 0;
     let accumTradeLatency = 0;
     let validTradeLatencyCount = 0;
@@ -106,6 +106,7 @@ export async function GET(request: Request) {
     let totalRevives = 0;
     let accumCoverRate = 0;
     let totalTeamWipes = 0;
+    let accumTeammateKnocks = 0;
 
     // All squad members including the searched player
     const allMembers = [selectedGroup.members.find(m => normalizeName(m) === lowerNickname) || nickname, ...selectedGroup.members];
@@ -117,6 +118,9 @@ export async function GET(request: Request) {
     squadMembers.forEach(name => {
       playerAccumStats[name] = { damage: 0, kills: 0, assists: 0, dbnos: 0 };
     });
+
+    // 1. 대표 티어 결정을 위해 매치별 티어 빈도수 집계
+    const tierCounts: Record<string, number> = {};
 
     // Extract metrics from each match
     targetMatches.forEach(m => {
@@ -137,6 +141,13 @@ export async function GET(request: Request) {
       totalRevives += tradeStats.revCount || 0;
       accumCoverRate += tradeStats.coverRate !== undefined ? tradeStats.coverRate : 0.3;
       totalTeamWipes += tradeStats.enemyTeamWipes || 0;
+      accumTeammateKnocks += tradeStats.teammateKnocks || 0;
+
+      // 집계용 매치 티어 수집
+      const matchTier = fullResult.matchInfo?.tier || fullResult.benchmark?.tier;
+      if (matchTier) {
+        tierCounts[matchTier] = (tierCounts[matchTier] || 0) + 1;
+      }
 
       // Accumulate individual match performance
       const team = fullResult.team || [];
@@ -153,24 +164,161 @@ export async function GET(request: Request) {
 
     // Calculate averages
     const avgIsolation = matchCount > 0 ? (accumIsolation / matchCount) : 2.0;
-    const avgTradeLatency = validTradeLatencyCount > 0 ? (accumTradeLatency / validTradeLatencyCount) : 2500;
+    const avgTradeLatency = validTradeLatencyCount > 0 ? (accumTradeLatency / validTradeLatencyCount) : 12000;
     const avgCoverRate = matchCount > 0 ? (accumCoverRate / matchCount) : 0.3;
 
-    // Compute tactical scores for radar chart (normalized to 10 - 100 range)
-    const scores = {
-      // Formation: 100 for tightly packed, decays as isolation index increases
-      formation: Math.max(10, Math.min(100, Math.round(100 - (avgIsolation - 1) * 20))),
-      // Backup speed: 100 for fast trade kills, decays as trade latency increases
-      backupSpeed: Math.max(10, Math.min(100, Math.round(100 - (avgTradeLatency - 2000) / 100))),
-      // Survival care: smoke saves and revives (scaled by match count, 4 per match yields 100)
-      survivalCare: Math.min(100, Math.max(20, Math.round((totalSmokeRescues + totalRevives) * 25 / matchCount))),
-      // Focus fire: based on team focus cover rate
-      focusFire: Math.min(100, Math.max(20, Math.round(avgCoverRate * 100))),
-      // Team wipe contribution: based on total team wipes
-      teamWipe: Math.min(100, Math.max(20, Math.round(totalTeamWipes * 10)))
+    // 2. 가장 빈도가 높은 대표 티어 설정 (없으면 B)
+    let detectedTier = "B";
+    let maxCount = 0;
+    Object.entries(tierCounts).forEach(([tier, count]) => {
+      if (count > maxCount) {
+        maxCount = count;
+        detectedTier = tier;
+      }
+    });
+
+    const baseTierChar = detectedTier.trim().charAt(0).toUpperCase();
+    const targetTier = ["S", "A", "B", "C", "D"].includes(baseTierChar) ? baseTierChar : "B";
+
+    // 3. Fallback용 티어별 벤치마크 통계 세트
+    interface BenchmarkStats {
+      avgIsolation: number;
+      avgTradeLatency: number;
+      avgReviveRate: number;
+      avgSmokeRate: number;
+      avgTeamWipes: number;
+    }
+
+    const DEFAULT_BENCHMARKS: Record<string, BenchmarkStats> = {
+      "S": { avgIsolation: 1.02, avgTradeLatency: 10810, avgReviveRate: 22.6, avgSmokeRate: 3.72, avgTeamWipes: 7.18 },
+      "A": { avgIsolation: 1.36, avgTradeLatency: 12143, avgReviveRate: 17.0, avgSmokeRate: 3.58, avgTeamWipes: 5.33 },
+      "B": { avgIsolation: 1.53, avgTradeLatency: 11642, avgReviveRate: 9.53, avgSmokeRate: 3.62, avgTeamWipes: 2.80 },
+      "C": { avgIsolation: 1.40, avgTradeLatency: 12940, avgReviveRate: 4.29, avgSmokeRate: 1.18, avgTeamWipes: 0.81 },
+      "D": { avgIsolation: 2.53, avgTradeLatency: 20000, avgReviveRate: 0.00, avgSmokeRate: 0.00, avgTeamWipes: 0.19 }
     };
 
-    // 1. Calculate cumulative stats to determine division 1sts
+    let benchmark = { ...DEFAULT_BENCHMARKS[targetTier] };
+
+    // 4. Supabase DB에서 실시간 글로벌 벤치마크 평균 조회 시도 (스쿼드 모드 기준)
+    try {
+      const { data: dbBench, error: benchError } = await supabase
+        .from("global_benchmarks")
+        .select("isolation_index, trade_latency_ms, revive_rate, smoke_rate, team_wipes")
+        .eq("tier", detectedTier)
+        .in("game_mode", ["squad", "squad-fpp"]);
+
+      if (!benchError && dbBench && dbBench.length > 5) {
+        let isoSum = 0;
+        let latSum = 0;
+        let latCount = 0;
+        let revSum = 0;
+        let smkSum = 0;
+        let wipeSum = 0;
+
+        dbBench.forEach(row => {
+          isoSum += row.isolation_index || 0;
+          const lat = row.trade_latency_ms;
+          if (lat && lat > 0) {
+            latSum += lat;
+            latCount++;
+          }
+          revSum += row.revive_rate || 0;
+          smkSum += row.smoke_rate || 0;
+          wipeSum += Number(row.team_wipes) || 0;
+        });
+
+        benchmark = {
+          avgIsolation: isoSum / dbBench.length,
+          avgTradeLatency: latCount > 0 ? (latSum / latCount) : benchmark.avgTradeLatency,
+          avgReviveRate: revSum / dbBench.length,
+          avgSmokeRate: smkSum / dbBench.length,
+          avgTeamWipes: wipeSum / dbBench.length
+        };
+      } else {
+        // 대표 알파벳 매핑으로 재시도
+        const { data: dbBenchBase, error: benchBaseError } = await supabase
+          .from("global_benchmarks")
+          .select("isolation_index, trade_latency_ms, revive_rate, smoke_rate, team_wipes")
+          .like("tier", `${targetTier}%`)
+          .in("game_mode", ["squad", "squad-fpp"]);
+
+        if (!benchBaseError && dbBenchBase && dbBenchBase.length > 5) {
+          let isoSum = 0;
+          let latSum = 0;
+          let latCount = 0;
+          let revSum = 0;
+          let smkSum = 0;
+          let wipeSum = 0;
+
+          dbBenchBase.forEach(row => {
+            isoSum += row.isolation_index || 0;
+            const lat = row.trade_latency_ms;
+            if (lat && lat > 0) {
+              latSum += lat;
+              latCount++;
+            }
+            revSum += row.revive_rate || 0;
+            smkSum += row.smoke_rate || 0;
+            wipeSum += Number(row.team_wipes) || 0;
+          });
+
+          benchmark = {
+            avgIsolation: isoSum / dbBenchBase.length,
+            avgTradeLatency: latCount > 0 ? (latSum / latCount) : benchmark.avgTradeLatency,
+            avgReviveRate: revSum / dbBenchBase.length,
+            avgSmokeRate: smkSum / dbBenchBase.length,
+            avgTeamWipes: wipeSum / dbBenchBase.length
+          };
+        }
+      }
+    } catch (err) {
+      console.warn("[SQUAD-ANALYZE] Live benchmark query failed, fallback used:", err);
+    }
+
+    // 5. 상대평가 점수화 산정 공식 계산 (중간 70점 기준 가감산)
+    const userReviveRate = (totalRevives / Math.max(1, accumTeammateKnocks)) * 100;
+    const userSmokeRate = (totalSmokeRescues / Math.max(1, accumTeammateKnocks)) * 100;
+    const userWipes = totalTeamWipes / matchCount;
+
+    const formationScore = Math.max(10, Math.min(100, Math.round(70 + (benchmark.avgIsolation - avgIsolation) * 40)));
+    const backupSpeedScore = Math.max(10, Math.min(100, Math.round(70 + (benchmark.avgTradeLatency - avgTradeLatency) / 150)));
+    const survivalCareScore = Math.max(10, Math.min(100, Math.round(70 + (userReviveRate - benchmark.avgReviveRate) * 1.5 + (userSmokeRate - benchmark.avgSmokeRate) * 5)));
+    const focusFireScore = Math.max(10, Math.min(100, Math.round(70 + (avgCoverRate - 0.30) * 100)));
+    const teamWipeScore = Math.max(10, Math.min(100, Math.round(70 + (userWipes - benchmark.avgTeamWipes) * 6)));
+
+    const scores = {
+      formation: formationScore,
+      backupSpeed: backupSpeedScore,
+      survivalCare: survivalCareScore,
+      focusFire: focusFireScore,
+      teamWipe: teamWipeScore
+    };
+
+    // 6. 종합 점수 및 최종 등급 판정
+    const overallScore = Math.round(
+      formationScore * 0.20 +
+      backupSpeedScore * 0.25 +
+      survivalCareScore * 0.15 +
+      focusFireScore * 0.25 +
+      teamWipeScore * 0.15
+    );
+
+    let squadGrade = "B";
+    if (overallScore >= 95) squadGrade = "S+";
+    else if (overallScore >= 90) squadGrade = "S";
+    else if (overallScore >= 87) squadGrade = "A+";
+    else if (overallScore >= 83) squadGrade = "A";
+    else if (overallScore >= 80) squadGrade = "A-";
+    else if (overallScore >= 77) squadGrade = "B+";
+    else if (overallScore >= 73) squadGrade = "B";
+    else if (overallScore >= 70) squadGrade = "B-";
+    else if (overallScore >= 65) squadGrade = "C+";
+    else if (overallScore >= 60) squadGrade = "C";
+    else if (overallScore >= 55) squadGrade = "C-";
+    else if (overallScore >= 50) squadGrade = "D+";
+    else squadGrade = "D";
+
+    // 7. Calculate cumulative stats to determine division 1sts
     const totalStats = { damage: 0, kills: 0, assists: 0, dbnos: 0 };
     squadMembers.forEach(name => {
       const stats = playerAccumStats[name];
@@ -180,7 +328,7 @@ export async function GET(request: Request) {
       totalStats.dbnos += stats.dbnos;
     });
 
-    // 2. Find the teammate with the maximum share in each category
+    // 8. Find the teammate with the maximum share in each category
     let maxDamageName = "";
     let maxDamageValue = -1;
     let maxDbnoName = "";
@@ -292,7 +440,17 @@ export async function GET(request: Request) {
         totalTeamWipes
       },
       scores,
-      roleProfiles
+      squadGrade,
+      roleProfiles,
+      // 팩트 체크용 벤치마크 데이터도 리턴해 줌
+      benchmarkStats: {
+        tier: detectedTier,
+        avgIsolation: Number(benchmark.avgIsolation.toFixed(2)),
+        avgTradeLatency: Math.round(benchmark.avgTradeLatency),
+        avgReviveRate: Number(benchmark.avgReviveRate.toFixed(2)),
+        avgSmokeRate: Number(benchmark.avgSmokeRate.toFixed(2)),
+        avgTeamWipes: Number(benchmark.avgTeamWipes.toFixed(2))
+      }
     });
   } catch (error) {
     console.error("[SQUAD-ANALYZE-ERROR]", error);

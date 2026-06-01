@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense, useRef, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Camera, Copy, Download, ImageDown, Share2, Star, Clock, User, X } from "lucide-react";
+import { Camera, Copy, Download, Share2, Star, Clock, User, X } from "lucide-react";
 import { STORAGE_KEY_RECENT, STORAGE_KEY_FAVORITES } from "../../../lib/pubg-analysis/constants";
 import { trackEvent } from "@/lib/analytics";
 
@@ -57,7 +57,7 @@ function BattleContent() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [shareMessage, setShareMessage] = useState<string | null>(null);
-  const [shareBusy, setShareBusy] = useState<"share" | "copy" | "download" | "image" | "imageCopy" | null>(null);
+  const [shareBusy, setShareBusy] = useState<"share" | "copy" | "download" | "image" | null>(null);
 
   // 로컬 스토리지 데이터 상태
   const [recentSearches, setRecentSearches] = useState<string[]>([]);
@@ -327,39 +327,6 @@ function BattleContent() {
       clearShareMessageLater();
     } catch {
       setShareMessage("이미지 저장에 실패했습니다.");
-    } finally {
-      setShareBusy(null);
-    }
-  };
-
-  const handleCopyImage = async () => {
-    if (!result) return;
-
-    try {
-      setShareBusy("imageCopy");
-      const blob = await createShareImageBlob();
-
-      if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
-        await navigator.clipboard.write([
-          new ClipboardItem({
-            [blob.type]: blob,
-          }),
-        ]);
-        // [Analytics]
-        trackEvent({ name: "share_clicked", params: { method: "image_copy", page: "battle" } });
-        setShareMessage("비교 이미지를 클립보드에 복사했어요.");
-      } else {
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement("a");
-        link.href = url;
-        link.download = `bgms-battle-${result.nick1}-vs-${result.nick2}.png`;
-        link.click();
-        URL.revokeObjectURL(url);
-        setShareMessage("이미지 복사가 지원되지 않아 파일로 저장했어요.");
-      }
-      clearShareMessageLater();
-    } catch {
-      setShareMessage("이미지 복사에 실패했습니다.");
     } finally {
       setShareBusy(null);
     }
@@ -702,7 +669,7 @@ function BattleContent() {
                 )}
               </div>
 
-              <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-3">
+              <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
                 <button
                   onClick={handleShareLink}
                   disabled={shareBusy !== null}
@@ -726,14 +693,6 @@ function BattleContent() {
                 >
                   <Camera size={16} />
                   {shareBusy === "image" ? "생성 중..." : "이미지 공유"}
-                </button>
-                <button
-                  onClick={handleCopyImage}
-                  disabled={shareBusy !== null}
-                  className="h-12 rounded-2xl border border-fuchsia-400/20 bg-fuchsia-500/10 text-fuchsia-200 font-black text-sm flex items-center justify-center gap-2 disabled:opacity-50"
-                >
-                  <ImageDown size={16} />
-                  {shareBusy === "imageCopy" ? "복사 중..." : "이미지 복사"}
                 </button>
                 <button
                   onClick={handleDownloadImage}
