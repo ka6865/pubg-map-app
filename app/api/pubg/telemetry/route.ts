@@ -55,8 +55,8 @@ export async function GET(request: Request) {
     const myInfo = participants.find((p: any) => p.attributes.stats.name === nickname);
     if (!myInfo) throw new Error("플레이어 데이터를 찾을 수 없습니다.");
 
-    // 1-1. 캐시 확인 (DB/Storage) - V26.0 버전 기반 무효화 적용
-    const mapCachePath = `${matchId}_${lowerNickname}_v${TELEMETRY_VERSION}_map_${mode}.json`;
+    // 1-1. 캐시 확인 (DB/Storage) - V26.0 버전 기반 무효화 적용 (매치 ID 기반 단일 캐시)
+    const mapCachePath = `${matchId}_v${TELEMETRY_VERSION}_map_${mode}.json`;
     const fileText = await downloadFromR2(mapCachePath);
 
     if (fileText) {

@@ -30,6 +30,18 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 2, delay = 1000): Pr
   throw lastError;
 }
 
+async function safeJsonParse(res: Response): Promise<any> {
+  const contentType = res.headers.get("content-type") || "";
+  if (!contentType.includes("json")) {
+    throw new Error(`PUBG API 응답이 JSON 형식이 아닙니다 (Content-Type: ${contentType}, Status: ${res.status}). API 호출 한도 초과 또는 일시적인 장애일 수 있습니다.`);
+  }
+  try {
+    return await res.json();
+  } catch (err: any) {
+    throw new Error(`JSON 파싱 실패: ${err.message}`);
+  }
+}
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const nickname = searchParams.get("nickname");
@@ -63,7 +75,7 @@ export async function GET(request: Request) {
   let targetNickname = nickname;
   const { data: cacheData } = await supabase
     .from('pubg_player_cache')
-    .select('nickname')
+    .select('*')
     .eq('lower_nickname', nickname.toLowerCase())
     .eq('platform', platform)
     .maybeSingle();
@@ -138,20 +150,11 @@ export async function GET(request: Request) {
       }
       throw new Error(`PUBG API 에러: ${playerRes.status}`);
     }
-    const playerData = await playerRes.json();
+    const playerData = await safeJsonParse(playerRes);
     const accountId = playerData.data[0].id;
     const actualNickname = playerData.data[0].attributes.name;
 
-    // 4. 캐시 업데이트 (비동기)
-    supabase.from('pubg_player_cache').upsert({
-      id: accountId,
-      platform,
-      nickname: actualNickname,
-      lower_nickname: actualNickname.toLowerCase(),
-      updated_at: new Date().toISOString()
-    }).then(({ error }) => {
-      if (error) console.error('[CACHE UPDATE ERROR]', error);
-    });
+    // (클랜/무기 데이터 갱신 여부를 포함하여 하단에서 통합 캐시 업데이트를 수행합니다.)
 
     const recentMatches = playerData.data[0].relationships.matches.data.map(
       (m: any) => m.id
@@ -167,7 +170,7 @@ export async function GET(request: Request) {
       }
     ));
     trackPubgRateLimit(seasonRes.headers);
-    const seasonData = await seasonRes.json();
+    const seasonData = await safeJsonParse(seasonRes);
     // 🚀 [FIX] pc- 필터링을 완화하여 콘솔(Xbox, PSN) 시즌 데이터도 처리 가능하도록 수정
     const availableSeasons = seasonData.data
       .filter((s: any) => s.id.includes("pc-") || s.id.includes("console-"))
@@ -193,7 +196,7 @@ export async function GET(request: Request) {
           }
         ));
         if (checkRes.ok) {
-          const checkData = await checkRes.json();
+          const checkData = await safeJsonParse(checkRes);
           const stats = checkData.data.attributes.gameModeStats;
           const hasData = Object.values(stats).some((m: any) => m.roundsPlayed > 0);
           
@@ -205,7 +208,7 @@ export async function GET(request: Request) {
                 { headers, next: { revalidate: 60 } }
               );
               if (prevRes.ok) {
-                const prevData = await prevRes.json();
+                const prevData = await safeJsonParse(prevRes);
                 if (Object.values(prevData.data.attributes.gameModeStats).some((m: any) => m.roundsPlayed > 0)) {
                   targetSeasonId = prevId;
                   break;
@@ -222,8 +225,96 @@ export async function GET(request: Request) {
     // Retrieve clanId from player attributes (NOT relationships — PUBG API spec)
     const clanId: string | null = playerData.data[0].attributes?.clanId ?? null;
 
+    // 캐시 유효성 판단 (클랜 24시간, 무기 숙련도 3시간)
+    const CLAN_CACHE_TTL = 24 * 60 * 60 * 1000;
+    const MASTERY_CACHE_TTL = 3 * 60 * 60 * 1000;
+    const now = Date.now();
+
+    const isClanCacheValid = cacheData?.clan_updated_at && (now - new Date(cacheData.clan_updated_at).getTime() < CLAN_CACHE_TTL);
+    const isMasteryCacheValid = cacheData?.mastery_updated_at && (now - new Date(cacheData.mastery_updated_at).getTime() < MASTERY_CACHE_TTL);
+
+    let clanDataPromise: Promise<{ source: string; data: any; updated: boolean }>;
+    if (isClanCacheValid && cacheData?.clan_data) {
+      console.log(`[CLAN CACHE HIT] Using cached clan data for ${targetNickname}`);
+      clanDataPromise = Promise.resolve({ source: 'cache', data: cacheData.clan_data, updated: false });
+    } else {
+      clanDataPromise = clanId
+        ? fetch(`https://api.pubg.com/shards/${platform}/clans/${clanId}`, { headers, next: { revalidate: 86400 }, signal: AbortSignal.timeout(6000) })
+            .then(async (res) => {
+              if (res.ok) {
+                const clanJson = await res.json();
+                const attr = clanJson.data?.attributes ?? {};
+                const parsedClan = {
+                  id: clanId,
+                  name: attr.clanName ?? "",
+                  tag: attr.clanTag ?? "",
+                  level: attr.clanLevel ?? 0,
+                  memberCount: attr.clanMemberCount ?? 0,
+                };
+                return { source: 'api', data: parsedClan, updated: true };
+              }
+              throw new Error(`Clan API Error: ${res.status}`);
+            })
+            .catch((err) => {
+              console.warn(`[CLAN API FAIL] Falling back to DB cache:`, err.message);
+              return { source: 'fallback', data: cacheData?.clan_data || null, updated: false };
+            })
+        : Promise.resolve({ source: 'api', data: null, updated: false });
+    }
+
+    let masteryDataPromise: Promise<{ source: string; data: any; updated: boolean }>;
+    if (isMasteryCacheValid && cacheData?.weapon_mastery_data) {
+      console.log(`[MASTERY CACHE HIT] Using cached mastery data for ${targetNickname}`);
+      masteryDataPromise = Promise.resolve({ source: 'cache', data: cacheData.weapon_mastery_data, updated: false });
+    } else {
+      masteryDataPromise = fetch(
+        `https://api.pubg.com/shards/${platform}/players/${accountId}/weapon_mastery`,
+        { headers, next: { revalidate: 10800 }, signal: AbortSignal.timeout(8000) }
+      )
+        .then(async (res) => {
+          if (res.ok) {
+            const masteryJson = await res.json();
+            const summaries: Record<string, any> = masteryJson.data?.attributes?.weaponSummaries ?? {};
+            const parsedMastery = Object.entries(summaries)
+              .map(([weaponId, data]: [string, any]) => {
+                const official = data.OfficialStatsTotal ?? data.StatsTotal ?? {};
+                const competitive = data.CompetitiveStatsTotal ?? {};
+                return {
+                  weaponId,
+                  level: data.LevelCurrent ?? 0,
+                  xp: data.XPTotal ?? 0,
+                  kills: official.Kills ?? 0,
+                  damagePlayer: official.DamagePlayer ?? 0,
+                  headShots: official.HeadShots ?? 0,
+                  longestDefeat: official.LongestKill ?? official.LongestDefeat ?? 0,
+                  mostDefeatsInAGame: official.MostKillsInAGame ?? official.MostDefeatsInAGame ?? 0,
+                  rankKills: competitive.Kills ?? 0,
+                  rankDamagePlayer: competitive.DamagePlayer ?? 0,
+                  rankHeadShots: competitive.HeadShots ?? 0,
+                  rankLongestDefeat: competitive.LongestKill ?? competitive.LongestDefeat ?? 0,
+                  rankMostDefeatsInAGame: competitive.MostKillsInAGame ?? competitive.MostDefeatsInAGame ?? 0,
+                };
+              })
+              .sort((a, b) => {
+                const totalKillsA = (a.kills ?? 0) + (a.rankKills ?? 0);
+                const totalKillsB = (b.kills ?? 0) + (b.rankKills ?? 0);
+                if (totalKillsB !== totalKillsA) return totalKillsB - totalKillsA;
+                if (b.level !== a.level) return b.level - a.level;
+                return b.xp - a.xp;
+              })
+              .slice(0, 5);
+            return { source: 'api', data: parsedMastery, updated: true };
+          }
+          throw new Error(`Mastery API Error: ${res.status}`);
+        })
+        .catch((err) => {
+          console.warn(`[MASTERY API FAIL] Falling back to DB cache:`, err.message);
+          return { source: 'fallback', data: cacheData?.weapon_mastery_data || [], updated: false };
+        });
+    }
+
     // Parallel fetch: ranked, normal season stats + clan info + weapon mastery
-    const [rankedRes, normalRes, clanRes, masteryRes] = await Promise.all([
+    const [rankedRes, normalRes, clanResult, masteryResult] = await Promise.all([
       withRetry(() => fetch(
         `https://api.pubg.com/shards/${platform}/players/${accountId}/seasons/${targetSeasonId}/ranked`,
         { headers, next: { revalidate: 60 }, signal: AbortSignal.timeout(8000) }
@@ -232,22 +323,15 @@ export async function GET(request: Request) {
         `https://api.pubg.com/shards/${platform}/players/${accountId}/seasons/${targetSeasonId}`,
         { headers, next: { revalidate: 60 }, signal: AbortSignal.timeout(8000) }
       )),
-      // Clan API — only call if clanId exists, otherwise resolve to null immediately
-      clanId
-        ? fetch(`https://api.pubg.com/shards/${platform}/clans/${clanId}`, { headers, next: { revalidate: 3600 }, signal: AbortSignal.timeout(6000) }).catch(() => null)
-        : Promise.resolve(null),
-      // Weapon Mastery API — season-independent lifetime stats
-      fetch(
-        `https://api.pubg.com/shards/${platform}/players/${accountId}/weapon_mastery`,
-        { headers, next: { revalidate: 3600 }, signal: AbortSignal.timeout(8000) }
-      ).catch(() => null),
+      clanDataPromise,
+      masteryDataPromise,
     ]);
     trackPubgRateLimit(rankedRes.headers);
     trackPubgRateLimit(normalRes.headers);
 
     const rankedStats = { solo: null as any, duo: null as any, squad: null as any };
     if (rankedRes.ok) {
-      const rankedData = await rankedRes.json();
+      const rankedData = await safeJsonParse(rankedRes);
       const allStats = rankedData.data.attributes.rankedGameModeStats;
       // ✅ roundsPlayed 기준으로 더 많이 플레이한 모드 선택 (FPP/TPP 혼용 유저 대응)
       const pickMode = (fpp: any, tpp: any) => {
@@ -263,7 +347,7 @@ export async function GET(request: Request) {
 
     const normalStats = { solo: null as any, duo: null as any, squad: null as any };
     if (normalRes.ok) {
-      const normalData = await normalRes.json();
+      const normalData = await safeJsonParse(normalRes);
       const allStats = normalData.data.attributes.gameModeStats;
       // ✅ roundsPlayed 기준으로 더 많이 플레이한 모드 선택 (일반전도 동일 기준 적용)
       const pickMode = (fpp: any, tpp: any) => {
@@ -277,72 +361,33 @@ export async function GET(request: Request) {
       normalStats.squad = pickMode(allStats["squad-fpp"], allStats["squad"]);
     }
 
-    // Parse clan info
-    let clan: any = null;
-    if (clanRes && (clanRes as Response).ok) {
-      try {
-        const clanJson = await (clanRes as Response).json();
-        const attr = clanJson.data?.attributes ?? {};
-        clan = {
-          id: clanId,
-          name: attr.clanName ?? "",
-          tag: attr.clanTag ?? "",
-          level: attr.clanLevel ?? 0,
-          memberCount: attr.clanMemberCount ?? 0,
-        };
-      } catch {
-        clan = null;
-      }
+    const clan = clanResult.data;
+    const weaponMastery = masteryResult.data;
+
+    // 4. 캐시 업데이트 (클랜/무기 정보 통합 upsert)
+    const cacheUpdateData: any = {
+      id: accountId,
+      platform,
+      nickname: actualNickname,
+      lower_nickname: actualNickname.toLowerCase(),
+      updated_at: new Date().toISOString()
+    };
+    
+    const isNewUser = !cacheData;
+    if (clanResult.updated || isNewUser) {
+      cacheUpdateData.clan_data = clanResult.data;
+      cacheUpdateData.clan_updated_at = new Date().toISOString();
+    }
+    if (masteryResult.updated || isNewUser) {
+      cacheUpdateData.weapon_mastery_data = masteryResult.data;
+      cacheUpdateData.mastery_updated_at = new Date().toISOString();
     }
 
-    // Parse weapon mastery — PUBG API v18.2+:
-    // StatsTotal is FROZEN (no longer updated).
-    // Use OfficialStatsTotal for normal mode, CompetitiveStatsTotal for ranked mode.
-    let weaponMastery: any[] = [];
-    if (masteryRes && (masteryRes as Response).ok) {
-      try {
-        const masteryJson = await (masteryRes as Response).json();
-        const summaries: Record<string, any> = masteryJson.data?.attributes?.weaponSummaries ?? {};
-        weaponMastery = Object.entries(summaries)
-          .map(([weaponId, data]: [string, any]) => {
-            const official = data.OfficialStatsTotal ?? data.StatsTotal ?? {};
-            const competitive = data.CompetitiveStatsTotal ?? {};
-            return {
-              weaponId,
-              // LevelCurrent is directly available (up to 100)
-              level: data.LevelCurrent ?? 0,
-              xp: data.XPTotal ?? 0,
-              // Official (normal mode) stats
-              kills: official.Kills ?? 0,
-              damagePlayer: official.DamagePlayer ?? 0,
-              headShots: official.HeadShots ?? 0,
-              longestDefeat: official.LongestKill ?? official.LongestDefeat ?? 0,
-              mostDefeatsInAGame: official.MostKillsInAGame ?? official.MostDefeatsInAGame ?? 0,
-              // Competitive (ranked mode) stats
-              rankKills: competitive.Kills ?? 0,
-              rankDamagePlayer: competitive.DamagePlayer ?? 0,
-              rankHeadShots: competitive.HeadShots ?? 0,
-              rankLongestDefeat: competitive.LongestKill ?? competitive.LongestDefeat ?? 0,
-              rankMostDefeatsInAGame: competitive.MostKillsInAGame ?? competitive.MostDefeatsInAGame ?? 0,
-            };
-          })
-          // Sort: Total Kills DESC (Official + Competitive) -> Level DESC -> XP DESC
-          .sort((a, b) => {
-            const totalKillsA = (a.kills ?? 0) + (a.rankKills ?? 0);
-            const totalKillsB = (b.kills ?? 0) + (b.rankKills ?? 0);
-            if (totalKillsB !== totalKillsA) {
-              return totalKillsB - totalKillsA;
-            }
-            if (b.level !== a.level) {
-              return b.level - a.level;
-            }
-            return b.xp - a.xp;
-          })
-          .slice(0, 5);
-      } catch {
-        weaponMastery = [];
-      }
-    }
+    supabase.from('pubg_player_cache')
+      .upsert(cacheUpdateData, { onConflict: 'id' })
+      .then(({ error }) => {
+        if (error) console.error('[CACHE UPDATE ERROR]', error.message);
+      });
 
     const responseBody = {
       nickname: actualNickname,

@@ -344,14 +344,12 @@ export async function POST(request: Request) {
       cachedMatches.forEach(m => {
         const fullResult = (m.data as any)?.fullResult;
         // [ISR V1.0] RESULT_VERSION 비교 로직 소각 — 캐시 무효화는 revalidateTag가 전담
-        // force=true일 때만 캐시를 건너뛰고 재분석 유도 (사용자 명시적 '새로고침')
-        if (!force && fullResult) {
+        // 완료된 매치는 결과가 고정이므로 새로고침(force) 시에도 DB 캐시를 100% 재사용
+        if (fullResult) {
           const pureId = m.match_id.includes(':') ? m.match_id.split(':').pop()! : m.match_id;
           const normalizedData = { ...fullResult, matchId: pureId };
           cachedMap.set(pureId, normalizedData);
           cachedMap.set(m.match_id, normalizedData);
-        } else if (force) {
-          console.log(`[AI-SUMMARY] Skipping cache for ${m.match_id}: Reason=Force Refresh`);
         }
       });
     }

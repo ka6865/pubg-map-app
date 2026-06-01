@@ -19,6 +19,18 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+async function safeJsonParse(res: Response): Promise<any> {
+  const contentType = res.headers.get("content-type") || "";
+  if (!contentType.includes("json")) {
+    throw new Error(`PUBG API 응답이 JSON 형식이 아닙니다 (Content-Type: ${contentType}, Status: ${res.status}). API 호출 한도 초과 또는 일시적인 장애일 수 있습니다.`);
+  }
+  try {
+    return await res.json();
+  } catch (err: any) {
+    throw new Error(`JSON 파싱 실패: ${err.message}`);
+  }
+}
+
 const MAP_NAMES: Record<string, string> = {
   "Baltic_Main": "에란겔", "Savage_Main": "사녹", "Desert_Main": "미라마",
   "Summerland_Main": "카라킨", "Chimera_Main": "파라모", "Tiger_Main": "태이고",
@@ -107,7 +119,7 @@ export async function GET(request: NextRequest) {
       }
       throw new Error(`PUBG API Match Load Failed: ${res.status}`);
     }
-    const matchData = await res.json();
+    const matchData = await safeJsonParse(res);
     const matchAttr = matchData.data.attributes;
 
     const participants = matchData.included.filter((it: any) => it.type === "participant");
@@ -254,7 +266,7 @@ async function reanalyzeAndSave(
 
     if (needsProcessing) {
       const telRes = await fetch(telemetryAsset.attributes.URL);
-      const rawTel = await telRes.json();
+      const rawTel = await safeJsonParse(telRes);
 
       let posCount = 0;
       telData = rawTel.filter((e: any) => {
@@ -391,16 +403,26 @@ async function reanalyzeAndSave(
   };
 
   const { mapData, ...tacticalResult } = fullResult;
-  const mapCachePath = `${matchId}_${lowerNickname}_v${TELEMETRY_VERSION}_map.json`;
+  const mapCachePath = `${matchId}_v${TELEMETRY_VERSION}_map.json`;
+
+  // 1. 아군 전체 멤버(나 포함)에 대한 Supabase processed_match_telemetry Co-Upsert 생성
+  const dbUpsertPromises = Array.from(teamNames).map((memberNickname) => {
+    const lowerMemberName = normalizeName(memberNickname);
+    const memberTacticalResult = {
+      ...tacticalResult,
+      player_id: lowerMemberName
+    };
+    return supabase.from("processed_match_telemetry").upsert({
+      match_id: matchId,
+      player_id: lowerMemberName,
+      data: { fullResult: memberTacticalResult },
+      updated_at: new Date().toISOString()
+    });
+  });
 
   await Promise.all([
     uploadToR2(mapCachePath, JSON.stringify(mapData), 'application/json'),
-    supabase.from("processed_match_telemetry").upsert({
-      match_id: matchId,
-      player_id: lowerNickname,
-      data: { fullResult: tacticalResult },
-      updated_at: new Date().toISOString()
-    }),
+    ...dbUpsertPromises,
     supabase.from("match_master_telemetry").upsert({
       match_id: matchId,
       map_name: matchAttr.mapId,
