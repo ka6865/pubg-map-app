@@ -40,7 +40,7 @@ export async function POST(request: Request) {
     if (auth.error) return auth.error;
 
     const body = await request.json();
-    const { groupKey, stats, scores, roleProfiles, nickname, coachingStyle = "spicy" } = body;
+    const { groupKey, stats, scores, roleProfiles, nickname, coachingStyle = "spicy", squadGrade = "B", benchmarkStats } = body;
     const isMild = coachingStyle === "mild";
 
     const apiKey = process.env.GOOGLE_GEMINI_API_KEY;
@@ -52,6 +52,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Missing required squad parameters" }, { status: 400 });
     }
 
+    const matchCount = body.matchCount || 1;
+
     // 1. Serialize members performance data for prompt context
     const membersReport = roleProfiles.map((p: any) => {
       return `- Nickname: ${p.name}
@@ -61,11 +63,25 @@ export async function POST(request: Request) {
       `.trim();
     }).join("\n\n");
 
+    const benchmarkContext = benchmarkStats ? `
+[Global Benchmark Context (Tier: ${benchmarkStats.tier})]
+- Global Avg Isolation Index: ${benchmarkStats.avgIsolation} (Our Squad Avg: ${stats.avgIsolation})
+- Global Avg Backup Speed (Trade Latency): ${benchmarkStats.avgTradeLatency}ms (Our Squad Avg: ${stats.avgTradeLatency}ms)
+- Global Avg Revive Success Rate: ${benchmarkStats.avgReviveRate}%
+- Global Avg Smoke Rescue Rate: ${benchmarkStats.avgSmokeRate}%
+- Global Avg Squad Team Wipes: ${benchmarkStats.avgTeamWipes} times (Our Squad Avg: ${(stats.totalTeamWipes / matchCount).toFixed(2)} times)
+
+[Assigned Fixed Squad Grade]
+- Given Grade: ${squadGrade} (You must strictly output this exact grade in the "squadGrade" JSON field. Do NOT change it.)
+` : `
+[Assigned Fixed Squad Grade]
+- Given Grade: ${squadGrade} (You must strictly output this exact grade in the "squadGrade" JSON field. Do NOT change it.)
+`;
     const squadReportSummary = `
 [Squad Teammates]
 - Target Player: ${nickname}
 - Teammates: ${groupKey}
-- Match Count Together: ${body.matchCount || 0} matches
+- Match Count Together: ${matchCount} matches
 
 [Individual Member Role & Stats]
 ${membersReport}
@@ -77,6 +93,7 @@ ${membersReport}
 - Ally Revives: ${stats.totalRevives} times
 - Average Cover Rate: ${stats.avgCoverRate} (Focus fire rate on common targets)
 - Enemy Squad Team Wipes: ${stats.totalTeamWipes} times
+${benchmarkContext}
 
 [Synergy Balance Scores (Scale 10 - 100)]
 - Formation & Cohesion (대열 유지): ${scores.formation}
@@ -98,6 +115,7 @@ Analyze the provided squad synergy report and write a report.
 - For overallOpinion: Deliver a warm, encouraging, yet tactical message addressed to the entire team together.
 - Output MUST be structured in JSON matching the exact schema.
 - Language: Output fields MUST be written in Korean.
+- CRITICAL: You MUST use the exact GIVEN squadGrade ("${squadGrade}") in the "squadGrade" output property. Do NOT change or recalculate the grade yourself.
       `.trim();
     } else {
       systemInstruction = `
@@ -109,6 +127,7 @@ Analyze the provided squad synergy report and write a report.
 - For overallOpinion: Deliver a sharp, critical, yet highly constructive message addressed to the entire team together.
 - Output MUST be structured in JSON matching the exact schema.
 - Language: Output fields MUST be written in Korean.
+- CRITICAL: You MUST use the exact GIVEN squadGrade ("${squadGrade}") in the "squadGrade" output property. Do NOT change or recalculate the grade yourself.
       `.trim();
     }
 
@@ -131,6 +150,7 @@ Analyze the provided squad synergy report and write a report.
 ${squadReportSummary}
 
 Based on the above performance data, write a tactical coaching report according to your designated persona.
+Make sure to reference the GIVEN squadGrade "${squadGrade}" and the compared benchmark statistics to provide concrete, quantitative facts (e.g. "평균 대비 X초 빠름") in your feedback.
     `.trim();
 
     let responseText = "";
@@ -147,7 +167,7 @@ Based on the above performance data, write a tactical coaching report according 
             responseSchema: {
               type: SchemaType.OBJECT,
               properties: {
-                squadGrade: { type: SchemaType.STRING, description: "Squad overall grade: S, A+, A, A-, B+, B, B-, C+, C, C-, D+, D, D-" },
+                squadGrade: { type: SchemaType.STRING, description: `Must be exactly "${squadGrade}" (GIVEN overall grade)` },
                 summary: { type: SchemaType.STRING, description: "One-line tactical summary of this squad" },
                 strength: { type: SchemaType.STRING, description: "Key strength of squad collaboration" },
                 weakness: { type: SchemaType.STRING, description: "Major vulnerability/weakness of the squad" },
@@ -231,17 +251,19 @@ Based on the above performance data, write a tactical coaching report according 
     // Safety fallback data in case of API failure - bifurcated based on coachingStyle
     let isMild = false;
     let roleProfilesFallback: any[] = [];
+    let fallbackGrade = "B";
     try {
       const body = await request.clone().json().catch(() => ({}));
       isMild = body.coachingStyle === "mild";
       roleProfilesFallback = body.roleProfiles || [];
+      fallbackGrade = body.squadGrade || "B";
     } catch (e) {
       // ignore
     }
 
     const fallbackData = isMild
       ? {
-          squadGrade: "B+",
+          squadGrade: fallbackGrade,
           summary: "서로의 부족함을 든든하게 메워주는 따뜻한 연대의 스쿼드",
           strength: "동료가 위기에 처했을 때 빠르게 연막탄을 던져 구출하고 소생시키는 끈끈한 케어 능력이 최고입니다.",
           weakness: "동료를 돕기 위해 무리하게 진입하다가 함께 위기에 빠지는 착한 고립 지수가 약간 보입니다.",
@@ -255,7 +277,7 @@ Based on the above performance data, write a tactical coaching report according 
           overallOpinion: "서로를 구하고 챙겨주려는 마음만큼은 훌륭합니다! 조금만 더 전술적인 침착함을 보완해 안전한 구출 루트를 설계한다면 훨씬 탄탄한 스쿼드가 될 것입니다."
         }
       : {
-          squadGrade: "C+",
+          squadGrade: fallbackGrade,
           summary: "정교한 오더와 백업 부재로 따로 놀다 전멸하는 오합지졸 스쿼드",
           strength: "각자도생하는 피지컬은 나쁘지 않으나, 개인플레이에 의존하여 시너지가 전무합니다.",
           weakness: "아군이 물렸을 때 백업하는 속도가 너무 느리고, 엄폐 연막도 없이 무지성 소생을 시도해 더블 킬을 헌납합니다.",

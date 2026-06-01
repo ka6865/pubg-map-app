@@ -77,7 +77,15 @@ function computeRoleProfiles(squadMembers: string[], playerAccumStats: Record<st
   });
 }
 
-// 3. Synergy Score Normalization Logic
+// 3. Synergy Score Normalization Logic (Relative benchmarking formula)
+interface BenchmarkStats {
+  avgIsolation: number;
+  avgTradeLatency: number;
+  avgReviveRate: number;
+  avgSmokeRate: number;
+  avgTeamWipes: number;
+}
+
 function computeScores(
   avgIsolation: number,
   avgTradeLatency: number,
@@ -85,15 +93,20 @@ function computeScores(
   totalRevives: number,
   avgCoverRate: number,
   totalTeamWipes: number,
-  matchCount: number
+  matchCount: number,
+  accumTeammateKnocks: number,
+  benchmark: BenchmarkStats
 ) {
+  const userReviveRate = (totalRevives / Math.max(1, accumTeammateKnocks)) * 105;
+  const userSmokeRate = (totalSmokeRescues / Math.max(1, accumTeammateKnocks)) * 105;
+  const userWipes = totalTeamWipes / matchCount;
+
   return {
-    formation: Math.max(10, Math.min(100, Math.round(100 - (avgIsolation - 1) * 20))),
-    backupSpeed: Math.max(10, Math.min(100, Math.round(100 - (avgTradeLatency - 2000) / 100))),
-    // Scaled survival care: * 25 / matchCount yields 100 at 4 actions per match
-    survivalCare: Math.min(100, Math.max(20, Math.round((totalSmokeRescues + totalRevives) * 25 / matchCount))),
-    focusFire: Math.min(100, Math.max(20, Math.round(avgCoverRate * 100))),
-    teamWipe: Math.min(100, Math.max(20, Math.round(totalTeamWipes * 10)))
+    formation: Math.max(10, Math.min(100, Math.round(70 + (benchmark.avgIsolation - avgIsolation) * 40))),
+    backupSpeed: Math.max(10, Math.min(100, Math.round(70 + (benchmark.avgTradeLatency - avgTradeLatency) / 150))),
+    survivalCare: Math.max(10, Math.min(100, Math.round(70 + (userReviveRate - benchmark.avgReviveRate) * 1.5 + (userSmokeRate - benchmark.avgSmokeRate) * 5))),
+    focusFire: Math.max(10, Math.min(100, Math.round(70 + (avgCoverRate - 0.30) * 100))),
+    teamWipe: Math.max(10, Math.min(100, Math.round(70 + (userWipes - benchmark.avgTeamWipes) * 6)))
   };
 }
 
@@ -153,21 +166,29 @@ describe("PUBG Squad Synergy Analysis Tests", () => {
     expect(roles.find(r => r.name === "Teammate_D")?.role).toBe("지원가");
   });
 
-  it("should normalize and scale synergy scores into 10 - 100 range correctly", () => {
-    // Top performance scenario (totalTeamWipes is 20 to yield 100 in score)
-    const topScores = computeScores(1.0, 1500, 4, 12, 1.0, 20, 4);
-    expect(topScores.formation).toBe(100);
-    expect(topScores.backupSpeed).toBe(100);
-    expect(topScores.survivalCare).toBe(100);
-    expect(topScores.focusFire).toBe(100);
-    expect(topScores.teamWipe).toBe(100);
+  it("should normalize and scale synergy scores into 10 - 100 range correctly based on benchmarks", () => {
+    const mockBenchmark = {
+      avgIsolation: 1.36,
+      avgTradeLatency: 12143,
+      avgReviveRate: 17.0,
+      avgSmokeRate: 3.58,
+      avgTeamWipes: 5.33
+    };
+
+    // Top performance scenario (low isolation, extremely fast backup, high smoke/revive, high cover, high wipes)
+    const topScores = computeScores(0.8, 1500, 10, 10, 0.70, 40, 4, 10, mockBenchmark);
+    expect(topScores.formation).toBe(92); // 70 + (1.36 - 0.8) * 40 = 70 + 22.4 = 92
+    expect(topScores.backupSpeed).toBe(100); // 70 + (12143 - 1500)/150 = 70 + 70.9 = 140.9 -> 100 (clamp)
+    expect(topScores.survivalCare).toBe(100); // clamped to 100 (clamp)
+    expect(topScores.focusFire).toBe(100); // 70 + (0.70 - 0.30)*100 = 110 -> 100 (clamp)
+    expect(topScores.teamWipe).toBe(98); // 70 + (10 - 5.33)*6 = 70 + 28 = 98
 
     // Extreme poor performance scenario (scores clamped to min boundaries)
-    const poorScores = computeScores(6.0, 15000, 0, 0, 0.05, 0, 4);
-    expect(poorScores.formation).toBe(10);
-    expect(poorScores.backupSpeed).toBe(10);
-    expect(poorScores.survivalCare).toBe(20); // Min bound clamp for survival
-    expect(poorScores.focusFire).toBe(20);
-    expect(poorScores.teamWipe).toBe(20);
+    const poorScores = computeScores(5.0, 30000, 0, 0, 0.05, 0, 4, 10, mockBenchmark);
+    expect(poorScores.formation).toBe(10); // clamped to min 10
+    expect(poorScores.backupSpeed).toBe(10); // clamped to min 10
+    expect(poorScores.survivalCare).toBe(27); // 70 + (0 - 17.0)*1.5 + (0 - 3.58)*5 = 70 - 25.5 - 17.9 = 26.6 -> 27
+    expect(poorScores.focusFire).toBe(45); // 70 + (0.05 - 0.30)*100 = 45
+    expect(poorScores.teamWipe).toBe(38); // 70 + (0 - 5.33)*6 = 70 - 32 = 38
   });
 });

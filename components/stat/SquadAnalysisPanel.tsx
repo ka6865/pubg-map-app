@@ -51,6 +51,15 @@ interface SquadAnalysisData {
     focusFire: number;
     teamWipe: number;
   };
+  squadGrade: string;
+  benchmarkStats?: {
+    tier: string;
+    avgIsolation: number;
+    avgTradeLatency: number;
+    avgReviveRate: number;
+    avgSmokeRate: number;
+    avgTeamWipes: number;
+  };
   roleProfiles: Teammate[];
 }
 
@@ -161,7 +170,9 @@ export default function SquadAnalysisPanel({ nickname, platform }: SquadAnalysis
           scores: analysisData.scores,
           roleProfiles: analysisData.roleProfiles,
           nickname,
-          coachingStyle
+          coachingStyle,
+          squadGrade: analysisData.squadGrade,
+          benchmarkStats: analysisData.benchmarkStats
         })
       });
       const data = await res.json();
@@ -335,7 +346,7 @@ export default function SquadAnalysisPanel({ nickname, platform }: SquadAnalysis
             </div>
  
             {/* Synergy metrics key-value list */}
-            <div className="rounded-lg bg-zinc-950/60 p-3 space-y-2 text-xs border border-zinc-800/40">
+            <div className="rounded-lg bg-zinc-950/60 p-3.5 space-y-3.5 text-xs border border-zinc-800/40">
               {(() => {
                 const normalizedSearchName = nickname.toLowerCase().replace(/[^a-zA-Z0-9_]/g, "");
                 const myProfile = analysisData.roleProfiles.find(
@@ -350,44 +361,90 @@ export default function SquadAnalysisPanel({ nickname, platform }: SquadAnalysis
 
                 return (
                   <>
-                    <div className="flex justify-between border-b border-zinc-900 pb-1.5 mb-1.5">
+                    <div className="flex justify-between border-b border-zinc-900 pb-2">
+                      <span className="text-zinc-400 font-medium flex items-center gap-1.5">
+                        🏆 스쿼드 협동 등급
+                      </span>
+                      <span className="text-purple-400 font-black text-sm tracking-wide bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/15">
+                        {analysisData.squadGrade} Grade
+                      </span>
+                    </div>
+                    <div className="flex justify-between border-b border-zinc-900 pb-2">
                       <span className="text-zinc-400 font-medium">내 평균 딜량 / 킬</span>
                       <span className="text-purple-300 font-bold">
                         {myProfile ? `${Math.round(myProfile.avgDamage)}딜 / ${myProfile.avgKills}킬` : "N/A"}
                       </span>
                     </div>
-                    <div className="flex justify-between border-b border-zinc-900 pb-1.5 mb-1.5">
+                    <div className="flex justify-between border-b border-zinc-900 pb-2">
                       <span className="text-zinc-400 font-medium">스쿼드 평균 딜량 / 킬</span>
                       <span className="text-zinc-100 font-bold">{squadAvgDamage}딜 / {squadAvgKills}킬</span>
                     </div>
                   </>
                 );
               })()}
-              <div className="flex justify-between">
-                <span className="text-zinc-400">평균 대열 이탈율 (고립)</span>
-                <span className={`font-bold ${analysisData.stats.avgIsolation > 3.5 ? "text-red-400" : "text-zinc-100"}`}>
-                  {analysisData.stats.avgIsolation} (평균)
-                </span>
+              
+              <div className="flex flex-col gap-1 border-b border-zinc-900 pb-2">
+                <div className="flex justify-between">
+                  <span className="text-zinc-400 font-medium">평균 대열 이탈율 (고립)</span>
+                  <span className={`font-bold ${analysisData.stats.avgIsolation > 3.5 ? "text-red-400" : "text-zinc-100"}`}>
+                    {analysisData.stats.avgIsolation} (평균)
+                  </span>
+                </div>
+                {analysisData.benchmarkStats && (
+                  <div className="text-[10px] text-zinc-500 text-right -mt-0.5">
+                    {analysisData.benchmarkStats.tier}티어 기준치: {analysisData.benchmarkStats.avgIsolation} (낮을수록 우수)
+                  </div>
+                )}
               </div>
-              <div className="flex justify-between">
-                <span className="text-zinc-400">평균 백업 반응 속도</span>
-                <span className="text-zinc-100 font-bold">
-                  {analysisData.stats.avgTradeLatency > 0
-                    ? `${(analysisData.stats.avgTradeLatency / 1000).toFixed(2)}초`
-                    : "측정 불가"}
-                </span>
+
+              <div className="flex flex-col gap-1 border-b border-zinc-900 pb-2">
+                <div className="flex justify-between">
+                  <span className="text-zinc-400 font-medium">평균 백업 반응 속도 (트레이드)</span>
+                  <span className="text-zinc-100 font-bold">
+                    {analysisData.stats.avgTradeLatency > 0
+                      ? `${(analysisData.stats.avgTradeLatency / 1000).toFixed(2)}초`
+                      : "측정 불가"}
+                  </span>
+                </div>
+                {analysisData.benchmarkStats && (
+                  <div className="text-[10px] text-zinc-500 text-right -mt-0.5">
+                    {analysisData.benchmarkStats.tier}티어 기준치: {(analysisData.benchmarkStats.avgTradeLatency / 1000).toFixed(2)}초 (빠를수록 우수)
+                  </div>
+                )}
               </div>
-              <div className="flex justify-between">
-                <span className="text-zinc-400">누적 세이브 (연막/소생)</span>
-                <span className="text-zinc-100 font-bold">{analysisData.stats.totalSmokeRescues}회 / {analysisData.stats.totalRevives}회</span>
+
+              <div className="flex flex-col gap-1 border-b border-zinc-900 pb-2">
+                <div className="flex justify-between">
+                  <span className="text-zinc-400 font-medium">누적 세이브 (연막/소생)</span>
+                  <span className="text-zinc-100 font-bold">{analysisData.stats.totalSmokeRescues}회 / {analysisData.stats.totalRevives}회</span>
+                </div>
+                {analysisData.benchmarkStats && (
+                  <div className="text-[10px] text-zinc-500 text-right -mt-0.5">
+                    {analysisData.benchmarkStats.tier}티어 기준치 (경기당 평균): 부활 {analysisData.benchmarkStats.avgReviveRate}% / 연막 {analysisData.benchmarkStats.avgSmokeRate}%
+                  </div>
+                )}
               </div>
-              <div className="flex justify-between">
-                <span className="text-zinc-400">평균 아군 집중사격 커버율</span>
-                <span className="text-zinc-100 font-bold">{Math.round(analysisData.stats.avgCoverRate * 100)}%</span>
+
+              <div className="flex flex-col gap-1 border-b border-zinc-900 pb-2">
+                <div className="flex justify-between">
+                  <span className="text-zinc-400 font-medium">평균 아군 집중사격 커버율</span>
+                  <span className="text-zinc-100 font-bold">{Math.round(analysisData.stats.avgCoverRate * 100)}%</span>
+                </div>
+                <div className="text-[10px] text-zinc-500 text-right -mt-0.5">
+                  글로벌 권장 기준치: 30% 이상
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span className="text-zinc-400">적 스쿼드 전멸 유발 수</span>
-                <span className="text-purple-300 font-bold">{analysisData.stats.totalTeamWipes}회 전멸</span>
+
+              <div className="flex flex-col gap-1">
+                <div className="flex justify-between">
+                  <span className="text-zinc-400 font-medium">적 스쿼드 전멸 유발 수</span>
+                  <span className="text-purple-300 font-bold">{analysisData.stats.totalTeamWipes}회 전멸</span>
+                </div>
+                {analysisData.benchmarkStats && (
+                  <div className="text-[10px] text-zinc-500 text-right -mt-0.5">
+                    {analysisData.benchmarkStats.tier}티어 기준치: 경기당 평균 {analysisData.benchmarkStats.avgTeamWipes}회
+                  </div>
+                )}
               </div>
             </div>
           </div>
