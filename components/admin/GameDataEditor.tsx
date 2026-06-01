@@ -234,7 +234,7 @@ export default function GameDataEditor() {
     } catch (err: any) {
       toast.error("상자 로딩 오류: " + err.message);
     }
-  }, []);
+  }, [setSelectedCrateDetail]);
 
   useEffect(() => {
     const checkAdmin = async () => {

@@ -836,7 +836,7 @@ export function DetailModal({
                       return sortedItems.map((item, idx) => {
                         let displayProb = "0.00%";
                         if (item.probability !== undefined) {
-                          let multiplier = 100;
+                          const multiplier = 100;
                           displayProb = `${(item.probability * multiplier).toFixed(4)}%`;
                         }
 
