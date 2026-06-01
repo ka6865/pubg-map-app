@@ -38,7 +38,24 @@ export type BgmsEvent =
       name: "share_clicked";
       params: {
         method: "link_share" | "link_copy" | "image_share" | "image_copy" | "image_download";
-        page: "stats" | "battle";
+        page: "stats" | "battle" | "squad";
+      };
+    }
+  | {
+      name: "squad_synergy_completed";
+      params: {
+        nickname: string;
+        platform: string;
+        match_count: number;
+        members_count: number;
+      };
+    }
+  | {
+      name: "ai_squad_coaching_requested";
+      params: {
+        nickname: string;
+        coaching_style: "spicy" | "mild";
+        squad_grade: string;
       };
     }
   | {

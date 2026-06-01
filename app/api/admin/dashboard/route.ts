@@ -32,6 +32,57 @@ export async function GET(request: Request) {
   }
 
   try {
+    // 0. 📊 스쿼드 및 API 절약 지표 연산 (안전장치 추가)
+    let totalMatches = 0;
+    let squadMatches = 0;
+    let estimatedSquadGroups = 0;
+
+    try {
+      const { count: totalCount, error: totalErr } = await adminContext.supabaseAdmin
+        .from("processed_match_telemetry")
+        .select("match_id", { count: "exact", head: true });
+      if (!totalErr && totalCount !== null) {
+        totalMatches = totalCount;
+      }
+
+      const { count: squadCount, error: squadErr } = await adminContext.supabaseAdmin
+        .from("processed_match_telemetry")
+        .select("match_id", { count: "exact", head: true })
+        .filter("data->fullResult->>gameMode", "ilike", "%squad%");
+      if (!squadErr && squadCount !== null) {
+        squadMatches = squadCount;
+      }
+
+      const { data: recentMatches, error: recentErr } = await adminContext.supabaseAdmin
+        .from("processed_match_telemetry")
+        .select("data")
+        .order("updated_at", { ascending: false })
+        .limit(100);
+
+      if (!recentErr && recentMatches) {
+        const squadGroups = new Set<string>();
+        recentMatches.forEach(m => {
+          const fullResult = (m.data as any)?.fullResult;
+          if (!fullResult) return;
+          const mode = fullResult.gameMode || "";
+          if (!mode.includes("squad")) return;
+
+          const team = fullResult.team || [];
+          const memberNames = team
+            .map((t: any) => t.name)
+            .filter(Boolean)
+            .sort((a: string, b: string) => a.localeCompare(b));
+
+          if (memberNames.length > 1) {
+            squadGroups.add(memberNames.join(", "));
+          }
+        });
+        estimatedSquadGroups = squadGroups.size;
+      }
+    } catch (squadStatsErr) {
+      console.error("[Dashboard API] Squad statistics calculation error:", squadStatsErr);
+    }
+
     // 1. 📍 맵 마커 제보 승인 대기 건수
     const { count: pendingCount, error: pendingErr } = await adminContext.supabaseAdmin
       .from("pending_markers")
@@ -110,7 +161,14 @@ export async function GET(request: Request) {
         resetAt: pubgStatus.reset_at,
         updatedAt: pubgStatus.updated_at
       } : null,
-      aiUsage: aiUsageChartData
+      aiUsage: aiUsageChartData,
+      squadStats: {
+        totalMatches,
+        squadMatches,
+        estimatedSquadGroups,
+        savedApiCalls: totalMatches * 2,
+        savedBandwidthBytes: r2TotalSize
+      }
     });
   } catch (error: any) {
     console.error("Dashboard API error:", error);
