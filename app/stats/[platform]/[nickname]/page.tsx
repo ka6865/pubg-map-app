@@ -7,35 +7,74 @@ interface Props {
     platform: string;
     nickname: string;
   }>;
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>;
 }
 
-export async function generateMetadata({ params }: Props): Promise<Metadata> {
+export async function generateMetadata({ params, searchParams }: Props): Promise<Metadata> {
   const { platform, nickname } = await params;
+  const sParams = await searchParams;
+  
+  const tab = typeof sParams.tab === "string" ? sParams.tab : undefined;
+  const groupKey = typeof sParams.groupKey === "string" ? sParams.groupKey : undefined;
+  
   const decodedNickname = decodeURIComponent(nickname);
   const seo = await getTabSeo("Stats");
   
   const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://bgms.kr";
-  const canonicalUrl = `${baseUrl}/stats/${platform}/${nickname}`;
+  let canonicalUrl = `${baseUrl}/stats/${platform}/${nickname}`;
+  
+  if (tab) {
+    canonicalUrl += `?tab=${encodeURIComponent(tab)}`;
+    if (groupKey) {
+      canonicalUrl += `&groupKey=${encodeURIComponent(groupKey)}`;
+    }
+  }
+
+  // tab === "squad" 일 경우 동적 스쿼드 OG 이미지 주입
+  const isSquad = tab === "squad";
+  const ogImages = isSquad
+    ? [
+        {
+          url: `${baseUrl}/api/og/squad?nickname=${encodeURIComponent(decodedNickname)}&platform=${platform}${
+            groupKey ? `&groupKey=${encodeURIComponent(groupKey)}` : ""
+          }`,
+        },
+      ]
+    : undefined;
 
   return {
     ...seo,
-    title: `${decodedNickname} 전적 분석 | BGMS`,
-    description: `${decodedNickname}님의 PUBG AI 정밀 전술 분석 리포트를 확인하세요. KDA, 평균 딜량, 생존 시간, 전술 티어를 BGMS에서 분석합니다.`,
+    title: isSquad
+      ? `${decodedNickname} AI 스쿼드 분석 리포트 | BGMS`
+      : `${decodedNickname} 전적 분석 | BGMS`,
+    description: isSquad
+      ? `${decodedNickname}님의 PUBG AI 스쿼드 협동 분석 리포트를 확인하세요. 스쿼드 밸런스 등급, 백업 시간, 대열 유지율 및 Gemini tactical 코칭을 확인하세요.`
+      : `${decodedNickname}님의 PUBG AI 정밀 전술 분석 리포트를 확인하세요. KDA, 평균 딜량, 생존 시간, 전술 티어를 BGMS에서 분석합니다.`,
     alternates: {
       canonical: canonicalUrl,
     },
     openGraph: {
-      title: `${decodedNickname} 전적 분석 | BGMS`,
-      description: `${decodedNickname}님의 PUBG AI 전술 분석을 확인하세요.`,
+      title: isSquad
+        ? `${decodedNickname} AI 스쿼드 분석 리포트 | BGMS`
+        : `${decodedNickname} 전적 분석 | BGMS`,
+      description: isSquad
+        ? `${decodedNickname}님의 PUBG AI 스쿼드 협동 분석 리포트`
+        : `${decodedNickname}님의 PUBG AI 전술 분석을 확인하세요.`,
       url: canonicalUrl,
       siteName: "BGMS",
+      images: ogImages,
       locale: "ko_KR",
       type: "profile",
     },
     twitter: {
       card: "summary_large_image",
-      title: `${decodedNickname} 전적 분석 | BGMS`,
-      description: `${decodedNickname}님의 PUBG AI 전술 분석 — bgms.kr`,
+      title: isSquad
+        ? `${decodedNickname} AI 스쿼드 분석 리포트 | BGMS`
+        : `${decodedNickname} 전적 분석 | BGMS`,
+      description: isSquad
+        ? `${decodedNickname}님의 PUBG AI 스쿼드 협동 분석 리포트 — bgms.kr`
+        : `${decodedNickname}님의 PUBG AI 전술 분석 — bgms.kr`,
+      images: ogImages ? ogImages.map((img) => img.url) : undefined,
     },
   };
 }

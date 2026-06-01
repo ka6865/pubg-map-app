@@ -53,6 +53,9 @@ export async function POST(request: Request) {
     }
 
     const matchCount = body.matchCount || 1;
+    const myTradeLatencySec = stats.avgTradeLatency > 0 ? (stats.avgTradeLatency / 1000).toFixed(2) : "0.0";
+    const benchmarkTradeLatencySec = benchmarkStats?.avgTradeLatency ? (benchmarkStats.avgTradeLatency / 1000).toFixed(2) : "0.0";
+    const coverRatePercent = Math.round(stats.avgCoverRate * 100);
 
     // 1. Serialize members performance data for prompt context
     const membersReport = roleProfiles.map((p: any) => {
@@ -65,11 +68,11 @@ export async function POST(request: Request) {
 
     const benchmarkContext = benchmarkStats ? `
 [Global Benchmark Context (Tier: ${benchmarkStats.tier})]
-- Global Avg Isolation Index: ${benchmarkStats.avgIsolation} (Our Squad Avg: ${stats.avgIsolation})
-- Global Avg Backup Speed (Trade Latency): ${benchmarkStats.avgTradeLatency}ms (Our Squad Avg: ${stats.avgTradeLatency}ms)
-- Global Avg Revive Success Rate: ${benchmarkStats.avgReviveRate}%
-- Global Avg Smoke Rescue Rate: ${benchmarkStats.avgSmokeRate}%
-- Global Avg Squad Team Wipes: ${benchmarkStats.avgTeamWipes} times (Our Squad Avg: ${(stats.totalTeamWipes / matchCount).toFixed(2)} times)
+- Global Avg Isolation Index (대열 이탈 고립도): ${benchmarkStats.avgIsolation} (Our Squad Avg: ${stats.avgIsolation})
+- Global Avg Backup Speed (백업 반응 속도): ${benchmarkTradeLatencySec}초 (Our Squad Avg: ${myTradeLatencySec}초)
+- Global Avg Revive Success Rate (부활 성공률): ${benchmarkStats.avgReviveRate}%
+- Global Avg Smoke Rescue Rate (연막탄 구출 성공률): ${benchmarkStats.avgSmokeRate}%
+- Global Avg Squad Team Wipes (경기당 적 전멸 기여): ${benchmarkStats.avgTeamWipes}회 (Our Squad Avg: ${(stats.totalTeamWipes / matchCount).toFixed(2)}회)
 
 [Assigned Fixed Squad Grade]
 - Given Grade: ${squadGrade} (You must strictly output this exact grade in the "squadGrade" JSON field. Do NOT change it.)
@@ -87,12 +90,12 @@ export async function POST(request: Request) {
 ${membersReport}
 
 [Squad Collaboration Performance Average]
-- Average Isolation Index: ${stats.avgIsolation} (Lower is better. 1.0 means tight group, >3.5 indicates high risk of isolated death)
-- Backup Speed (Trade Latency): ${stats.avgTradeLatency}ms (Time taken to trade-kill after a teammate is knocked down)
-- Smoke Rescues: ${stats.totalSmokeRescues} times
-- Ally Revives: ${stats.totalRevives} times
-- Average Cover Rate: ${stats.avgCoverRate} (Focus fire rate on common targets)
-- Enemy Squad Team Wipes: ${stats.totalTeamWipes} times
+- Average Isolation Index (대열 이탈 고립도): ${stats.avgIsolation} (낮을수록 좋음. 1.0은 대열 유지 우수, 3.5 이상은 높은 고립 데스 위험)
+- Backup Speed (아군 기절 후 백업 속도): ${myTradeLatencySec}초 (평균적으로 아군이 누운 뒤 복수 킬을 내는 데 걸린 시간)
+- Smoke Rescues (연막 구출 세이브 성공 수): ${stats.totalSmokeRescues}회 (단순히 연막탄을 던진 횟수가 아니라, 기절한 팀원 주변에 연막을 쳐서 안전을 도모하고 소생까지 성공적으로 완료한 '연막 세이브' 횟수)
+- Ally Revives (아군 부활 성공 수): ${stats.totalRevives}회
+- Average Cover Rate (평균 아군 집중사격 커버율): ${coverRatePercent}% (동시 교전 참여 지표)
+- Enemy Squad Team Wipes (적 스쿼드 전멸 유발 수): ${stats.totalTeamWipes}회
 ${benchmarkContext}
 
 [Synergy Balance Scores (Scale 10 - 100)]
@@ -119,15 +122,27 @@ Analyze the provided squad synergy report and write a report.
       `.trim();
     } else {
       systemInstruction = `
-You are "SPICY BOMBER", a brutal, fact-based, and aggressive PUBG tactical analyst.
-Analyze the provided squad synergy report and write a report.
-- Identify weak spots, slow backup speeds, high isolation rates, and lack of team-play.
-- Give a very honest, harsh, yet highly practical advice.
-- For memberFeedbacks: You must generate detailed individual feedback (praise, fault, advice) for EACH and EVERY member listed in roleProfiles.
-- For overallOpinion: Deliver a sharp, critical, yet highly constructive message addressed to the entire team together.
-- Output MUST be structured in JSON matching the exact schema.
-- Language: Output fields MUST be written in Korean.
-- CRITICAL: You MUST use the exact GIVEN squadGrade ("${squadGrade}") in the "squadGrade" output property. Do NOT change or recalculate the grade yourself.
+You are "SPICY BOMBER", a brutal, fact-based, and highly sarcastic PUBG tactical analyst.
+Analyze the provided squad synergy report and write a detailed roast and analysis.
+
+[Rules for roasting & tone]:
+1. NEVER use explicit vulgar swear words (e.g. "병신", "개새끼", "시발") directly, to prevent safety filters from blocking the response.
+2. Maximize mental damage using PUBG community terms and sarcastic metaphors:
+   - "킬로그 배달부" (Killfeed delivery), "걸어다니는 파밍 상자/보급 상자" (Walking lootbox)
+   - "뇌 빼고 배그함?" (Brainless play), "손가락 압수 마렵다" (Confiscating fingers)
+   - "에임 실화냐?" (Terrible aim), "어휴 그저 샷발 원툴" (All aim no brain)
+   - "연막탄 아껴서 국 끓여 먹을 거냐" (Roast if smoke rescue/revive is very low or 0. Make sure to clarify that this represents "연막 구출 세이브 성공 수(연막치고 아군을 살린 횟수)"가 0회라는 의미임을 유저가 알도록 언급할 것.)
+   - "혼자 정글북 찍으며 각개전투함" (Roast if isolation index is high, e.g. > 3.0)
+3. Highlight metrics aggressively using clear, human-readable units (e.g. "X.X초", "X회", "X%"):
+   - NEVER output raw millisecond values like "22958ms" or "12000ms" in the response. Always divide by 1000 and round to convert them to seconds like "23.0초" or "12.0초".
+   - If trade latency is slow: "아군 기절하고 장례식 다 치른 뒤에야 늦장 백업 오실 겁니까? 평균 대비 너무 느립니다."
+   - If isolation rate is high: "4인 스쿼드를 하는 게 아니라 1인 솔로 4개를 돌리는 오합지졸 상태입니다."
+4. Deliver extremely sharp, critical, yet constructive, fact-based overall opinion and feedback.
+5. For memberFeedbacks: You must generate detailed individual feedback (praise, fault, advice) for EACH and EVERY member listed in roleProfiles. Don't be soft. Roast them based on their relative stat shares (e.g. high kill share but zero assist/revive).
+6. For overallOpinion: Deliver a sharp, critical, yet highly constructive message addressed to the entire team together.
+7. Output MUST be structured in JSON matching the exact schema.
+8. Language: Output fields MUST be written in Korean.
+9. CRITICAL: You MUST use the exact GIVEN squadGrade ("${squadGrade}") in the "squadGrade" output property. Do NOT change or recalculate the grade yourself.
       `.trim();
     }
 
