@@ -8,6 +8,7 @@ export async function POST(request: Request) {
     // 🔒 [보안] JWT 인증 가드 — 로그인된 사용자만 AI 분석 실행 허용 (Gemini API 비용 방어)
     const auth = await withAuthGuard();
     if (auth.error) return auth.error;
+    const { supabaseAdmin: supabase } = auth;
 
     const body = await request.json();
     const { matchData, nickname, coachingStyle = "spicy" } = body;
@@ -16,6 +17,35 @@ export async function POST(request: Request) {
     const apiKey = process.env.GOOGLE_GEMINI_API_KEY;
     if (!apiKey) return NextResponse.json({ error: "No API Key" }, { status: 500 });
     if (!matchData || !nickname) return NextResponse.json({ error: "Missing data" }, { status: 400 });
+
+    const matchId = matchData.matchId || matchData.match_id || matchData.id;
+    if (!matchId) return NextResponse.json({ error: "Missing matchId" }, { status: 400 });
+
+    // 1. DB Cache Lookup
+    try {
+      const { data: cached, error: cacheErr } = await supabase
+        .from("match_ai_coaching_cache")
+        .select("ai_result")
+        .eq("match_id", matchId)
+        .eq("coaching_style", coachingStyle)
+        .maybeSingle();
+
+      if (!cacheErr && cached && cached.ai_result) {
+        console.log(`[AI-ANALYZE] Cache Hit! Restored match AI coaching for match: ${matchId}`);
+        const cachedData = cached.ai_result as any;
+        const encoder = new TextEncoder();
+        const stream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode(JSON.stringify({ type: "chunk", data: cachedData.text }) + "\n"));
+            controller.enqueue(encoder.encode(JSON.stringify({ type: "done" }) + "\n"));
+            controller.close();
+          }
+        });
+        return new Response(stream, { headers: { "Content-Type": "application/x-ndjson", "Cache-Control": "no-cache" } });
+      }
+    } catch (dbErr) {
+      console.warn("[AI-ANALYZE] Cache lookup failed:", dbErr);
+    }
 
     const { 
       stats, mapName, gameMode, 
@@ -144,13 +174,16 @@ export async function POST(request: Request) {
     const stream = new ReadableStream({
       async start(controller) {
         try {
+          let aiResponseText = "";
           if (streamResult) {
             for await (const chunk of streamResult.stream) {
               if (request.signal.aborted) {
                 console.log("[AI-STOP] Client aborted ai-analyze request, stopping Gemini stream.");
                 break;
               }
-              controller.enqueue(encoder.encode(JSON.stringify({ type: "chunk", data: chunk.text() }) + "\n")); 
+              const chunkText = chunk.text();
+              aiResponseText += chunkText;
+              controller.enqueue(encoder.encode(JSON.stringify({ type: "chunk", data: chunkText }) + "\n")); 
             }
 
             // 비동기로 사용량 메타데이터 획득 후 로깅
@@ -167,6 +200,7 @@ export async function POST(request: Request) {
             }).catch((err: any) => console.error("[AI-ANALYZE] Usage fetch error:", err));
 
           } else if (fallbackText) { 
+            aiResponseText = fallbackText;
             controller.enqueue(encoder.encode(JSON.stringify({ type: "chunk", data: fallbackText }) + "\n")); 
             
             if (nonStreamRes?.response?.usageMetadata) {
@@ -179,6 +213,24 @@ export async function POST(request: Request) {
               );
             }
           }
+
+          // 3. Write to DB Cache
+          if (aiResponseText) {
+            try {
+              const { error: saveErr } = await supabase
+                .from("match_ai_coaching_cache")
+                .insert({
+                  match_id: matchId,
+                  coaching_style: coachingStyle,
+                  ai_result: { text: aiResponseText }
+                });
+              if (saveErr) throw saveErr;
+              console.log(`[AI-ANALYZE] Cache Saved! Successfully stored AI coaching cache for match: ${matchId}`);
+            } catch (saveErr: any) {
+              console.warn("[AI-ANALYZE] Failed to write cache to DB:", saveErr.message || saveErr);
+            }
+          }
+
           controller.enqueue(encoder.encode(JSON.stringify({ type: "done" }) + "\n"));
         } catch (e) { controller.error(e); } finally { controller.close(); }
       }
