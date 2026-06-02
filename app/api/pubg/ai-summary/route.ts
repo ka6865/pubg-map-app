@@ -8,6 +8,7 @@ import { adaptBenchmark } from "@/lib/pubg-analysis/benchmarkAdapter";
 import { jsonrepair } from "jsonrepair";
 import { withAuthGuard } from "@/utils/supabase/guard";
 import { trackAiUsage } from "@/lib/pubg-analysis/aiUsageTracker";
+import crypto from "crypto";
 
 export const maxDuration = 60;
 
@@ -315,6 +316,47 @@ export async function POST(request: Request) {
     const lowerNickname = normalizeName(nickname);
     console.log(`[AI-SUMMARY-SYNC-CHECK] Original: ${nickname}, Normalized: ${lowerNickname}`);
 
+    if (!matchIds || matchIds.length === 0) return NextResponse.json({ error: "No matches" }, { status: 400 });
+
+    // 1. Compute matchIdsHash
+    const normalizedMatchIds = matchIds
+      .map((id: string) => (id.includes(":") ? id.split(":").pop()! : id))
+      .filter(Boolean);
+    const matchIdsHash = crypto
+      .createHash("sha256")
+      .update(normalizedMatchIds.sort().join(","))
+      .digest("hex");
+
+    // 2. DB Cache Lookup
+    try {
+      const { data: cached, error: cacheErr } = await supabase
+        .from("player_ai_summary_cache")
+        .select("ai_result")
+        .eq("player_id", lowerNickname)
+        .eq("match_ids_hash", matchIdsHash)
+        .maybeSingle();
+
+      if (!cacheErr && cached && cached.ai_result) {
+        console.log(`[AI-SUMMARY] Cache Hit! Restored 10-match AI summary for player: ${lowerNickname}`);
+        const cachedData = cached.ai_result as any;
+        const encoder = new TextEncoder();
+        const stream = new ReadableStream({
+          start(controller) {
+            controller.enqueue(encoder.encode(JSON.stringify({ type: "visuals", data: cachedData.visuals }) + "\n"));
+            controller.enqueue(encoder.encode(JSON.stringify({ type: "final", data: cachedData.final }) + "\n"));
+            controller.enqueue(encoder.encode(JSON.stringify({ type: "done", valid: true }) + "\n"));
+            controller.close();
+          }
+        });
+        return new Response(stream, { headers: { "Content-Type": "application/x-ndjson", "Cache-Control": "no-cache" } });
+      }
+    } catch (dbErr) {
+      console.warn("[AI-SUMMARY] Cache lookup failed:", dbErr);
+    }
+
+    const geminiApiKey = process.env.GOOGLE_GEMINI_API_KEY;
+    if (!geminiApiKey) return NextResponse.json({ error: "No API Key" }, { status: 500 });
+
     const { data: userBenchmarks } = await supabase
       .from("global_benchmarks")
       .select("*")
@@ -323,11 +365,6 @@ export async function POST(request: Request) {
       .limit(50);
 
     console.log(`[DB-Check] Found ${userBenchmarks?.length || 0} benchmarks for ${lowerNickname}`);
-
-    if (!matchIds || matchIds.length === 0) return NextResponse.json({ error: "No matches" }, { status: 400 });
-
-    const geminiApiKey = process.env.GOOGLE_GEMINI_API_KEY;
-    if (!geminiApiKey) return NextResponse.json({ error: "No API Key" }, { status: 500 });
 
     // [V45.3] 10개의 유효한 분석 데이터를 확보하기 위해 조회 범위를 25개로 확장 (이벤트/아케이드 필터링 대비)
     const targetMatchIds = matchIds.slice(0, 25);
@@ -871,6 +908,24 @@ export async function POST(request: Request) {
               type: "final",
               data: validJsonString
             }) + "\n"));
+
+            // 3. Write to DB Cache
+            try {
+              const { error: saveErr } = await supabase
+                .from("player_ai_summary_cache")
+                .insert({
+                  player_id: lowerNickname,
+                  match_ids_hash: matchIdsHash,
+                  ai_result: {
+                    visuals: precomputedVisuals,
+                    final: validJsonString
+                  }
+                });
+              if (saveErr) throw saveErr;
+              console.log(`[AI-SUMMARY] Cache Saved! Successfully stored AI summary cache for player: ${lowerNickname}`);
+            } catch (saveErr: any) {
+              console.warn("[AI-SUMMARY] Failed to write cache to DB:", saveErr.message || saveErr);
+            }
 
             // 3. 완료 신호
             controller.enqueue(encoder.encode(JSON.stringify({ type: "done", valid: true }) + "\n"));

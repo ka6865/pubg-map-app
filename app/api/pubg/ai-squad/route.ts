@@ -33,11 +33,15 @@ function extractValidJson(text: string): string {
   }
 }
 
+import crypto from "crypto";
+import { getSquadAnalysisData } from "@/app/api/pubg/squad-analyze/route";
+
 export async function POST(request: Request) {
   try {
     // 🔒 [Security] JWT Authentication Guard - Only logged-in users can call AI coaching
     const auth = await withAuthGuard();
     if (auth.error) return auth.error;
+    const { supabaseAdmin: supabase } = auth;
 
     const body = await request.json();
     const { groupKey, stats, scores, roleProfiles, nickname, coachingStyle = "spicy", squadGrade = "B", benchmarkStats } = body;
@@ -50,6 +54,41 @@ export async function POST(request: Request) {
 
     if (!groupKey || !stats || !scores || !roleProfiles) {
       return NextResponse.json({ error: "Missing required squad parameters" }, { status: 400 });
+    }
+
+    const platform = body.platform || "steam"; // Fallback to steam
+
+    // 1. Calculate matchIdsHash based on the current squad matches in DB
+    let matchIdsHash = "legacy-squad-hash";
+    try {
+      const squadData = await getSquadAnalysisData(nickname, platform, groupKey);
+      if (squadData && "matchesSummary" in squadData && Array.isArray(squadData.matchesSummary)) {
+        const matchIds = squadData.matchesSummary.map((m: any) => m.matchId || m.match_id).filter(Boolean);
+        matchIdsHash = crypto
+          .createHash("sha256")
+          .update(matchIds.sort().join(","))
+          .digest("hex");
+      }
+    } catch (hashErr) {
+      console.warn("[AI-SQUAD] Failed to compute matchIdsHash, falling back to static:", hashErr);
+    }
+
+    // 2. Perform DB Cache Lookup
+    try {
+      const { data: cached, error: cacheErr } = await supabase
+        .from("squad_ai_coaching_cache")
+        .select("ai_result")
+        .eq("group_key", groupKey)
+        .eq("match_ids_hash", matchIdsHash)
+        .eq("coaching_style", coachingStyle)
+        .maybeSingle();
+
+      if (!cacheErr && cached && cached.ai_result) {
+        console.log(`[AI-SQUAD] Cache Hit! Restored squad AI coaching for group: ${groupKey}`);
+        return NextResponse.json(cached.ai_result);
+      }
+    } catch (dbErr) {
+      console.warn("[AI-SQUAD] Cache lookup failed:", dbErr);
     }
 
     const matchCount = body.matchCount || 1;
@@ -239,6 +278,22 @@ Make sure to reference the GIVEN squadGrade "${squadGrade}" and the compared ben
 
     const validJsonString = extractValidJson(responseText);
     const resultJson = JSON.parse(validJsonString);
+
+    // 3. Write to DB Cache
+    try {
+      const { error: saveErr } = await supabase
+        .from("squad_ai_coaching_cache")
+        .insert({
+          group_key: groupKey,
+          match_ids_hash: matchIdsHash,
+          coaching_style: coachingStyle,
+          ai_result: resultJson
+        });
+      if (saveErr) throw saveErr;
+      console.log(`[AI-SQUAD] Cache Saved! Successfully stored AI coaching cache for group: ${groupKey}`);
+    } catch (saveErr: any) {
+      console.warn("[AI-SQUAD] Failed to write cache to DB:", saveErr.message || saveErr);
+    }
 
     // Track usage stats
     if (selectedModelName && usageMetadata) {
