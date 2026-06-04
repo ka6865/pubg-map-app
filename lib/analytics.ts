@@ -124,14 +124,16 @@ export type BgmsEvent =
 
 // ─── 발송 함수 ──────────────────────────────────────────────────────────────
 
-/**
- * GA4에 커스텀 이벤트 발송.
- * 클라이언트 전용 — SSR 환경에서는 자동 skip.
- */
 export function trackEvent(event: BgmsEvent): void {
   if (typeof window === "undefined") return;
   if (typeof (window as any).gtag !== "function") return;
 
-  (window as any).gtag("event", event.name, event.params);
+  // 개발 환경(Local)에서 실시간으로 GA4 DebugView를 모니터링할 수 있도록 debug_mode 적용
+  const params = {
+    ...event.params,
+    debug_mode: process.env.NODE_ENV === "development" ? true : undefined
+  };
+
+  (window as any).gtag("event", event.name, params);
 }
 
