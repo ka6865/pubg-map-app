@@ -1,3 +1,5 @@
+import { createClient as createSupabaseAdminClient } from "@supabase/supabase-js";
+
 interface ApiErrorRecord {
   timestamp: number;
   route: string;
@@ -5,6 +7,11 @@ interface ApiErrorRecord {
   message: string;
   detail?: string;
 }
+
+const supabaseAdmin = createSupabaseAdminClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 // 전역 에러 리스트 (슬라이딩 윈도우 감시용)
 let errorQueue: ApiErrorRecord[] = [];
@@ -26,6 +33,21 @@ export async function reportPubgApiError(
 ) {
   const now = Date.now();
   errorQueue.push({ timestamp: now, route, status, message, detail });
+
+  // DB에 비동기 에러 로그 적립
+  supabaseAdmin
+    .from("pubg_api_errors")
+    .insert({
+      route,
+      status,
+      message,
+      detail: detail || null
+    })
+    .then(({ error }) => {
+      if (error) {
+        console.error("[MONITORING DB LOG FAIL]:", error.message);
+      }
+    });
 
   // 5분보다 오래된 만료 레코드 정리
   const cutOff = now - WINDOW_SIZE;
