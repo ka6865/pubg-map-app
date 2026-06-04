@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { CrateTemplate, PrimeParcelItem } from "../actions/crates";
 import { drawSingleItem, drawSinglePrimeItem, tryDrawBonusItem } from "../../lib/crateUtils";
 import { DrawnCard, HistoryItem } from "./types";
+import { trackEvent } from "../../lib/analytics";
 
 interface UseCratesStateProps {
   initialCrates: CrateTemplate[];
@@ -552,6 +553,14 @@ export function useCratesState({ initialCrates, selectedCrateId, exchangeRate }:
     }
     
     const startDraw = () => {
+      // GA4 트래킹: 상자 개봉 기록
+      trackEvent({
+        name: "crate_opened",
+        params: {
+          crate_id: activeCrate.id,
+          open_count: countToOpen
+        }
+      });
       setIsDrawing(true);
       setDrawMode("standard");
       
@@ -639,6 +648,14 @@ export function useCratesState({ initialCrates, selectedCrateId, exchangeRate }:
     }
 
     const startDraw = () => {
+      // GA4 트래킹: 꾸러미 개봉 기록
+      trackEvent({
+        name: "crate_opened",
+        params: {
+          crate_id: `${activeCrate.id}_prime_parcel`,
+          open_count: countToOpen
+        }
+      });
       setIsDrawing(true);
       setDrawMode("prime");
       setHasBonusEffect(false); // 꾸러미 개봉은 일반 금색 연출 제외
@@ -753,6 +770,14 @@ export function useCratesState({ initialCrates, selectedCrateId, exchangeRate }:
     }
     
     const startDraw = () => {
+      // GA4 트래킹: 상자 개봉 기록
+      trackEvent({
+        name: "crate_opened",
+        params: {
+          crate_id: activeCrate.id,
+          open_count: countToOpen
+        }
+      });
       setIsDrawing(true);
       setDrawMode("standard");
 
@@ -887,6 +912,14 @@ export function useCratesState({ initialCrates, selectedCrateId, exchangeRate }:
     }
     
     const startDraw = () => {
+      // GA4 트래킹: 상자 개봉 기록
+      trackEvent({
+        name: "crate_opened",
+        params: {
+          crate_id: activeCrate.id,
+          open_count: countToOpen
+        }
+      });
       setIsDrawing(true);
       setDrawMode("standard");
       

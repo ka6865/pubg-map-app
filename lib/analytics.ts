@@ -92,6 +92,34 @@ export type BgmsEvent =
         status: "start" | "success" | "fail";
         error_type?: string;
       };
+    }
+  | {
+      name: "crate_opened";
+      params: {
+        crate_id: string;
+        open_count: number;
+      };
+    }
+  | {
+      name: "board_viewed";
+      params: {
+        category: string;
+      };
+    }
+  | {
+      name: "post_viewed";
+      params: {
+        post_id: string;
+        category: string;
+      };
+    }
+  | {
+      name: "post_action";
+      params: {
+        action: "create_post" | "create_comment";
+        status: "success" | "fail";
+        error_type?: string;
+      };
     };
 
 // ─── 발송 함수 ──────────────────────────────────────────────────────────────
