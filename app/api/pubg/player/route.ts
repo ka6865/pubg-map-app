@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 import { trackPubgRateLimit } from "@/lib/pubg-analysis/pubgApiTracker";
+import { reportPubgApiError } from "@/lib/pubg/apiHelper";
 
 // ─────────────────────────────────────────────────────────────
 // [CACHE] PUBG API 호출 절약을 위한 서버 측 인메모리 캐싱 레이어 (3분 TTL)
@@ -416,6 +417,9 @@ export async function GET(request: Request) {
     const errorMsg = isRateLimit
       ? "PUBG API 호출 한도가 일시적으로 초과되었습니다. 약 1분 후 다시 시도해 주세요."
       : (error.message || "오류가 발생했습니다.");
+
+    // [MONITORING] PUBG API 에러 감지 및 기록
+    await reportPubgApiError("/api/pubg/player", status, errorMsg, error.stack || error.message);
 
     return NextResponse.json(
       { error: errorMsg },

@@ -11,6 +11,7 @@ import { useMapData } from "../hooks/useMapData";
 import { useAuth } from "./AuthProvider";
 import MapShell from "./map/MapShell";
 import type { MapFilters, MapTab } from "../types/map";
+import { trackEvent } from "../lib/analytics";
 
 const createPinIcon = (colorCode: string, pathData: string, scale: number = 1) => {
   const width = 28 * scale;
@@ -104,6 +105,16 @@ export default function Map({ initialMapId, postId }: MapProps) {
       sessionStorage.removeItem("showPendingReports");
     }
   }, []);
+
+  // GA4 map_viewed 이벤트 추적
+  useEffect(() => {
+    trackEvent({
+      name: "map_viewed",
+      params: {
+        map_id: activeMapId.toLowerCase()
+      }
+    });
+  }, [activeMapId]);
 
   useEffect(() => {
     const checkMobile = () => {

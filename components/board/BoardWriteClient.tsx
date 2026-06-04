@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase";
 import { validatePost, extractImageUrl, sanitizeTitle } from "@/lib/board-utils";
 import { toast } from "sonner";
 import type { Post, ClanInfo } from "@/types/board";
+import { trackEvent } from "@/lib/analytics";
 
 export default function BoardWriteClient() {
   const router = useRouter();
@@ -106,6 +107,14 @@ export default function BoardWriteClient() {
         throw new Error(result.error || "서버 저장 중 오류가 발생했습니다.");
       }
 
+      trackEvent({
+        name: "post_action",
+        params: {
+          action: "create_post",
+          status: "success"
+        }
+      });
+
       toast.success(editPostId ? "게시글이 수정되었습니다." : "새 게시글이 등록되었습니다.");
       
       // 🌟 API 응답 구조({ data: { id } })에 맞게 수정
@@ -119,6 +128,14 @@ export default function BoardWriteClient() {
       }
       return true;
     } catch (error: any) {
+      trackEvent({
+        name: "post_action",
+        params: {
+          action: "create_post",
+          status: "fail",
+          error_type: error.message || "Unknown error"
+        }
+      });
       toast.error(error.message || "게시글을 저장하지 못했습니다.");
       return false;
     } finally {

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Post } from "@/types/board";
 import { PenLine } from "lucide-react";
+import { trackEvent } from "@/lib/analytics";
 import PostItem from "./PostItem";
 import BoardSearch from "./BoardSearch";
 import BoardPagination from "./BoardPagination";
@@ -35,6 +36,15 @@ export default function BoardListClient({
   const [isMobile, setIsMobile] = useState(false);
   const [searchInput, setSearchInput] = useState(currentSearchQuery);
   const [searchOption, setSearchOption] = useState(currentSearchOption);
+
+  useEffect(() => {
+    trackEvent({
+      name: "board_viewed",
+      params: {
+        category: currentFilter
+      }
+    });
+  }, [currentFilter]);
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768);

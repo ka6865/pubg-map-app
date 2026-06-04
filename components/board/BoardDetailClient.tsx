@@ -10,6 +10,7 @@ import { Post, Comment } from "@/types/board";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/AuthProvider";
 import { toast } from "sonner";
+import { trackEvent } from "@/lib/analytics";
 
 interface BoardDetailClientProps {
   initialPost: Post;
@@ -42,6 +43,16 @@ export default function BoardDetailClient({
   const [displayName, setDisplayName] = useState("익명");
   const [isMobile, setIsMobile] = useState(false);
   const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    trackEvent({
+      name: "post_viewed",
+      params: {
+        post_id: String(post.id),
+        category: post.category
+      }
+    });
+  }, [post.id, post.category]);
 
   useEffect(() => {
     setMounted(true);
@@ -133,6 +144,13 @@ export default function BoardDetailClient({
     }]);
 
     if (!error) {
+      trackEvent({
+        name: "post_action",
+        params: {
+          action: "create_comment",
+          status: "success"
+        }
+      });
       const targetUserId = replyingTo ? replyingTo.user_id : post.user_id;
       // 본인 글/댓글에 본인이 달 때는 알림 생략
       if (targetUserId && targetUserId !== user.id) {
@@ -153,6 +171,14 @@ export default function BoardDetailClient({
       setReplyingTo(null);
       fetchComments();
     } else {
+      trackEvent({
+        name: "post_action",
+        params: {
+          action: "create_comment",
+          status: "fail",
+          error_type: error.message
+        }
+      });
       toast.error("댓글 저장 중 오류가 발생했습니다.");
     }
   };

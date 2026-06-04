@@ -14,6 +14,7 @@ import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { LogIn } from "lucide-react";
+import { trackEvent } from "@/lib/analytics";
 
 interface DebateStat {
   label: string;
@@ -252,6 +253,15 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
       }
     }, 25000);
 
+    // GA4 이벤트 트래킹: 10경기 요약 시작
+    trackEvent({
+      name: "feature_consumption",
+      params: {
+        feature_name: "ai-coaching",
+        status: "start"
+      }
+    });
+
     try {
       const response = await fetch('/api/pubg/ai-summary', {
         method: 'POST',
@@ -335,9 +345,28 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
                         ...finalJson,
                         visuals: prev?.visuals || finalJson.visuals
                       }));
-                    } catch (e) {
+
+                      // GA4 이벤트 트래킹: 10경기 요약 성공
+                      trackEvent({
+                        name: "feature_consumption",
+                        params: {
+                          feature_name: "ai-coaching",
+                          status: "success"
+                        }
+                      });
+                    } catch (e: any) {
                       console.error("[AI-SUMMARY] Final result parse failed:", e);
                       setError("분석 결과 데이터 처리에 실패했습니다.");
+
+                      // GA4 이벤트 트래킹: 10경기 요약 파싱 실패
+                      trackEvent({
+                        name: "feature_consumption",
+                        params: {
+                          feature_name: "ai-coaching",
+                          status: "fail",
+                          error_type: "parse_error"
+                        }
+                      });
                     }
                   }
                 }
@@ -366,6 +395,17 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
       if (err.name !== 'AbortError') {
         console.error("[AI-SUMMARY] Critical Error:", err);
         const errMsg = err.message || "알 수 없는 오류가 발생했습니다.";
+        
+        // GA4 이벤트 트래킹: 10경기 요약 실패
+        trackEvent({
+          name: "feature_consumption",
+          params: {
+            feature_name: "ai-coaching",
+            status: "fail",
+            error_type: errMsg
+          }
+        });
+
         // Failed to parse stream 등 일시적 에러 → 자동 재시도
         if (isTransientError(errMsg) && retryCountRef.current < MAX_AUTO_RETRIES) {
           retryCountRef.current++;
