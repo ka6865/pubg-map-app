@@ -16,6 +16,7 @@ import {
   Info
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
+import { trackEvent } from "../../lib/analytics";
 
 // ----------------------------------------------------
 // 1. 파츠 DB 인터페이스 (Supabase attachments 테이블 기반)
@@ -143,6 +144,17 @@ export default function WeaponsPage() {
   const [selectedWeaponId, setSelectedWeaponId] = useState<string | null>(null);
   const [selectedAttachments, setSelectedAttachments] = useState<Record<string, Record<string, string | null>>>({});
   const [activeSlot, setActiveSlot] = useState<string | null>(null);
+
+  const selectWeapon = useCallback((id: string, type: string) => {
+    setSelectedWeaponId(id);
+    trackEvent({
+      name: "weapon_viewed",
+      params: {
+        weapon_id: id,
+        category: type
+      }
+    });
+  }, []);
 
   // 이미지 에러 여부를 추적하여 Fallback UI 트리거
   const [imageErrors, setImageErrors] = useState<Record<string, boolean>>({});
@@ -322,7 +334,7 @@ export default function WeaponsPage() {
               key={w.id} 
               className={`hover:bg-slate-900/40 transition-colors cursor-pointer ${selectedWeaponId === w.id ? "bg-slate-900/50" : ""}`}
               onClick={() => {
-                setSelectedWeaponId(w.id);
+                selectWeapon(w.id, w.type);
                 // 모바일 환경 배려: 대시보드로 자연스러운 스크롤 포커스
                 window.scrollTo({ top: 0, behavior: "smooth" });
               }}
@@ -355,7 +367,7 @@ export default function WeaponsPage() {
                   }`}
                   onClick={(e) => {
                     e.stopPropagation();
-                    setSelectedWeaponId(w.id);
+                    selectWeapon(w.id, w.type);
                     window.scrollTo({ top: 0, behavior: "smooth" });
                   }}
                 >
@@ -379,7 +391,7 @@ export default function WeaponsPage() {
           <div 
             key={w.id} 
             onClick={() => {
-              setSelectedWeaponId(w.id);
+              selectWeapon(w.id, w.type);
               window.scrollTo({ top: 0, behavior: "smooth" });
             }}
             className={`bg-slate-900/30 border rounded-2xl overflow-hidden shadow-lg transition-all duration-300 cursor-pointer flex flex-col justify-between ${
@@ -455,7 +467,7 @@ export default function WeaponsPage() {
                 }`}
                 onClick={(e) => {
                   e.stopPropagation();
-                  setSelectedWeaponId(w.id);
+                  selectWeapon(w.id, w.type);
                   window.scrollTo({ top: 0, behavior: "smooth" });
                 }}
               >

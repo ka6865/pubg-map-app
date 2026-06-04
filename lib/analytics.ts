@@ -69,6 +69,29 @@ export type BgmsEvent =
   | {
       name: "tab_clicked";
       params: { tab: string; nickname: string };
+    }
+  | {
+      name: "map_viewed";
+      params: {
+        map_id: string;
+        zoom_level?: number;
+        view_mode?: string;
+      };
+    }
+  | {
+      name: "weapon_viewed";
+      params: {
+        weapon_id: string;
+        category: string;
+      };
+    }
+  | {
+      name: "feature_consumption";
+      params: {
+        feature_name: "ai-coaching" | "squad-synergy" | "battle-compare" | "2d-replay";
+        status: "start" | "success" | "fail";
+        error_type?: string;
+      };
     };
 
 // ─── 발송 함수 ──────────────────────────────────────────────────────────────

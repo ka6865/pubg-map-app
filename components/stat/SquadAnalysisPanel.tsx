@@ -192,6 +192,15 @@ export default function SquadAnalysisPanel({ nickname, platform }: SquadAnalysis
   const requestAiCoaching = async () => {
     if (!analysisData) return;
 
+    // GA4 이벤트 트래킹: 스쿼드 시너지 분석 시작
+    trackEvent({
+      name: "feature_consumption",
+      params: {
+        feature_name: "squad-synergy",
+        status: "start"
+      }
+    });
+
     try {
       setLoadingAi(true);
       const res = await fetch("/api/pubg/ai-squad", {
@@ -209,8 +218,11 @@ export default function SquadAnalysisPanel({ nickname, platform }: SquadAnalysis
           benchmarkStats: analysisData.benchmarkStats
         })
       });
+      
+      if (!res.ok) throw new Error("스쿼드 AI 분석 API 응답 에러");
       const data = await res.json();
       setAiFeedback(data);
+      
       // [GA4 Analytics] AI 스쿼드 코칭 생성 완료
       trackEvent({
         name: "ai_squad_coaching_requested",
@@ -220,8 +232,27 @@ export default function SquadAnalysisPanel({ nickname, platform }: SquadAnalysis
           squad_grade: data.squadGrade || analysisData.squadGrade,
         },
       });
-    } catch (err) {
+
+      // GA4 이벤트 트래킹: 스쿼드 시너지 분석 성공
+      trackEvent({
+        name: "feature_consumption",
+        params: {
+          feature_name: "squad-synergy",
+          status: "success"
+        }
+      });
+    } catch (err: any) {
       console.error("AI coaching request failed:", err);
+      
+      // GA4 이벤트 트래킹: 스쿼드 시너지 분석 실패
+      trackEvent({
+        name: "feature_consumption",
+        params: {
+          feature_name: "squad-synergy",
+          status: "fail",
+          error_type: err.message || "unknown"
+        }
+      });
     } finally {
       setLoadingAi(false);
     }

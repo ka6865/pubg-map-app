@@ -8,6 +8,7 @@ import { normalizeName } from "@/lib/pubg-analysis/utils";
 import { adaptBenchmark } from "@/lib/pubg-analysis/benchmarkAdapter";
 import { uploadToR2, downloadFromR2 } from "@/lib/pubg-analysis/r2Service";
 import { trackPubgRateLimit } from "@/lib/pubg-analysis/pubgApiTracker";
+import { reportPubgApiError } from "@/lib/pubg/apiHelper";
 
 // [ISR V1.0] force-dynamic 유지: PUBG API 호출, R2 업로드, DB Upsert 등 부수효과 보호
 // unstable_cache는 DB 읽기(캐시 조회) 전용 프록시로만 사용
@@ -220,6 +221,10 @@ export async function GET(request: NextRequest) {
     const errorMsg = isRateLimit
       ? "PUBG API 호출 한도가 일시적으로 초과되었습니다. 약 1분 후 다시 시도해 주세요."
       : err.message;
+
+    // [MONITORING] PUBG API 에러 감지 및 기록
+    await reportPubgApiError("/api/pubg/match", status, errorMsg, err.stack || err.message);
+
     return NextResponse.json({ error: errorMsg }, { status });
   }
 }

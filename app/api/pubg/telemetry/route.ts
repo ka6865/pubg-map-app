@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { TELEMETRY_VERSION } from "@/lib/pubg-analysis/constants";
 import { normalizeName } from "@/lib/pubg-analysis/utils";
 import { uploadToR2, downloadFromR2 } from "@/lib/pubg-analysis/r2Service";
+import { reportPubgApiError } from "@/lib/pubg/apiHelper";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -93,6 +94,10 @@ export async function GET(request: Request) {
 
   } catch (error: any) {
     console.error("Telemetry Error:", error);
+    
+    // [MONITORING] PUBG API 에러 감지 및 기록
+    await reportPubgApiError("/api/pubg/telemetry", 500, error.message, error.stack || error.message);
+
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

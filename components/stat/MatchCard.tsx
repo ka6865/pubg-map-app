@@ -33,6 +33,7 @@ import { estimateUserTier } from "@/lib/pubg-analysis/benchmarkScore";
 import { useAIStatus, aiManager } from "@/lib/ai-management";
 import { useAuth } from "@/components/AuthProvider";
 import { toast } from "sonner";
+import { trackEvent } from "@/lib/analytics";
 
 const TimelineMiniMap = dynamic(
   () => import("./TimelineMiniMap").then((mod) => mod.TimelineMiniMap),
@@ -277,6 +278,13 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
 
   const handleInternalReplay = (e: React.MouseEvent) => {
     e.stopPropagation();
+    trackEvent({
+      name: "feature_consumption",
+      params: {
+        feature_name: "2d-replay",
+        status: "start"
+      }
+    });
     router.push(`/maps/${mapId}?playback=${matchId}&nickname=${nickname}`);
   };
 
@@ -359,6 +367,15 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
     
     let lineBuffer = "";
     
+    // GA4 이벤트 트래킹: AI 코칭 시작
+    trackEvent({
+      name: "feature_consumption",
+      params: {
+        feature_name: "ai-coaching",
+        status: "start"
+      }
+    });
+    
     try {
       const res = await fetch("/api/pubg/ai-analyze", {
         method: "POST",
@@ -400,10 +417,29 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
           reader.releaseLock();
         }
       }
+
+      // GA4 이벤트 트래킹: AI 코칭 성공
+      trackEvent({
+        name: "feature_consumption",
+        params: {
+          feature_name: "ai-coaching",
+          status: "success"
+        }
+      });
     } catch (err: any) {
       if (err.name !== 'AbortError') {
         console.error("Analysis Error:", err);
       }
+      
+      // GA4 이벤트 트래킹: AI 코칭 실패
+      trackEvent({
+        name: "feature_consumption",
+        params: {
+          feature_name: "ai-coaching",
+          status: "fail",
+          error_type: err.name === 'AbortError' ? 'user_abort' : (err.message || 'unknown')
+        }
+      });
     } finally {
       clearTimeout(safetyTimeout);
       setIsAnalyzing(false);
@@ -689,6 +725,13 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
         <button 
           onClick={(e) => {
             e.stopPropagation();
+            trackEvent({
+              name: "feature_consumption",
+              params: {
+                feature_name: "2d-replay",
+                status: "start"
+              }
+            });
             router.push(`/maps/${mapId}?playback=${matchId}&nickname=${nickname}&mode=full`);
           }}
           className="flex items-center gap-1.5 px-3 py-1.5 md:px-4 md:py-2 rounded-xl text-[10px] md:text-[11px] font-black uppercase tracking-tighter transition-all hover:scale-105 active:scale-95 bg-gradient-to-r from-yellow-500/20 to-orange-600/20 text-yellow-500 border border-yellow-500/30 shadow-[0_0_15px_rgba(245,158,11,0.1)]"
