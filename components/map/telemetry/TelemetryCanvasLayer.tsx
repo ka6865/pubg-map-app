@@ -3,6 +3,7 @@
 import React, { useEffect, useRef } from "react";
 import { useMap } from "react-leaflet";
 import L from "leaflet";
+import { toCalibratedCoords } from "../../../utils/coordinate";
 
 interface TelemetryCanvasLayerProps {
   telemetryData: any;
@@ -109,7 +110,8 @@ export const TelemetryCanvasLayer = ({
         return { x: -9999, y: -9999 }; // 화면 밖으로 밀어냄
       }
       try {
-        const p = map.latLngToContainerPoint([8192 - lat, lng]);
+        const calibrated = toCalibratedCoords(lng, lat, telemetryData.mapName);
+        const p = map.latLngToContainerPoint(calibrated);
         return { x: p.x, y: p.y };
       } catch (e) {
         return { x: -9999, y: -9999 };

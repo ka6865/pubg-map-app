@@ -13,7 +13,7 @@
  */
 
 export const RESULT_VERSION = 69.0; // [V69.0] 생존 점수 개편 (생존 순위 비율화, 기절 생존력 및 솔로 탑10 도입)
-export const TELEMETRY_VERSION = 58.4; // [V58.4] 차량 탑승 정보 실시간 동기화 오버라이트 대응
+export const TELEMETRY_VERSION = 60.0; // [V60.0] 아군 전멸 후 풀 매치 리플레이 데이터 기록 캐시 소각
 
 export const MAP_NAMES: Record<string, string> = {
   "Baltic_Main": "에란겔", 

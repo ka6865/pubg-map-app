@@ -195,7 +195,7 @@ export class AnalysisEngine {
         "LogPlayerCreate"
       ].some(t => t.toLowerCase() === eventType.toLowerCase());
 
-      const isAfterTeamWipe = !isMyTeamAlive && this.state.myDeathTime && ts > (this.state.myDeathTime + 30000);
+      const isAfterTeamWipe = this.state.mode !== "full" && !isMyTeamAlive && this.state.myDeathTime && ts > (this.state.myDeathTime + 30000);
       const isWin = e._T === "LogMatchEnd" && this.state.playerAliveStatus.get(this.state.lowerNickname) !== false;
 
       if (!isAfterTeamWipe || isWin || isRecallEvent) {

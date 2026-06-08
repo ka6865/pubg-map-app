@@ -63,19 +63,22 @@ const normalizeName = (name: string): string => {
   return name.toLowerCase().replace(/[\s\-_]/g, "");
 };
 
+import { toCalibratedCoords as toLeafletCoords } from "@/utils/coordinate";
+
 // 시간 기반 2D 평면 선형 보간 함수
 const interpolatePosition = (
   posEvs: { relativeTimeMs: number; x: number; y: number }[],
-  timeMs: number
+  timeMs: number,
+  mapName?: string
 ): [number, number] | null => {
   if (!posEvs || posEvs.length === 0) return null;
   
   if (timeMs <= posEvs[0].relativeTimeMs) {
-    return [8192 - posEvs[0].y, posEvs[0].x];
+    return toLeafletCoords(posEvs[0].x, posEvs[0].y, mapName);
   }
   
   if (timeMs >= posEvs[posEvs.length - 1].relativeTimeMs) {
-    return [8192 - posEvs[posEvs.length - 1].y, posEvs[posEvs.length - 1].x];
+    return toLeafletCoords(posEvs[posEvs.length - 1].x, posEvs[posEvs.length - 1].y, mapName);
   }
   
   for (let i = 0; i < posEvs.length - 1; i++) {
@@ -84,16 +87,16 @@ const interpolatePosition = (
     
     if (timeMs >= ev1.relativeTimeMs && timeMs <= ev2.relativeTimeMs) {
       const duration = ev2.relativeTimeMs - ev1.relativeTimeMs;
-      if (duration === 0) return [8192 - ev1.y, ev1.x];
+      if (duration === 0) return toLeafletCoords(ev1.x, ev1.y, mapName);
       
       const ratio = (timeMs - ev1.relativeTimeMs) / duration;
       const x = ev1.x + (ev2.x - ev1.x) * ratio;
       const y = ev1.y + (ev2.y - ev1.y) * ratio;
-      return [8192 - y, x];
+      return toLeafletCoords(x, y, mapName);
     }
   }
   
-  return [8192 - posEvs[posEvs.length - 1].y, posEvs[posEvs.length - 1].x];
+  return toLeafletCoords(posEvs[posEvs.length - 1].x, posEvs[posEvs.length - 1].y, mapName);
 };
 
 // 특정 시간(playbackTimeMs)과 가장 가까운 위치 이벤트에서 vehicleId 조회
@@ -256,7 +259,7 @@ export default function Squad2DMap({ matchId, nickname, platform, mapName }: Squ
           ev.relativeTimeMs <= endMs
       );
 
-      const coords: [number, number][] = posEvs.map((ev: any) => [8192 - ev.y, ev.x]);
+      const coords: [number, number][] = posEvs.map((ev: any) => toLeafletCoords(ev.x, ev.y, mapName));
 
       return {
         name,
@@ -324,8 +327,9 @@ export default function Squad2DMap({ matchId, nickname, platform, mapName }: Squ
       const minLng = Math.min(...lngs);
       const maxLng = Math.max(...lngs);
       
-      const enemyLats = enemies.flatMap(e => e.posEvs.map(pe => 8192 - pe.y));
-      const enemyLngs = enemies.flatMap(e => e.posEvs.map(pe => pe.x));
+      const enemyCoords = enemies.flatMap(e => e.posEvs.map(pe => toLeafletCoords(pe.x, pe.y, mapName)));
+      const enemyLats = enemyCoords.map(c => c[0]);
+      const enemyLngs = enemyCoords.map(c => c[1]);
       
       const minLatVal = Math.min(minLat, enemyLats.length > 0 ? Math.min(...enemyLats) : minLat);
       const maxLatVal = Math.max(maxLat, enemyLats.length > 0 ? Math.max(...enemyLats) : maxLat);
@@ -371,10 +375,10 @@ export default function Squad2DMap({ matchId, nickname, platform, mapName }: Squ
     if (mapData?.firstKnock) {
       const fk = mapData.firstKnock;
       if (fk.victimY !== undefined && fk.victimX !== undefined) {
-        return { center: [8192 - fk.victimY, fk.victimX] as [number, number], zoom: -1 };
+        return { center: toLeafletCoords(fk.victimX, fk.victimY, mapName), zoom: -1 };
       }
       if (fk.y !== undefined && fk.x !== undefined) {
-        return { center: [8192 - fk.y, fk.x] as [number, number], zoom: -1 };
+        return { center: toLeafletCoords(fk.x, fk.y, mapName), zoom: -1 };
       }
     }
     const b = mapData?.bounds;
@@ -385,17 +389,17 @@ export default function Squad2DMap({ matchId, nickname, platform, mapName }: Squ
       center: [centerLat, centerLng] as [number, number],
       zoom: -1
     };
-  }, [mapData]);
+  }, [mapData, mapName]);
 
   // 실시간으로 변경되는 교전지의 실제 기절 발생 중심점 추적
   const currentCenter = useMemo(() => {
     if (mapData?.firstKnock) {
       const fk = mapData.firstKnock;
       if (fk.victimY !== undefined && fk.victimX !== undefined) {
-        return [8192 - fk.victimY, fk.victimX] as [number, number];
+        return toLeafletCoords(fk.victimX, fk.victimY, mapName);
       }
       if (fk.y !== undefined && fk.x !== undefined) {
-        return [8192 - fk.y, fk.x] as [number, number];
+        return toLeafletCoords(fk.x, fk.y, mapName);
       }
     }
     const b = mapData?.bounds;
@@ -403,7 +407,7 @@ export default function Squad2DMap({ matchId, nickname, platform, mapName }: Squ
     const centerLat = (b[0][0] + b[1][0]) / 2;
     const centerLng = (b[0][1] + b[1][1]) / 2;
     return [centerLat, centerLng] as [number, number];
-  }, [mapData]);
+  }, [mapData, mapName]);
 
   // Reset playback time when active knock event changes
   useEffect(() => {
@@ -467,7 +471,7 @@ export default function Squad2DMap({ matchId, nickname, platform, mapName }: Squ
 
   // 1. Calculate teammates position at current playbackTimeMs
   const computedPlayers = paths.map((p: any) => {
-    const pos = interpolatePosition(p.posEvs, playbackTimeMs);
+    const pos = interpolatePosition(p.posEvs, playbackTimeMs, mapName);
     const isVictim = firstKnock && normalizeName(firstKnock.victim) === normalizeName(p.name);
     const shouldShowAsGroggy = isVictim && playbackTimeMs >= T;
     const vehicleId = getVehicleIdAtTime(p.posEvs, playbackTimeMs);
@@ -514,7 +518,7 @@ export default function Squad2DMap({ matchId, nickname, platform, mapName }: Squ
 
   // 2. Calculate attacker position at current playbackTimeMs
   const attackerCurrentPos = firstKnock && firstKnock.attacker
-    ? interpolatePosition(attackerPosEvs, playbackTimeMs)
+    ? interpolatePosition(attackerPosEvs, playbackTimeMs, mapName)
     : null;
 
   // Render knock/attacker links if present
@@ -527,9 +531,9 @@ export default function Squad2DMap({ matchId, nickname, platform, mapName }: Squ
     );
     const victimPos = (playbackTimeMs >= T && isVictimInPlayers?.currentPos)
       ? isVictimInPlayers.currentPos
-      : [8192 - firstKnock.victimY, firstKnock.victimX] as [number, number];
+      : toLeafletCoords(firstKnock.victimX, firstKnock.victimY, mapName);
 
-    const attackerPos = attackerCurrentPos || [8192 - firstKnock.y, firstKnock.x] as [number, number];
+    const attackerPos = attackerCurrentPos || toLeafletCoords(firstKnock.x, firstKnock.y, mapName);
     const attackerVehicleId = getVehicleIdAtTime(attackerPosEvs, playbackTimeMs);
     const attackerIsInVehicle = !!attackerVehicleId;
     const attackerBadgeHtml = attackerIsInVehicle 
@@ -599,7 +603,7 @@ export default function Squad2DMap({ matchId, nickname, platform, mapName }: Squ
     const isVictimInPlayers = computedPlayers.find(
       (p: any) => normalizeName(p.name) === normalizeName(firstKnock.victim)
     );
-    const victimPos = isVictimInPlayers?.currentPos || [8192 - firstKnock.victimY, firstKnock.victimX] as [number, number];
+    const victimPos = isVictimInPlayers?.currentPos || toLeafletCoords(firstKnock.victimX, firstKnock.victimY, mapName);
 
     groggyMarker = (
       <Marker position={victimPos} icon={groggyIcon}>
@@ -612,7 +616,7 @@ export default function Squad2DMap({ matchId, nickname, platform, mapName }: Squ
 
   // 4. Calculate nearby enemies position
   const computedEnemies = enemies.map((e: any) => {
-    const pos = interpolatePosition(e.posEvs, playbackTimeMs);
+    const pos = interpolatePosition(e.posEvs, playbackTimeMs, mapName);
     const vehicleId = getVehicleIdAtTime(e.posEvs, playbackTimeMs);
     return {
       ...e,

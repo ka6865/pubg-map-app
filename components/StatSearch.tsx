@@ -494,6 +494,16 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
                 {result.clan && (
                   <ClanBadge clan={result.clan} isMobile={isMobile} />
                 )}
+                {/* 제재 상태 확인 버튼 */}
+                <BanStatusButton banType={result.banType} isMobile={isMobile} />
+                {/* 무기 마스터리 개별 페이지 이동 버튼 */}
+                <button
+                  onClick={() => router.push(`/stats/${result.platform}/${result.nickname}/weapons`)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-full text-[11px] font-black transition-all cursor-pointer"
+                >
+                  <Crosshair size={12} />
+                  <span>🎯 무기 마스터리 분석</span>
+                </button>
               </div>
               <button
                 onClick={() => router.push(`/stats/battle?nick1=${encodeURIComponent(result.nickname)}`)}
@@ -545,10 +555,6 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
 
           {activeTab === "overview" ? (
             <div style={{ display: "flex", flexDirection: "column", gap: "30px" }}>
-              {/* 주력 총기 TOP 5 무기 마스터리 */}
-              {result.weaponMastery && result.weaponMastery.length > 0 && (
-                <WeaponArsenal weapons={result.weaponMastery} />
-              )}
 
               {/* 경쟁전 / 일반전 통합 탭 패널 */}
               <StatSummaryPanel stats={result.stats} isMobile={isMobile} />
@@ -755,6 +761,103 @@ function ClanBadge({ clan, isMobile }: { clan: ClanData; isMobile: boolean }) {
               <span className="text-[11px] font-black text-white">{clan.memberCount}명</span>
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// 제재 상태 확인 버튼 및 팝오버 컴포넌트
+// ─────────────────────────────────────────────────────────────
+
+interface BanStatusButtonProps {
+  banType: string;
+  isMobile: boolean;
+}
+
+function BanStatusButton({ banType, isMobile }: BanStatusButtonProps) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isMobile || !open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [isMobile, open]);
+
+  const normalizedType = banType ? banType.trim() : "None";
+  
+  let label = "🛡️ 제재 상태 확인";
+  let statusText = "정상 활동 계정";
+  let statusDesc = "현재 특별한 플랫폼 제한 또는 영구 제재 조치가 없는 정상 상태입니다.";
+  let badgeColor = "text-emerald-400 border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20";
+  let popoverBg = "linear-gradient(145deg, #022013 0%, #000c07 100%)";
+  let popoverBorder = "rgba(16,185,129,0.3)";
+  let popoverShadow = "0 20px 40px rgba(0,0,0,0.6), 0 0 15px rgba(16,185,129,0.1) inset";
+
+  if (normalizedType === "Permanent") {
+    statusText = "영구 이용 정지 계정";
+    statusDesc = "PUBG 보안 및 게임 정책 위반으로 시스템에 의해 영구 이용 제한 조치된 상태입니다.";
+    badgeColor = "text-rose-400 border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20";
+    popoverBg = "linear-gradient(145deg, #25060d 0%, #0c0003 100%)";
+    popoverBorder = "rgba(244,63,94,0.3)";
+    popoverShadow = "0 20px 40px rgba(0,0,0,0.6), 0 0 15px rgba(244,63,94,0.1) inset";
+  } else if (normalizedType === "Inherited") {
+    statusText = "상속된 제재 상태";
+    statusDesc = "연결된 Steam 또는 타 서비스의 외부 보안 정책 위반에 의해 연동 제재된 상태입니다.";
+    badgeColor = "text-amber-400 border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20";
+    popoverBg = "linear-gradient(145deg, #201302 0%, #0c0700 100%)";
+    popoverBorder = "rgba(245,158,11,0.3)";
+    popoverShadow = "0 20px 40px rgba(0,0,0,0.6), 0 0 15px rgba(245,158,11,0.1) inset";
+  } else if (normalizedType !== "None") {
+    statusText = "임시 보호 조치";
+    statusDesc = "조사를 위해 일시적으로 계정이 동결되었거나 안전 상태 점검 중입니다.";
+    badgeColor = "text-sky-400 border-sky-500/30 bg-sky-500/10 hover:bg-sky-500/20";
+    popoverBg = "linear-gradient(145deg, #0c1a30 0%, #030810 100%)";
+    popoverBorder = "rgba(14,165,233,0.3)";
+    popoverShadow = "0 20px 40px rgba(0,0,0,0.6), 0 0 15px rgba(14,165,233,0.1) inset";
+  }
+
+  return (
+    <div
+      ref={ref}
+      className="relative inline-block"
+      onMouseEnter={() => !isMobile && setOpen(true)}
+      onMouseLeave={() => !isMobile && setOpen(false)}
+      onClick={() => isMobile && setOpen((v) => !v)}
+    >
+      <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full border cursor-pointer select-none text-[11px] font-black tracking-wide transition-all duration-200 ${badgeColor}`}>
+        <Shield size={11} />
+        <span>{label}</span>
+      </div>
+
+      {open && (
+        <div
+          className="absolute top-full left-0 mt-2 z-[999] min-w-[280px] md:min-w-[320px] p-4 rounded-2xl border shadow-2xl animate-in fade-in slide-in-from-top-1 duration-150 backdrop-blur-md"
+          style={{
+            background: popoverBg,
+            borderColor: popoverBorder,
+            boxShadow: popoverShadow,
+          }}
+        >
+          <div className="flex items-center gap-2 mb-3 pb-2 border-b" style={{ borderColor: popoverBorder }}>
+            <div className="p-1.5 rounded-lg" style={{ background: "rgba(255,255,255,0.05)" }}>
+              <Shield size={14} className={normalizedType === "None" ? "text-emerald-400" : normalizedType === "Permanent" ? "text-rose-400" : "text-amber-400"} />
+            </div>
+            <div>
+              <div className="text-xs font-black text-white">PUBG 계정 보안 상태</div>
+              <div className={`text-[10px] font-bold ${normalizedType === "None" ? "text-emerald-400/80" : normalizedType === "Permanent" ? "text-rose-400/80" : "text-amber-400/80"}`}>
+                {statusText} ({normalizedType})
+              </div>
+            </div>
+          </div>
+          <p className="text-[11px] text-gray-300 leading-relaxed font-medium">
+            {statusDesc}
+          </p>
         </div>
       )}
     </div>

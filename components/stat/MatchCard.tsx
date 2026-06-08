@@ -22,7 +22,9 @@ import {
   PlayCircle,
   ExternalLink,
   X,
-  Car
+  Car,
+  Video,
+  Map
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { MatchTimeline } from "./MatchTimeline";
@@ -151,6 +153,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
   const [loading, setLoading] = useState(true);
   const [isExpanded, setIsExpanded] = useState(false);
   const [isTimelineExpanded, setIsTimelineExpanded] = useState(false);
+  const [showReplayModal, setShowReplayModal] = useState(false);
   const [coachingStyle, setCoachingStyle] = useState<"mild" | "spicy">("spicy");
   const [analysis, setAnalysis] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -714,30 +717,14 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
       {/* Quick Action Bar (Floating) */}
       <div className="px-3.5 pb-3.5 md:px-5 md:pb-4 flex flex-wrap gap-2 md:gap-3">
         <button 
-          onClick={handleInternalReplay}
-          className={`flex items-center gap-1.5 px-3 py-1.5 md:px-4 md:py-2 rounded-xl text-[10px] md:text-[11px] font-black uppercase tracking-tighter transition-all hover:scale-105 active:scale-95
-            ${isRanked ? 'bg-amber-500/10 text-amber-500 border border-amber-500/20' : 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20'}`}
-        >
-          <PlayCircle size={12} className="md:w-3.5 md:h-3.5" />
-          2D 리플레이
-        </button>
-
-        <button 
           onClick={(e) => {
             e.stopPropagation();
-            trackEvent({
-              name: "feature_consumption",
-              params: {
-                feature_name: "2d-replay",
-                status: "start"
-              }
-            });
-            router.push(`/maps/${mapId}?playback=${matchId}&nickname=${nickname}&mode=full`);
+            setShowReplayModal(true);
           }}
-          className="flex items-center gap-1.5 px-3 py-1.5 md:px-4 md:py-2 rounded-xl text-[10px] md:text-[11px] font-black uppercase tracking-tighter transition-all hover:scale-105 active:scale-95 bg-gradient-to-r from-yellow-500/20 to-orange-600/20 text-yellow-500 border border-yellow-500/30 shadow-[0_0_15px_rgba(245,158,11,0.1)]"
+          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-[10px] md:text-[11px] font-black uppercase tracking-tighter transition-all hover:scale-105 active:scale-95 bg-[#ff9f0a] hover:bg-[#e08b00] text-[#0d1117] shadow-[0_0_20px_rgba(255,159,10,0.25)] border border-[#ff9f0a]/30 cursor-pointer`}
         >
-          <span className="text-xs md:text-sm">💎</span>
-          고정밀 리플레이 (원본 데이터)
+          <PlayCircle size={13} className="md:w-4 md:h-4 shrink-0" />
+          리플레이 분석
         </button>
       </div>
 
@@ -1365,6 +1352,120 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                   </div>
                 );
               })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 리플레이 분석 모드 선택 모달 ── */}
+      {showReplayModal && (
+        <div 
+          className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/70 backdrop-blur-md p-4 animate-in fade-in duration-200"
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowReplayModal(false);
+          }}
+        >
+          <div 
+            className="w-full max-w-lg bg-[#0e1116] border border-white/10 rounded-[2.5rem] p-6 shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col gap-6 relative overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 배경 광채 데코 */}
+            <div className="absolute -top-20 -right-20 w-48 h-48 bg-amber-500/10 rounded-full blur-[80px] pointer-events-none" />
+            <div className="absolute -bottom-20 -left-20 w-48 h-48 bg-indigo-500/10 rounded-full blur-[80px] pointer-events-none" />
+
+            {/* 헤더 */}
+            <div className="flex justify-between items-start border-b border-white/5 pb-4">
+              <div>
+                <h3 className="text-white text-lg font-black tracking-tight">리플레이 분석 모드 선택</h3>
+                <p className="text-[11px] text-gray-500 font-bold mt-1 uppercase tracking-wider font-sans">전술적 상황을 다각도로 복기할 분석 환경을 선택하세요.</p>
+              </div>
+              <button 
+                onClick={() => setShowReplayModal(false)}
+                className="p-1.5 hover:bg-white/5 rounded-full text-gray-400 hover:text-white transition-colors cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* 카드 선택 리스트 */}
+            <div className="flex flex-col gap-3">
+              {/* 1) 3D 입체 리플레이 (NEW & RECOMMENDED) */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowReplayModal(false);
+                  trackEvent({
+                    name: "feature_consumption",
+                    params: {
+                      feature_name: "3d-replay",
+                      status: "start"
+                    }
+                  });
+                  router.push(`/replay/3d?matchId=${matchId}&nickname=${nickname}&platform=${platform}`);
+                }}
+                className="w-full text-left p-4 bg-gradient-to-r from-amber-500/10 via-amber-500/[0.03] to-transparent hover:from-amber-500/15 border border-amber-500/30 hover:border-amber-500/50 rounded-2xl transition-all flex gap-3.5 items-center cursor-pointer group hover:scale-[1.01]"
+              >
+                <div className="w-10 h-10 bg-amber-500/20 rounded-xl flex items-center justify-center text-amber-500 shrink-0">
+                  <Video size={20} className="group-hover:scale-110 transition-transform" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-white font-black text-sm font-sans">3D 전술 리플레이</span>
+                    <span className="text-[8px] font-black tracking-wider bg-amber-500 text-black px-1.5 py-0.5 rounded-md scale-90">BETA</span>
+                  </div>
+                  <p className="text-[10px] text-gray-400 mt-1 leading-normal font-medium font-sans">
+                    3D 홀로그램 전술 작전판에서 실시간 킬로그 피드, 총탄 궤적, 입체 고도 및 카메라 추적으로 정밀 분석합니다.
+                  </p>
+                </div>
+              </button>
+
+              {/* 2) 2D 미니 리플레이 */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowReplayModal(false);
+                  handleInternalReplay(e);
+                }}
+                className="w-full text-left p-4 bg-white/3 hover:bg-white/5 border border-white/5 hover:border-white/10 rounded-2xl transition-all flex gap-3.5 items-center cursor-pointer group hover:scale-[1.01]"
+              >
+                <div className="w-10 h-10 bg-indigo-500/10 rounded-xl flex items-center justify-center text-indigo-400 shrink-0">
+                  <Map size={20} className="group-hover:scale-110 transition-transform" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <span className="text-white font-black text-sm font-sans">2D 맵 리플레이 (간이)</span>
+                  <p className="text-[10px] text-gray-400 mt-1 leading-normal font-medium font-sans">
+                    지도가 아래로 확장되며 타임라인을 통해 가볍고 빠르게 이동 경로와 안전구역 수축을 요약 복기합니다.
+                  </p>
+                </div>
+              </button>
+
+              {/* 3) 고정밀 리플레이 (원본) */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowReplayModal(false);
+                  trackEvent({
+                    name: "feature_consumption",
+                    params: {
+                      feature_name: "2d-replay",
+                      status: "start"
+                    }
+                  });
+                  router.push(`/maps/${mapId}?playback=${matchId}&nickname=${nickname}&mode=full`);
+                }}
+                className="w-full text-left p-4 bg-white/3 hover:bg-white/5 border border-white/5 hover:border-white/10 rounded-2xl transition-all flex gap-3.5 items-center cursor-pointer group hover:scale-[1.01]"
+              >
+                <div className="w-10 h-10 bg-emerald-500/10 rounded-xl flex items-center justify-center text-emerald-400 shrink-0">
+                  <PlayCircle size={20} className="group-hover:scale-110 transition-transform" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <span className="text-white font-black text-sm font-sans">고정밀 리플레이 (원본 데이터)</span>
+                  <p className="text-[10px] text-gray-400 mt-1 leading-normal font-medium font-sans">
+                    전체 맵 스케일에서 모든 플레이어들의 원본 동선 데이터와 세부 교전 상황을 풀스크린으로 세밀하게 관전합니다.
+                  </p>
+                </div>
+              </button>
             </div>
           </div>
         </div>

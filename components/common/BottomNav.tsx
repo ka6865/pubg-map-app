@@ -42,6 +42,11 @@ export default function BottomNav() {
     setIsMenuOpen(false);
   }
 
+  // 3D 리플레이 등 전체 화면 전술 페이지에서는 하단 탭바를 숨겨 재생 컨트롤러 조작을 보장
+  if (pathname.startsWith('/replay/')) {
+    return null;
+  }
+
   const bottomNavItems = [
     {
       id: 'Home',

@@ -154,6 +154,7 @@ export async function GET(request: Request) {
     const playerData = await safeJsonParse(playerRes);
     const accountId = playerData.data[0].id;
     const actualNickname = playerData.data[0].attributes.name;
+    const banType = playerData.data[0].attributes?.banType ?? "None";
 
     // (클랜/무기 데이터 갱신 여부를 포함하여 하단에서 통합 캐시 업데이트를 수행합니다.)
 
@@ -303,7 +304,7 @@ export async function GET(request: Request) {
                 if (b.level !== a.level) return b.level - a.level;
                 return b.xp - a.xp;
               })
-              .slice(0, 5);
+              .slice(0, 10);
             return { source: 'api', data: parsedMastery, updated: true };
           }
           throw new Error(`Mastery API Error: ${res.status}`);
@@ -365,13 +366,16 @@ export async function GET(request: Request) {
     const clan = clanResult.data;
     const weaponMastery = masteryResult.data;
 
-    // 4. 캐시 업데이트 (클랜/무기 정보 통합 upsert)
+    // 4. 캐시 업데이트 (클랜/무기 정보 통합 upsert 및 검색 횟수 누적)
+    const currentSearchCount = cacheData?.search_count ?? 0;
     const cacheUpdateData: any = {
       id: accountId,
       platform,
       nickname: actualNickname,
       lower_nickname: actualNickname.toLowerCase(),
-      updated_at: new Date().toISOString()
+      search_count: currentSearchCount + 1,
+      updated_at: new Date().toISOString(),
+      ban_type: banType
     };
     
     const isNewUser = !cacheData;
@@ -402,6 +406,7 @@ export async function GET(request: Request) {
       recentMatches,
       clan,
       weaponMastery,
+      banType,
     };
 
     // 인메모리 캐시 업데이트
