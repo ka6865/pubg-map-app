@@ -72,6 +72,16 @@ export class MapReplayHandler extends BaseHandler {
       return;
     }
 
+    // 5.5. 보급 상자
+    if (lowerType === "logcarepackagespawn") {
+      this.handleCarePackageSpawn(e, elapsed);
+      return;
+    }
+    if (lowerType === "logcarepackageland") {
+      this.handleCarePackageLand(e, elapsed);
+      return;
+    }
+
     // 6. 투척물 및 폭발
     if (lowerType === "logplayerusethrowable") {
       this.handleThrowable(e, elapsed);
@@ -245,6 +255,10 @@ export class MapReplayHandler extends BaseHandler {
         damage: e.damage,
         x: this.scaleX(e.victim.location?.x ?? 0),
         y: this.scaleY(e.victim.location?.y ?? 0),
+        z: (e.victim.location?.z ?? 0) / 100,
+        attackerX: this.scaleX(e.attacker.location?.x ?? 0),
+        attackerY: this.scaleY(e.attacker.location?.y ?? 0),
+        attackerZ: (e.attacker.location?.z ?? 0) / 100,
       });
     }
   }
@@ -329,6 +343,34 @@ export class MapReplayHandler extends BaseHandler {
         x: this.scaleX(loc.x),
         y: this.scaleY(loc.y),
         isRealExplosion: true
+      });
+    }
+  }
+
+  private handleCarePackageSpawn(e: any, elapsed: number) {
+    const loc = e.location;
+    if (loc) {
+      this.state.mapEvents.push({
+        type: "carepackage_spawn",
+        time: e._D,
+        relativeTimeMs: elapsed,
+        x: this.scaleX(loc.x),
+        y: this.scaleY(loc.y),
+        z: (loc.z ?? 0) / 100
+      });
+    }
+  }
+
+  private handleCarePackageLand(e: any, elapsed: number) {
+    const loc = e.location;
+    if (loc) {
+      this.state.mapEvents.push({
+        type: "carepackage_land",
+        time: e._D,
+        relativeTimeMs: elapsed,
+        x: this.scaleX(loc.x),
+        y: this.scaleY(loc.y),
+        z: (loc.z ?? 0) / 100
       });
     }
   }

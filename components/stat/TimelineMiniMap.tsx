@@ -51,7 +51,9 @@ const createPingIcon = (nickname: string, type: 'attacker' | 'victim' | 'normal'
   });
 };
 
-const MapController = ({ event }: { event?: any }) => {
+import { toCalibratedCoords } from "@/utils/coordinate";
+
+const MapController = ({ event, mapId }: { event?: any, mapId: string }) => {
   const map = useMap();
 
   useEffect(() => {
@@ -63,11 +65,10 @@ const MapController = ({ event }: { event?: any }) => {
 
   useEffect(() => {
     if (event && event.x !== undefined && event.y !== undefined) {
-      const centerLat = 8192 - event.y;
-      const centerLng = event.x;
-      map.setView([centerLat, centerLng], 0, { animate: true });
+      const calibrated = toCalibratedCoords(event.x, event.y, mapId);
+      map.setView(calibrated, 0, { animate: true });
     }
-  }, [map, event]);
+  }, [map, event, mapId]);
 
   if (!event) return null;
 
@@ -79,7 +80,7 @@ const MapController = ({ event }: { event?: any }) => {
     markers.push(
       <Marker 
         key="main-player"
-        position={[8192 - event.y, event.x]} 
+        position={toCalibratedCoords(event.x, event.y, mapId)} 
         icon={createPingIcon(mainPlayerName, 'normal')} 
       />
     );
@@ -92,7 +93,7 @@ const MapController = ({ event }: { event?: any }) => {
       markers.push(
         <Marker 
           key="attacker"
-          position={[8192 - event.attackerY, event.attackerX]} 
+          position={toCalibratedCoords(event.attackerX, event.attackerY, mapId)} 
           icon={createPingIcon(event.attacker || "Attacker", 'attacker')} 
         />
       );
@@ -106,7 +107,7 @@ const MapController = ({ event }: { event?: any }) => {
       markers.push(
         <Marker 
           key="victim"
-          position={[8192 - event.victimY, event.victimX]} 
+          position={toCalibratedCoords(event.victimX, event.victimY, mapId)} 
           icon={createPingIcon(event.victim || "Victim", 'victim')} 
         />
       );
@@ -139,7 +140,7 @@ export const TimelineMiniMap = ({ selectedEvent, mapId, className = "" }: Timeli
           noWrap={true}
           bounds={[[0, 0], [8192, 8192]]}
         />
-        <MapController event={selectedEvent} />
+        <MapController event={selectedEvent} mapId={mapId} />
       </MapContainer>
     </div>
   );

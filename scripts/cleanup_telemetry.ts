@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import path from 'path';
 import { listR2Files, deleteMultipleFromR2 } from '../lib/pubg-analysis/r2Service';
+import { TELEMETRY_VERSION } from '../lib/pubg-analysis/constants';
 
 // .env.local 파일 로드
 dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
@@ -22,7 +23,17 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey, {
 });
 
 // 환경 변수에 따라 삭제 강도 조절 (Daily Action용)
-const TARGET_VERSION = parseInt(process.env.CLEANUP_TARGET_VERSION || '56');
+const currentVersion = Math.floor(TELEMETRY_VERSION);
+let envTargetVersion = parseInt(process.env.CLEANUP_TARGET_VERSION || '56');
+
+// 안전 장치: CLEANUP_TARGET_VERSION이 현재 동작 중인 버전을 덮어쓰지 않도록 강제 제한 (활성 데이터 삭제 방지)
+if (envTargetVersion >= currentVersion) {
+  console.warn(`⚠️ 경고: CLEANUP_TARGET_VERSION (${envTargetVersion})이 현재 동작 중인 텔레메트리 버전 (${currentVersion})보다 크거나 같습니다.`);
+  console.warn(`   안전을 위해 TARGET_VERSION을 활성 버전 미만인 ${currentVersion - 1}로 강제 강하 조정합니다.`);
+  envTargetVersion = currentVersion - 1;
+}
+
+const TARGET_VERSION = envTargetVersion;
 const RETENTION_DAYS = parseInt(process.env.CLEANUP_RETENTION_DAYS || '1');
 
 async function smartCleanup() {
@@ -33,14 +44,44 @@ async function smartCleanup() {
   console.log(`📅 기준 날짜: ${expirationDate.toISOString()} (이전 데이터 삭제)`);
   console.log(`🔢 기준 버전: V${TARGET_VERSION} (미만 버전 삭제)`);
 
-  // 0. 고립된 데이터 정리 (match_master_telemetry에 없는 match_stats_raw 삭제)
-  console.log('🧹 고립된 match_stats_raw 데이터 확인 중...');
-  const { data: orphanedStats, error: orphanError } = await supabase
-    .rpc('get_orphaned_match_ids'); // RPC가 없다면 쿼리로 대체 가능하나 효율을 위해 별도 처리
+  // 0. 고립된 데이터 정리 (match_master_telemetry에 없는 match_stats_raw/processed_match_telemetry 삭제)
+  console.log('🧹 고립된 상세 데이터 확인 및 정리 중...');
+  try {
+    const { data: orphanedMatches, error: orphanError } = await supabase
+      .rpc('get_orphaned_match_ids');
 
-  // RPC가 없는 경우를 대비한 수동 고립 데이터 체크 (제한적)
-  if (orphanError) {
-     console.log('💡 고립 데이터 정리를 위한 RPC가 없습니다. 기본 클린업을 진행합니다.');
+    if (orphanError) {
+      console.warn('⚠️ 고립된 match_id 조회 실패:', orphanError.message);
+    } else if (orphanedMatches && orphanedMatches.length > 0) {
+      const orphanedMatchIds = orphanedMatches.map((row: any) => row.match_id).filter(Boolean);
+      console.log(`🧹 발견된 고립 매치 ID 개수: ${orphanedMatchIds.length}개. 정리를 진행합니다.`);
+      
+      // 1) match_stats_raw 삭제
+      const { error: delStatsErr } = await supabase
+        .from('match_stats_raw')
+        .delete()
+        .in('match_id', orphanedMatchIds);
+      if (delStatsErr) {
+        console.error('❌ 고립된 match_stats_raw 삭제 실패:', delStatsErr.message);
+      } else {
+        console.log(`✓ 고립된 match_stats_raw 데이터 정리 완료`);
+      }
+      
+      // 2) processed_match_telemetry 삭제
+      const { error: delProcessedErr } = await supabase
+        .from('processed_match_telemetry')
+        .delete()
+        .in('match_id', orphanedMatchIds);
+      if (delProcessedErr) {
+        console.error('❌ 고립된 processed_match_telemetry 삭제 실패:', delProcessedErr.message);
+      } else {
+        console.log(`✓ 고립된 processed_match_telemetry 데이터 정리 완료`);
+      }
+    } else {
+      console.log('✅ 고립된 매치 데이터가 없습니다.');
+    }
+  } catch (err) {
+    console.error('❌ 고립 데이터 정리 중 예외 발생:', err);
   }
 
   let totalMatchesDeleted = 0;
@@ -90,11 +131,24 @@ async function smartCleanup() {
     console.log(`⏳ 처리 중... (DB: ${totalMatchesDeleted}개 매치 및 관련 데이터 삭제됨)`);
   }
 
-  // 4. 고립된 데이터 최종 확인 (혹시 모를 누락 방지)
-  console.log('🧹 고립된 상세 데이터 최종 정리 중...');
-  // match_master_telemetry에 없는 match_id를 가진 데이터들 삭제
-  const { data: activeMatches } = await supabase.from('match_master_telemetry').select('match_id');
-  const activeMatchIds = new Set(activeMatches?.map(m => m.match_id) || []);
+  // 4. 플레이어 자동완성 캐시 정리 (검색된 적이 없고 14일 이상 업데이트되지 않은 비활성 유저 캐시 소각)
+  console.log('🧹 비활성 플레이어 자동완성 캐시 정리 중...');
+  try {
+    const playerCutoffDate = new Date(now.getTime() - (14 * 24 * 60 * 60 * 1000));
+    const { count: deletedPlayersCount, error: playerCacheErr } = await supabase
+      .from('pubg_player_cache')
+      .delete({ count: 'exact' })
+      .eq('search_count', 0)
+      .lt('updated_at', playerCutoffDate.toISOString());
+
+    if (playerCacheErr) {
+      console.error('❌ 비활성 플레이어 캐시 삭제 실패:', playerCacheErr.message);
+    } else {
+      console.log(`✅ 비활성 플레이어 캐시 정리 완료 (${deletedPlayersCount || 0}개 유저 삭제됨)`);
+    }
+  } catch (err) {
+    console.error('❌ 플레이어 캐시 정리 중 예외 발생:', err);
+  }
   
   // 5. 벤치마크 데이터 정리 (filter_version 및 티어별 캡핑)
   console.log('📊 벤치마크 데이터 정리 중...');

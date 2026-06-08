@@ -12,14 +12,22 @@ export default function SidebarFooterWrapper({ children }: { children: React.Rea
   
   // 메인 홈(/) 또는 상세 지도(/maps/...) 경로인 경우 지도 레이아웃으로 간주
   const isMapPage = pathname === '/' || pathname.startsWith('/maps/');
+  // 3D 리플레이 경로인 경우 (헤더/하단바가 없으므로 전체화면 레이아웃)
+  const isReplayPage = pathname.startsWith('/replay/');
 
   return (
     <>
-      <main className={`flex-grow relative flex flex-col ${isMapPage ? 'overflow-hidden h-[calc(100dvh-56px)]' : 'overflow-visible'}`}>
+      <main className={`flex-grow relative flex flex-col ${
+        isReplayPage 
+          ? 'overflow-hidden h-dvh' 
+          : isMapPage 
+            ? 'overflow-hidden h-[calc(100dvh-56px)]' 
+            : 'overflow-visible'
+      }`}>
         {children}
       </main>
-      {/* 지도 페이지가 아닐 때만 하단 글로벌 푸터를 노출하여 스크롤 트랩 방지 */}
-      {!isMapPage && <Footer />}
+      {/* 지도 및 리플레이 페이지가 아닐 때만 하단 글로벌 푸터를 노출하여 스크롤 트랩 방지 */}
+      {!isMapPage && !isReplayPage && <Footer />}
     </>
   );
 }

@@ -159,11 +159,10 @@ export default function GlobalHeader() {
     return new Date(dateString).toLocaleDateString();
   };
 
-  // 기존 홈/맵 루트에서는 지도가 뒷배경에 깔리므로 MapHeader를 자체적으로 사용합니다.
-  // 따라서 / (Home) 이거나 /maps/... 일 때는 GlobalHeader를 투명화하거나 렌더링하지 않을 수 있습니다.
-  // 유저 요청에 따라 우선 전역에서 띄웁니다.
-  // 단, SPA Map.tsx가 살아있는 한 충돌할 수 있습니다. 
-  // 나중에 분리 전까지는 보이지 않게 처리해 둡니다.
+  // 3D 리플레이 등 전체 화면 전술 페이지에서는 상단 헤더를 숨겨 전체 뷰포트 영역을 확보
+  if (pathname.startsWith('/replay/')) {
+    return null;
+  }
 
   return (
     <header className="flex items-center justify-between min-h-[56px] h-auto px-4 bg-[#F2A900] border-b-2 border-[#cc8b00] z-[6000] safe-top shadow-md select-none shrink-0 w-full">
