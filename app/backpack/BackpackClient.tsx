@@ -7,6 +7,7 @@ import {
   calcBackpackCapacity,
   calcTotalWeight,
 } from "../../lib/backpackUtils";
+import { trackEvent } from "../../lib/analytics";
 
 interface InventoryItem {
   id: string;
@@ -139,6 +140,15 @@ export default function BackpackSimulator() {
   const [editingKey, setEditingKey] = useState<string | null>(null);
 
   useEffect(() => {
+    // GA4 가방 계산기 피처 소비 시작 트래킹
+    trackEvent({
+      name: "feature_consumption",
+      params: {
+        feature_name: "backpack-calculator",
+        status: "start"
+      }
+    });
+
     async function fetchAllData() {
       console.log("[Backpack] 데이터 로드 시작...");
       
@@ -345,6 +355,15 @@ export default function BackpackSimulator() {
         return [...prev, { id: item.id, name: item.name, weight: item.weight, quantity: qty, category, can_be_in_backpack: item.can_be_in_backpack }];
       });
     }
+
+    // GA4 가방 계산기 피처 소비 성공 트래킹
+    trackEvent({
+      name: "feature_consumption",
+      params: {
+        feature_name: "backpack-calculator",
+        status: "success"
+      }
+    });
   };
 
   if (loading) {

@@ -88,7 +88,7 @@ export type BgmsEvent =
   | {
       name: "feature_consumption";
       params: {
-        feature_name: "ai-coaching" | "squad-synergy" | "battle-compare" | "2d-replay" | "3d-replay";
+        feature_name: "ai-coaching" | "squad-synergy" | "battle-compare" | "2d-replay" | "3d-replay" | "backpack-calculator" | "crate-simulator";
         status: "start" | "success" | "fail";
         error_type?: string;
       };

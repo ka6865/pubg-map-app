@@ -162,6 +162,16 @@ function BattleContent() {
     setResult(null);
     setShareMessage(null);
 
+    // 🌟 [추가] [Analytics] 대결 시작
+    trackEvent({
+      name: "battle_started",
+      params: {
+        nick1: n1,
+        nick2: n2,
+        match_type: mode
+      }
+    });
+
     try {
       const res = await fetch(`/api/pubg/battle?nick1=${encodeURIComponent(n1)}&nick2=${encodeURIComponent(n2)}&matchType=${mode}`);
       const data = await res.json();
