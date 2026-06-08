@@ -75,7 +75,7 @@ export const MAP_DIMENSIONS: Record<string, number> = {
 
 export const MAP_CATEGORIES: Record<string, string[]> = {
     Erangel: ['Garage', 'Esports', 'EsportsBoat', 'Glider', 'SecretRoom'],
-    Miramar: ['GoldenMirado', 'EsportsMirado', 'EsportsPickup', 'EsportsBoat', 'Glider'], 
+    Miramar: ['GoldenMirado', 'EsportsMirado', 'EsportsPickup', 'EsportsBoat', 'Glider', 'SecretRoom'], 
     Taego: ['Garage', 'Porter', 'Boat', 'SecretRoom'],
     Deston: ['Garage', 'PoliceCar', 'Boat', 'Glider'],
     Vikendi: ['Garage', 'Snowmobile', 'Esports', 'Boat', 'SecretRoom'],

@@ -2,13 +2,14 @@
 
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../lib/supabase';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 export default function HomeNotice() {
   const [latestNotice, setLatestNotice] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isVisible, setIsVisible] = useState(true);
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   useEffect(() => {
     const fetchLatestNotice = async () => {
@@ -49,7 +50,7 @@ export default function HomeNotice() {
     };
   }, []);
 
-  if (isLoading || !latestNotice || !isVisible) return null;
+  if (isLoading || !latestNotice || !isVisible || searchParams?.get("notice") === "false") return null;
 
   const handleNoticeClick = () => {
     router.push(`/board/${latestNotice.id}`);

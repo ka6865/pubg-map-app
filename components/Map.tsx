@@ -66,7 +66,10 @@ export default function Map({ initialMapId, postId }: MapProps) {
     pendingVehicles,
   } = useMapData(activeMapId, authUser);
 
-  const [isSidebarOpen, setSidebarOpen] = useState(true);
+  const [isSidebarOpen, setSidebarOpen] = useState(() => {
+    if (searchParams?.get("sidebar") === "false") return false;
+    return true;
+  });
   const [isMobile, setIsMobile] = useState(false);
 
   // DB 기반 카테고리 마스터 정보 로드
@@ -92,10 +95,19 @@ export default function Map({ initialMapId, postId }: MapProps) {
     if (typeof window !== "undefined" && sessionStorage.getItem("showPendingReports") === "true") {
       init.pending = true;
     }
+    // URL layer 파라미터 확인 (예: ?layer=secret_room -> secretroom으로 정규화)
+    const targetLayer = searchParams?.get("layer")?.toLowerCase().replace(/_/g, "");
+
     // DB 카테고리 우선, 없으면 CATEGORY_INFO 기본값 사용
     const infoSource = Object.keys(categoryInfoMap).length > 0 ? categoryInfoMap : CATEGORY_INFO;
     Object.keys(infoSource).forEach((k) => {
-      if (!init.hasOwnProperty(k)) init[k] = false;
+      if (!init.hasOwnProperty(k)) {
+        if (targetLayer && k.toLowerCase() === targetLayer) {
+          init[k] = true;
+        } else {
+          init[k] = false;
+        }
+      }
     });
     return init;
   });
