@@ -283,7 +283,7 @@ export async function POST(request: Request) {
               });
 
               chat = model.startChat({
-                systemInstruction: systemPrompt,
+                systemInstruction: systemPrompt ? { role: "system", parts: [{ text: systemPrompt }] } : undefined,
                 history: history.map((h: any) => ({
                   role: h.role === "model" ? "model" : "user",
                   parts: [{ text: h.content }]
