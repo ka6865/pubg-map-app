@@ -88,11 +88,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     if (user) {
+      // 🌟 [개선] SPA 환경에서 확실한 매핑을 위해 gtag('set')으로 글로벌 세션 및 사용자 속성에 주입
+      (window as any).gtag('set', { user_id: user.id });
+      (window as any).gtag('set', 'user_properties', { user_id: user.id });
+
       (window as any).gtag('config', process.env.NEXT_PUBLIC_GA_ID, {
         user_id: user.id
       });
     } else {
       // 로그아웃 시 user_id 해제
+      (window as any).gtag('set', { user_id: null });
+      (window as any).gtag('set', 'user_properties', { user_id: null });
+
       (window as any).gtag('config', process.env.NEXT_PUBLIC_GA_ID, {
         user_id: null
       });
