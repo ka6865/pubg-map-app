@@ -290,7 +290,7 @@ export default function AdminBotPage() {
       {/* 💬 3. 채팅 메시지 영역 */}
       <main 
         ref={messageContainerRef}
-        className="flex-1 overflow-y-auto p-4 space-y-4 pb-24"
+        className="flex-1 overflow-y-auto p-4 space-y-4 pb-6"
       >
         {messages.map((msg) => {
           const isUser = msg.role === "user";
@@ -389,8 +389,8 @@ export default function AdminBotPage() {
         <div ref={chatEndRef} />
       </main>
 
-      {/* ⌨️ 4. 모바일 터치 최적화 입력창 영역 */}
-      <footer className="fixed bottom-0 left-0 right-0 border-t border-zinc-800 bg-zinc-900/90 p-3 pb-safe backdrop-blur-md">
+      {/* ⌨️ 4. 모바일 터치 최적화 입력창 영역 (Flex 흐름 배치로 모바일 가상 키보드 대응) */}
+      <footer className="w-full border-t border-zinc-800 bg-zinc-900/90 p-3 pb-[env(safe-area-inset-bottom)] backdrop-blur-md z-10">
         <form onSubmit={handleSendMessage} className="flex gap-2 items-center">
           <input
             type="text"
