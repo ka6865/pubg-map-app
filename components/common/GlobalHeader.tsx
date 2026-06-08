@@ -3,7 +3,7 @@
 import React, { useState, useEffect, startTransition } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Bell, User, Hammer, Database, LogIn, Settings } from 'lucide-react';
+import { Bell, User, Hammer, Database, LogIn, Settings, Bot } from 'lucide-react';
 import { useAuth } from "../AuthProvider";
 import { supabase } from "@/lib/supabase";
 import NotificationDropdown from "../map/NotificationDropdown";
@@ -306,6 +306,12 @@ export default function GlobalHeader() {
                   <button className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg font-black text-[10px] uppercase shadow-sm">
                     <Settings size={12} />
                     <span>맵 설정</span>
+                  </button>
+                </Link>
+                <Link href="/admin/bot">
+                  <button className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 text-zinc-950 rounded-lg font-black text-[10px] uppercase shadow-sm">
+                    <Bot size={12} />
+                    <span>AI 비서</span>
                   </button>
                 </Link>
               </div>

@@ -1,6 +1,6 @@
 import React, { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { X, User, LogOut, Sword, Package, Trophy, Box } from 'lucide-react';
+import { X, User, LogOut, Sword, Package, Trophy, Box, Bot } from 'lucide-react';
 import { useAuth } from '../AuthProvider';
 import { supabase } from '@/lib/supabase';
 import { Drawer } from 'vaul';
@@ -194,7 +194,7 @@ export default function GlobalMobileMenu({ isOpen, setIsOpen, activeMapId, isAdm
                 {isAdmin && (
                   <div className="flex flex-col gap-4">
                     <h3 className="text-red-500 text-[11px] font-black uppercase tracking-widest ml-1">Admin Console</h3>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="grid grid-cols-2 gap-2">
                       <button 
                         onClick={() => { router.push('/admin/game-data'); setIsOpen(false); }}
                         className="bg-[#1a1a1a] p-3.5 rounded-2xl border border-red-900/30 flex flex-col gap-2.5 items-center text-center active:bg-[#222] transition-colors"
@@ -223,6 +223,16 @@ export default function GlobalMobileMenu({ isOpen, setIsOpen, activeMapId, isAdm
                           <Trophy size={20} className="text-blue-500" />
                         </div>
                         <span className="text-white font-bold text-xs">맵 설정</span>
+                      </button>
+
+                      <button 
+                        onClick={() => { router.push('/admin/bot'); setIsOpen(false); }}
+                        className="bg-[#1a1a1a] p-3.5 rounded-2xl border border-red-900/30 flex flex-col gap-2.5 items-center text-center active:bg-[#222] transition-colors"
+                      >
+                        <div className="p-2 bg-amber-500/10 rounded-xl">
+                          <Bot size={20} className="text-amber-500" />
+                        </div>
+                        <span className="text-white font-bold text-xs">AI 비서</span>
                       </button>
                     </div>
                   </div>
