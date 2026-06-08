@@ -75,6 +75,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => clearTimeout(timer);
   }, [user]);
 
+  // 🌟 [추가] GA4 user_id 연동 (Identity Stitching)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !(window as any).gtag || !process.env.NEXT_PUBLIC_GA_ID) return;
+
+    if (user) {
+      (window as any).gtag('config', process.env.NEXT_PUBLIC_GA_ID, {
+        user_id: user.id
+      });
+    } else {
+      // 로그아웃 시 user_id 해제
+      (window as any).gtag('config', process.env.NEXT_PUBLIC_GA_ID, {
+        user_id: null
+      });
+    }
+  }, [user]);
+
   return (
     <AuthContext.Provider value={{ session, user, loading }}>
       {children}

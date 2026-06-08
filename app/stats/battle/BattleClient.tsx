@@ -136,6 +136,12 @@ function BattleContent() {
       url.searchParams.set("score2", String(score.nick2));
     }
     if (winner) url.searchParams.set("winner", winner);
+
+    // 🌟 [추가] GA4 UTM 파라미터 강제 주입 (바이럴 유입 추적)
+    url.searchParams.set("utm_source", "user_share");
+    url.searchParams.set("utm_medium", "social");
+    url.searchParams.set("utm_campaign", "battle_share");
+
     return url.toString();
   };
 
