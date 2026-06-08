@@ -21,7 +21,7 @@ const getDbStatisticsDecl: FunctionDeclaration = {
 
 const createBoardPostDecl: FunctionDeclaration = {
   name: "create_board_post",
-  description: "배틀그라운드 커뮤니티 자유게시판에 Markdown 본문을 포함한 분석 리포트 글을 작성하여 등록합니다. 반드시 정중하고 격조 있는 존댓말 어조여야 합니다.",
+  description: "배틀그라운드 커뮤니티 자유게시판에 HTML 형식 본문을 포함한 분석 리포트 글을 작성하여 등록합니다. 본문은 반드시 Markdown이 아닌 HTML 태그(<p>, <h3>, <ul>, <img src='...'> 등) 형식이어야 하며 정중하고 격조 있는 존댓말 어조여야 합니다.",
   parameters: {
     type: SchemaType.OBJECT,
     properties: {
@@ -31,7 +31,7 @@ const createBoardPostDecl: FunctionDeclaration = {
       },
       content: {
         type: SchemaType.STRING,
-        description: "Markdown 포맷의 게시글 본문 텍스트"
+        description: "HTML 형식의 게시글 본문 텍스트 (예: <p>안녕하세요...</p><img src='...' style='width:100%'/>)"
       }
     },
     required: ["title", "content"]
@@ -69,6 +69,35 @@ const tavilySearchDecl: FunctionDeclaration = {
       }
     },
     required: ["query"]
+  }
+};
+
+const getVercelDeploymentsDecl: FunctionDeclaration = {
+  name: "get_vercel_deployments",
+  description: "Vercel의 최근 배포 리스트를 가져와 각 배포의 상태(BUILDING, READY, ERROR 등) 및 생성 시간을 확인합니다.",
+  parameters: {
+    type: SchemaType.OBJECT,
+    properties: {
+      limit: {
+        type: SchemaType.NUMBER,
+        description: "가져올 배포 개수 (기본 5개)"
+      }
+    }
+  }
+};
+
+const getVercelBuildLogsDecl: FunctionDeclaration = {
+  name: "get_vercel_build_logs",
+  description: "Vercel 특정 배포 ID(deploymentId)의 상세 빌드 로그 이벤트를 가져와 빌드 실패 원인을 파악합니다.",
+  parameters: {
+    type: SchemaType.OBJECT,
+    properties: {
+      deploymentId: {
+        type: SchemaType.STRING,
+        description: "조회할 Vercel 배포 ID (예: 'dpl_xxxxxx')"
+      }
+    },
+    required: ["deploymentId"]
   }
 };
 
@@ -172,14 +201,23 @@ async function runDbStatQuery(statType: string, supabase: any): Promise<string> 
 
 async function createBoardPost(title: string, content: string, supabase: any, userId: string): Promise<string> {
   try {
+    // 본문 내용에서 첫 번째 이미지 URL 추출하여 대표 썸네일로 지정
+    let imageUrl = null;
+    const imgRegex = /<img[^>]+src\s*=\s*["']?([^"'\s>]+)["']?/i;
+    const match = content.match(imgRegex);
+    if (match && match[1]) {
+      imageUrl = match[1];
+    }
+
     const { data, error } = await supabase
       .from("posts")
       .insert({
         title,
         content,
-        author_id: userId,
-        author_nickname: "BGMS_AI_BOT",
-        category: "통계/팁"
+        user_id: userId,
+        author: "BGMS_AI_BOT",
+        category: "자유",
+        image_url: imageUrl
       })
       .select("id")
       .single();
@@ -221,7 +259,7 @@ async function takeMapScreenshot(mapName: string, layer: string, supabase: any):
     await page.setViewport({ width: 1200, height: 800 });
 
     const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000";
-    const mapUrl = `${baseUrl}/maps/${mapName.toLowerCase()}?layer=${layer}`;
+    const mapUrl = `${baseUrl}/maps/${mapName.toLowerCase()}?layer=${layer}&sidebar=false&notice=false`;
 
     // 페이지 진입 후 지도 로딩 대기
     await page.goto(mapUrl, { waitUntil: "networkidle2" });
@@ -293,6 +331,66 @@ async function runTavilySearch(query: string): Promise<string> {
   }
 }
 
+async function runGetVercelDeployments(limit = 5): Promise<string> {
+  const token = process.env.VERCEL_TOKEN;
+  const projectId = process.env.VERCEL_PROJECT_ID;
+  if (!token || !projectId) {
+    return "Vercel API 연동에 필요한 VERCEL_TOKEN 또는 VERCEL_PROJECT_ID 환경변수가 .env.local에 설정되지 않았습니다.";
+  }
+  try {
+    const res = await fetch(`https://api.vercel.com/v6/deployments?projectId=${projectId}&limit=${limit}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Vercel API 오류: ${errText}`);
+    }
+    const data = await res.json();
+    return JSON.stringify({
+      description: "최근 Vercel 배포 목록입니다.",
+      deployments: data.deployments?.map((d: any) => ({
+        uid: d.uid,
+        name: d.name,
+        url: d.url,
+        state: d.state, // READY, ERROR, BUILDING 등
+        creator: d.creator?.username,
+        created: new Date(d.created).toLocaleString("ko-KR")
+      })) || []
+    });
+  } catch (e: any) {
+    return `Vercel 배포 목록 조회 실패: ${e.message}`;
+  }
+}
+
+async function runGetVercelBuildLogs(deploymentId: string): Promise<string> {
+  const token = process.env.VERCEL_TOKEN;
+  if (!token) {
+    return "Vercel API 연동에 필요한 VERCEL_TOKEN 환경변수가 .env.local에 설정되지 않았습니다.";
+  }
+  try {
+    const res = await fetch(`https://api.vercel.com/v2/deployments/${deploymentId}/events?direction=backward&limit=100`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Vercel API 오류: ${errText}`);
+    }
+    const events = await res.json();
+    // 주요 에러 메시지가 담긴 로그 필터링
+    const errorLogs = events
+      .filter((ev: any) => ev.type === "stderr" || ev.payload?.text?.toLowerCase().includes("error") || ev.payload?.text?.toLowerCase().includes("failed"))
+      .map((ev: any) => ev.payload?.text || "")
+      .join("\n");
+      
+    return JSON.stringify({
+      description: `${deploymentId} 배포의 빌드 에러 로그입니다.`,
+      logs: errorLogs || "에러 로그를 찾지 못했습니다. 전체 빌드 이벤트를 간략히 검토해 보세요."
+    });
+  } catch (e: any) {
+    return `Vercel 빌드 로그 조회 실패: ${e.message}`;
+  }
+}
+
 export async function POST(request: Request) {
   try {
     // 🔒 [보안] JWT 인증 가드 (어드민 전용 격리)
@@ -338,7 +436,14 @@ export async function POST(request: Request) {
                   parts: [{ text: h.content }]
                 })),
                 tools: [{
-                  functionDeclarations: [getDbStatisticsDecl, createBoardPostDecl, takeMapScreenshotDecl, tavilySearchDecl]
+                  functionDeclarations: [
+                    getDbStatisticsDecl, 
+                    createBoardPostDecl, 
+                    takeMapScreenshotDecl, 
+                    tavilySearchDecl,
+                    getVercelDeploymentsDecl,
+                    getVercelBuildLogsDecl
+                  ]
                 }]
               });
 
@@ -385,6 +490,10 @@ export async function POST(request: Request) {
                   toolResult = await takeMapScreenshot(args.mapName, args.layer, supabase);
                 } else if (call.name === "tavily_search") {
                   toolResult = await runTavilySearch(args.query);
+                } else if (call.name === "get_vercel_deployments") {
+                  toolResult = await runGetVercelDeployments(args.limit);
+                } else if (call.name === "get_vercel_build_logs") {
+                  toolResult = await runGetVercelBuildLogs(args.deploymentId);
                 } else {
                   toolResult = "존재하지 않는 도구입니다.";
                   status = "failed";

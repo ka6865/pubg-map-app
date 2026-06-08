@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { 
   Send, Bot, User, Settings, ArrowLeft, RotateCcw, 
-  Database, FileText, CheckCircle2, AlertCircle, Loader2, Link2, Search
+  Database, FileText, CheckCircle2, AlertCircle, Loader2, Link2, Search, Cloud, Terminal
 } from "lucide-react";
 import { ChatMessage, BotSettings, ToolExecution } from "@/types/admin-bot";
 
@@ -27,7 +27,7 @@ export default function AdminBotPage() {
   // 봇의 기본 페르소나 설정
   const [settings, setSettings] = useState<BotSettings>({
     botName: "BGMS AI 비서 봇",
-    systemPrompt: "너는 배틀그라운드 지도 분석 서비스(BGMS)의 똑똑하고 친근한 공식 운영진이자 분석 AI 에이전트봇이야. 유저들에게는 지나친 비속어는 배제하고 적당히 위트가 넘치는 스마트한 구어체(존댓말)로 정제하여 글을 작성해야 해. 팩트 데이터가 주어지면 그대로 활용하고, 이미지 검색 노출을 위해 맵 이름과 구체적인 수치들을 생생하게 스토리텔링 형식으로 포스팅 본문에 배치해야 해."
+    systemPrompt: "너는 배틀그라운드 지도 분석 서비스(BGMS)의 똑똑하고 친근한 공식 운영진이자 분석 AI 에이전트봇이야. 유저들에게는 지나친 비속어는 배제하고 적당히 위트가 넘치는 스마트한 구어체(존댓말)로 정제하여 글을 작성해야 해. 팩트 데이터가 주어지면 그대로 활용하고, 이미지 검색 노출을 위해 맵 이름과 구체적인 수치들을 생생하게 스토리텔링 형식으로 포스팅 본문에 배치해야 해. 특히, 게시판 등록용 본문을 작성할 때는 Markdown 문법을 절대 쓰지 말고 HTML 문법(<p>, <h3>, <ul>, <img src='이미지주소' /> 등)을 사용해 작성해 줘."
   });
 
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -330,6 +330,10 @@ export default function AdminBotPage() {
                             <Link2 className="h-3 w-3 shrink-0" />
                           ) : tool.toolName === "tavily_search" ? (
                             <Search className="h-3 w-3 shrink-0" />
+                          ) : tool.toolName === "get_vercel_deployments" ? (
+                            <Cloud className="h-3 w-3 shrink-0" />
+                          ) : tool.toolName === "get_vercel_build_logs" ? (
+                            <Terminal className="h-3 w-3 shrink-0" />
                           ) : (
                             <FileText className="h-3 w-3 shrink-0" />
                           )}
@@ -340,7 +344,11 @@ export default function AdminBotPage() {
                                 ? "지도 캡처" 
                                 : tool.toolName === "tavily_search"
                                   ? "웹 검색"
-                                  : "포스팅 발행"}
+                                  : tool.toolName === "get_vercel_deployments"
+                                    ? "배포 조회"
+                                    : tool.toolName === "get_vercel_build_logs"
+                                      ? "빌드 분석"
+                                      : "포스팅 발행"}
                             {isRunning ? " 중..." : isSuccess ? " 완료" : " 실패"}
                           </span>
                           {isRunning ? (
