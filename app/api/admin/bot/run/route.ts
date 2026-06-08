@@ -57,6 +57,21 @@ const takeMapScreenshotDecl: FunctionDeclaration = {
   }
 };
 
+const tavilySearchDecl: FunctionDeclaration = {
+  name: "tavily_search",
+  description: "웹 검색 엔진(Tavily)을 통해 최신 PUBG 패치 노트, 공략 트렌드, 커뮤니티 반응 등 실시간 인터넷 정보를 검색하여 요약해 가져옵니다.",
+  parameters: {
+    type: SchemaType.OBJECT,
+    properties: {
+      query: {
+        type: SchemaType.STRING,
+        description: "검색할 쿼리 질의어 (예: 'PUBG 29.2 패치 노트 총기 밸런스', '배그 미라마 비밀의방 공략 트렌드')"
+      }
+    },
+    required: ["query"]
+  }
+};
+
 async function runDbStatQuery(statType: string, supabase: any): Promise<string> {
   try {
     if (statType === "map_preference") {
@@ -244,6 +259,40 @@ async function takeMapScreenshot(mapName: string, layer: string, supabase: any):
   }
 }
 
+async function runTavilySearch(query: string): Promise<string> {
+  const apiKey = process.env.TAVILY_API_KEY;
+  if (!apiKey) {
+    return "Tavily API 키가 설정되지 않았습니다. 관리자 서버의 .env.local 파일에 TAVILY_API_KEY를 등록해 주세요.";
+  }
+  try {
+    const res = await fetch("https://api.tavily.com/search", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        api_key: apiKey,
+        query,
+        max_results: 5,
+        include_answer: true
+      })
+    });
+    if (!res.ok) {
+      const errText = await res.text();
+      throw new Error(`Tavily API 에러: ${errText}`);
+    }
+    const data = await res.json();
+    return JSON.stringify({
+      answer: data.answer || "직접적인 답변 요약이 없습니다.",
+      results: data.results?.map((r: any) => ({
+        title: r.title,
+        url: r.url,
+        content: r.content
+      })) || []
+    });
+  } catch (e: any) {
+    return `Tavily 검색 실패: ${e.message}`;
+  }
+}
+
 export async function POST(request: Request) {
   try {
     // 🔒 [보안] JWT 인증 가드 (어드민 전용 격리)
@@ -289,7 +338,7 @@ export async function POST(request: Request) {
                   parts: [{ text: h.content }]
                 })),
                 tools: [{
-                  functionDeclarations: [getDbStatisticsDecl, createBoardPostDecl, takeMapScreenshotDecl]
+                  functionDeclarations: [getDbStatisticsDecl, createBoardPostDecl, takeMapScreenshotDecl, tavilySearchDecl]
                 }]
               });
 
@@ -334,6 +383,8 @@ export async function POST(request: Request) {
                   toolResult = await createBoardPost(args.title, args.content, supabase, user.id);
                 } else if (call.name === "take_map_screenshot") {
                   toolResult = await takeMapScreenshot(args.mapName, args.layer, supabase);
+                } else if (call.name === "tavily_search") {
+                  toolResult = await runTavilySearch(args.query);
                 } else {
                   toolResult = "존재하지 않는 도구입니다.";
                   status = "failed";

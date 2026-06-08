@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { 
   Send, Bot, User, Settings, ArrowLeft, RotateCcw, 
-  Database, FileText, CheckCircle2, AlertCircle, Loader2, Link2
+  Database, FileText, CheckCircle2, AlertCircle, Loader2, Link2, Search
 } from "lucide-react";
 import { ChatMessage, BotSettings, ToolExecution } from "@/types/admin-bot";
 
@@ -328,6 +328,8 @@ export default function AdminBotPage() {
                             <Database className="h-3 w-3 shrink-0" />
                           ) : tool.toolName === "take_map_screenshot" ? (
                             <Link2 className="h-3 w-3 shrink-0" />
+                          ) : tool.toolName === "tavily_search" ? (
+                            <Search className="h-3 w-3 shrink-0" />
                           ) : (
                             <FileText className="h-3 w-3 shrink-0" />
                           )}
@@ -336,7 +338,9 @@ export default function AdminBotPage() {
                               ? "DB 집계" 
                               : tool.toolName === "take_map_screenshot" 
                                 ? "지도 캡처" 
-                                : "포스팅 발행"}
+                                : tool.toolName === "tavily_search"
+                                  ? "웹 검색"
+                                  : "포스팅 발행"}
                             {isRunning ? " 중..." : isSuccess ? " 완료" : " 실패"}
                           </span>
                           {isRunning ? (

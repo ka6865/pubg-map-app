@@ -261,4 +261,69 @@ describe("🤖 Admin AI Bot API Route (E2E Logic Flow Verification)", () => {
     expect(mockLaunch).toHaveBeenCalled();
     expect(mockNewPage).toHaveBeenCalled();
   });
+
+  it("4. AI가 'tavily_search' 도구를 실행하도록 유도될 시, Tavily 검색 요청이 성공해야 함", async () => {
+    process.env.TAVILY_API_KEY = "dummy-tavily-key";
+    
+    // global.fetch 모킹
+    const mockFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        answer: "29.2 패치에서는 M416 반동이 개선되었습니다.",
+        results: [{ title: "PUBG 29.2 Patch Note", url: "https://pubg.com", content: "M416 Buff details" }]
+      })
+    });
+    global.fetch = mockFetch;
+
+    (withAuthGuard as any).mockResolvedValue({
+      user: { id: "admin-id" },
+      supabaseAdmin: mockSupabaseAdmin
+    });
+
+    // 1차 응답: tavily_search 도구 호출 요청
+    mockSendMessage.mockResolvedValueOnce({
+      response: {
+        text: () => "",
+        functionCalls: () => [
+          {
+            name: "tavily_search",
+            args: { query: "M416 패치 정보" }
+          }
+        ]
+      }
+    });
+
+    // 2차 응답
+    mockSendMessage.mockResolvedValueOnce({
+      response: {
+        text: () => "검색 결과 M416의 반동이 버프되었습니다.",
+        functionCalls: () => undefined
+      }
+    });
+
+    const req = new Request("http://localhost:3000/api/admin/bot/run", {
+      method: "POST",
+      body: JSON.stringify({ message: "최근 M416 패치 알려줘" })
+    });
+
+    const res = await adminBotPOST(req);
+    expect(res.status).toBe(200);
+
+    const reader = res.body?.getReader();
+    const decoder = new TextDecoder();
+    let chunks = "";
+    if (reader) {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks += decoder.decode(value);
+      }
+    }
+
+    expect(chunks).toContain("tool_start");
+    expect(chunks).toContain("tavily_search");
+    expect(chunks).toContain("tool_end");
+    expect(chunks).toContain("M416");
+    expect(mockFetch).toHaveBeenCalled();
+  });
 });
