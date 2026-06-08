@@ -790,7 +790,11 @@ function BanStatusButton({ banType, isMobile }: BanStatusButtonProps) {
   }, [isMobile, open]);
 
   const normalizedType = banType ? banType.trim() : "None";
-  
+  const lowerType = normalizedType.toLowerCase();
+  const isNormal = lowerType === "none" || lowerType === "innocent";
+  const isPermanent = lowerType.startsWith("permanent");
+  const isInherited = lowerType.startsWith("inherited");
+
   let label = "🛡️ 제재 상태 확인";
   let statusText = "정상 활동 계정";
   let statusDesc = "현재 특별한 플랫폼 제한 또는 영구 제재 조치가 없는 정상 상태입니다.";
@@ -799,21 +803,21 @@ function BanStatusButton({ banType, isMobile }: BanStatusButtonProps) {
   let popoverBorder = "rgba(16,185,129,0.3)";
   let popoverShadow = "0 20px 40px rgba(0,0,0,0.6), 0 0 15px rgba(16,185,129,0.1) inset";
 
-  if (normalizedType === "Permanent") {
+  if (isPermanent) {
     statusText = "영구 이용 정지 계정";
     statusDesc = "PUBG 보안 및 게임 정책 위반으로 시스템에 의해 영구 이용 제한 조치된 상태입니다.";
     badgeColor = "text-rose-400 border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20";
     popoverBg = "linear-gradient(145deg, #25060d 0%, #0c0003 100%)";
     popoverBorder = "rgba(244,63,94,0.3)";
     popoverShadow = "0 20px 40px rgba(0,0,0,0.6), 0 0 15px rgba(244,63,94,0.1) inset";
-  } else if (normalizedType === "Inherited") {
+  } else if (isInherited) {
     statusText = "상속된 제재 상태";
     statusDesc = "연결된 Steam 또는 타 서비스의 외부 보안 정책 위반에 의해 연동 제재된 상태입니다.";
     badgeColor = "text-amber-400 border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/20";
     popoverBg = "linear-gradient(145deg, #201302 0%, #0c0700 100%)";
     popoverBorder = "rgba(245,158,11,0.3)";
     popoverShadow = "0 20px 40px rgba(0,0,0,0.6), 0 0 15px rgba(245,158,11,0.1) inset";
-  } else if (normalizedType !== "None") {
+  } else if (!isNormal) {
     statusText = "임시 보호 조치";
     statusDesc = "조사를 위해 일시적으로 계정이 동결되었거나 안전 상태 점검 중입니다.";
     badgeColor = "text-sky-400 border-sky-500/30 bg-sky-500/10 hover:bg-sky-500/20";
@@ -846,11 +850,11 @@ function BanStatusButton({ banType, isMobile }: BanStatusButtonProps) {
         >
           <div className="flex items-center gap-2 mb-3 pb-2 border-b" style={{ borderColor: popoverBorder }}>
             <div className="p-1.5 rounded-lg" style={{ background: "rgba(255,255,255,0.05)" }}>
-              <Shield size={14} className={normalizedType === "None" ? "text-emerald-400" : normalizedType === "Permanent" ? "text-rose-400" : "text-amber-400"} />
+              <Shield size={14} className={isNormal ? "text-emerald-400" : isPermanent ? "text-rose-400" : isInherited ? "text-amber-400" : "text-sky-400"} />
             </div>
             <div>
               <div className="text-xs font-black text-white">PUBG 계정 보안 상태</div>
-              <div className={`text-[10px] font-bold ${normalizedType === "None" ? "text-emerald-400/80" : normalizedType === "Permanent" ? "text-rose-400/80" : "text-amber-400/80"}`}>
+              <div className={`text-[10px] font-bold ${isNormal ? "text-emerald-400/80" : isPermanent ? "text-rose-400/80" : isInherited ? "text-amber-400/80" : "text-sky-400/80"}`}>
                 {statusText} ({normalizedType})
               </div>
             </div>

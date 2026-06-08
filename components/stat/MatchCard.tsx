@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { 
   ChevronDown, 
   Target, 
@@ -154,6 +155,11 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
   const [isExpanded, setIsExpanded] = useState(false);
   const [isTimelineExpanded, setIsTimelineExpanded] = useState(false);
   const [showReplayModal, setShowReplayModal] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
   const [coachingStyle, setCoachingStyle] = useState<"mild" | "spicy">("spicy");
   const [analysis, setAnalysis] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -188,6 +194,18 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
       }
     };
   }, [matchId]);
+
+  // 리플레이 분석 모달 오픈 시 body 스크롤 방지
+  useEffect(() => {
+    if (showReplayModal) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [showReplayModal]);
 
   useEffect(() => {
     if (!showTierTooltip || !isMobile) return;
@@ -1358,16 +1376,16 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
       )}
 
       {/* ── 리플레이 분석 모드 선택 모달 ── */}
-      {showReplayModal && (
+      {showReplayModal && mounted && createPortal(
         <div 
-          className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/70 backdrop-blur-md p-4 animate-in fade-in duration-200"
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200"
           onClick={(e) => {
             e.stopPropagation();
             setShowReplayModal(false);
           }}
         >
           <div 
-            className="w-full max-w-lg bg-[#0e1116] border border-white/10 rounded-[2.5rem] p-6 shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col gap-6 relative overflow-hidden"
+            className="w-full max-w-lg bg-[#0e1116] border border-white/10 sm:rounded-[2.5rem] rounded-[2rem] sm:p-6 p-5 shadow-2xl animate-in zoom-in-95 duration-200 flex flex-col gap-5 sm:gap-6 relative overflow-hidden max-h-[calc(100dvh-2rem)] overflow-y-auto"
             onClick={(e) => e.stopPropagation()}
           >
             {/* 배경 광채 데코 */}
@@ -1468,7 +1486,8 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
