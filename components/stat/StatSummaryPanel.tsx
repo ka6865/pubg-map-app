@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useTransition, useRef, useEffect } from "react";
+import { getTierIconPath } from "@/utils/tier";
 import {
   Trophy,
   Target,
@@ -261,6 +262,11 @@ export const StatSummaryPanel = ({ stats, isMobile }: StatSummaryPanelProps) => 
               <div
                 className={`flex items-center gap-4 p-4 rounded-2xl bg-gradient-to-r ${tierInfo?.bg} border border-white/8 ${tierInfo?.glow}`}
               >
+                <img
+                  src={getTierIconPath(data.currentTier?.tier, data.currentTier?.subTier)}
+                  alt={data.currentTier?.tier || "Rank Icon"}
+                  className="w-12 h-12 md:w-16 md:h-16 object-contain shrink-0"
+                />
                 <div className="flex flex-col gap-0.5 min-w-0 flex-1">
                   <span className="text-[10px] font-black text-white/30 uppercase tracking-widest">
                     현재 랭크
