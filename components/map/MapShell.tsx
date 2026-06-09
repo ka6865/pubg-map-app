@@ -89,6 +89,12 @@ const MapShell = memo(({
     const [showPlayerNames, setShowPlayerNames] = useState(true);
     const [showFlightPath, setShowFlightPath] = useState(true);
     const [showSmokeNotice, setShowSmokeNotice] = useState(false); // 🎯 연막탄 공지 상태
+    const [isInstructionDismissed, setIsInstructionDismissed] = useState(false);
+
+    // Reset instruction dismissal when activeMode changes
+    useEffect(() => {
+      setIsInstructionDismissed(false);
+    }, [activeMode]);
 
     // 🎯 "오늘 하루 보지 않기" 체크 로직
     useEffect(() => {
@@ -167,35 +173,146 @@ const MapShell = memo(({
             {/* 구형 상태바 제거됨 */}
 
             {/* UI Overlay Buttons */}
+            {/* UI Overlay Buttons */}
             {!playbackId && (
-              <div className={`absolute z-[1000] flex w-full pointer-events-none transition-all ${isMobile ? 'bottom-[72px] px-6 safe-bottom' : 'top-4 right-4 justify-end'}`}>
-                <div className={`flex w-full items-start ${isMobile ? 'justify-between items-end' : 'justify-end'}`}>
-                  {!isMobile && !isSidebarOpen && (
-                    <button onClick={() => onSetSidebarOpen(true)} className="pointer-events-auto absolute left-4 top-0 flex items-center justify-center w-[44px] h-[44px] bg-black/80 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl active:scale-90 transition-all text-white hover:text-[#F2A900] z-[5000]">
-                      <Menu size={22} strokeWidth={2.5} />
-                    </button>
-                  )}
-                  {isMobile && (
-                    <button onClick={() => onSetSidebarOpen(!isSidebarOpen)} className="pointer-events-auto flex items-center justify-center w-[52px] h-[52px] bg-black/80 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl active:scale-90 transition-all text-[#F2A900]">
-                      <SlidersHorizontal size={22} strokeWidth={2.5} />
-                    </button>
-                  )}
-                  <div className="flex flex-col gap-3 items-end pointer-events-auto">
-                    <button onClick={() => setIsMenuOpen(!isMenuOpen)} className={`pointer-events-auto flex items-center gap-2 px-6 shadow-[0_12px_40px_rgba(0,0,0,0.4)] active:scale-90 transition-all duration-300 border border-white/5 ${isMenuOpen ? "bg-red-600 text-white h-[52px] rounded-2xl text-sm" : "bg-black/80 backdrop-blur-xl text-[#F2A900] h-[52px] rounded-2xl text-base"}`}>
-                      {isMenuOpen ? <><X size={18} strokeWidth={3} /><span className="font-black uppercase tracking-tight text-xs">닫기</span></> : <><Hammer size={18} strokeWidth={3} /><span className="font-black uppercase tracking-tight text-xs">{isMobile ? "도구" : "지도 도구"}</span></>}
-                    </button>
+              <>
+                {isMobile ? (
+                  // Mobile compact layout
+                  <div className="absolute z-[1000] bottom-[72px] left-6 right-6 pointer-events-none flex flex-col gap-3 safe-bottom">
                     {isMenuOpen && (
-                      <div className="flex flex-col gap-2.5 items-end animate-in fade-in slide-in-from-bottom-4 duration-300">
-                        <button onClick={() => setIsHotDropOn(!isHotDropOn)} className={`pointer-events-auto flex items-center gap-2.5 px-5 py-3.5 border border-white/10 rounded-xl font-black text-xs shadow-2xl transition-all active:scale-95 ${isHotDropOn ? "bg-gradient-to-r from-orange-500 to-red-600 text-white border-orange-400" : "bg-[#1a1a1a] text-orange-500 hover:text-orange-400"}`}><Flame size={16} strokeWidth={3} /><span className="uppercase tracking-tighter">핫드랍 {isHotDropOn ? "ON" : "OFF"}</span></button>
-                        <button onClick={() => setIsGridOn(!isGridOn)} className={`pointer-events-auto flex items-center gap-2.5 px-5 py-3.5 border border-white/10 rounded-xl font-black text-xs shadow-2xl transition-all active:scale-95 ${isGridOn ? "bg-[#F2A900] text-black" : "bg-[#1a1a1a] text-[#777]"}`}><MapIcon size={16} strokeWidth={3} /><span className="uppercase tracking-tighter">그리드 {isGridOn ? "ON" : "OFF"}</span></button>
-                        <button onClick={() => handleModeToggle("simulate")} className={`pointer-events-auto flex items-center gap-2.5 px-5 py-3.5 border border-blue-500/30 rounded-xl font-black text-xs shadow-2xl transition-all active:scale-95 ${activeMode === "simulate" ? "bg-blue-600 text-white" : "bg-[#1a1a1a] text-blue-400 hover:text-blue-300"}`}><Target size={16} strokeWidth={3} /><span className="uppercase tracking-tighter">시뮬레이터</span></button>
-                        <button onClick={() => handleModeToggle("mortar")} className={`pointer-events-auto flex items-center gap-2.5 px-5 py-3.5 border border-white/10 rounded-xl font-black text-xs shadow-2xl transition-all active:scale-95 ${activeMode === "mortar" ? "bg-[#ea4335] text-white" : "bg-[#1a1a1a] text-[#777]"}`}><Crosshair size={16} strokeWidth={3} /><span className="uppercase tracking-tighter">박격포</span></button>
-                        <button onClick={() => handleModeToggle("report")} className={`pointer-events-auto flex items-center gap-2.5 px-5 py-3.5 border border-emerald-500/30 rounded-xl font-black text-xs shadow-2xl transition-all active:scale-95 ${activeMode === "report" ? "bg-emerald-600 text-white border-emerald-500" : "bg-[#1a1a1a] text-emerald-400 hover:text-emerald-300"}`}><MapPin size={16} strokeWidth={3} /><span className="uppercase tracking-tighter">차량 제보</span></button>
+                      <div className="pointer-events-auto w-full bg-black/90 backdrop-blur-xl border border-white/10 rounded-2xl px-2 py-3 shadow-[0_12px_40px_rgba(0,0,0,0.6)] flex justify-around items-center gap-1 animate-in slide-in-from-bottom-4 duration-300">
+                        {/* 핫드랍 */}
+                        <button 
+                          onClick={() => setIsHotDropOn(!isHotDropOn)} 
+                          className={`flex flex-col items-center gap-1.5 flex-1 py-1 rounded-xl transition-all active:scale-90 ${isHotDropOn ? "text-orange-500 font-bold" : "text-gray-400"}`}
+                        >
+                          <Flame size={18} strokeWidth={2.5} className={isHotDropOn ? "animate-pulse text-orange-500" : ""} />
+                          <span className="text-[10px] tracking-tight">핫드랍</span>
+                        </button>
+                        
+                        {/* 그리드 */}
+                        <button 
+                          onClick={() => setIsGridOn(!isGridOn)} 
+                          className={`flex flex-col items-center gap-1.5 flex-1 py-1 rounded-xl transition-all active:scale-90 ${isGridOn ? "text-[#F2A900] font-bold" : "text-gray-400"}`}
+                        >
+                          <MapIcon size={18} strokeWidth={2.5} className={isGridOn ? "text-[#F2A900]" : ""} />
+                          <span className="text-[10px] tracking-tight">그리드</span>
+                        </button>
+                        
+                        {/* 시뮬레이터 */}
+                        <button 
+                          onClick={() => handleModeToggle("simulate")} 
+                          className={`flex flex-col items-center gap-1.5 flex-1 py-1 rounded-xl transition-all active:scale-90 ${activeMode === "simulate" ? "text-blue-400 font-bold" : "text-gray-400"}`}
+                        >
+                          <Target size={18} strokeWidth={2.5} className={activeMode === "simulate" ? "text-blue-400" : ""} />
+                          <span className="text-[10px] tracking-tight">시뮬</span>
+                        </button>
+                        
+                        {/* 박격포 */}
+                        <button 
+                          onClick={() => handleModeToggle("mortar")} 
+                          className={`flex flex-col items-center gap-1.5 flex-1 py-1 rounded-xl transition-all active:scale-90 ${activeMode === "mortar" ? "text-red-500 font-bold" : "text-gray-400"}`}
+                        >
+                          <Crosshair size={18} strokeWidth={2.5} className={activeMode === "mortar" ? "text-red-500" : ""} />
+                          <span className="text-[10px] tracking-tight">박격포</span>
+                        </button>
+                        
+                        {/* 차량 제보 */}
+                        <button 
+                          onClick={() => handleModeToggle("report")} 
+                          className={`flex flex-col items-center gap-1.5 flex-1 py-1 rounded-xl transition-all active:scale-90 ${activeMode === "report" ? "text-emerald-400 font-bold" : "text-gray-400"}`}
+                        >
+                          <MapPin size={18} strokeWidth={2.5} className={activeMode === "report" ? "text-emerald-400" : ""} />
+                          <span className="text-[10px] tracking-tight">차량제보</span>
+                        </button>
                       </div>
                     )}
+                    <div className="flex justify-between items-center w-full">
+                      <button 
+                        onClick={() => onSetSidebarOpen(!isSidebarOpen)} 
+                        className="pointer-events-auto flex items-center justify-center w-[52px] h-[52px] bg-black/80 backdrop-blur-md border border-white/10 rounded-2xl shadow-2xl active:scale-90 transition-all text-[#F2A900]"
+                      >
+                        <SlidersHorizontal size={22} strokeWidth={2.5} />
+                      </button>
+                      <button 
+                        onClick={() => setIsMenuOpen(!isMenuOpen)} 
+                        className={`pointer-events-auto flex items-center gap-2 px-5 shadow-[0_12px_40px_rgba(0,0,0,0.4)] active:scale-90 transition-all duration-300 border border-white/5 bg-black/80 backdrop-blur-xl h-[52px] rounded-2xl ${isMenuOpen ? "text-red-500 border-red-500/20" : "text-[#F2A900]"}`}
+                      >
+                        {isMenuOpen ? (
+                          <><X size={18} strokeWidth={3} /><span className="font-black uppercase tracking-tight text-xs">닫기</span></>
+                        ) : (
+                          <><Hammer size={18} strokeWidth={3} /><span className="font-black uppercase tracking-tight text-xs">도구</span></>
+                        )}
+                      </button>
+                    </div>
                   </div>
-                </div>
-              </div>
+                ) : (
+                  // Desktop layout
+                  <div className="absolute z-[1000] flex w-full pointer-events-none transition-all top-4 right-4 justify-end">
+                    <div className="flex w-full items-start justify-end">
+                      {!isSidebarOpen && (
+                        <button 
+                          onClick={() => onSetSidebarOpen(true)} 
+                          className="pointer-events-auto absolute left-4 top-0 flex items-center justify-center w-[44px] h-[44px] bg-black/80 backdrop-blur-md border border-white/10 rounded-xl shadow-2xl active:scale-90 transition-all text-white hover:text-[#F2A900] z-[5000]"
+                        >
+                          <Menu size={22} strokeWidth={2.5} />
+                        </button>
+                      )}
+                      <div className="flex flex-col gap-3 items-end pointer-events-auto">
+                        <button 
+                          onClick={() => setIsMenuOpen(!isMenuOpen)} 
+                          className={`pointer-events-auto flex items-center gap-2 px-6 shadow-[0_12px_40px_rgba(0,0,0,0.4)] active:scale-90 transition-all duration-300 border border-white/5 ${isMenuOpen ? "bg-red-600 text-white h-[52px] rounded-2xl text-sm" : "bg-black/80 backdrop-blur-xl text-[#F2A900] h-[52px] rounded-2xl text-base"}`}
+                        >
+                          {isMenuOpen ? (
+                            <><X size={18} strokeWidth={3} /><span className="font-black uppercase tracking-tight text-xs">닫기</span></>
+                          ) : (
+                            <><Hammer size={18} strokeWidth={3} /><span className="font-black uppercase tracking-tight text-xs">지도 도구</span></>
+                          )}
+                        </button>
+                        {isMenuOpen && (
+                          <div className="flex flex-col gap-2.5 items-end animate-in fade-in slide-in-from-bottom-4 duration-300">
+                            <button 
+                              onClick={() => setIsHotDropOn(!isHotDropOn)} 
+                              className={`pointer-events-auto flex items-center gap-2.5 px-5 py-3.5 border border-white/10 rounded-xl font-black text-xs shadow-2xl transition-all active:scale-95 ${isHotDropOn ? "bg-gradient-to-r from-orange-500 to-red-600 text-white border-orange-400" : "bg-[#1a1a1a] text-orange-500 hover:text-orange-400"}`}
+                            >
+                              <Flame size={16} strokeWidth={3} />
+                              <span className="uppercase tracking-tighter">핫드랍 {isHotDropOn ? "ON" : "OFF"}</span>
+                            </button>
+                            <button 
+                              onClick={() => setIsGridOn(!isGridOn)} 
+                              className={`pointer-events-auto flex items-center gap-2.5 px-5 py-3.5 border border-white/10 rounded-xl font-black text-xs shadow-2xl transition-all active:scale-95 ${isGridOn ? "bg-[#F2A900] text-black" : "bg-[#1a1a1a] text-[#777]"}`}
+                            >
+                              <MapIcon size={16} strokeWidth={3} />
+                              <span className="uppercase tracking-tighter">그리드 {isGridOn ? "ON" : "OFF"}</span>
+                            </button>
+                            <button 
+                              onClick={() => handleModeToggle("simulate")} 
+                              className={`pointer-events-auto flex items-center gap-2.5 px-5 py-3.5 border border-blue-500/30 rounded-xl font-black text-xs shadow-2xl transition-all active:scale-95 ${activeMode === "simulate" ? "bg-blue-600 text-white" : "bg-[#1a1a1a] text-blue-400 hover:text-blue-300"}`}
+                            >
+                              <Target size={16} strokeWidth={3} />
+                              <span className="uppercase tracking-tighter">시뮬레이터</span>
+                            </button>
+                            <button 
+                              onClick={() => handleModeToggle("mortar")} 
+                              className={`pointer-events-auto flex items-center gap-2.5 px-5 py-3.5 border border-white/10 rounded-xl font-black text-xs shadow-2xl transition-all active:scale-95 ${activeMode === "mortar" ? "bg-[#ea4335] text-white" : "bg-[#1a1a1a] text-[#777]"}`}
+                            >
+                              <Crosshair size={16} strokeWidth={3} />
+                              <span className="uppercase tracking-tighter">박격포</span>
+                            </button>
+                            <button 
+                              onClick={() => handleModeToggle("report")} 
+                              className={`pointer-events-auto flex items-center gap-2.5 px-5 py-3.5 border border-emerald-500/30 rounded-xl font-black text-xs shadow-2xl transition-all active:scale-95 ${activeMode === "report" ? "bg-emerald-600 text-white border-emerald-500" : "bg-[#1a1a1a] text-emerald-400 hover:text-emerald-300"}`}
+                            >
+                              <MapPin size={16} strokeWidth={3} />
+                              <span className="uppercase tracking-tighter">차량 제보</span>
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
             
             <SimulatorPanel 
@@ -222,12 +339,21 @@ const MapShell = memo(({
               simulatorPhases={simulatorPhases}
             />
 
-            {activeMode !== "none" && (
-              <div className={`absolute left-1/2 -translate-x-1/2 z-[1000] bg-black/80 text-white px-5 py-2.5 rounded-full text-xs pointer-events-none font-bold border border-white/10 shadow-2xl flex items-center gap-2 whitespace-nowrap ${isMobile ? 'top-[60px]' : 'top-4'}`}>
-                {activeMode === "mortar" && "🎯 [박격포] 지도 위에 내 위치와 타겟 지점을 순서대로 클릭하세요."}
-                {activeMode === "simulate" && "🎲 [시뮬레이터] 지도를 클릭해 서클 및 가상 경로 지점을 추가하세요."}
-                {activeMode === "report" && "🚨 [차량 제보] 지도 위에 차량을 제보할 위치를 클릭하세요!"}
-                <span className="text-[#F2A900] ml-1.5">(우클릭: 취소)</span>
+            {activeMode !== "none" && !isInstructionDismissed && (
+              <div className={`absolute left-1/2 -translate-x-1/2 z-[1000] bg-black/80 backdrop-blur-md text-white px-5 py-2.5 rounded-full text-xs font-bold border border-white/10 shadow-2xl flex items-center gap-2.5 whitespace-nowrap pointer-events-auto transition-all ${isMobile ? 'top-[60px]' : 'top-4'}`}>
+                <span>
+                  {activeMode === "mortar" && "🎯 [박격포] 지도 위에 내 위치와 타겟 지점을 순서대로 클릭하세요."}
+                  {activeMode === "simulate" && "🎲 [시뮬레이터] 지도를 클릭해 서클 및 가상 경로 지점을 추가하세요."}
+                  {activeMode === "report" && "🚨 [차량 제보] 지도 위에 차량을 제보할 위치를 클릭하세요!"}
+                </span>
+                {!isMobile && <span className="text-[#F2A900] ml-1.5">(우클릭: 취소)</span>}
+                <button 
+                  onClick={() => setIsInstructionDismissed(true)}
+                  className="ml-1.5 p-0.5 hover:bg-white/10 rounded-full transition-all active:scale-75"
+                  title="닫기"
+                >
+                  <X size={14} className="text-gray-400 hover:text-white" />
+                </button>
               </div>
             )}
 
