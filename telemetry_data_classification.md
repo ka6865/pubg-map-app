@@ -1,5 +1,5 @@
 # [사실기반] BGMS 텔레메트리 데이터 실구현 명세서 (V60.0)
-*공식 PUBG API 텔레메트리 이벤트 + 오브젝트 전수 대조 및 V60.0 고정밀 정합성 패치 완료*
+*공식 PUBG API 텔레메트리 이벤트 + 오브젝트 전수 대조 및 V60.0 고정밀 정합성 패치 완료 (3D 바닥 격자 차폐 정합 및 지형 불투명화 추가)*
 
 ---
 
@@ -13,7 +13,7 @@
 | LogPhaseChange | 페이즈 변경 | O | O | O | CORE: 페이즈 전환 인식 및 타임라인 연동 |
 | LogPlayerCreate | 플레이어 생성 | O | O | O | CORE: 초기 참가자 정보 및 복귀전 세션 준비 |
 | LogParachuteLanding | 낙하산 착지 | O | O | O | CORE: 초기 파밍 지역 판정 및 크론 작업([hotdrop/route.ts](file:///Users/kangheesung/pubg-map-app-local/app/api/cron/hotdrop/route.ts))을 통한 핫드랍 히트맵 추출 가동 |
-| LogPlayerPosition | 위치 정보 | O | O | O | CORE: `isolationIndex` 및 리플레이 경로 빌드. <br> ※ 리플레이 수집 시 적군은 10번에 1번만 기록(`mode !== "full"` 일 때 10% Slimming 최적화)하여 저장 용량 초경량 보존. 최상위 `vehicle` 필드로 캐릭터 탑승 정보 수집. |
+| LogPlayerPosition | 위치 정보 | O | O | O | CORE: `isolationIndex` 및 리플레이 경로 빌드. <br> ※ 리플레이 수집 시 적군은 10번에 1번만 기록(`mode !== "full"` 일 때 10% Slimming 최적화)하여 저장 용량 초경량 보존. 최상위 `vehicle` 필드로 캐릭터 탑승 정보 수집. <br> ※ 3D 리플레이 고도 시각화 및 정합을 위해 하이트맵 포맷에 맞춤화된 이원화(하이브리드) 공식 적용. PNG 맵(에란겔/미라마/비켄디)은 브라우저 Canvas의 sRGB 감마 2.2 보정을 역산하기 위해 `const R_linear = Math.pow(R / 255, 2.2) * 255;` 역 감마 보정을 거친 후, 맵별 물리 스케일에 정합되는 `(R_linear - zOffset) * zScale` 수식을 사용함 (미라마는 고지대 정합을 위해 `zScale = 3.0`, `zOffset = 135` 적용, 타 PNG 맵은 `zScale = 2.048`, `zOffset = 128` 적용). JPG 맵(론도/태이고/데스턴)은 `MAP_ELEVATION_CONFIGS` 테이블 기반 공식을 적용하여 텔레메트리 절대 고도와 1:1 싱크 정합. 특히 3D 지형 메쉬의 X축 -90도 회전(Local Y -> World -Z)에 따른 세로축(남북 Z축)의 기하학적 매핑에 대해, 비동기 로딩되는 그리드 캐시 조회 시 Z축 반전 계산 오류(`1 - percentZ`)를 제거하여 폴백 방식 픽셀 쿼리와의 1:1 기하학적 정합성을 바로잡았음. 또한 128x128 격자망 **이중 선형 보간 격자 고도 캐시**를 탑재하여 캐릭터가 지면 아래로 파묻히는 비주얼 버그를 차단하였으며, 지상 스냅 알고리즘을 지능적으로 고도화하여 캐릭터가 땅속으로 묻히는 지하 매몰 현상을 즉각 차단(diffM < 0일 때 무조건 스냅)하고, 일반 차량 탑승 상태(isInVehicle) 시에는 급경사 오차를 커버하기 위해 25m 완화 스냅을 적용하며, 도보 시에는 옥상 교전 분리 가독성을 위해 8m 완화 스냅을 동적으로 교차 적용하는 다단계 지상 안착 필터링을 구축하여 산악 지형 급사면에서의 캐릭터/차량 붕뜸 버그를 차단함. 더불어, 바닥의 가이드 격자망(GridHelper)이 특정 저지대(음수 고도 지역) 지면 위로 뚫고 나와 붕 뜨는 현상을 해결하기 위해, 지형 메쉬 재질을 완전히 불투명하게 만들고(transparent: false) 하이트맵 로딩 콜백 내에서 지형의 최저 고도(minElevation) 값을 계산하여 격자망의 Y 좌표를 이보다 아래인 `minElevation - 0.05`로 동적 스냅 정합시킴으로써 격자가 지상 위로 돌출되는 물리적 한계를 해소하였음. |
 | LogPlayerAttack | 공격/사격 | X | **O (100% 정상)** | O | **E2E 실증**: 리플레이 전용 API(`telemetry/route.ts`)는 원본 전체를 분석하므로 `"shot"` 및 `"throw"`로 100% 완벽히 가공/스토리지 캐싱 완료. 다만 AI DB 수집기(`match/route.ts`)에서만 필터 누락되어 통계 미반영. |
 | LogPlayerTakeDamage | 피격 정보 | O | O | O | CORE: HP 감쇄 피해량 및 교전 딜레이(latency) 산출. 리플레이에서 탄도선 및 탄착 VFX 렌더링에 직접 소비. <br> **[V58.4 패치]**: 아군 사격(Friendly Fire) 및 자해 데미지는 본인 무기 교전 통계 및 시간대별 딜량(`goldenTimeDamage`)에서 완전히 제외하여 딜량 오염 차단. 또한 피해자가 이미 기절(`groggy`) 또는 사망 상태인 경우 확킬 딜량 오염 방지를 위해 무기 딜량 및 타격 가산 제외. |
 | LogPlayerMakeGroggy | 기절(Knock) | O | O | O | CORE: 기절 스탯 누적 및 연막 세이브 판정 트리거. <br> **[V58.4 패치]**: 기절 발생 시 피해자의 생존 상태를 실시간 `"groggy"`로 추적하여 확킬 데미지 차단 필터와 연동. 공격자/피해자의 차량 탑승 상태(isInVehicle)를 기반으로 **순수 무기 리드샷(Lead Shot) 기절 및 라이딩샷(Riding Shot) 기절** 지표를 실시간 가산. |

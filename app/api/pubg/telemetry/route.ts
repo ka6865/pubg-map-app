@@ -61,7 +61,12 @@ export async function GET(request: Request) {
     const fileText = await downloadFromR2(mapCachePath);
 
     if (fileText) {
-      return NextResponse.json(JSON.parse(fileText), {
+      const cachedData = JSON.parse(fileText);
+      // 구버전 캐시 복원: mapName 필드가 누락된 경우 쿼리 파라미터 또는 기본값으로 보완
+      if (!cachedData.mapName) {
+        cachedData.mapName = mapName || "Erangel";
+      }
+      return NextResponse.json(cachedData, {
         headers: { "Cache-Control": "no-store" }
       });
     }
@@ -83,6 +88,7 @@ export async function GET(request: Request) {
       teamNames: result.mapData?.teamNames || [nickname],
       events: result.mapData?.events || [],
       zoneEvents: result.mapData?.zoneEvents || [],
+      mapName: result.mapName || matchData.data.attributes.mapName || mapName,
     };
 
     // [V58.3] 파싱된 최종 결과물을 Cloudflare R2 스토리지에 업로드
