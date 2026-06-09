@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import { HelpCircle, Trophy, Target, Swords, Shield, Clock, Crosshair, Users } from "lucide-react";
+import { getTierIconPath } from "@/utils/tier";
 
 const getKDA = (k: number, a: number, d: number) => ((k + a) / (d || 1)).toFixed(2);
 const getWinRate = (w: number, p: number) => (p > 0 ? ((w / p) * 100).toFixed(1) : "0.0");
@@ -55,10 +56,21 @@ export const StatSummaryCard = ({ title, data, isRanked, isMobile }: { title: st
             <span className="text-white/40 font-black text-xs uppercase tracking-tighter">{title} 기록</span>
           </div>
           
-          <div className="flex justify-between items-end">
-            <h4 className="text-2xl font-black text-white tracking-tight">{isRanked ? (data.currentTier?.tier || "랭크 정보 없음") : title}</h4>
+          <div className="flex justify-between items-center mt-1">
+            <div className="flex items-center gap-2.5 min-w-0">
+              {isRanked && (
+                <img
+                  src={getTierIconPath(data.currentTier?.tier, data.currentTier?.subTier)}
+                  alt={data.currentTier?.tier || "Rank Icon"}
+                  className="w-10 h-10 object-contain shrink-0"
+                />
+              )}
+              <h4 className="text-xl md:text-2xl font-black text-white tracking-tight truncate">
+                {isRanked ? (data.currentTier?.tier || "랭크 정보 없음") : title}
+              </h4>
+            </div>
             {isRanked && (
-              <div className="text-right">
+              <div className="text-right shrink-0">
                 <div className="text-amber-500 font-black text-xl leading-none">{data.currentRankPoint || 0} <span className="text-xs">RP</span></div>
                 <div className="text-[10px] text-white/30 font-bold uppercase tracking-widest">{data.currentTier?.subTier || ""} 티어</div>
               </div>

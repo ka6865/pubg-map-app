@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import getApiUrl from "../../lib/api-config";
+import { getTierIconPath } from "@/utils/tier";
 
 interface MiniStatWidgetProps {
   pubgNickname: string;
@@ -101,7 +102,14 @@ export default function MiniStatWidget({ pubgNickname, platform = "steam" }: Min
           </div>
           <div className="flex flex-col">
             <span className="text-xs text-gray-500">티어(스쿼드)</span>
-            <span className="font-bold text-sm text-[#F2A900]">{data.tier} {data.subTier}</span>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <img
+                src={getTierIconPath(data.tier, data.subTier)}
+                alt={`${data.tier} ${data.subTier}`}
+                className="w-5 h-5 object-contain"
+              />
+              <span className="font-bold text-sm text-[#F2A900]">{data.tier} {data.subTier}</span>
+            </div>
           </div>
         </div>
       ) : (

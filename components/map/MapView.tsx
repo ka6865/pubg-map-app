@@ -225,6 +225,10 @@ interface MapViewProps {
   setSimulatorPhases?: React.Dispatch<React.SetStateAction<L.LatLng[]>>;
 }
 
+
+
+
+
 const MapView = memo(
   ({
     activeMapId,
@@ -259,6 +263,83 @@ const MapView = memo(
     setSimulatorPhases,
   }: MapViewProps) => {
     const isActionRunningRef = useRef(false);
+    const heightmapDataRef = useRef<{
+      canvas: HTMLCanvasElement | null;
+      width: number;
+      height: number;
+      mapId: string;
+    } | null>(null);
+
+    useEffect(() => {
+      if (typeof window === "undefined") return;
+
+      const mapId = activeMapId;
+      // 손상된 PNG를 우회하여 정상 JPG 하이트맵을 모든 맵에서 일관되게 사용
+      const imageUrl = `/assets/map/${mapId}_HeightMap.jpg`;
+      const supportedMaps = [
+        "Erangel", "Miramar", "Vikendi", "Taego", "Deston", "Rondo"
+      ];
+
+      if (!supportedMaps.includes(mapId)) {
+        heightmapDataRef.current = null;
+        return;
+      }
+
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.src = imageUrl;
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext("2d");
+        if (ctx) {
+          ctx.drawImage(img, 0, 0);
+          heightmapDataRef.current = {
+            canvas,
+            width: img.width,
+            height: img.height,
+            mapId,
+          };
+        }
+      };
+      img.onerror = () => {
+        console.warn(`Failed to load heightmap for ${mapId}`);
+        heightmapDataRef.current = null;
+      };
+    }, [activeMapId]);
+
+    const getElevation = (latlng: L.LatLng): number => {
+      const heightData = heightmapDataRef.current;
+      if (!heightData || heightData.mapId !== activeMapId || !heightData.canvas) {
+        return 0;
+      }
+
+      const { canvas, width, height } = heightData;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return 0;
+
+      const px_x = Math.round((latlng.lng / 8192) * width);
+      // 하이트맵 Y축은 반전 없이 Leaflet Y와 동일 방향으로 매핑
+      const px_y = Math.round((latlng.lat / 8192) * height);
+
+      const clampedX = Math.max(0, Math.min(width - 1, px_x));
+      const clampedY = Math.max(0, Math.min(height - 1, px_y));
+
+      try {
+        const imgData = ctx.getImageData(clampedX, clampedY, 1, 1).data;
+        if (imgData[3] === 0) {
+          return 0;
+        }
+        const R = imgData[0];
+        // PUBG 인게임 표준 8비트 고도 변환 공식: R=128 기준 ±262m 범위
+        return (R - 128) * 2.048;
+      } catch (e) {
+        console.error("Failed to read elevation pixel data", e);
+        return 0;
+      }
+    };
+
 
     const handleCloseReport = () => {
       setReportLocation(null);
@@ -394,6 +475,16 @@ const MapView = memo(
           .leaflet-pane path.leaflet-interactive[stroke-dasharray] {
             transition: none !important;
           }
+          /* Leaflet 툴팁 기본 오버라이드 */
+          .custom-mortar-tooltip {
+            background: transparent !important;
+            border: none !important;
+            box-shadow: none !important;
+            padding: 0 !important;
+          }
+          .custom-mortar-tooltip::before {
+            display: none !important;
+          }
         `}</style>
         {currentMap && (
           <TileLayer
@@ -523,52 +614,77 @@ const MapView = memo(
                 icon={i === 0 ? mortarStartIcon : mortarEndIcon}
               />
             ))}
-            {mortarPoints.length === 2 && (
-              <>
-                <Polyline
-                  positions={mortarPoints.map((p) => [p.lat, p.lng])}
-                  color="#ea4335"
-                  weight={3}
-                  dashArray="8, 8"
-                  interactive={false}
-                />
-                <Marker
-                  position={[
-                    (mortarPoints[0].lat + mortarPoints[1].lat) / 2,
-                    (mortarPoints[0].lng + mortarPoints[1].lng) / 2,
-                  ]}
-                  icon={emptyIcon}
-                  interactive={false}
-                >
-                  <Tooltip permanent direction="center" opacity={0.95}>
-                    <div
-                      style={{
-                        textAlign: "center",
-                        padding: "4px",
-                        fontWeight: "bold",
-                      }}
-                    >
-                      <div style={{ fontSize: "16px", color: "#d93025" }}>
-                        거리:{" "}
-                        {Math.round(
-                          Math.sqrt(
-                            Math.pow(
-                              mortarPoints[0].lat - mortarPoints[1].lat,
-                              2
-                            ) +
-                              Math.pow(
-                                mortarPoints[0].lng - mortarPoints[1].lng,
-                                2
-                              )
-                          ) * mapScale
-                        )}
-                        m
+            {mortarPoints.length === 2 && (() => {
+              const p1 = mortarPoints[0];
+              const p2 = mortarPoints[1];
+              const horizontalDistance = Math.round(
+                Math.sqrt(
+                  Math.pow(p1.lat - p2.lat, 2) + Math.pow(p1.lng - p2.lng, 2)
+                ) * mapScale
+              );
+
+              const z1 = getElevation(p1);
+              const z2 = getElevation(p2);
+              const rawDeltaH = z2 - z1; // Real altitude difference in meters
+              const deltaH = rawDeltaH * 0.4; // Corrected altitude difference in meters
+
+              // Calculate 3D distance using Pythagoras theorem
+              const distance3D = Math.round(
+                Math.sqrt(Math.pow(horizontalDistance, 2) + Math.pow(rawDeltaH, 2))
+              );
+
+              // Standard in-game Zeroing Distance: Horizontal + (Elevation Diff * 0.4)
+              const mortarSetting = Math.round(horizontalDistance + deltaH);
+              const isRangeValid = mortarSetting >= 121 && mortarSetting <= 700;
+
+              return (
+                <>
+                  <Polyline
+                    positions={mortarPoints.map((p) => [p.lat, p.lng])}
+                    color="#ea4335"
+                    weight={3}
+                    dashArray="8, 8"
+                    interactive={false}
+                  />
+                  <Marker
+                    position={[
+                      (p1.lat + p2.lat) / 2,
+                      (p1.lng + p2.lng) / 2,
+                    ]}
+                    icon={emptyIcon}
+                    interactive={false}
+                  >
+                    <Tooltip permanent direction="center" opacity={0.98} className="custom-mortar-tooltip">
+                      <div className="bg-slate-900/95 backdrop-blur-sm text-slate-100 p-3 rounded-xl border border-slate-700/50 shadow-2xl text-left min-w-[155px] font-sans flex flex-col gap-1.5">
+                        <div className="text-[10px] text-slate-400 font-bold tracking-wider uppercase">박격포 포격 분석</div>
+                        <div className="h-[1px] bg-slate-700/50 my-0.5" />
+                        <div className="flex justify-between items-center gap-4">
+                          <span className="text-xs text-slate-400">수평 거리</span>
+                          <span className="text-sm font-semibold text-slate-200">{horizontalDistance}m</span>
+                        </div>
+                        <div className="flex justify-between items-center gap-4">
+                          <span className="text-xs text-slate-400">3D 실제 거리</span>
+                          <span className="text-sm font-semibold text-slate-200">{distance3D}m</span>
+                        </div>
+                        <div className="flex justify-between items-center gap-4">
+                          <span className="text-xs text-slate-400">고도 차이</span>
+                          <span className={`text-sm font-semibold ${deltaH > 0 ? "text-emerald-400" : deltaH < 0 ? "text-sky-400" : "text-slate-200"}`}>
+                            {deltaH > 0 ? "+" : ""}{Math.round(deltaH)}m
+                          </span>
+                        </div>
+                        <div className="h-[1px] bg-slate-700/50 my-0.5" />
+                        <div className="flex justify-between items-center gap-4">
+                          <span className="text-xs text-slate-400 font-bold">조준 거리</span>
+                          <span className="text-base font-extrabold text-red-500">
+                            {isRangeValid ? `${mortarSetting}m` : "도달 불가"}
+                          </span>
+                        </div>
                       </div>
-                    </div>
-                  </Tooltip>
-                </Marker>
-              </>
-            )}
+                    </Tooltip>
+                  </Marker>
+                </>
+              );
+            })()}
           </>
         )}
 

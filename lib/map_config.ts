@@ -52,6 +52,7 @@ export const CATEGORY_INFO: Record<string, { label: string; color: string; path:
     SecurityCard: { label: '보안 키카드', color: '#10b981', path: svgPaths.key, iconType: '💳' },
     GasPump: { label: '주유소', color: '#84cc16', path: svgPaths.gas, iconType: '⛽' },
     Snowmobile: { label: '스노우모빌', color: '#0ea5e9', path: svgPaths.car, iconType: '🏂' },
+    BearCave: { label: '곰 동굴', color: '#228b22', path: svgPaths.star, iconType: '🐻' },
   };
   
 /**
@@ -67,10 +68,6 @@ export const MAP_DIMENSIONS: Record<string, number> = {
     Deston: 8,
     Vikendi: 8,
     Rondo: 8,
-    Sanhok: 4,
-    Paramo: 3,
-    Karakin: 2,
-    Haven: 1,
 };
 
 export const MAP_CATEGORIES: Record<string, string[]> = {
@@ -78,6 +75,6 @@ export const MAP_CATEGORIES: Record<string, string[]> = {
     Miramar: ['GoldenMirado', 'EsportsMirado', 'EsportsPickup', 'EsportsBoat', 'Glider', 'SecretRoom'], 
     Taego: ['Garage', 'Porter', 'Boat', 'SecretRoom'],
     Deston: ['Garage', 'PoliceCar', 'Boat', 'Glider'],
-    Vikendi: ['Garage', 'Snowmobile', 'Esports', 'Boat', 'SecretRoom'],
+    Vikendi: ['Garage', 'Snowmobile', 'Esports', 'Boat', 'SecretRoom', 'BearCave'],
     Rondo: ['Garage','Esports', 'Boat', 'Glider','SecretRoom', 'GasPump']
   };

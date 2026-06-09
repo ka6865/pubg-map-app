@@ -71,6 +71,7 @@ const MapShell = memo(({
     } = useTelemetry(playbackId, playbackNickname, activeMapId);
 
     const [activeMode, setActiveMode] = useState<"none" | "mortar" | "flight" | "report" | "simulate">("none");
+    const [isMortarDisclaimerOpen, setIsMortarDisclaimerOpen] = useState(false);
     const [mortarPoints, setMortarPoints] = useState<L.LatLng[]>([]);
     const [flightPoints, setFlightPoints] = useState<L.LatLng[]>([]);
     const [reportLocation, setReportLocation] = useState<L.LatLng | null>(null);
@@ -122,6 +123,13 @@ const MapShell = memo(({
     const pxPerMeter = imageWidth / 8192;
 
     const handleModeToggle = (mode: "mortar" | "flight" | "report" | "simulate") => {
+      if (mode === "mortar" && activeMode !== "mortar") {
+        const accepted = localStorage.getItem("bgms_mortar_disclaimer_accepted") === "true";
+        if (!accepted) {
+          setIsMortarDisclaimerOpen(true);
+          return;
+        }
+      }
       setActiveMode(activeMode === mode ? "none" : mode);
       setMortarPoints([]); 
       setFlightPoints([]); 
@@ -131,6 +139,16 @@ const MapShell = memo(({
         setSimulatorStep(0);
         setSimulatorPhases([]);
       }
+    };
+
+    const handleAcceptMortarDisclaimer = () => {
+      localStorage.setItem("bgms_mortar_disclaimer_accepted", "true");
+      setIsMortarDisclaimerOpen(false);
+      setActiveMode("mortar");
+      setMortarPoints([]); 
+      setFlightPoints([]); 
+      setIsVehicleFilterOn(false); 
+      setReportLocation(null);
     };
 
     let flightPolygonCoords: [number, number][] = [];
@@ -340,20 +358,27 @@ const MapShell = memo(({
             />
 
             {activeMode !== "none" && !isInstructionDismissed && (
-              <div className={`absolute left-1/2 -translate-x-1/2 z-[1000] bg-black/80 backdrop-blur-md text-white px-5 py-2.5 rounded-full text-xs font-bold border border-white/10 shadow-2xl flex items-center gap-2.5 whitespace-nowrap pointer-events-auto transition-all ${isMobile ? 'top-[60px]' : 'top-4'}`}>
-                <span>
-                  {activeMode === "mortar" && "🎯 [박격포] 지도 위에 내 위치와 타겟 지점을 순서대로 클릭하세요."}
-                  {activeMode === "simulate" && "🎲 [시뮬레이터] 지도를 클릭해 서클 및 가상 경로 지점을 추가하세요."}
-                  {activeMode === "report" && "🚨 [차량 제보] 지도 위에 차량을 제보할 위치를 클릭하세요!"}
-                </span>
-                {!isMobile && <span className="text-[#F2A900] ml-1.5">(우클릭: 취소)</span>}
-                <button 
-                  onClick={() => setIsInstructionDismissed(true)}
-                  className="ml-1.5 p-0.5 hover:bg-white/10 rounded-full transition-all active:scale-75"
-                  title="닫기"
-                >
-                  <X size={14} className="text-gray-400 hover:text-white" />
-                </button>
+              <div className={`absolute left-1/2 -translate-x-1/2 z-[1000] bg-black/80 backdrop-blur-md text-white px-4 py-2.5 rounded-2xl border border-white/10 shadow-2xl flex flex-col items-center justify-center gap-1.5 pointer-events-auto transition-all w-[calc(100%-2rem)] max-w-md ${isMobile ? 'top-[60px]' : 'top-4'}`}>
+                <div className="flex items-start justify-between gap-3 w-full">
+                  <span className="text-xs sm:text-sm font-medium leading-tight">
+                    {activeMode === "mortar" && "🎯 [박격포] 지도 위에 내 위치와 타겟 지점을 순서대로 클릭하세요."}
+                    {activeMode === "simulate" && "🎲 [시뮬레이터] 지도를 클릭해 서클 및 가상 경로 지점을 추가하세요."}
+                    {activeMode === "report" && "🚨 [차량 제보] 지도 위에 차량을 제보할 위치를 클릭하세요!"}
+                    {!isMobile && <span className="text-[#F2A900] ml-1.5">(우클릭: 취소)</span>}
+                  </span>
+                  <button 
+                    onClick={() => setIsInstructionDismissed(true)}
+                    className="p-1 hover:bg-white/10 rounded-full transition-all active:scale-75 shrink-0"
+                    title="닫기"
+                  >
+                    <X size={14} className="text-gray-400 hover:text-white" />
+                  </button>
+                </div>
+                {activeMode === "mortar" && (
+                  <span className="text-[10px] text-gray-400 font-semibold leading-normal w-full text-left sm:text-center">
+                    (※ 지형 기반 고도차 참고 데이터로 실제 인게임 수치와 오차가 존재할 수 있습니다)
+                  </span>
+                )}
               </div>
             )}
 
@@ -489,6 +514,67 @@ const MapShell = memo(({
             </div>
           )}
         </div>
+
+        {/* 🏆 박격포 고저차 면책 고지 안내 모달 (pubg.plus 스타일 방어책) */}
+        {isMortarDisclaimerOpen && (
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-md z-[5000] flex items-center justify-center p-4 pointer-events-auto">
+            <div className="bg-[#0b0f19]/95 border border-white/10 rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl relative overflow-hidden animate-fade-in">
+              {/* 뒷배경 오렌지 빛 네온 효과 */}
+              <div className="absolute inset-0 bg-gradient-to-r from-amber-500/5 to-transparent pointer-events-none" />
+              
+              <div className="space-y-6">
+                <div className="flex items-center gap-3 border-b border-white/5 pb-4">
+                  <Crosshair className="w-6 h-6 text-[#F2A900] animate-pulse" />
+                  <h3 className="text-lg font-black text-white tracking-wide uppercase">
+                    박격포 고저차 기능 안내
+                  </h3>
+                </div>
+                
+                <div className="space-y-4 text-xs sm:text-sm text-gray-300 leading-relaxed font-medium">
+                  <p className="text-gray-400 font-bold">
+                    이 기능은 지형 고도 데이터를 활용하여 박격포 사격 파라미터 계산을 보조합니다.
+                  </p>
+                  
+                  <div className="space-y-3 bg-white/5 border border-white/5 rounded-2xl p-4">
+                    <p className="font-extrabold text-[#F2A900] text-[11px] uppercase tracking-wider">
+                      ⚠️ 다음 제한 사항을 확인하세요
+                    </p>
+                    <ul className="list-disc list-inside space-y-2 text-gray-300 text-xs font-semibold">
+                      <li>
+                        데이터 정밀도의 한계로 인해 론도 고지대 등 극단적인 지형에서는 오차가 클 수 있습니다. 고도는 자연 지형만 계산하며, 건물·교량 등 구조물은 포함되지 않습니다.
+                      </li>
+                      <li>
+                        이 기능은 참고용으로만 제공되며, 계산 결과의 정확성을 보장하지 않습니다.
+                      </li>
+                      <li>
+                        이 기능 사용으로 인한 게임 내 손실에 대해 본 사이트는 어떠한 책임도 지지 않습니다.
+                      </li>
+                    </ul>
+                  </div>
+                  
+                  <p className="text-[11px] text-gray-400 font-semibold">
+                    계속 사용하면 위 제한 사항을 이해하고 동의한 것으로 간주합니다.
+                  </p>
+                </div>
+                
+                <div className="flex gap-3 pt-2">
+                  <button
+                    onClick={() => setIsMortarDisclaimerOpen(false)}
+                    className="flex-1 py-3 bg-white/5 hover:bg-white/10 text-gray-450 hover:text-white font-bold rounded-xl active:scale-95 transition-all text-xs cursor-pointer border border-white/5 text-center"
+                  >
+                    취소
+                  </button>
+                  <button
+                    onClick={handleAcceptMortarDisclaimer}
+                    className="flex-1 py-3 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-slate-950 font-black rounded-xl active:scale-95 transition-all text-xs cursor-pointer text-center"
+                  >
+                    확인했습니다, 계속 사용
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
 });

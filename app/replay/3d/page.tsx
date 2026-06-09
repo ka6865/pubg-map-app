@@ -17,14 +17,15 @@ import ReplayKillFeed from "@/components/replay/ReplayKillFeed";
 const MAP_SIZE_CM = 816000;
 const THREE_MAP_SIZE = 100; // Three.js 공간 상의 가로세로 크기
 
-// PUBG cm 좌표를 Three.js 3D 좌표로 변환 (바닥은 XZ 평면, 고도는 Y축)
-// 8192 기준의 Leaflet 좌표계를 Three.js 3D 좌표로 변환 (바닥은 XZ 평면, 고도는 Y축)
+
+
+
 const convertTo3D = (x: number, y: number, z: number = 0, altitudeScale: number = 0.02) => {
   const threeX = (x / 8192) * THREE_MAP_SIZE - THREE_MAP_SIZE / 2;
   const threeZ = (y / 8192) * THREE_MAP_SIZE - THREE_MAP_SIZE / 2;
   // 고도(z) 미터 단위를 altitudeScale 비율로 축소 적용하여 붕 떠 있는 괴리감 해결
   const threeY = z * altitudeScale; 
-  return new THREE.Vector3(threeX, Math.max(0.05, threeY), threeZ);
+  return new THREE.Vector3(threeX, threeY, threeZ);
 };
 
 // 닉네임 3D 빌보드 스프라이트 라벨 생성 함수
@@ -73,6 +74,64 @@ const createNicknameSprite = (text: string, color: string): THREE.Sprite => {
   return sprite;
 };
 
+// 맵별 고밀도 고도 오프셋/스케일 보정 테이블
+const MAP_ELEVATION_CONFIGS: Record<string, { minR: number; maxR: number; maxElevation: number }> = {
+  Erangel: { minR: 86, maxR: 253, maxElevation: 400 },
+  Miramar: { minR: 81, maxR: 255, maxElevation: 600 },
+  Rondo: { minR: 110, maxR: 250, maxElevation: 500 },
+  Vikendi: { minR: 66, maxR: 196, maxElevation: 450 },
+  Taego: { minR: 15, maxR: 219, maxElevation: 400 },
+  Deston: { minR: 43, maxR: 250, maxElevation: 450 }
+};
+
+/**
+ * 지정 맵의 타일을 Canvas에 합성해 고화질 텍스처 ImageBitmap을 반환한다.
+ * zoom 2 (4x4 = 16장, 각 256px) → 1024x1024 합성 이미지
+ *
+ * 타일 좌표 규칙 (RGB 픽셀 통계 역산으로 확정):
+ *  - 파일 경로: /{zoom}/{x}/{y}.jpg  (y는 음수)
+ *  - x: 화면 좌→우 방향 열 인덱스 (x=0이 왼쪽, x=3이 오른쪽)
+ *  - y: 화면 위→아래 역방향 (y=-4가 최상단, y=-1이 최하단)
+ *  - 따라서: fileX = col, fileY = -(GRID - row)
+ */
+async function buildHighResTileTexture(mapName: string): Promise<HTMLCanvasElement> {
+  const ZOOM = 2;
+  const GRID = 4; // 2^ZOOM
+  const TILE_PX = 256;
+  const CANVAS_SIZE = GRID * TILE_PX; // 1024
+
+  const canvas = document.createElement("canvas");
+  canvas.width = CANVAS_SIZE;
+  canvas.height = CANVAS_SIZE;
+  const ctx = canvas.getContext("2d")!;
+
+  const promises: Promise<void>[] = [];
+  for (let row = 0; row < GRID; row++) {
+    for (let col = 0; col < GRID; col++) {
+      const fileX = col;              // x는 열과 동일 방향 (좌→우)
+      const fileY = -(GRID - row);    // row=0 -> y=-4(상단), row=3 -> y=-1(하단)
+      const url = `/tiles/${mapName}/${ZOOM}/${fileX}/${fileY}.jpg`;
+      const destX = col * TILE_PX;
+      const destY = row * TILE_PX;
+
+      promises.push(
+        new Promise<void>((resolve) => {
+          const img = new Image();
+          img.onload = () => {
+            ctx.drawImage(img, destX, destY, TILE_PX, TILE_PX);
+            resolve();
+          };
+          img.onerror = () => resolve(); // 실패 타일은 빈칸으로 처리
+          img.src = url;
+        })
+      );
+    }
+  }
+
+  await Promise.all(promises);
+  return canvas;
+}
+
 // 맵 폴더 매핑 테이블
 const MAP_FOLDER_NAMES: Record<string, "Erangel" | "Miramar" | "Rondo" | "Taego" | "Deston" | "Vikendi"> = {
   "에란겔": "Erangel",
@@ -83,11 +142,19 @@ const MAP_FOLDER_NAMES: Record<string, "Erangel" | "Miramar" | "Rondo" | "Taego"
   "론도": "Rondo",
   "비켄디": "Vikendi",
   "Baltic_Main": "Erangel",
+  "Erangel_Main": "Erangel", // 🎯 에란겔 메인 맵 명칭 누락 보완
   "Desert_Main": "Miramar",
   "Tiger_Main": "Taego",
   "Kiki_Main": "Deston",
   "Neon_Main": "Rondo",
-  "DihorOtok_Main": "Vikendi"
+  "DihorOtok_Main": "Vikendi",
+  // 🎯 영문 정규화 명칭 1:1 패스스루 추가
+  "Erangel": "Erangel",
+  "Miramar": "Miramar",
+  "Taego": "Taego",
+  "Deston": "Deston",
+  "Rondo": "Rondo",
+  "Vikendi": "Vikendi"
 };
 
 // 비상호출 수송 비행기 판정 헬퍼 함수
@@ -185,6 +252,12 @@ function Replay3DContent() {
   const mapTextureRef = useRef<THREE.Texture | null>(null);
   const animationFrameIdRef = useRef<number | null>(null);
   const controlsRef = useRef<OrbitControls | null>(null);
+  const heightmapDataRef = useRef<{
+    pixels: Uint8ClampedArray;
+    width: number;
+    height: number;
+  } | null>(null);
+  const terrainGridRef = useRef<number[][] | null>(null);
 
   // 마커 및 라인 씬 객체 캐시
   const playerMeshesRef = useRef<Record<string, THREE.Mesh>>({});
@@ -388,6 +461,65 @@ function Replay3DContent() {
     }
   }, [qMatchId, qNickname, qPlatform]);
 
+  // 특정 X, Z 월드 좌표에서 하이트맵 고도 데이터를 기반으로 실제 지형 높이 Y를 계산하는 헬퍼 함수
+  const getTerrainHeight = (threeX: number, threeZ: number): number => {
+    // 1) 3D 지형 메쉬와 동일한 256x256 이중 선형 보간(Bilinear Interpolation) 캐시가 있는 경우 우선 사용 (오차 0%)
+    if (terrainGridRef.current) {
+      const grid = terrainGridRef.current;
+      
+      // threeX: -50 ~ 50, threeZ: -50 ~ 50 범위 매핑
+      // PlaneGeometry의 Local X는 -50 ~ 50 이며, ix = 0 일 때 x = -50, ix = 255 일 때 x = 50
+      const percentX = (threeX + THREE_MAP_SIZE / 2) / THREE_MAP_SIZE;
+      const ixFloat = percentX * 255;
+      
+      // 3D 지형의 X축 -90도 회전(Local Y -> World -Z)에 맞춘 세로축 Z축 반전 보정 해결
+      const percentZ = (threeZ + THREE_MAP_SIZE / 2) / THREE_MAP_SIZE;
+      const iyFloat = percentZ * 255;
+
+      const ix = Math.floor(ixFloat);
+      const iy = Math.floor(iyFloat);
+
+      const ix1 = Math.max(0, Math.min(255, ix));
+      const ix2 = Math.max(0, Math.min(255, ix + 1));
+      const iy1 = Math.max(0, Math.min(255, iy));
+      const iy2 = Math.max(0, Math.min(255, iy + 1));
+
+      const fx = ixFloat - ix;
+      const fy = iyFloat - iy;
+
+      const h11 = grid[iy1][ix1];
+      const h21 = grid[iy1][ix2];
+      const h12 = grid[iy2][ix1];
+      const h22 = grid[iy2][ix2];
+
+      const h1 = h11 * (1 - fx) + h21 * fx;
+      const h2 = h12 * (1 - fx) + h22 * fx;
+      return h1 * (1 - fy) + h2 * fy;
+    }
+
+    // 2) 폴백: 캐시가 아직 로드되지 않은 경우 하이트맵 픽셀을 직접 쿼리
+    const data = heightmapDataRef.current;
+    if (!data) return 0.05;
+
+    // Three.js 월드 좌표 (-50 ~ 50)를 Leaflet 좌표 (0 ~ 8192)로 변환
+    const leafletX = (threeX + THREE_MAP_SIZE / 2) * (8192 / THREE_MAP_SIZE);
+    // 3D 지형의 X축 -90도 회전(Local Y -> World -Z)에 맞춘 세로축 Z축 반전 보정
+    const leafletY = (THREE_MAP_SIZE / 2 - threeZ) * (8192 / THREE_MAP_SIZE);
+
+    // Leaflet 좌표를 이미지 픽셀 인덱스 좌표로 변환 (Y축 반전 없이 동일 방향 매핑)
+    const px_x = Math.round((leafletX / 8192) * data.width);
+    const px_y = Math.round((leafletY / 8192) * data.height);
+
+    const clampedX = Math.max(0, Math.min(data.width - 1, px_x));
+    const clampedY = Math.max(0, Math.min(data.height - 1, px_y));
+
+    const pixelIdx = (clampedY * data.width + clampedX) * 4;
+    const R = data.pixels[pixelIdx];
+    // PUBG 인게임 표준 8비트 고도 변환 공식: R=128 기준 ±262m 범위
+    const elevation = (R - 128) * 2.048;
+    return elevation * altitudeScale;
+  };
+
   // 2. 플레이어 위치 및 차량 탑승 상태 보간 계산 함수
   const getInterpolatedState = (player: PlayerTrajectory, time: number, altitudeScale: number): { position: THREE.Vector3; vehicleId: string | null; health: number } => {
     const pts = player.waypoints;
@@ -495,10 +627,6 @@ function Replay3DContent() {
     controls.maxPolarAngle = Math.PI / 2 - 0.05;
     controls.minDistance = 5;
     controls.maxDistance = 220;
-    controls.addEventListener("start", () => {
-      // 사용자가 임의로 카메라를 수동 조작하면 플레이어 고정(트래킹) 해제
-      setTrackingPlayer(null);
-    });
     controlsRef.current = controls;
 
     // [E] 조명 배치
@@ -512,40 +640,70 @@ function Replay3DContent() {
     dirLight.shadow.mapSize.height = 1024;
     scene.add(dirLight);
 
-    // [F] Grid 가이드 데코레이션
-    const gridHelper = new THREE.GridHelper(THREE_MAP_SIZE, 50, "#122538", "#08111a");
-    gridHelper.position.y = 0.01; // 지도 평면 바로 위에 살짝 얹음
+    // [F] Grid 가이드 데코레이션 배치
+    // 지형 메쉬가 불투명하게 렌더링되므로, 산 등의 지형 아래에 깔린 격자는 깊이 테스트에 의해 올바르게 가려집니다.
+    const gridHelper = new THREE.GridHelper(THREE_MAP_SIZE, 40, 0x1f2937, 0x111827);
+    gridHelper.position.y = 0.01;
+    if (Array.isArray(gridHelper.material)) {
+      gridHelper.material.forEach((mat) => {
+        mat.transparent = false;
+        mat.depthWrite = true;
+        mat.depthTest = true;
+      });
+    } else {
+      gridHelper.material.transparent = false;
+      gridHelper.material.depthWrite = true;
+      gridHelper.material.depthTest = true;
+    }
     scene.add(gridHelper);
 
-    // [G] 🎯 완전한 평면(Flat Plane) 지형 메쉬 생성 (텍스처 왜곡 제거 및 시인성 극대화)
-    const planeGeo = new THREE.PlaneGeometry(THREE_MAP_SIZE, THREE_MAP_SIZE, 1, 1);
+    // [G] 🎯 지형 고도(Heightmap)를 반영한 입체 지형 메쉬 생성
+    const segments = 256;
+    const planeGeo = new THREE.PlaneGeometry(THREE_MAP_SIZE, THREE_MAP_SIZE, segments - 1, segments - 1);
 
     setIsMapLoading(true);
-    const textureLoader = new THREE.TextureLoader();
-    const mapUrl = `/tiles/${selectedMap}/0/0/-1.jpg`;
-    
-    const texture = textureLoader.load(
-      mapUrl,
-      (txt) => {
-        txt.colorSpace = THREE.SRGBColorSpace;
-        setIsMapLoading(false);
-      },
-      undefined,
-      (err) => {
-        console.error("지정된 맵 텍스처 로딩 실패:", err);
-        setIsMapLoading(false);
-      }
-    );
+
+    // zoom 2 타일 16장을 canvas에 합성해 1024x1024 고화질 텍스처 생성
+    const texture = new THREE.Texture();
+    texture.colorSpace = THREE.SRGBColorSpace;
     mapTextureRef.current = texture;
 
-    // StandardMaterial의 roughness와 metalness를 조율해 반짝이는 글래스 패널 질감 연출
+    buildHighResTileTexture(selectedMap)
+      .then((canvas) => {
+        texture.image = canvas;
+        // GPU가 지원하는 최대 이방성 필터링 적용 (경사 뷰에서 텍스처 선명도 유지)
+        if (rendererRef.current) {
+          texture.anisotropy = rendererRef.current.capabilities.getMaxAnisotropy();
+        }
+        texture.needsUpdate = true;
+        setIsMapLoading(false);
+      })
+      .catch(() => {
+        // 합성 실패 시 zoom 0 단일 이미지로 폴백
+        const fallbackLoader = new THREE.TextureLoader();
+        fallbackLoader.load(
+          `/tiles/${selectedMap}/0/0/-1.jpg`,
+          (txt) => {
+            txt.colorSpace = THREE.SRGBColorSpace;
+            if (mapMeshRef.current) {
+              (mapMeshRef.current.material as THREE.MeshStandardMaterial).map = txt;
+              (mapMeshRef.current.material as THREE.MeshStandardMaterial).needsUpdate = true;
+            }
+            setIsMapLoading(false);
+          },
+          undefined,
+          () => setIsMapLoading(false)
+        );
+      });
+
+    // 지형 메쉬의 재질을 불투명하게 변경하여 하위 바닥에 있는 GridHelper가
+    // 깊이 판정을 뚫고 지상 위로 오버레이 렌더링(붕 뜨는 착시 현상)되는 현상을 해결합니다.
     const planeMat = new THREE.MeshStandardMaterial({
       map: texture,
       side: THREE.DoubleSide,
       roughness: 0.45,
       metalness: 0.4,
-      transparent: true,
-      opacity: 0.96
+      transparent: false
     });
 
     const mapMesh = new THREE.Mesh(planeGeo, planeMat);
@@ -554,6 +712,92 @@ function Replay3DContent() {
     mapMesh.receiveShadow = true;
     scene.add(mapMesh);
     mapMeshRef.current = mapMesh;
+
+    // Load map elevation details asynchronously for supported maps
+    const supportedMaps = ["Erangel", "Miramar", "Vikendi", "Taego", "Deston", "Rondo"];
+    if (supportedMaps.includes(selectedMap)) {
+      const heightmapImg = new Image();
+      heightmapImg.crossOrigin = "anonymous";
+      // 손상된 PNG를 우회하여 정상 JPG 하이트맵을 모든 맵에서 일관되게 사용
+      heightmapImg.src = `/assets/map/${selectedMap}_HeightMap.jpg`;
+      heightmapImg.onload = () => {
+        const tempCanvas = document.createElement("canvas");
+        tempCanvas.width = heightmapImg.width;
+        tempCanvas.height = heightmapImg.height;
+        const tempCtx = tempCanvas.getContext("2d");
+        if (tempCtx) {
+          tempCtx.drawImage(heightmapImg, 0, 0);
+          try {
+            const imgData = tempCtx.getImageData(0, 0, heightmapImg.width, heightmapImg.height);
+            const pixels = imgData.data;
+            
+            // 3D 지형 실시간 역산용 레퍼런스 업데이트
+            heightmapDataRef.current = {
+              pixels,
+              width: heightmapImg.width,
+              height: heightmapImg.height
+            };
+
+            const posAttr = planeGeo.attributes.position;
+            const count = posAttr.count;
+            const config = MAP_ELEVATION_CONFIGS[selectedMap] || { minR: 0, maxR: 255, maxElevation: 800 };
+
+            // 256x256 격자 고도 데이터 생성
+            const grid: number[][] = Array.from({ length: 256 }, () => new Array(256).fill(0));
+
+            // 전체 지형 중 최저 고도를 수집하기 위한 변수
+            let minElevation = 0;
+
+            for (let i = 0; i < count; i++) {
+              const x = posAttr.getX(i); // Local X coordinate (-50 to 50)
+              const y = posAttr.getY(i); // Local Y coordinate (-50 to 50)
+
+              // Restore back to Leaflet coordinate system (0 to 8192)
+              const leafletX = (x + THREE_MAP_SIZE / 2) * (8192 / THREE_MAP_SIZE);
+              const leafletY = (y + THREE_MAP_SIZE / 2) * (8192 / THREE_MAP_SIZE);
+
+              // 하이트맵 Y축은 반전 없이 Leaflet Y와 동일 방향으로 매핑
+              const px_x = Math.round((leafletX / 8192) * heightmapImg.width);
+              const px_y = Math.round((leafletY / 8192) * heightmapImg.height);
+
+              const clampedX = Math.max(0, Math.min(heightmapImg.width - 1, px_x));
+              const clampedY = Math.max(0, Math.min(heightmapImg.height - 1, px_y));
+
+              const pixelIdx = (clampedY * heightmapImg.width + clampedX) * 4;
+              let finalElevation = 0;
+              if (pixels[pixelIdx + 3] !== 0) { // Skip transparent pixels if any
+                const R = pixels[pixelIdx];
+                // PUBG 인게임 표준 8비트 고도 변환 공식: R=128 기준 ±262m 범위
+                const elevation = (R - 128) * 2.048;
+                finalElevation = elevation * altitudeScale;
+                posAttr.setZ(i, finalElevation);
+              }
+              
+              const ix = i % 256;
+              const iy = Math.floor(i / 256);
+              grid[iy][ix] = finalElevation;
+
+              // 최저 고도 최신화
+              if (finalElevation < minElevation) {
+                minElevation = finalElevation;
+              }
+            }
+            terrainGridRef.current = grid;
+            posAttr.needsUpdate = true;
+            planeGeo.computeVertexNormals();
+
+            // 격자의 Y 위치를 지형의 최저 고도보다 아주 조금 더 아래(예: -0.05m)로 내려줍니다.
+            // 이를 통해 격자가 지상의 특정 저지대(음수 고도 지역) 위로 뚫고 나오는 공중 붕뜸 현상을 종식합니다.
+            gridHelper.position.y = minElevation - 0.05;
+          } catch (e) {
+            console.error("Failed to apply heightmap to 3D mesh vertices:", e);
+          }
+        }
+      };
+      heightmapImg.onerror = () => {
+        console.warn(`Failed to load heightmap image for 3D terrain: ${selectedMap}`);
+      };
+    }
 
     // 🎯 홀로그램 전술 보드판 테두리 네온 라인 추가
     const borderGeo = new THREE.BoxGeometry(THREE_MAP_SIZE, THREE_MAP_SIZE, 0.05);
@@ -1063,6 +1307,17 @@ function Replay3DContent() {
       edges.dispose();
       borderMat.dispose();
 
+      // 격자 가이드 자원 수거 (메모리 누수 및 옛날 격자가 씬에 중첩 잔존하여 붕 뜨는 결함 해결)
+      if (gridHelper) {
+        gridHelper.geometry.dispose();
+        if (Array.isArray(gridHelper.material)) {
+          gridHelper.material.forEach((m) => m.dispose());
+        } else {
+          gridHelper.material.dispose();
+        }
+        scene.remove(gridHelper);
+      }
+
       cylinderGeo.dispose();
       bluezoneMat.dispose();
       whitezoneMat.dispose();
@@ -1295,14 +1550,47 @@ function Replay3DContent() {
         }
       });
 
+      let finalPos = currentPos.clone();
+
       if (group) {
+        // 지상 캐릭터 지형 높이 스냅 보정 (묻힘 및 산정상 붕뜸 현상 해결)
+        if (heightmapDataRef.current && !isDead) {
+          const isPlaneState = state.isPlane;
+          const vehicleId = state.vehicleId;
+          const isEmergency = vehicleId ? isAirplane(vehicleId) : false;
+          const terrainHeight = getTerrainHeight(finalPos.x, finalPos.z);
+          
+          // 실측 고도와 지형 높이의 차이 (미터 단위)
+          const diffM = (finalPos.y - terrainHeight) / altitudeScale;
+          const isFlying = isPlaneState || isEmergency;
+
+          if (!isFlying) {
+            // 1) 캐릭터가 지형 아래로 파묻히는 비주얼 버그 전면 차단 (지하 매몰 방지)
+            if (diffM < 0.0) {
+              finalPos.y = terrainHeight;
+            } else {
+              // 2) 일반 차량은 비행할 수 없으므로 25m 완화 스냅 적용, 도보는 옥상 분리를 위해 8m 스냅 적용
+              const snapLimit = isInVehicle ? 25.0 : 8.0;
+              if (diffM <= snapLimit) {
+                finalPos.y = terrainHeight;
+              }
+            }
+          }
+        }
+
         // 사망 여부에 따라 그룹 위치를 사망 시점 좌표에 고정하거나 보간 위치로 갱신
         if (isDead && player.deathTimeMs != null) {
           // 사망 시점의 좌표를 계산하여 묘비를 해당 위치에 고정 (매 프레임 갱신 금지)
           const deathState = getInterpolatedState(player, player.deathTimeMs, altitudeScale);
-          group.position.copy(deathState.position);
+          let finalDeathPos = deathState.position.clone();
+          if (heightmapDataRef.current) {
+            const terrainHeight = getTerrainHeight(finalDeathPos.x, finalDeathPos.z);
+            finalDeathPos.y = Math.max(terrainHeight, finalDeathPos.y);
+          }
+          finalPos.copy(finalDeathPos);
+          group.position.copy(finalPos);
         } else {
-          group.position.copy(currentPos);
+          group.position.copy(finalPos);
         }
 
         // 묘비 노출 분기: 사망했고, 적군인 경우 showEnemies 스위치 준수
@@ -1446,7 +1734,8 @@ function Replay3DContent() {
       }
 
       // 최종 월드 좌표 연산 및 드롭라인 적용
-      const finalWorldPos = currentPos.clone().add(finalWpOffset);
+      // 스냅 보정이 반영된 finalPos를 참조하도록 수정하여 캐릭터 마커와 수직선 위치를 1:1 동기화
+      const finalWorldPos = finalPos.clone().add(finalWpOffset);
 
       const dropLineMesh = playerDropLinesRef.current[player.name];
       if (dropLineMesh) {
@@ -1456,9 +1745,15 @@ function Replay3DContent() {
         } else {
           dropLineMesh.visible = player.isTeam ? showTrajectories : (showTrajectories && showEnemies);
         }
-        dropLineMesh.position.set(finalWorldPos.x, 0, finalWorldPos.z);
+        // 해당 캐릭터 X, Z 좌표의 실제 지면 고도 쿼리
+        const terrainHeight = getTerrainHeight(finalWorldPos.x, finalWorldPos.z);
+        // 드롭라인의 시작점을 실제 지면 높이로 밀착
+        dropLineMesh.position.set(finalWorldPos.x, terrainHeight, finalWorldPos.z);
+        
         const posAttr = dropLineMesh.geometry.attributes.position;
-        posAttr.setY(1, finalWorldPos.y);
+        // 캐릭터 마커 고도와 지면 고도의 실질적 차이만큼 가이드라인 크기(갭) 설정
+        const heightGap = Math.max(0, finalWorldPos.y - terrainHeight);
+        posAttr.setY(1, heightGap);
         posAttr.needsUpdate = true;
         dropLineMesh.computeLineDistances();
       }
@@ -1645,14 +1940,7 @@ function Replay3DContent() {
     return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
   };
 
-  // 검색 트리거
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    handleFetchTelemetry();
-  };
-
   const handleFetchTelemetry = () => {
-    if (!matchId.trim() || !nickname.trim()) return;
     fetchTelemetryData(matchId.trim(), nickname.trim());
   };
 
@@ -1753,21 +2041,21 @@ function Replay3DContent() {
         togglePlayer={togglePlayer}
         handlePlayerFocus={handlePlayerFocus}
         handlePlayerTrack={handlePlayerTrack}
-        nickname={nickname}
-        setNickname={setNickname}
-        matchId={matchId}
-        setMatchId={setMatchId}
-        platform={platform}
-        setPlatform={setPlatform}
+        showBluezone={showBluezone}
+        setShowBluezone={setShowBluezone}
+        showTrajectories={showTrajectories}
+        setShowTrajectories={setShowTrajectories}
+        showNames={showNames}
+        setShowNames={setShowNames}
         isLoading={isLoading}
         isMapLoading={isMapLoading}
         handleFetchTelemetry={handleFetchTelemetry}
       />
 
-      {/* 사이드바 토글 탭 (반응형 밸런싱) */}
+      {/* 사이드바 토글 탭 (PC 전용) */}
       <button
         onClick={() => setIsSidebarOpen(o => !o)}
-        className="fixed md:absolute top-1/2 -translate-y-1/2 z-50 w-5 h-14 flex items-center justify-center bg-[#21262d] border border-[#30363d] rounded-r-lg text-[#8b949e] hover:text-[#ff9f0a] hover:bg-[#30363d] transition-all cursor-pointer"
+        className="hidden md:flex fixed md:absolute top-1/2 -translate-y-1/2 z-50 w-5 h-14 items-center justify-center bg-[#21262d] border border-[#30363d] rounded-r-lg text-[#8b949e] hover:text-[#ff9f0a] hover:bg-[#30363d] transition-all cursor-pointer"
         style={{ left: isSidebarOpen ? "288px" : "0px", transition: "left 0.3s" }}
       >
         {isSidebarOpen ? <ChevronLeft className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
@@ -1792,6 +2080,8 @@ function Replay3DContent() {
               }
             }}
             formatTime={formatTime}
+            isSidebarOpen={isSidebarOpen}
+            onToggleSidebar={() => setIsSidebarOpen(o => !o)}
           />
         )}
 

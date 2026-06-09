@@ -489,7 +489,8 @@ export class AnalysisEngine {
         events: this.state.mapEvents,
         zoneEvents: this.state.mapZoneEvents,
         teammates: Array.from(this.state.teamAccountIds),
-        teamNames: Array.from(this.state.teamNames)
+        teamNames: Array.from(this.state.teamNames),
+        mapName: this.state.mapName
       }
     };
   }

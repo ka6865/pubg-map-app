@@ -178,6 +178,7 @@ export interface AnalysisResult {
     zoneEvents: any[];
     teammates: string[];
     teamNames: string[];
+    mapName?: string;
   };
   // [V16.0] 신규 엔터테인먼트 지표
   avgCircleLuck?: number;
