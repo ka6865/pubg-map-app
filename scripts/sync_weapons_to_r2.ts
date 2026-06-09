@@ -79,8 +79,7 @@ const WEAPON_MAP: Record<string, string> = {
   "ar_beryl": "Item_Weapon_BerylM762_C",
   "smg_vector": "Item_Weapon_Vector_C",
   "dmr_dragunov": "Item_Weapon_Dragunov_C",
-  "박격포": "Item_Weapon_Mortar_C",
-  "folded_shield": "Item_BulletproofShield_C"
+  "박격포": "Item_Weapon_Mortar_C"
 };
 
 // 2. 파츠 매핑 테이블 (R2 저장 key ➡️ 펍지 공식 api-assets 원시 ID)
