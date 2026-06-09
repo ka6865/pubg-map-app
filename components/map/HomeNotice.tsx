@@ -22,10 +22,19 @@ export default function HomeNotice() {
         .maybeSingle();
       
       if (!error && data) {
-        // localStorage에서 숨김 처리된 ID 확인
-        const dismissedNoticeId = localStorage.getItem('dismissed_notice_id');
-        if (dismissedNoticeId === data.id.toString()) {
+        // 공지사항 생성 후 7일(1주일) 경과 여부 확인
+        const createdAtTime = new Date(data.created_at).getTime();
+        const currentTime = new Date().getTime();
+        const oneWeekMs = 7 * 24 * 60 * 60 * 1000;
+        
+        if (currentTime - createdAtTime > oneWeekMs) {
           setIsVisible(false);
+        } else {
+          // localStorage에서 숨김 처리된 ID 확인
+          const dismissedNoticeId = localStorage.getItem('dismissed_notice_id');
+          if (dismissedNoticeId === data.id.toString()) {
+            setIsVisible(false);
+          }
         }
         setLatestNotice(data);
       }
