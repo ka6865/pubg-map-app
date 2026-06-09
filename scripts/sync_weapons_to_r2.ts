@@ -5,6 +5,7 @@ import axios from 'axios';
 import sharp from 'sharp';
 import dotenv from 'dotenv';
 import path from 'path';
+import fs from 'fs/promises';
 
 // .env.local 환경 변수 강제 로드
 dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
@@ -38,14 +39,14 @@ const WEAPON_MAP: Record<string, string> = {
   "dmr_mk12": "Item_Weapon_Mk12_C",
   "dmr_vss": "Item_Weapon_VSS_C",
   "dmr_mk14": "Item_Weapon_Mk14_C",
-  "sg_dbs": "Item_Weapon_DBS_C",
+  "sg_dbs": "Item_Weapon_DP12_C",
   "smg_tommy": "Item_Weapon_Thompson_C",
   "ar_ace32": "Item_Weapon_ACE32_C",
   "ar_akm": "Item_Weapon_AK47_C",
   "ar_aug": "Item_Weapon_AUG_C",
   "sr_awm": "Item_Weapon_AWM_C",
   "lmg_dp28": "Item_Weapon_DP28_C",
-  "sg_s1897": "Item_Weapon_S1897_C",
+  "sg_s1897": "Item_Weapon_Winchester_C",
   "ar_famas": "Item_Weapon_FAMASG2_C",
   "ar_g36c": "Item_Weapon_G36C_C",
   "smg_js9": "Item_Weapon_JS9_C",
@@ -78,7 +79,8 @@ const WEAPON_MAP: Record<string, string> = {
   "ar_beryl": "Item_Weapon_BerylM762_C",
   "smg_vector": "Item_Weapon_Vector_C",
   "dmr_dragunov": "Item_Weapon_Dragunov_C",
-  "박격포": "Item_Weapon_Mortar_C"
+  "박격포": "Item_Weapon_Mortar_C",
+  "folded_shield": "Item_BulletproofShield_C"
 };
 
 // 2. 파츠 매핑 테이블 (R2 저장 key ➡️ 펍지 공식 api-assets 원시 ID)
@@ -87,13 +89,13 @@ const ATTACHMENT_MAP: Record<string, string> = {
   "angled_grip": "Item_Attach_Weapon_Lower_AngledForeGrip_C",
   "half_grip": "Item_Attach_Weapon_Lower_HalfGrip_C",
   "thumb_grip": "Item_Attach_Weapon_Lower_ThumbGrip_C",
-  "light_grip": "Item_Attach_Weapon_Lower_LightGrip_C",
+  "light_grip": "Item_Attach_Weapon_Lower_LightweightForeGrip_C",
   "ar_compensator": "Item_Attach_Weapon_Muzzle_Compensator_Large_C",
   "ar_suppressor": "Item_Attach_Weapon_Muzzle_Suppressor_Large_C",
   "ar_flashhider": "Item_Attach_Weapon_Muzzle_FlashHider_Large_C",
-  "ar_eqd_magazine": "Item_Attach_Weapon_Magazine_ExtendedQuickDraw_AR_C",
+  "ar_eqd_magazine": "Item_Attach_Weapon_Magazine_ExtendedQuickDraw_Large_C",
   "scope_3x": "Item_Attach_Weapon_Upper_Scope3x_C",
-  "scope_4x": "Item_Attach_Weapon_Upper_Scope4x_C",
+  "scope_4x": "Item_Attach_Weapon_Upper_ACOG_01_C",
   "scope_6x": "Item_Attach_Weapon_Upper_Scope6x_C"
 };
 
@@ -117,6 +119,31 @@ async function uploadToR2(key: string, buffer: Buffer, contentType: string) {
   await r2Client.send(command);
 }
 
+// 로컬 스크랩 디렉토리 Fallback 헬퍼
+async function getFallbackLocalBuffer(pubgId: string): Promise<Buffer | null> {
+  const nameMap: Record<string, string> = {
+    "Item_Weapon_HK416_C": "M416",
+    "Item_Weapon_BerylM762_C": "BerylM762",
+    "Item_Weapon_DBS_C": "DBS",
+    "Item_Weapon_S1897_C": "S1897",
+    "Item_Weapon_JS9_C": "JS9",
+    "Item_Weapon_Thompson_C": "TommyGun",
+    "Item_Weapon_UZI_C": "MicroUZI",
+    "Item_Weapon_SCAR-L_C": "SCAR-L",
+    "Item_Weapon_FNFal_C": "SLR"
+  };
+
+  const baseName = nameMap[pubgId] || pubgId.replace("Item_Weapon_", "").replace("_C", "");
+  const localPath = path.resolve(process.cwd(), 'scratch/pubg_plus_assets/weapon', `${baseName}.png`);
+  
+  try {
+    const buffer = await fs.readFile(localPath);
+    return buffer;
+  } catch {
+    return null;
+  }
+}
+
 // 이미지 다운로드, WebP 최적화 및 R2 업로드 연쇄 파이프라인
 async function syncImageToR2(pubgId: string, destKey: string, isAttachment = false) {
   // 파츠는 Attachment/ 하위, 무기는 Weapon/Main/ 하위에 위치함
@@ -124,10 +151,28 @@ async function syncImageToR2(pubgId: string, destKey: string, isAttachment = fal
   const url = `https://raw.githubusercontent.com/pubg/api-assets/master/${folderPath}/${pubgId}.png`;
   
   try {
-    const res = await axios.get(url, { responseType: 'arraybuffer' });
+    let rawData: Buffer;
+    try {
+      const res = await axios.get(url, { responseType: 'arraybuffer' });
+      rawData = Buffer.from(res.data);
+    } catch (err: any) {
+      // 404 등 다운로드 실패 시, 무기 아이템이면 로컬 스크랩 디렉토리에서 Fallback 시도
+      if (!isAttachment) {
+        console.log(`[TRY FALLBACK] ${pubgId} not found in github. Trying local scrap folder...`);
+        const fallbackBuffer = await getFallbackLocalBuffer(pubgId);
+        if (fallbackBuffer) {
+          rawData = fallbackBuffer;
+          console.log(`[FALLBACK FOUND] Loaded ${pubgId} from local scratch folder.`);
+        } else {
+          throw err;
+        }
+      } else {
+        throw err;
+      }
+    }
     
     // sharp를 이용해 WebP 512px 최대 너비로 압축 (용량 99% 최적화)
-    const webpBuffer = await sharp(Buffer.from(res.data))
+    const webpBuffer = await sharp(rawData)
       .resize(512, null, { withoutEnlargement: true })
       .webp({ quality: 85 })
       .toBuffer();

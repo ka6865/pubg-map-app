@@ -253,6 +253,13 @@ PUBG 공식 텔레메트리 스펙 문서의 필드 명칭과 게임 내 실제 
     *   **DB 확률 데이터 초기화 및 재정비**: 원격 Supabase DB의 `crate_items`, `prime_parcel_items`, `bonus_items` 테이블을 완전히 `DELETE`한 후, 41.2 패치 기준의 공식 가공 데이터(`sync_data.sql` 기반)를 재수행하여 확률 합계가 정확히 1.0 (100.0%)에 수렴하도록 보정 완료.
     *   **유닛 테스트 동기화**: `tests/crate-probability.test.ts` 내부의 하드코딩된 기대 확률 데이터 및 구성품들을 실제 최신화된 DB 스펙에 맞추어 보정하여 테스트 통과 검증 완료.
 
+---
 
+## 8. [에셋/R2] 무기 및 파츠 R2 캐싱 데이터베이스 100% 완비 (V63.0 패치)
 
-
+*   **배경**: 인게임 도감 및 분석 UI에서 일부 무기 및 파츠의 이미지가 404/엑박 처리되는 결함이 식별되어 데이터베이스 전수 조사를 실시함.
+*   **해결책**:
+    *   **ID 매핑 정밀 보정**: `sync_weapons_to_r2.ts` 스크립트 상에서 DBS (`Item_Weapon_DP12_C`), S1897 (`Item_Weapon_Winchester_C`)의 잘못 설정된 펍지 텔레메트리 에셋명을 정밀 수정하여 깃허브 공식 에셋에서 올바르게 로드 및 R2 업로드 완료.
+    *   **파츠 ID 교정**: 라이트 그립, 대퀵탄(AR), 4배율 조준경의 펍지 에셋명(`Item_Attach_Weapon_Lower_LightweightForeGrip_C`, `Item_Attach_Weapon_Magazine_ExtendedQuickDraw_Large_C`, `Item_Attach_Weapon_Upper_ACOG_01_C`)을 바로잡아 파츠 12종 100% R2 캐싱 성공.
+    *   **공식 에셋 누락본 AI 생성 및 탑재**: 펍지 공식 api-assets 깃허브에 존재하지 않고 크롤링도 차단된 `JS9` 및 `접이식 방패`에 대해 AI 이미지 제너레이션을 통해 펍지 UI에 맞는 고해상도 에셋을 신규 제작하고 WebP 512px 변환 후 R2에 직접 업로드 완료. 이로써 46종의 무기 전체 이미지 리소스를 완전 확보함.
+    *   **스크랩 더미 식별**: 기존의 로컬 스크랩 디렉토리(`scratch/pubg_plus_assets/weapon`) 내 48개 PNG 파일은 정밀 검사 결과 Cloudflare/CDN 단에서 403 Forbidden 권한 제한으로 인해 리턴된 HTML 에러 코드로 채워진 깨진 더미 파일인 것으로 판명되어 불필요함을 확인하였습니다.
