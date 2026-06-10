@@ -1,5 +1,4 @@
 import type { Metadata } from "next"; // Next.js 메타데이터 타입
-import { Outfit } from "next/font/google"; // DESIGN.md 지정 폰트
 import "./globals.css"; // 전역 스타일시트
 import { AuthProvider } from "@/components/AuthProvider";
 import { Toaster } from "sonner";
@@ -11,16 +10,6 @@ import { GoogleAnalytics } from '@next/third-parties/google';
 import SidebarFooterWrapper from "@/components/layout/SidebarFooterWrapper";
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/react";
-
-
-// Outfit 폰트 — 기하학적이고 현대적인 게이밍 타이포그래피
-const outfit = Outfit({
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800", "900"],
-  display: "swap",
-  variable: "--font-outfit",
-});
-
 
 // 브라우저 탭 제목, 설명, 파비콘 메타데이터 정의
 const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://bgms.kr";
@@ -107,12 +96,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="ko" className={outfit.variable}>
+    <html lang="ko">
       <head>
         <meta name="naver-site-verification" content="7f13af8906644439c3d292d41b1e48a6e85d3f4a8" />
         <JsonLd data={siteJsonLd as any} />
       </head>
-      <body className="antialiased bg-[#0d0d0d] text-white" style={{ fontFamily: 'var(--font-outfit), Pretendard, sans-serif' }}>
+      <body className="antialiased bg-[#0d0d0d] text-white">
         <GoogleAnalytics gaId={process.env.NEXT_PUBLIC_GA_ID!} />
         <AuthProvider>
 

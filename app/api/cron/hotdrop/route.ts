@@ -5,7 +5,8 @@
  * - PUBG /leaderboards → 상위 랭커 accountId 수집
  * - 각 플레이어의 최근 매치 텔레메트리 다운로드
  * - LogParachuteLanding 이벤트에서 착지 좌표 추출
- * - 맵별 128×128 그리드 셀 count UPSERT → hotdrop_heatmap 테이블
+ * - 맵별 256×256 그리드 셀 count UPSERT → hotdrop_heatmap 테이블
+ * - Hobby 플랜 시간 제한을 고려해 기본 처리량은 작게 유지하고 환경변수로만 확장합니다.
  */
 
 import { NextResponse } from "next/server";
@@ -46,8 +47,10 @@ const MAP_SIZES: Record<string, number> = {
 
 const GRID_DIVISIONS = 256;   // 256×256 = 65,536 셀
 const RATE_LIMIT_MS  = 6500; // PUBG API 분당 10회 제한 → 약 6.5초 간격
-const MAX_RANKERS    = 10;    // 1회 Cron당 처리할 랭커 수 (시간 제한 고려)
-const MATCHES_PER_PLAYER = 3; // 플레이어당 최근 N경기
+const MAX_RANKERS = Number(process.env.HOTDROP_MAX_RANKERS || 1);
+const MATCHES_PER_PLAYER = Number(process.env.HOTDROP_MATCHES_PER_PLAYER || 2);
+const SAMPLE_MATCH_LIMIT = Number(process.env.HOTDROP_SAMPLE_MATCH_LIMIT || 3);
+const MAX_MATCHES_PER_RUN = Number(process.env.HOTDROP_MAX_MATCHES_PER_RUN || 3);
 
 // ─────────────────────────────────────────────
 // 헬퍼
@@ -298,7 +301,7 @@ async function cleanupOldSeasons(
 // Route Handler
 // ─────────────────────────────────────────────
 
-export const maxDuration = 300; // Vercel 함수 최대 실행 시간 (Pro: 300s)
+export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
@@ -353,13 +356,13 @@ export async function GET(request: Request) {
     } else {
       log.push(`Leaderboard 데이터 없음. Samples 기반 수집으로 전환.`);
       await sleep(RATE_LIMIT_MS);
-      const sampleMatchIds = await getSampleMatchIds(apiKey, 15); // 약 15개 매치 샘플링
+      const sampleMatchIds = await getSampleMatchIds(apiKey, SAMPLE_MATCH_LIMIT);
       sampleMatchIds.forEach(id => processedMatchIds.add(id));
       log.push(`Samples 매치 획득: ${processedMatchIds.size}개`);
     }
 
     // 4. 매치별 텔레메트리 처리
-    const matchIds = Array.from(processedMatchIds);
+    const matchIds = Array.from(processedMatchIds).slice(0, MAX_MATCHES_PER_RUN);
     log.push(`매치 분석 시작 (총 ${matchIds.length}개)`);
 
     for (const matchId of matchIds) {

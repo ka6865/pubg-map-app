@@ -23,7 +23,7 @@
   --color-text-muted:     rgba(255, 255, 255, 0.3);
 
   /* 타이포그래피 */
-  --font-sans: 'Outfit', 'Pretendard', sans-serif;
+  --font-sans: 'Outfit', 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
   /* 라운딩 */
   --radius-sm:  6px;
