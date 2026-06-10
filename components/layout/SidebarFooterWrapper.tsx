@@ -14,20 +14,22 @@ export default function SidebarFooterWrapper({ children }: { children: React.Rea
   const isMapPage = pathname === '/' || pathname.startsWith('/maps/');
   // 3D 리플레이 경로인 경우 (헤더/하단바가 없으므로 전체화면 레이아웃)
   const isReplayPage = pathname.startsWith('/replay/');
+  // 어드민 도구는 앱 화면처럼 동작하므로 공용 푸터를 붙이지 않는다.
+  const isAdminToolPage = pathname.startsWith('/admin/');
 
   return (
     <>
       <main className={`flex-grow relative flex flex-col ${
         isReplayPage 
           ? 'overflow-hidden h-dvh' 
-          : isMapPage 
+          : isMapPage || isAdminToolPage
             ? 'overflow-hidden h-[calc(100dvh-56px)]' 
             : 'overflow-visible'
       }`}>
         {children}
       </main>
-      {/* 지도 및 리플레이 페이지가 아닐 때만 하단 글로벌 푸터를 노출하여 스크롤 트랩 방지 */}
-      {!isMapPage && !isReplayPage && <Footer />}
+      {/* 지도, 리플레이, 어드민 도구 페이지가 아닐 때만 하단 글로벌 푸터를 노출하여 스크롤 트랩 방지 */}
+      {!isMapPage && !isReplayPage && !isAdminToolPage && <Footer />}
     </>
   );
 }
