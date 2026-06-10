@@ -42,8 +42,8 @@ export default function BottomNav() {
     setIsMenuOpen(false);
   }
 
-  // 3D 리플레이 등 전체 화면 전술 페이지에서는 하단 탭바를 숨겨 재생 컨트롤러 조작을 보장
-  if (pathname.startsWith('/replay/')) {
+  // 3D 리플레이와 어드민 도구 페이지에서는 하단 탭바를 숨겨 작업 화면을 보장
+  if (pathname.startsWith('/replay/') || pathname.startsWith('/admin/')) {
     return null;
   }
 
