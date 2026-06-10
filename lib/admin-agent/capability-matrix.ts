@@ -69,6 +69,8 @@ export function buildAgentCapabilityMatrix(input: {
       label: "원인 진단",
       passed: [
         hasTool("inspect_operations"),
+        hasTool("inspect_user_metrics"),
+        hasTool("summarize_user_activity"),
         hasTool("inspect_incident_timeline"),
         hasTool("inspect_handoff_packet"),
         Boolean(input.dailyCheckout),
@@ -76,10 +78,12 @@ export function buildAgentCapabilityMatrix(input: {
       ],
       evidence: [
         `read tools ${countTools("read")}`,
+        hasTool("inspect_user_metrics") ? "user metrics tool registered" : "user metrics tool missing",
+        hasTool("summarize_user_activity") ? "traffic summary tool registered" : "traffic summary tool missing",
         input.dailyCheckout ? `checkout ${input.dailyCheckout.label || input.dailyCheckout.status}` : "daily checkout missing",
         input.todayActionBoard ? `action board ${input.todayActionBoard.status}` : "today action board missing"
       ],
-      nextStep: "진단 답변 품질이 낮으면 최근 장애 memory와 playbook을 먼저 보강하세요."
+      nextStep: "진단 답변 품질이 낮으면 지표 출처(Auth/profiles/analytics_events)를 구분하고 최근 장애 memory와 playbook을 보강하세요."
     }),
     scoreCapability({
       id: "approve",

@@ -32,7 +32,9 @@ const REQUIRED_TABLES = [
 const OBSERVABILITY_TABLES = [
   "pubg_api_errors",
   "ai_usage_logs",
-  "processed_match_telemetry"
+  "processed_match_telemetry",
+  "analytics_events",
+  "profiles"
 ];
 
 export async function runAgentSelfTest(supabase: any): Promise<AgentSelfTest> {
@@ -165,6 +167,8 @@ function checkTools() {
     "inspect_owner_brief",
     "inspect_monitor_trend",
     "inspect_automation_contract",
+    "summarize_user_activity",
+    "inspect_user_metrics",
     "inspect_capability_matrix",
     "inspect_growth_roadmap",
     "inspect_today_action_board",
@@ -214,6 +218,8 @@ function checkToolSafetyClassification() {
     inspect_owner_brief: "read",
     inspect_monitor_trend: "read",
     inspect_automation_contract: "read",
+    summarize_user_activity: "read",
+    inspect_user_metrics: "read",
     inspect_capability_matrix: "read",
     inspect_growth_roadmap: "read",
     inspect_today_action_board: "read",

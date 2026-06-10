@@ -276,6 +276,7 @@ describe("🧠 Admin Agent Memory/Briefing APIs", () => {
       expect.objectContaining({ name: "inspect_owner_brief", safetyLevel: "read", approvalRequired: false }),
       expect.objectContaining({ name: "inspect_monitor_trend", safetyLevel: "read", approvalRequired: false }),
       expect.objectContaining({ name: "inspect_automation_contract", safetyLevel: "read", approvalRequired: false }),
+      expect.objectContaining({ name: "inspect_user_metrics", safetyLevel: "read", approvalRequired: false }),
       expect.objectContaining({ name: "inspect_capability_matrix", safetyLevel: "read", approvalRequired: false }),
       expect.objectContaining({ name: "inspect_growth_roadmap", safetyLevel: "read", approvalRequired: false }),
       expect.objectContaining({ name: "inspect_today_action_board", safetyLevel: "read", approvalRequired: false }),
