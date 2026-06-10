@@ -418,9 +418,9 @@ export default function AdminDashboardPage() {
               <section className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
                 <h3 className="text-sm font-bold text-zinc-100">AI에게 맡길 일</h3>
                 <div className="mt-3 grid gap-2">
-                  {(todayItems.length > 0 ? todayItems : fallbackActionItems()).map((item) => (
+                  {(todayItems.length > 0 ? todayItems : fallbackActionItems()).map((item, index) => (
                     <button
-                      key={item.prompt}
+                      key={`${item.title}-${item.prompt}-${index}`}
                       onClick={() => openBotPrompt(item.prompt)}
                       className="rounded-md border border-zinc-800 bg-zinc-950 p-3 text-left active:border-amber-500"
                     >
@@ -655,8 +655,8 @@ export default function AdminDashboardPage() {
                   <p className="mt-3 whitespace-pre-wrap break-words text-xs leading-relaxed text-zinc-400">{memory.body}</p>
                   {Array.isArray(memory.metadata?.tags) && memory.metadata.tags.length > 0 && (
                     <div className="mt-3 flex flex-wrap gap-1">
-                      {memory.metadata.tags.slice(0, 5).map((tag: string) => (
-                        <span key={tag} className="rounded bg-zinc-950 px-2 py-1 text-[10px] text-zinc-500">{tag}</span>
+                      {memory.metadata.tags.slice(0, 5).map((tag: string, index: number) => (
+                        <span key={`${tag}-${index}`} className="rounded bg-zinc-950 px-2 py-1 text-[10px] text-zinc-500">{tag}</span>
                       ))}
                     </div>
                   )}
@@ -702,8 +702,8 @@ export default function AdminDashboardPage() {
                 body: "운영 상태가 정상이라면 비공개 운영 일지 저장 요청만 만들어 둡니다.",
                 prompt: "오늘 운영 브리핑을 리포트로 저장 요청해줘"
               }
-            ].map((item) => (
-              <article key={item.title} className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+            ].map((item, index) => (
+              <article key={`${item.title}-${index}`} className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
                 <h2 className="text-sm font-bold text-zinc-100">{item.title}</h2>
                 <p className="mt-2 text-xs leading-relaxed text-zinc-400">{item.body}</p>
                 <button
@@ -941,8 +941,8 @@ function StatusSnapshot({ snapshot, commandCenter }: { snapshot: AgentMonitorSna
       )) : (
         <p className="rounded-md bg-zinc-950 p-2 text-zinc-500">위험 알림이 없으면 Discord 알림은 보내지 않습니다.</p>
       )}
-      {(snapshot?.recommendations || []).slice(0, 3).map((item) => (
-        <p key={item} className="rounded-md bg-zinc-950 p-2 text-zinc-400">{translateSignal(item)}</p>
+      {(snapshot?.recommendations || []).slice(0, 3).map((item, index) => (
+        <p key={`${item}-${index}`} className="rounded-md bg-zinc-950 p-2 text-zinc-400">{translateSignal(item)}</p>
       ))}
     </div>
   );
@@ -989,8 +989,8 @@ function TopList({ title, items }: { title: string; items: Array<{ label: string
       <p className="mb-2 text-[10px] font-semibold text-zinc-500">{title}</p>
       {items.length === 0 ? (
         <p className="text-xs text-zinc-600">데이터 없음</p>
-      ) : items.map((item) => (
-        <div key={item.label} className="flex items-center justify-between gap-2 py-1 text-xs">
+      ) : items.map((item, index) => (
+        <div key={`${item.label}-${index}`} className="flex items-center justify-between gap-2 py-1 text-xs">
           <span className="min-w-0 truncate text-zinc-300">{item.label}</span>
           <span className="shrink-0 text-zinc-500">{item.count}</span>
         </div>
