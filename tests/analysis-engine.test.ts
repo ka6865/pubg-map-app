@@ -4,13 +4,15 @@ import { calcBenchmarkScore, getBenchmarkTier, getBaseTier, getNextTierInfo } fr
 import fs from 'fs';
 import path from 'path';
 
-describe('AnalysisEngine 실데이터(Gold Match) 정밀 검증', () => {
+const realDataPath = path.resolve(__dirname, '../scratch/test-data/revive-gold-match.json');
+const hasRealDataFixture = fs.existsSync(realDataPath);
+
+if (!hasRealDataFixture) {
+  console.warn('⚠️ 테스트 데이터 파일이 없습니다. 실데이터 테스트 suite를 건너뜁니다.');
+}
+
+if (hasRealDataFixture) describe('AnalysisEngine 실데이터(Gold Match) 정밀 검증', () => {
   // 실제 KangHeeSung_ 님의 경기 데이터를 테스트 Fixture로 사용
-  const realDataPath = path.resolve(__dirname, '../scratch/test-data/revive-gold-match.json');
-  if (!fs.existsSync(realDataPath)) {
-    console.warn('⚠️ 테스트 데이터 파일이 없습니다. 테스트를 건너뜁니다.');
-    return;
-  }
   const telemetry = JSON.parse(fs.readFileSync(realDataPath, 'utf-8'));
   
   const nickname = "KangHeeSung_";
@@ -218,4 +220,3 @@ describe('티어 산정 및 조기 탈락 폴백 엔진 검증', () => {
     expect(getNextTierInfo(95)).toBeNull();
   });
 });
-

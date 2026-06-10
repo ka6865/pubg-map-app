@@ -13,6 +13,30 @@ interface CacheEntry {
 const playerResponseCache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 3 * 60 * 1000; // 3분 쿨다운
 
+function pubgFetchInit(
+  headers: HeadersInit,
+  timeoutMs: number,
+  revalidateSeconds: number,
+  forceRefresh: boolean
+): RequestInit & { next?: { revalidate: number } } {
+  const base = {
+    headers,
+    signal: AbortSignal.timeout(timeoutMs)
+  };
+
+  if (forceRefresh) {
+    return {
+      ...base,
+      cache: "no-store"
+    };
+  }
+
+  return {
+    ...base,
+    next: { revalidate: revalidateSeconds }
+  };
+}
+
 // [V12.1] 네트워크 불안정 대응을 위한 재시도 헬퍼 함수 (전체 대기 시간 누적 방지)
 async function withRetry<T>(fn: () => Promise<T>, retries = 2, delay = 1000): Promise<T> {
   let lastError;
@@ -48,6 +72,7 @@ export async function GET(request: Request) {
   const nickname = searchParams.get("nickname");
   const platform = searchParams.get("platform") || "steam";
   const reqSeason = searchParams.get("season");
+  const forceRefresh = searchParams.has("_t") || searchParams.get("refresh") === "true";
 
   if (!nickname)
     return NextResponse.json(
@@ -58,7 +83,7 @@ export async function GET(request: Request) {
   // 1. 서버 인메모리 캐시 조회 (3분 TTL)
   const cacheKey = `${platform}:${nickname.toLowerCase()}:${reqSeason || 'current'}`;
   const cachedEntry = playerResponseCache.get(cacheKey);
-  if (cachedEntry && (Date.now() - cachedEntry.timestamp < CACHE_TTL_MS)) {
+  if (!forceRefresh && cachedEntry && (Date.now() - cachedEntry.timestamp < CACHE_TTL_MS)) {
     console.log(`[IN-MEMORY CACHE HIT] ${cacheKey}`);
     return NextResponse.json(cachedEntry.data);
   }
@@ -90,11 +115,7 @@ export async function GET(request: Request) {
     // 2. PUBG API 호출 (캐시된 닉네임 우선 사용, 개별 타임아웃 8초로 조정)
     let playerRes = await withRetry(() => fetch(
       `https://api.pubg.com/shards/${platform}/players?filter[playerNames]=${targetNickname}`,
-      { 
-        headers, 
-        next: { revalidate: 60 },
-        signal: AbortSignal.timeout(8000)
-      }
+      pubgFetchInit(headers, 8000, 60, forceRefresh)
     ));
     trackPubgRateLimit(playerRes.headers);
 
@@ -103,11 +124,7 @@ export async function GET(request: Request) {
       console.log(`[CACHE STALE] ${targetNickname} 404. Falling back to original: ${nickname}`);
       playerRes = await withRetry(() => fetch(
         `https://api.pubg.com/shards/${platform}/players?filter[playerNames]=${nickname}`,
-        { 
-          headers, 
-          next: { revalidate: 60 },
-          signal: AbortSignal.timeout(8000)
-        }
+        pubgFetchInit(headers, 8000, 60, forceRefresh)
       ));
     }
 
@@ -164,12 +181,7 @@ export async function GET(request: Request) {
 
     const seasonRes = await withRetry(() => fetch(
       `https://api.pubg.com/shards/${platform}/seasons`,
-      { 
-        headers, 
-        // Seasons change at most once per patch (months) — cache aggressively to save rate limit
-        next: { revalidate: 43200 },
-        signal: AbortSignal.timeout(8000)
-      }
+      pubgFetchInit(headers, 8000, 43200, forceRefresh)
     ));
     trackPubgRateLimit(seasonRes.headers);
     const seasonData = await safeJsonParse(seasonRes);
@@ -191,11 +203,7 @@ export async function GET(request: Request) {
       try {
         const checkRes = await withRetry(() => fetch(
           `https://api.pubg.com/shards/${platform}/players/${accountId}/seasons/${targetSeasonId}`,
-          { 
-            headers, 
-            next: { revalidate: 60 },
-            signal: AbortSignal.timeout(8000)
-          }
+          pubgFetchInit(headers, 8000, 60, forceRefresh)
         ));
         if (checkRes.ok) {
           const checkData = await safeJsonParse(checkRes);
@@ -207,7 +215,7 @@ export async function GET(request: Request) {
               const prevId = availableSeasons[i].id;
               const prevRes = await fetch(
                 `https://api.pubg.com/shards/${platform}/players/${accountId}/seasons/${prevId}`,
-                { headers, next: { revalidate: 60 } }
+                pubgFetchInit(headers, 8000, 60, forceRefresh)
               );
               if (prevRes.ok) {
                 const prevData = await safeJsonParse(prevRes);
@@ -227,13 +235,11 @@ export async function GET(request: Request) {
     // Retrieve clanId from player attributes (NOT relationships — PUBG API spec)
     const clanId: string | null = playerData.data[0].attributes?.clanId ?? null;
 
-    // 캐시 유효성 판단 (클랜 24시간, 무기 숙련도 3시간)
+    // 캐시 유효성 판단 (클랜 24시간)
     const CLAN_CACHE_TTL = 24 * 60 * 60 * 1000;
-    const MASTERY_CACHE_TTL = 3 * 60 * 60 * 1000;
     const now = Date.now();
 
     const isClanCacheValid = cacheData?.clan_updated_at && (now - new Date(cacheData.clan_updated_at).getTime() < CLAN_CACHE_TTL);
-    const isMasteryCacheValid = cacheData?.mastery_updated_at && (now - new Date(cacheData.mastery_updated_at).getTime() < MASTERY_CACHE_TTL);
 
     let clanDataPromise: Promise<{ source: string; data: any; updated: boolean }>;
     if (isClanCacheValid && cacheData?.clan_data) {
@@ -241,7 +247,7 @@ export async function GET(request: Request) {
       clanDataPromise = Promise.resolve({ source: 'cache', data: cacheData.clan_data, updated: false });
     } else {
       clanDataPromise = clanId
-        ? fetch(`https://api.pubg.com/shards/${platform}/clans/${clanId}`, { headers, next: { revalidate: 86400 }, signal: AbortSignal.timeout(6000) })
+        ? fetch(`https://api.pubg.com/shards/${platform}/clans/${clanId}`, pubgFetchInit(headers, 6000, 86400, forceRefresh))
             .then(async (res) => {
               if (res.ok) {
                 const clanJson = await res.json();
@@ -264,69 +270,19 @@ export async function GET(request: Request) {
         : Promise.resolve({ source: 'api', data: null, updated: false });
     }
 
-    let masteryDataPromise: Promise<{ source: string; data: any; updated: boolean }>;
-    if (isMasteryCacheValid && cacheData?.weapon_mastery_data) {
-      console.log(`[MASTERY CACHE HIT] Using cached mastery data for ${targetNickname}`);
-      masteryDataPromise = Promise.resolve({ source: 'cache', data: cacheData.weapon_mastery_data, updated: false });
-    } else {
-      masteryDataPromise = fetch(
-        `https://api.pubg.com/shards/${platform}/players/${accountId}/weapon_mastery`,
-        { headers, next: { revalidate: 10800 }, signal: AbortSignal.timeout(8000) }
-      )
-        .then(async (res) => {
-          if (res.ok) {
-            const masteryJson = await res.json();
-            const summaries: Record<string, any> = masteryJson.data?.attributes?.weaponSummaries ?? {};
-            const parsedMastery = Object.entries(summaries)
-              .map(([weaponId, data]: [string, any]) => {
-                const official = data.OfficialStatsTotal ?? data.StatsTotal ?? {};
-                const competitive = data.CompetitiveStatsTotal ?? {};
-                return {
-                  weaponId,
-                  level: data.LevelCurrent ?? 0,
-                  xp: data.XPTotal ?? 0,
-                  kills: official.Kills ?? 0,
-                  damagePlayer: official.DamagePlayer ?? 0,
-                  headShots: official.HeadShots ?? 0,
-                  longestDefeat: official.LongestKill ?? official.LongestDefeat ?? 0,
-                  mostDefeatsInAGame: official.MostKillsInAGame ?? official.MostDefeatsInAGame ?? 0,
-                  rankKills: competitive.Kills ?? 0,
-                  rankDamagePlayer: competitive.DamagePlayer ?? 0,
-                  rankHeadShots: competitive.HeadShots ?? 0,
-                  rankLongestDefeat: competitive.LongestKill ?? competitive.LongestDefeat ?? 0,
-                  rankMostDefeatsInAGame: competitive.MostKillsInAGame ?? competitive.MostDefeatsInAGame ?? 0,
-                };
-              })
-              .sort((a, b) => {
-                const totalKillsA = (a.kills ?? 0) + (a.rankKills ?? 0);
-                const totalKillsB = (b.kills ?? 0) + (b.rankKills ?? 0);
-                if (totalKillsB !== totalKillsA) return totalKillsB - totalKillsA;
-                if (b.level !== a.level) return b.level - a.level;
-                return b.xp - a.xp;
-              })
-              .slice(0, 10);
-            return { source: 'api', data: parsedMastery, updated: true };
-          }
-          throw new Error(`Mastery API Error: ${res.status}`);
-        })
-        .catch((err) => {
-          console.warn(`[MASTERY API FAIL] Falling back to DB cache:`, err.message);
-          return { source: 'fallback', data: cacheData?.weapon_mastery_data || [], updated: false };
-        });
-    }
+    const cachedWeaponMastery = cacheData?.weapon_mastery_data || [];
 
-    // Parallel fetch: ranked, normal season stats + clan info + weapon mastery
-    const [rankedRes, normalRes, clanResult, masteryResult] = await Promise.all([
+    // Parallel fetch: ranked, normal season stats + clan info
+    const [rankedRes, normalRes, clanResult] = await Promise.all([
       withRetry(() => fetch(
         `https://api.pubg.com/shards/${platform}/players/${accountId}/seasons/${targetSeasonId}/ranked`,
-        { headers, next: { revalidate: 60 }, signal: AbortSignal.timeout(8000) }
+        pubgFetchInit(headers, 8000, 60, forceRefresh)
       )),
       withRetry(() => fetch(
         `https://api.pubg.com/shards/${platform}/players/${accountId}/seasons/${targetSeasonId}`,
-        { headers, next: { revalidate: 60 }, signal: AbortSignal.timeout(8000) }
+        pubgFetchInit(headers, 8000, 60, forceRefresh)
       )),
       clanDataPromise,
-      masteryDataPromise,
     ]);
     trackPubgRateLimit(rankedRes.headers);
     trackPubgRateLimit(normalRes.headers);
@@ -364,7 +320,7 @@ export async function GET(request: Request) {
     }
 
     const clan = clanResult.data;
-    const weaponMastery = masteryResult.data;
+    const weaponMastery = cachedWeaponMastery;
 
     // 4. 캐시 업데이트 (클랜/무기 정보 통합 upsert 및 검색 횟수 누적)
     const currentSearchCount = cacheData?.search_count ?? 0;
@@ -382,10 +338,6 @@ export async function GET(request: Request) {
     if (clanResult.updated || isNewUser) {
       cacheUpdateData.clan_data = clanResult.data;
       cacheUpdateData.clan_updated_at = new Date().toISOString();
-    }
-    if (masteryResult.updated || isNewUser) {
-      cacheUpdateData.weapon_mastery_data = masteryResult.data;
-      cacheUpdateData.mastery_updated_at = new Date().toISOString();
     }
 
     supabase.from('pubg_player_cache')

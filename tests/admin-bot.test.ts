@@ -6,11 +6,7 @@ import { NextResponse } from "next/server";
 // 1. Host variables safely before standard imports/mocks using vi.hoisted
 const { 
   mockLaunch, 
-  mockNewPage, 
-  mockGoto, 
-  mockSetViewport, 
-  mockScreenshot, 
-  mockClose 
+  mockNewPage
 } = vi.hoisted(() => {
   const mockScreenshot = vi.fn().mockResolvedValue(Buffer.from("dummy-png-data"));
   const mockGoto = vi.fn();
@@ -30,8 +26,7 @@ const {
 
 const { 
   mockSendMessage, 
-  mockStartChat, 
-  mockGetGenerativeModel,
+  mockStartChat,
   MockGoogleGenerativeAI
 } = vi.hoisted(() => {
   const mockSendMessage = vi.fn();
@@ -89,6 +84,10 @@ describe("🤖 Admin AI Bot API Route (E2E Logic Flow Verification)", () => {
   let cacheChain: any;
   let errorChain: any;
   let postChain: any;
+  let profileChain: any;
+  let agentInsertChain: any;
+  let agentUpdateChain: any;
+  let agentRunChain: any;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -127,6 +126,126 @@ describe("🤖 Admin AI Bot API Route (E2E Logic Flow Verification)", () => {
       })
     };
 
+    profileChain = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn().mockResolvedValue({
+        data: { role: "admin" },
+        error: null
+      })
+    };
+
+    agentInsertChain = {
+      insert: vi.fn().mockReturnThis(),
+      select: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({
+        data: { id: "agent-log-id" },
+        error: null
+      })
+    };
+
+    agentUpdateChain = {
+      update: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockResolvedValue({
+        data: null,
+        error: null
+      })
+    };
+
+    agentRunChain = {
+      select: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
+      then: vi.fn((resolve) => resolve({
+        data: [{
+          id: "monitor-run",
+          status: "completed",
+          message: "scheduled operational monitor",
+          summary: JSON.stringify({
+            severity: "critical",
+            alerts: [{ type: "approval_gate_block", severity: "critical", message: "Execution Gate block 1건" }],
+            approvalGateSummary: { passCount: 0, reviewCount: 0, blockCount: 1 },
+            dailyCheckout: {
+              status: "blocked",
+              label: "마감 차단",
+              score: 48,
+              summary: "Execution Gate block 때문에 마감 전 승인 요청 재검토가 필요합니다.",
+              openRisks: ["Execution Gate block 1건"],
+              tomorrowFocus: ["승인 대기 작업 재생성"],
+              handoffPrompt: "Execution Gate block 승인 요청을 원인과 재생성 기준으로 정리해줘"
+            },
+            nextActions: [{
+              id: "review-risky-approvals",
+              priority: "high",
+              category: "approval",
+              urgencyScore: 92,
+              title: "오래된/위험 승인 먼저 검토",
+              reason: "high risk 1건",
+              prompt: "승인 대기 작업을 impact와 체크리스트 기준으로 우선순위 정리해줘",
+              expectedOutcome: "승인 대기열을 위험도 기준으로 정리합니다.",
+              checklist: ["Execution Gate block 여부 확인"]
+            }]
+          }),
+          error: null,
+          started_at: new Date().toISOString(),
+          completed_at: new Date().toISOString()
+        }],
+        error: null
+      })),
+      eq: vi.fn().mockReturnThis(),
+      insert: vi.fn().mockReturnThis(),
+      update: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({
+        data: { id: "agent-log-id" },
+        error: null
+      }),
+      maybeSingle: vi.fn().mockResolvedValue({
+        data: {
+          summary: JSON.stringify({
+            severity: "critical",
+            alerts: [{ type: "approval_gate_block", severity: "critical", message: "Execution Gate block 1건" }],
+            approvalGateSummary: { passCount: 0, reviewCount: 0, blockCount: 1 },
+            dailyCheckout: {
+              status: "blocked",
+              label: "마감 차단",
+              score: 48,
+              summary: "Execution Gate block 때문에 마감 전 승인 요청 재검토가 필요합니다.",
+              openRisks: ["Execution Gate block 1건"],
+              tomorrowFocus: ["승인 대기 작업 재생성"],
+              handoffPrompt: "Execution Gate block 승인 요청을 원인과 재생성 기준으로 정리해줘"
+            },
+            nextActions: [{
+              id: "review-risky-approvals",
+              priority: "high",
+              category: "approval",
+              urgencyScore: 92,
+              title: "오래된/위험 승인 먼저 검토",
+              reason: "high risk 1건",
+              prompt: "승인 대기 작업을 impact와 체크리스트 기준으로 우선순위 정리해줘",
+              expectedOutcome: "승인 대기열을 위험도 기준으로 정리합니다.",
+              checklist: ["Execution Gate block 여부 확인"]
+            }]
+          }),
+          completed_at: new Date().toISOString()
+        },
+        error: null
+      })
+    };
+    agentRunChain.insert.mockReturnValue({
+      select: vi.fn().mockReturnValue({
+        single: vi.fn().mockResolvedValue({
+          data: { id: "agent-log-id" },
+          error: null
+        })
+      })
+    });
+    agentRunChain.update.mockReturnValue({
+      eq: vi.fn().mockResolvedValue({
+        data: null,
+        error: null
+      })
+    });
+
     // Storage mock
     const mockStorageList = vi.fn().mockResolvedValue({ data: [{ name: "map-captures" }], error: null });
     const mockStorageUpload = vi.fn().mockResolvedValue({ data: {}, error: null });
@@ -134,10 +253,14 @@ describe("🤖 Admin AI Bot API Route (E2E Logic Flow Verification)", () => {
 
     mockSupabaseAdmin = {
       from: vi.fn((table) => {
+        if (table === "profiles") return profileChain;
         if (table === "match_stats_raw") return rawChain;
         if (table === "match_ai_coaching_cache") return cacheChain;
         if (table === "pubg_api_errors") return errorChain;
         if (table === "posts") return postChain;
+        if (table === "agent_runs") return agentRunChain;
+        if (table === "agent_steps") return { ...agentInsertChain, ...agentUpdateChain };
+        if (table === "agent_approvals") return { ...agentInsertChain, ...agentUpdateChain };
         return {};
       }),
       storage: {
@@ -203,6 +326,61 @@ describe("🤖 Admin AI Bot API Route (E2E Logic Flow Verification)", () => {
 
     expect(chunks).toContain("chunk");
     expect(chunks).toContain("안녕하세요 관리자님. 무엇을 도울까요?");
+    expect(mockStartChat).toHaveBeenCalledWith(expect.objectContaining({
+      systemInstruction: expect.objectContaining({
+        parts: [expect.objectContaining({
+          text: expect.stringContaining("Current server context snapshot")
+        })]
+      })
+    }));
+    const systemText = mockStartChat.mock.calls[0][0].systemInstruction.parts[0].text;
+    expect(systemText).toContain("Latest monitor: critical");
+    expect(systemText).toContain("Monitor trend:");
+    expect(systemText).toContain("Daily checkout: 마감 차단");
+    expect(systemText).toContain("Owner brief: act_now");
+    expect(systemText).toContain("Owner do now");
+    expect(systemText).toContain("Owner review items");
+    expect(systemText).toContain("Operator value:");
+    expect(systemText).toContain("Operator next leverage");
+    expect(systemText).toContain("Growth roadmap:");
+    expect(systemText).toContain("Growth primary prompt");
+    expect(systemText).toContain("Automation contract:");
+    expect(systemText).toContain("Free-plan guardrails:");
+    expect(systemText).toContain("monitor trend tool");
+    expect(systemText).toContain("automation contract tool");
+    expect(systemText).toContain("capability matrix tool");
+    expect(systemText).toContain("growth roadmap tool");
+    expect(systemText).toContain("today action board tool");
+    expect(systemText).toContain("daily checkout tool");
+    expect(systemText).toContain("operating SOP tool");
+    expect(systemText).toContain("Operating SOP:");
+    expect(systemText).toContain("SOP primary prompt");
+    expect(systemText).toContain("risk radar tool");
+    expect(systemText).toContain("Risk radar:");
+    expect(systemText).toContain("Risk primary prompt");
+    expect(systemText).toContain("decision trace tool");
+    expect(systemText).toContain("Decision trace:");
+    expect(systemText).toContain("Decision blind spots:");
+    expect(systemText).toContain("safety audit tool");
+    expect(systemText).toContain("Safety audit:");
+    expect(systemText).toContain("approval advisor tool");
+    expect(systemText).toContain("Approval advisor:");
+    expect(systemText).toContain("mission control tool");
+    expect(systemText).toContain("Mission control:");
+    expect(systemText).toContain("owner inbox tool");
+    expect(systemText).toContain("Owner inbox:");
+    expect(systemText).toContain("outcome review tool");
+    expect(systemText).toContain("Outcome review:");
+    expect(systemText).toContain("operator coach tool");
+    expect(systemText).toContain("Operator coach:");
+    expect(systemText).toContain("launch kit tool");
+    expect(systemText).toContain("Launch kit:");
+    expect(systemText).toContain("Launch first prompt:");
+    expect(systemText).toContain("final readiness tool");
+    expect(systemText).toContain("Final readiness:");
+    expect(systemText).toContain("Today action board: blocked");
+    expect(systemText).toContain("Today primary prompt");
+    expect(systemText).toContain("Today board lanes");
   });
 
   it("3. AI가 'take_map_screenshot' 도구를 실행하도록 유도될 시, Puppeteer 캡처 로직이 가동되어야 함", async () => {

@@ -87,3 +87,33 @@ jobs:
           CLOUDFLARE_R2_SECRET_ACCESS_KEY: ${{ secrets.CLOUDFLARE_R2_SECRET_ACCESS_KEY }}
           CLOUDFLARE_R2_BUCKET_NAME: ${{ secrets.CLOUDFLARE_R2_BUCKET_NAME }}
         run: npx tsx scripts/monitor_storage.ts --label "AFTER"
+
+      - name: Record Agent Monitor Snapshot
+        if: always()
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          ADMIN_AGENT_CRON_SECRET: ${{ secrets.ADMIN_AGENT_CRON_SECRET }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          SECRET="${ADMIN_AGENT_CRON_SECRET:-$CRON_SECRET}"
+          if [ -z "$APP_URL" ] || [ -z "$SECRET" ]; then
+            echo "APP_URL or agent cron secret is missing; skipping agent monitor snapshot."
+            exit 0
+          fi
+          curl -fsS "$APP_URL/api/admin/agent/monitor" \
+            -H "Authorization: Bearer $SECRET"
+
+      - name: Record Agent Rollout Readiness Snapshot
+        if: always()
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+          ADMIN_AGENT_CRON_SECRET: ${{ secrets.ADMIN_AGENT_CRON_SECRET }}
+          CRON_SECRET: ${{ secrets.CRON_SECRET }}
+        run: |
+          SECRET="${ADMIN_AGENT_CRON_SECRET:-$CRON_SECRET}"
+          if [ -z "$APP_URL" ] || [ -z "$SECRET" ]; then
+            echo "APP_URL or agent cron secret is missing; skipping agent rollout readiness snapshot."
+            exit 0
+          fi
+          curl -fsS "$APP_URL/api/admin/agent/rollout" \
+            -H "Authorization: Bearer $SECRET"

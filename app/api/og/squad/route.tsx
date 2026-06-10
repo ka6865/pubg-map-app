@@ -7,24 +7,16 @@ import { getSquadAnalysisData } from "@/app/api/pubg/squad-analyze/route";
 
 export const runtime = "nodejs";
 
-// Pretendard 한글 폰트 데이터 로드 (서버 사이드 캐시 활용을 위한 GET 외부 선언)
-const fontRegular = fetch(
-  new URL(
-    "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/packages/pretendard/dist/web/static/woff/Pretendard-Regular.woff"
-  )
-).then((res) => {
-  if (!res.ok) throw new Error("Failed to fetch Regular font");
-  return res.arrayBuffer();
-});
+const PRETENDARD_REGULAR_URL =
+  "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/packages/pretendard/dist/web/static/woff/Pretendard-Regular.woff";
+const PRETENDARD_BOLD_URL =
+  "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/packages/pretendard/dist/web/static/woff/Pretendard-Bold.woff";
 
-const fontBold = fetch(
-  new URL(
-    "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/packages/pretendard/dist/web/static/woff/Pretendard-Bold.woff"
-  )
-).then((res) => {
-  if (!res.ok) throw new Error("Failed to fetch Bold font");
-  return res.arrayBuffer();
-});
+async function loadOgFont(url: string) {
+  const response = await fetch(url);
+  if (!response.ok) throw new Error(`Failed to fetch OG font: ${response.status}`);
+  return response.arrayBuffer();
+}
 
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
@@ -88,7 +80,10 @@ export async function GET(request: NextRequest) {
   let regularFontBuffer: ArrayBuffer;
   let boldFontBuffer: ArrayBuffer;
   try {
-    [regularFontBuffer, boldFontBuffer] = await Promise.all([fontRegular, fontBold]);
+    [regularFontBuffer, boldFontBuffer] = await Promise.all([
+      loadOgFont(PRETENDARD_REGULAR_URL),
+      loadOgFont(PRETENDARD_BOLD_URL)
+    ]);
   } catch (fontErr) {
     console.error("[OG-SQUAD-FONT-ERROR] Font loading failed, using fallback.", fontErr);
     regularFontBuffer = new ArrayBuffer(0);
