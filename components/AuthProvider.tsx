@@ -82,8 +82,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // window.gtag가 아직 로드되지 않았다면, 임시 래퍼를 선언하여 dataLayer에 명령 누적
     (window as any).dataLayer = (window as any).dataLayer || [];
     if (!(window as any).gtag) {
-      (window as any).gtag = function () {
-        (window as any).dataLayer.push(arguments);
+      (window as any).gtag = function (...args: unknown[]) {
+        (window as any).dataLayer.push(args);
       };
     }
 

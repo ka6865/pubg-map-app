@@ -1550,7 +1550,7 @@ function Replay3DContent() {
         }
       });
 
-      let finalPos = currentPos.clone();
+      const finalPos = currentPos.clone();
 
       if (group) {
         // 지상 캐릭터 지형 높이 스냅 보정 (묻힘 및 산정상 붕뜸 현상 해결)
@@ -1582,7 +1582,7 @@ function Replay3DContent() {
         if (isDead && player.deathTimeMs != null) {
           // 사망 시점의 좌표를 계산하여 묘비를 해당 위치에 고정 (매 프레임 갱신 금지)
           const deathState = getInterpolatedState(player, player.deathTimeMs, altitudeScale);
-          let finalDeathPos = deathState.position.clone();
+          const finalDeathPos = deathState.position.clone();
           if (heightmapDataRef.current) {
             const terrainHeight = getTerrainHeight(finalDeathPos.x, finalDeathPos.z);
             finalDeathPos.y = Math.max(terrainHeight, finalDeathPos.y);

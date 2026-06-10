@@ -3396,7 +3396,7 @@ describe("🧠 Admin Agent Memory/Briefing APIs", () => {
     });
     tables.pubg_api_status = chain({
       maybeSingle: {
-        data: { api_limit: 1000, remaining: 25, reset_at: null, updated_at: new Date().toISOString() },
+        data: { api_limit: 1000, remaining: 0, reset_at: null, updated_at: new Date().toISOString() },
         error: null
       }
     });
@@ -3489,7 +3489,7 @@ describe("🧠 Admin Agent Memory/Briefing APIs", () => {
     });
     tables.pubg_api_status = chain({
       maybeSingle: {
-        data: { api_limit: 1000, remaining: 25, reset_at: null, updated_at: new Date().toISOString() },
+        data: { api_limit: 1000, remaining: 0, reset_at: null, updated_at: new Date().toISOString() },
         error: null
       }
     });

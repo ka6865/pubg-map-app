@@ -10,6 +10,7 @@ import { GoogleAnalytics } from '@next/third-parties/google';
 import SidebarFooterWrapper from "@/components/layout/SidebarFooterWrapper";
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/react";
+import PageViewTracker from "@/components/analytics/PageViewTracker";
 
 // 브라우저 탭 제목, 설명, 파비콘 메타데이터 정의
 const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://bgms.kr";
@@ -104,6 +105,7 @@ export default function RootLayout({
       <body className="antialiased bg-[#0d0d0d] text-white">
         <GoogleAnalytics gaId={process.env.NEXT_PUBLIC_GA_ID!} />
         <AuthProvider>
+          <PageViewTracker />
 
           <div className="flex flex-col min-h-dvh">
             <GlobalHeader />

@@ -795,7 +795,7 @@ function BanStatusButton({ banType, isMobile }: BanStatusButtonProps) {
   const isPermanent = lowerType.startsWith("permanent");
   const isInherited = lowerType.startsWith("inherited");
 
-  let label = "🛡️ 제재 상태 확인";
+  const label = "🛡️ 제재 상태 확인";
   let statusText = "정상 활동 계정";
   let statusDesc = "현재 특별한 플랫폼 제한 또는 영구 제재 조치가 없는 정상 상태입니다.";
   let badgeColor = "text-emerald-400 border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20";

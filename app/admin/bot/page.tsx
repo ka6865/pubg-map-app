@@ -56,6 +56,7 @@ export default function AdminBotPage() {
   const [memoryQuery, setMemoryQuery] = useState("");
   const [memoryCategory, setMemoryCategory] = useState("all");
   const [memoryIncludeInactive, setMemoryIncludeInactive] = useState(false);
+  const [trafficWindow, setTrafficWindow] = useState<"24h" | "7d">("24h");
   
   // 봇의 기본 페르소나 설정
   const [settings, setSettings] = useState<BotSettings>({
@@ -576,6 +577,9 @@ export default function AdminBotPage() {
   const selectedApprovalRisk = selectedApproval?.impact?.risk || null;
   const memoryCategories = ["all", "incident", "policy", "report", "content", "operations"];
   const approvalStaleHours = commandCenter?.thresholds?.approvalStaleHours || 24;
+  const activeTrafficSummary = trafficWindow === "7d"
+    ? commandCenter?.trafficSummary7d || commandCenter?.trafficSummary
+    : commandCenter?.trafficSummary;
 
   const getMemoryCategoryCount = (category: string) => {
     if (category === "all") return memorySummary?.total ?? memories.length;
@@ -606,6 +610,12 @@ export default function AdminBotPage() {
       hour: "2-digit",
       minute: "2-digit"
     });
+  };
+
+  const formatTrafficChange = (value?: number | null) => {
+    if (value === null || value === undefined) return "신규";
+    if (value === 0) return "변화 없음";
+    return `${value > 0 ? "+" : ""}${value}%`;
   };
 
   const translateStatus = (value?: string | null) => {
@@ -1185,7 +1195,7 @@ export default function AdminBotPage() {
 
           {showCommandCenter ? (
           <>
-          <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
+          <div className="grid grid-cols-2 gap-2 md:grid-cols-6">
             <div className={`rounded-md border p-2 ${
               (commandCenter.approvalGateSummary?.blockCount || 0) > 0
                 ? "border-rose-500/30 bg-rose-500/5"
@@ -1213,6 +1223,25 @@ export default function AdminBotPage() {
               <p className="mt-1 text-lg font-bold text-zinc-100">${commandCenter.aiUsage.totalCostUsd.toFixed(4)}</p>
             </div>
             <div className={`rounded-md border p-2 ${
+              commandCenter.trafficSummary?.status === "unavailable"
+                ? "border-amber-500/30 bg-amber-500/5"
+                : "border-zinc-800 bg-zinc-900"
+            }`}>
+              <p className="text-[10px] font-semibold text-zinc-500">유저 활동</p>
+              <p className="mt-1 text-lg font-bold text-zinc-100">
+                {commandCenter.trafficSummary?.status === "ready"
+                  ? commandCenter.trafficSummary.current.uniqueSessions
+                  : "-"}
+              </p>
+              <p className="mt-0.5 text-[10px] text-zinc-500">
+                {commandCenter.trafficSummary?.status === "ready"
+                  ? `회원 ${commandCenter.trafficSummary.current.memberSessions} · 비회원 ${commandCenter.trafficSummary.current.guestSessions}`
+                  : commandCenter.trafficSummary?.status === "empty"
+                    ? "수집 대기"
+                    : "확인 필요"}
+              </p>
+            </div>
+            <div className={`rounded-md border p-2 ${
               commandCenter.deploymentHealth?.severity === "critical"
                 ? "border-rose-500/30 bg-rose-500/5"
                 : commandCenter.deploymentHealth?.severity === "warn"
@@ -1236,6 +1265,125 @@ export default function AdminBotPage() {
               </div>
             </div>
           </div>
+
+          {activeTrafficSummary && (
+            <div className={`mt-2 rounded-md border p-2 text-xs ${
+              activeTrafficSummary.status === "unavailable"
+                ? "border-amber-500/20 bg-amber-500/5 text-amber-100"
+                : activeTrafficSummary.status === "empty"
+                  ? "border-zinc-800 bg-zinc-950/60 text-zinc-300"
+                  : "border-cyan-500/20 bg-cyan-500/5 text-cyan-100"
+            }`}>
+              <div className="mb-2 flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="truncate font-semibold">유저 활동</p>
+                  <p className="mt-0.5 line-clamp-2 text-[11px] opacity-80">
+                    {activeTrafficSummary.status === "ready"
+                      ? `방문 세션 ${activeTrafficSummary.current.uniqueSessions}개(회원 ${activeTrafficSummary.current.memberSessions}, 비회원 ${activeTrafficSummary.current.guestSessions}), 페이지뷰 ${activeTrafficSummary.current.pageViews}회`
+                      : activeTrafficSummary.status === "empty"
+                        ? "아직 수집된 활동 데이터가 없습니다. 배포 후 페이지 이동과 기능 사용이 쌓이면 표시됩니다."
+                        : `활동 집계 조회 실패: ${activeTrafficSummary.error || "테이블/권한 확인 필요"}`}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1 rounded-md border border-zinc-800 bg-zinc-950/60 p-0.5">
+                  {(["24h", "7d"] as const).map((window) => (
+                    <button
+                      key={window}
+                      onClick={() => setTrafficWindow(window)}
+                      className={`rounded px-2 py-1 text-[10px] font-semibold ${
+                        trafficWindow === window
+                          ? "bg-cyan-400 text-zinc-950"
+                          : "text-zinc-500 active:text-zinc-200"
+                      }`}
+                    >
+                      {window === "24h" ? "24시간" : "7일"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="grid gap-2 md:grid-cols-4">
+                {[
+                  ["방문 세션", activeTrafficSummary.current.uniqueSessions, formatTrafficChange(activeTrafficSummary.changes.uniqueSessions)],
+                  ["회원 세션", activeTrafficSummary.current.memberSessions, "로그인"],
+                  ["비회원 세션", activeTrafficSummary.current.guestSessions, "게스트"],
+                  ["전적 검색", activeTrafficSummary.current.statsSearches, formatTrafficChange(activeTrafficSummary.changes.statsSearches)],
+                  ["AI 기능", activeTrafficSummary.current.aiFeatureUses, formatTrafficChange(activeTrafficSummary.changes.aiFeatureUses)]
+                ].map(([label, value, change]) => (
+                  <div key={label} className="rounded border border-zinc-800 bg-zinc-950/50 p-2">
+                    <p className="text-[10px] font-semibold opacity-60">{label}</p>
+                    <p className="mt-1 text-sm font-semibold">{value}</p>
+                    <p className="text-[10px] opacity-70">이전 기간 대비 {change}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-2 grid gap-2 md:grid-cols-2">
+                <div className="rounded border border-zinc-800 bg-zinc-950/50 p-2">
+                  <p className="mb-1 text-[10px] font-semibold opacity-60">인기 페이지 Top 3</p>
+                  {activeTrafficSummary.current.topPages.length ? (
+                    <div className="space-y-1">
+                      {activeTrafficSummary.current.topPages.slice(0, 3).map((item) => (
+                        <div key={item.label} className="flex items-center justify-between gap-2 text-[10px]">
+                          <span className="truncate opacity-80">{item.label}</span>
+                          <span className="shrink-0 font-semibold">{item.count}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[10px] opacity-60">페이지뷰 데이터 없음</p>
+                  )}
+                </div>
+                <div className="rounded border border-zinc-800 bg-zinc-950/50 p-2">
+                  <p className="mb-1 text-[10px] font-semibold opacity-60">인기 기능 Top 3</p>
+                  {activeTrafficSummary.current.topFeatures.length ? (
+                    <div className="space-y-1">
+                      {activeTrafficSummary.current.topFeatures.slice(0, 3).map((item) => (
+                        <div key={item.label} className="flex items-center justify-between gap-2 text-[10px]">
+                          <span className="truncate opacity-80">{translateSignal(item.label)}</span>
+                          <span className="shrink-0 font-semibold">{item.count}</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-[10px] opacity-60">기능 사용 데이터 없음</p>
+                  )}
+                </div>
+              </div>
+              <div className="mt-2 rounded border border-zinc-800 bg-zinc-950/50 p-2">
+                <p className="mb-1 text-[10px] font-semibold opacity-60">활동 많은 로그인 유저</p>
+                {activeTrafficSummary.current.topUsers.length ? (
+                  <div className="grid gap-1 md:grid-cols-3">
+                    {activeTrafficSummary.current.topUsers.slice(0, 3).map((user) => (
+                      <div key={user.userId} className="rounded border border-zinc-800 bg-zinc-900/60 p-2">
+                        <p className="truncate text-[11px] font-semibold text-zinc-100">{user.label}</p>
+                        {user.pubgNickname && (
+                          <p className="mt-0.5 truncate text-[10px] text-zinc-500">PUBG {user.pubgNickname}</p>
+                        )}
+                        <p className="mt-1 text-[10px] text-zinc-400">
+                          이벤트 {user.eventCount} · 페이지 {user.pageViews} · 전적 {user.statsSearches} · AI {user.aiFeatureUses}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[10px] opacity-60">로그인 유저 활동 없음. 비회원 방문은 세션 수로만 집계됩니다.</p>
+                )}
+              </div>
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex flex-wrap gap-1">
+                  <span className="rounded bg-zinc-950/50 px-2 py-1 text-[10px] opacity-80">게시판 {activeTrafficSummary.current.boardActions}</span>
+                  <span className="rounded bg-zinc-950/50 px-2 py-1 text-[10px] opacity-80">상자 {activeTrafficSummary.current.crateOpens}</span>
+                  <span className="rounded bg-zinc-950/50 px-2 py-1 text-[10px] opacity-80">리플레이 {activeTrafficSummary.current.replayOpens}</span>
+                </div>
+                <button
+                  onClick={() => sendAgentMessage(`${trafficWindow === "7d" ? "최근 7일" : "최근 24시간"} 유저 활동을 쉽게 요약해줘`)}
+                  disabled={isLoading}
+                  className="rounded bg-cyan-400 px-2 py-1 text-[10px] font-semibold text-zinc-950 active:bg-cyan-300 disabled:opacity-50"
+                >
+                  AI에게 해석 요청
+                </button>
+              </div>
+            </div>
+          )}
 
           {commandCenter.operatingMode && (
             <div className={`mt-2 rounded-md border p-2 text-xs ${

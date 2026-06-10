@@ -226,6 +226,8 @@ export interface AgentCommandCenter {
   rollout?: AgentRolloutReadinessSummary;
   deploymentHealth?: AgentDeploymentHealth;
   contentPerformance?: AgentContentPerformanceSummary;
+  trafficSummary?: AgentTrafficSummary;
+  trafficSummary7d?: AgentTrafficSummary;
   thresholds?: AgentThresholds;
   toolCatalog?: AgentToolCatalog;
   readiness?: AgentReadiness;
@@ -573,6 +575,7 @@ export interface AgentMonitorSnapshot {
     value?: any;
   }>;
   recommendations: string[];
+  trafficSummary?: AgentTrafficSummary;
   approvalGateSummary?: {
     sampledCount: number;
     passCount: number;
@@ -598,6 +601,53 @@ export interface AgentMonitorSnapshot {
     cooldownMinutes?: number;
     lastSentAt?: string | null;
   };
+}
+
+export interface AgentTrafficSummary {
+  generatedAt: string;
+  status: "ready" | "empty" | "unavailable";
+  windowHours: number;
+  current: AgentTrafficSummaryWindow;
+  previous: AgentTrafficSummaryWindow;
+  changes: {
+    uniqueSessions: number | null;
+    pageViews: number | null;
+    totalEvents: number | null;
+    statsSearches: number | null;
+    aiFeatureUses: number | null;
+    boardActions: number | null;
+    crateOpens: number | null;
+    replayOpens: number | null;
+  };
+  highlights: string[];
+  error?: string;
+}
+
+export interface AgentTrafficSummaryWindow {
+  uniqueSessions: number;
+  uniqueUsers: number;
+  guestSessions: number;
+  memberSessions: number;
+  pageViews: number;
+  totalEvents: number;
+  topPages: Array<{ label: string; count: number }>;
+  topEvents: Array<{ label: string; count: number }>;
+  topFeatures: Array<{ label: string; count: number }>;
+  topUsers: Array<{
+    userId: string;
+    label: string;
+    nickname: string | null;
+    pubgNickname: string | null;
+    eventCount: number;
+    pageViews: number;
+    statsSearches: number;
+    aiFeatureUses: number;
+  }>;
+  statsSearches: number;
+  aiFeatureUses: number;
+  boardActions: number;
+  crateOpens: number;
+  replayOpens: number;
 }
 
 export interface AgentMemory {

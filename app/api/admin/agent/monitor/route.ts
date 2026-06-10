@@ -10,6 +10,7 @@ import { buildOperatorValueScorecard } from "@/lib/admin-agent/operator-value";
 import { buildAgentOwnerBrief } from "@/lib/admin-agent/owner-brief";
 import { matchPlaybooks } from "@/lib/admin-agent/playbooks";
 import { getAgentThresholds } from "@/lib/admin-agent/thresholds";
+import { buildTrafficSummary } from "@/lib/admin-agent/traffic-summary";
 import { withAuthGuard } from "@/utils/supabase/guard";
 
 const clean = (value: string | undefined) => (value || "").replace(/['";\s]+/g, "").trim();
@@ -97,14 +98,15 @@ async function resolveMonitorAuth(request: Request) {
 async function buildOperationalSnapshot(supabase: any) {
   const thresholds = getAgentThresholds();
   const since = new Date(Date.now() - thresholds.windowHours * 60 * 60 * 1000).toISOString();
-  const [apiErrors, aiUsage, pendingApprovals, approvalGateSummary, telemetryRows, latestPubgStatus, deploymentHealth] = await Promise.all([
+  const [apiErrors, aiUsage, pendingApprovals, approvalGateSummary, telemetryRows, latestPubgStatus, deploymentHealth, trafficSummary] = await Promise.all([
     fetchApiErrors(supabase, since),
     fetchAiUsage(supabase, since),
     fetchApprovalQueueSummary(supabase),
     fetchApprovalGateSummary(supabase),
     countTable(supabase, "processed_match_telemetry"),
     fetchLatestPubgStatus(supabase),
-    fetchVercelDeploymentHealth()
+    fetchVercelDeploymentHealth(),
+    buildTrafficSummary(supabase, thresholds.windowHours)
   ]);
 
   const alerts: MonitorAlert[] = [];
@@ -279,6 +281,7 @@ async function buildOperationalSnapshot(supabase: any) {
     cacheHealth: {
       processedTelemetryRows: telemetryRows.count
     },
+    trafficSummary,
     pubgApi: latestPubgStatus,
     deploymentHealth,
     playbooks,

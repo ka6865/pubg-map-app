@@ -32,6 +32,7 @@ import { runAgentSelfTest } from "@/lib/admin-agent/self-test";
 import { buildAgentRolloutReadiness } from "@/lib/admin-agent/rollout";
 import { getAgentThresholds } from "@/lib/admin-agent/thresholds";
 import { buildAgentToolCatalog } from "@/lib/admin-agent/tool-catalog";
+import { buildTrafficSummary } from "@/lib/admin-agent/traffic-summary";
 import { withAuthGuard } from "@/utils/supabase/guard";
 
 export async function GET(request: Request) {
@@ -312,6 +313,30 @@ export async function POST(request: Request) {
             recommendation: payload.monitorTrend.recommendation,
             deltas: payload.monitorTrend.deltas
           },
+          trafficSummary: payload.trafficSummary ? {
+            status: payload.trafficSummary.status,
+            windowHours: payload.trafficSummary.windowHours,
+            sessions: payload.trafficSummary.current.uniqueSessions,
+            pageViews: payload.trafficSummary.current.pageViews,
+            statsSearches: payload.trafficSummary.current.statsSearches,
+            aiFeatureUses: payload.trafficSummary.current.aiFeatureUses,
+            topPages: payload.trafficSummary.current.topPages.slice(0, 3),
+            topFeatures: payload.trafficSummary.current.topFeatures.slice(0, 3),
+            topUsers: payload.trafficSummary.current.topUsers.slice(0, 3),
+            highlights: payload.trafficSummary.highlights
+          } : null,
+          trafficSummary7d: payload.trafficSummary7d ? {
+            status: payload.trafficSummary7d.status,
+            windowHours: payload.trafficSummary7d.windowHours,
+            sessions: payload.trafficSummary7d.current.uniqueSessions,
+            pageViews: payload.trafficSummary7d.current.pageViews,
+            statsSearches: payload.trafficSummary7d.current.statsSearches,
+            aiFeatureUses: payload.trafficSummary7d.current.aiFeatureUses,
+            topPages: payload.trafficSummary7d.current.topPages.slice(0, 3),
+            topFeatures: payload.trafficSummary7d.current.topFeatures.slice(0, 3),
+            topUsers: payload.trafficSummary7d.current.topUsers.slice(0, 3),
+            highlights: payload.trafficSummary7d.highlights
+          } : null,
           latestMonitorSnapshot: payload.latestMonitorSnapshot?.item ? {
             runId: payload.latestMonitorSnapshot.item.runId,
             generatedAt: payload.latestMonitorSnapshot.item.generatedAt,
@@ -338,7 +363,7 @@ export async function POST(request: Request) {
 
 async function buildCommandCenterPayload(supabase: any) {
   const thresholds = getAgentThresholds();
-  const [latestRun, latestMonitorSnapshot, monitorTrend, pendingApprovals, approvalGateSummary, failedRuns, latestErrors, aiUsage, memories, latestReport, readiness, deploymentHealth, contentPerformance, rollout, recentAgentActivity, approvalOutcomes] = await Promise.all([
+  const [latestRun, latestMonitorSnapshot, monitorTrend, pendingApprovals, approvalGateSummary, failedRuns, latestErrors, aiUsage, memories, latestReport, readiness, deploymentHealth, contentPerformance, rollout, recentAgentActivity, approvalOutcomes, trafficSummary, trafficSummary7d] = await Promise.all([
     fetchLatestRun(supabase),
     fetchLatestMonitorSnapshot(supabase),
     fetchMonitorTrend(supabase),
@@ -354,7 +379,9 @@ async function buildCommandCenterPayload(supabase: any) {
     fetchContentPerformance(supabase),
     buildAgentRolloutReadiness(supabase),
     fetchRecentAgentActivity(supabase, thresholds.windowHours),
-    fetchRecentApprovalOutcomes(supabase, thresholds.windowHours)
+    fetchRecentApprovalOutcomes(supabase, thresholds.windowHours),
+    buildTrafficSummary(supabase, thresholds.windowHours),
+    buildTrafficSummary(supabase, 168)
   ]);
 
   const severity = getSeverity({
@@ -691,6 +718,8 @@ async function buildCommandCenterPayload(supabase: any) {
     },
     deploymentHealth,
     contentPerformance,
+    trafficSummary,
+    trafficSummary7d,
     thresholds,
     toolCatalog,
     capabilityMatrix,
@@ -751,6 +780,7 @@ async function buildCommandCenterPayload(supabase: any) {
       "Final Readiness로 최종형 에이전트 완성도와 남은 일을 점검해줘",
       "30초 운영자 브리핑으로 지금 할 일만 알려줘",
       "최근 monitor 추세가 좋아지는지 나빠지는지 알려줘",
+      "최근 24시간 유저 활동을 요약해줘",
       "오늘 운영 브리핑을 리포트로 저장 요청해줘",
       "이번 주 운영 데이터 기반 게시글 초안을 만들어줘",
       "최근 게시글 성과를 분석하고 다음 콘텐츠를 추천해줘",

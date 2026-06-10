@@ -5,7 +5,37 @@
 
 // ─── 이벤트 정의 ────────────────────────────────────────────────────────────
 
+export const ANALYTICS_EVENT_NAMES = [
+  "page_view",
+  "stats_searched",
+  "battle_started",
+  "battle_completed",
+  "share_clicked",
+  "squad_synergy_completed",
+  "ai_squad_coaching_requested",
+  "ai_analysis_opened",
+  "replay_2d_opened",
+  "tab_clicked",
+  "map_viewed",
+  "weapon_viewed",
+  "feature_consumption",
+  "crate_opened",
+  "board_viewed",
+  "post_viewed",
+  "post_action"
+] as const;
+
+const MIRRORED_EVENTS = new Set<string>(ANALYTICS_EVENT_NAMES);
+const SESSION_STORAGE_KEY = "bgms_analytics_session_id";
+
 export type BgmsEvent =
+  | {
+      name: "page_view";
+      params: {
+        path: string;
+        title?: string;
+      };
+    }
   | {
       name: "stats_searched";
       params: {
@@ -126,7 +156,6 @@ export type BgmsEvent =
 
 export function trackEvent(event: BgmsEvent): void {
   if (typeof window === "undefined") return;
-  if (typeof (window as any).gtag !== "function") return;
 
   // 개발 환경(Local)에서 실시간으로 GA4 DebugView를 모니터링할 수 있도록 debug_mode 적용
   const params = {
@@ -134,6 +163,65 @@ export function trackEvent(event: BgmsEvent): void {
     debug_mode: process.env.NODE_ENV === "development" ? true : undefined
   };
 
-  (window as any).gtag("event", event.name, params);
+  if (typeof (window as any).gtag === "function") {
+    (window as any).gtag("event", event.name, params);
+  }
+
+  mirrorEventToSupabase(event);
 }
 
+function mirrorEventToSupabase(event: BgmsEvent): void {
+  if (!MIRRORED_EVENTS.has(event.name)) return;
+  if (process.env.NEXT_PUBLIC_ANALYTICS_MIRROR_DISABLED === "true") return;
+
+  try {
+    const payload = JSON.stringify({
+      name: event.name,
+      params: event.params,
+      sessionId: getOrCreateSessionId(),
+      pagePath: window.location.pathname,
+      pageTitle: document.title || (event.name === "page_view" ? event.params.title : undefined),
+      referrerPath: document.referrer ? toPath(document.referrer) : undefined
+    });
+
+    if (navigator.sendBeacon) {
+      const blob = new Blob([payload], { type: "application/json" });
+      const accepted = navigator.sendBeacon("/api/analytics/event", blob);
+      if (accepted) return;
+    }
+
+    fetch("/api/analytics/event", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: payload,
+      keepalive: true
+    }).catch(() => {
+      // Analytics mirror must never affect user-facing features.
+    });
+  } catch {
+    // Ignore analytics mirror errors by design.
+  }
+}
+
+function getOrCreateSessionId() {
+  try {
+    const current = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    if (current) return current;
+    const next = typeof crypto !== "undefined" && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    window.localStorage.setItem(SESSION_STORAGE_KEY, next);
+    return next;
+  } catch {
+    return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  }
+}
+
+function toPath(value: string) {
+  try {
+    const url = new URL(value);
+    return `${url.pathname}${url.search}`;
+  } catch {
+    return undefined;
+  }
+}

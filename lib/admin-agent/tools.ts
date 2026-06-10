@@ -31,6 +31,7 @@ import { buildAgentSafetyAudit } from "@/lib/admin-agent/safety-audit";
 import { buildAgentRolloutReadiness } from "@/lib/admin-agent/rollout";
 import { runAgentSelfTest } from "@/lib/admin-agent/self-test";
 import { buildAgentToolCatalog } from "@/lib/admin-agent/tool-catalog";
+import { buildTrafficSummary, renderTrafficSummaryText } from "@/lib/admin-agent/traffic-summary";
 import { getAgentThresholds } from "@/lib/admin-agent/thresholds";
 import { listR2Files } from "@/lib/pubg-analysis/r2Service";
 import { createApprovalRequest } from "./logging";
@@ -197,6 +198,20 @@ const inspectAutomationContractDecl: FunctionDeclaration = {
       includeContracts: {
         type: SchemaType.BOOLEAN,
         description: "개별 자동화 계약 목록까지 포함할지 여부. 기본 true."
+      }
+    }
+  }
+};
+
+const summarizeUserActivityDecl: FunctionDeclaration = {
+  name: "summarize_user_activity",
+  description: "최근 방문 세션, 페이지뷰, 전적 검색, AI 기능, 게시판 활동, 상자/리플레이 사용량을 Supabase analytics_events에서 집계합니다. read-only 운영 분석 도구입니다.",
+  parameters: {
+    type: SchemaType.OBJECT,
+    properties: {
+      hours: {
+        type: SchemaType.NUMBER,
+        description: "최근 몇 시간 범위를 볼지 지정합니다. 기본 24, 최대 168."
       }
     }
   }
@@ -1175,6 +1190,28 @@ async function inspectAutomationContract(args: any, supabase: any): Promise<stri
       "긴 작업은 GitHub Actions 자동화와 Agent 역할 분담을 요약해줘"
     ].filter(Boolean)
   });
+}
+
+async function summarizeUserActivity(args: any, supabase: any): Promise<string> {
+  const hours = Math.min(Math.max(Number(args.hours || 24), 1), 168);
+  const summary = await buildTrafficSummary(supabase, hours);
+  return JSON.stringify({
+    description: `최근 ${hours}시간 기준 유저 활동 집계입니다. 개인 추적이 아니라 운영 집계만 제공합니다.`,
+    summary,
+    readable: renderTrafficSummaryText(summary),
+    recommendations: buildTrafficRecommendations(summary)
+  });
+}
+
+function buildTrafficRecommendations(summary: Awaited<ReturnType<typeof buildTrafficSummary>>) {
+  if (summary.status === "unavailable") return ["analytics_events 마이그레이션 적용과 서버 환경변수를 확인하세요."];
+  if (summary.status === "empty") return ["배포 후 실제 페이지 이동과 기능 사용 이벤트가 쌓이는지 /admin/bot 운영판에서 다시 확인하세요."];
+  const recommendations = [];
+  if (summary.current.statsSearches > 0) recommendations.push("전적 검색 유입이 있으니 PUBG API quota와 검색 캐시 상태를 같이 확인하세요.");
+  if (summary.current.aiFeatureUses > 0) recommendations.push("AI 기능 사용이 있으니 ai_usage_logs 비용 집계와 함께 보면 좋습니다.");
+  if (summary.current.topPages[0]) recommendations.push(`인기 페이지 ${summary.current.topPages[0].label} 기준으로 콘텐츠/공지 위치를 조정할 수 있습니다.`);
+  if (!recommendations.length) recommendations.push("현재 활동량은 낮습니다. 인기 페이지와 기능 데이터가 더 쌓인 뒤 콘텐츠 추천에 연결하세요.");
+  return recommendations;
 }
 
 async function inspectCapabilityMatrix(args: any, supabase: any): Promise<string> {
@@ -3049,6 +3086,17 @@ export const adminAgentTools: Record<string, AdminAgentTool> = {
     run: async (args, context) => {
       try {
         return ok(await inspectAutomationContract(args, context.supabase));
+      } catch (error) {
+        return failed(error);
+      }
+    }
+  },
+  summarize_user_activity: {
+    declaration: summarizeUserActivityDecl,
+    safetyLevel: "read",
+    run: async (args, context) => {
+      try {
+        return ok(await summarizeUserActivity(args, context.supabase));
       } catch (error) {
         return failed(error);
       }
