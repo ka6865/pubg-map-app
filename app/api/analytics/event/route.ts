@@ -43,7 +43,7 @@ export async function POST(request: Request) {
     clean(process.env.SUPABASE_SERVICE_ROLE_KEY)
   );
 
-  const userProfile = await getOptionalUserProfile(supabaseAdmin);
+  const userProfile = await getOptionalUserProfile(supabaseAdmin, request);
   if (userProfile?.role === "admin") {
     return NextResponse.json({ success: true, skipped: "admin_activity" });
   }
@@ -66,7 +66,13 @@ export async function POST(request: Request) {
   return NextResponse.json({ success: true });
 }
 
-async function getOptionalUserProfile(supabaseAdmin: any) {
+async function getOptionalUserProfile(supabaseAdmin: any, request: Request) {
+  const bearerToken = getBearerToken(request);
+  if (bearerToken) {
+    const profile = await getProfileFromAccessToken(supabaseAdmin, bearerToken);
+    if (profile) return profile;
+  }
+
   const url = clean(process.env.NEXT_PUBLIC_SUPABASE_URL);
   const anonKey = clean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
   if (!url || !anonKey) return null;
@@ -87,15 +93,35 @@ async function getOptionalUserProfile(supabaseAdmin: any) {
     if (error) return null;
     const userId = data.user?.id;
     if (!userId) return null;
-    const { data: profile } = await supabaseAdmin
-      .from("profiles")
-      .select("id, nickname, role, pubg_nickname")
-      .eq("id", userId)
-      .maybeSingle();
-    return profile || { id: userId, role: "user", nickname: null, pubg_nickname: null };
+    return await getProfileByUserId(supabaseAdmin, userId);
   } catch {
     return null;
   }
+}
+
+function getBearerToken(request: Request) {
+  const authorization = request.headers.get("authorization") || "";
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  return match?.[1]?.trim() || null;
+}
+
+async function getProfileFromAccessToken(supabaseAdmin: any, accessToken: string) {
+  try {
+    const { data, error } = await supabaseAdmin.auth.getUser(accessToken);
+    if (error || !data?.user?.id) return null;
+    return await getProfileByUserId(supabaseAdmin, data.user.id);
+  } catch {
+    return null;
+  }
+}
+
+async function getProfileByUserId(supabaseAdmin: any, userId: string) {
+  const { data: profile } = await supabaseAdmin
+    .from("profiles")
+    .select("id, nickname, role, pubg_nickname")
+    .eq("id", userId)
+    .maybeSingle();
+  return profile || { id: userId, role: "user", nickname: null, pubg_nickname: null };
 }
 
 function sanitizeText(value: unknown, maxLength: number) {

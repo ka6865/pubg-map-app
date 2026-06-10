@@ -33,19 +33,20 @@ import { runAgentSelfTest } from "@/lib/admin-agent/self-test";
 import { buildAgentToolCatalog } from "@/lib/admin-agent/tool-catalog";
 import { buildTrafficSummary, renderTrafficSummaryText } from "@/lib/admin-agent/traffic-summary";
 import { getAgentThresholds } from "@/lib/admin-agent/thresholds";
+import { buildUserMetricsSummary, renderUserMetricsSummaryText } from "@/lib/admin-agent/user-metrics";
 import { listR2Files } from "@/lib/pubg-analysis/r2Service";
 import { createApprovalRequest } from "./logging";
 import type { AdminAgentContext, AdminAgentTool, AgentToolResult } from "./types";
 
 const getDbStatisticsDecl: FunctionDeclaration = {
   name: "get_db_statistics",
-  description: "DB에서 PUBG 매치 정보, 유저 통계, 맵 선호도, API 에러 통계, 코칭 스타일 선호도 정보를 집계합니다.",
+  description: "DB에서 PUBG 매치 기반 플레이어 성과, 맵 선호도, API 에러 통계, 코칭 스타일 선호도 정보를 집계합니다. 가입자/회원 수는 inspect_user_metrics를 사용합니다.",
   parameters: {
     type: SchemaType.OBJECT,
     properties: {
       statType: {
         type: SchemaType.STRING,
-        description: "조회할 통계 유형: 'map_preference', 'top_players', 'api_errors', 'coaching_preference', 'general_stats'"
+        description: "조회할 통계 유형: 'map_preference', 'top_players', 'api_errors', 'coaching_preference', 'general_stats'. 회원/방문자 수에는 사용하지 않습니다."
       }
     },
     required: ["statType"]
@@ -206,6 +207,20 @@ const inspectAutomationContractDecl: FunctionDeclaration = {
 const summarizeUserActivityDecl: FunctionDeclaration = {
   name: "summarize_user_activity",
   description: "최근 방문 세션, 페이지뷰, 전적 검색, AI 기능, 게시판 활동, 상자/리플레이 사용량을 Supabase analytics_events에서 집계합니다. read-only 운영 분석 도구입니다.",
+  parameters: {
+    type: SchemaType.OBJECT,
+    properties: {
+      hours: {
+        type: SchemaType.NUMBER,
+        description: "최근 몇 시간 범위를 볼지 지정합니다. 기본 24, 최대 168."
+      }
+    }
+  }
+};
+
+const inspectUserMetricsDecl: FunctionDeclaration = {
+  name: "inspect_user_metrics",
+  description: "Supabase Auth와 profiles를 service role 권한으로 조회해 가입자 수, 관리자 제외 회원 수, 최근 로그인/활동 유저 수, profiles 누락 여부를 집계합니다. read-only 관리자 유저 지표 도구입니다.",
   parameters: {
     type: SchemaType.OBJECT,
     properties: {
@@ -779,7 +794,7 @@ async function inspectOperations(args: any, supabase: any): Promise<string> {
 async function inspectAgentReadiness(args: any, supabase: any): Promise<string> {
   const includeOptional = args.includeOptional !== false;
   const requiredTables = ["agent_runs", "agent_steps", "agent_approvals", "agent_memories"];
-  const optionalTables = includeOptional ? ["pubg_api_errors", "ai_usage_logs", "processed_match_telemetry"] : [];
+  const optionalTables = includeOptional ? ["pubg_api_errors", "ai_usage_logs", "processed_match_telemetry", "analytics_events", "profiles"] : [];
   const tableChecks = await Promise.all(
     [...requiredTables, ...optionalTables].map(async (table) => {
       const { count, error } = await supabase
@@ -1194,12 +1209,28 @@ async function inspectAutomationContract(args: any, supabase: any): Promise<stri
 
 async function summarizeUserActivity(args: any, supabase: any): Promise<string> {
   const hours = Math.min(Math.max(Number(args.hours || 24), 1), 168);
-  const summary = await buildTrafficSummary(supabase, hours);
+  const [summary, userMetrics] = await Promise.all([
+    buildTrafficSummary(supabase, hours),
+    buildUserMetricsSummary(supabase, hours)
+  ]);
   return JSON.stringify({
-    description: `최근 ${hours}시간 기준 유저 활동 집계입니다. 개인 추적이 아니라 운영 집계만 제공합니다.`,
+    description: `최근 ${hours}시간 기준 유저 활동 집계입니다. 가입자 수는 Supabase Auth/profiles 기준, 방문 행동은 analytics_events 기준입니다.`,
     summary,
+    userMetrics,
     readable: renderTrafficSummaryText(summary),
+    accountReadable: renderUserMetricsSummaryText(userMetrics),
     recommendations: buildTrafficRecommendations(summary)
+  });
+}
+
+async function inspectUserMetrics(args: any, supabase: any): Promise<string> {
+  const hours = Math.min(Math.max(Number(args.hours || 24), 1), 168);
+  const summary = await buildUserMetricsSummary(supabase, hours);
+  return JSON.stringify({
+    description: `최근 ${hours}시간 기준 가입자/회원/활동 유저 집계입니다. 관리자 활동은 활동 지표에서 제외합니다.`,
+    summary,
+    readable: renderUserMetricsSummaryText(summary),
+    recommendations: buildUserMetricRecommendations(summary)
   });
 }
 
@@ -1211,6 +1242,18 @@ function buildTrafficRecommendations(summary: Awaited<ReturnType<typeof buildTra
   if (summary.current.aiFeatureUses > 0) recommendations.push("AI 기능 사용이 있으니 ai_usage_logs 비용 집계와 함께 보면 좋습니다.");
   if (summary.current.topPages[0]) recommendations.push(`인기 페이지 ${summary.current.topPages[0].label} 기준으로 콘텐츠/공지 위치를 조정할 수 있습니다.`);
   if (!recommendations.length) recommendations.push("현재 활동량은 낮습니다. 인기 페이지와 기능 데이터가 더 쌓인 뒤 콘텐츠 추천에 연결하세요.");
+  return recommendations;
+}
+
+function buildUserMetricRecommendations(summary: Awaited<ReturnType<typeof buildUserMetricsSummary>>) {
+  if (summary.status === "unavailable") return ["SUPABASE_SERVICE_ROLE_KEY와 auth.admin.listUsers 권한을 확인하세요."];
+  const recommendations = [];
+  if (summary.accounts.missingProfiles > 0) recommendations.push("누락된 profiles가 있으니 /admin 데이터 관리에서 유저 동기화를 실행하세요.");
+  if (summary.accounts.orphanProfiles > 0) recommendations.push("Auth에 없는 profiles가 있어 과거/테스트 데이터인지 확인하세요.");
+  if (summary.activity.analyticsEvents > 0 && summary.activity.analyticsLoggedInUsers === 0) {
+    recommendations.push("analytics_events에 로그인 user_id가 아직 없습니다. 배포 후 로그인 사용자 이벤트가 쌓이는지 다시 확인하세요.");
+  }
+  if (!recommendations.length) recommendations.push("가입자/활동 유저 집계 권한은 정상입니다.");
   return recommendations;
 }
 
@@ -3097,6 +3140,17 @@ export const adminAgentTools: Record<string, AdminAgentTool> = {
     run: async (args, context) => {
       try {
         return ok(await summarizeUserActivity(args, context.supabase));
+      } catch (error) {
+        return failed(error);
+      }
+    }
+  },
+  inspect_user_metrics: {
+    declaration: inspectUserMetricsDecl,
+    safetyLevel: "read",
+    run: async (args, context) => {
+      try {
+        return ok(await inspectUserMetrics(args, context.supabase));
       } catch (error) {
         return failed(error);
       }

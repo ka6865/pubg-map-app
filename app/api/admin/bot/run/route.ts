@@ -33,6 +33,8 @@ const defaultAgentInstruction = [
   "When the user asks for a short owner/operator brief, use the owner brief tool and compress the answer into do-now, delegate-to-agent, and owner-review items.",
   "When the user asks whether operations are improving, stable, or worsening, use the monitor trend tool before answering.",
   "When the user asks what is automated, what requires approval, or what stays in GitHub Actions, use the automation contract tool before answering.",
+  "When the user asks how many users, members, signed-in users, guests, active users, or which users were active, use the user metrics tool before answering. Explain the difference between Supabase Auth users, profiles, and analytics sessions.",
+  "When the user asks which pages or features visitors used, use the user activity summary tool before answering.",
   "When the user asks what the agent can currently do, what is missing, or what capability is weak, use the capability matrix tool before answering.",
   "When the user asks for the next upgrade roadmap, agent growth plan, or what to improve next, use the growth roadmap tool before answering.",
   "When the user asks what to do today, what to handle first, or how to close out the day, use the today action board tool before answering.",

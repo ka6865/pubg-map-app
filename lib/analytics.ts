@@ -167,10 +167,10 @@ export function trackEvent(event: BgmsEvent): void {
     (window as any).gtag("event", event.name, params);
   }
 
-  mirrorEventToSupabase(event);
+  void mirrorEventToSupabase(event);
 }
 
-function mirrorEventToSupabase(event: BgmsEvent): void {
+async function mirrorEventToSupabase(event: BgmsEvent): Promise<void> {
   if (!MIRRORED_EVENTS.has(event.name)) return;
   if (process.env.NEXT_PUBLIC_ANALYTICS_MIRROR_DISABLED === "true") return;
 
@@ -184,6 +184,23 @@ function mirrorEventToSupabase(event: BgmsEvent): void {
       referrerPath: document.referrer ? toPath(document.referrer) : undefined
     });
 
+    const accessToken = await getCurrentAccessToken();
+    if (accessToken) {
+      fetch("/api/analytics/event", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`
+        },
+        body: payload,
+        keepalive: true,
+        credentials: "same-origin"
+      }).catch(() => {
+        // Analytics mirror must never affect user-facing features.
+      });
+      return;
+    }
+
     if (navigator.sendBeacon) {
       const blob = new Blob([payload], { type: "application/json" });
       const accepted = navigator.sendBeacon("/api/analytics/event", blob);
@@ -194,12 +211,23 @@ function mirrorEventToSupabase(event: BgmsEvent): void {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: payload,
-      keepalive: true
+      keepalive: true,
+      credentials: "same-origin"
     }).catch(() => {
       // Analytics mirror must never affect user-facing features.
     });
   } catch {
     // Ignore analytics mirror errors by design.
+  }
+}
+
+async function getCurrentAccessToken() {
+  try {
+    const { supabase } = await import("@/lib/supabase");
+    const { data } = await supabase.auth.getSession();
+    return data.session?.access_token || null;
+  } catch {
+    return null;
   }
 }
 
