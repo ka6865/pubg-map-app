@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Coins, Box, Award, Ticket, Sparkles, History, AlertTriangle, Layers } from "lucide-react";
-import { CrateTemplate, PrimeParcelItem } from "../actions/crates";
+import type { CrateTemplate } from "@/types/crates";
 import { HistoryItem } from "./types";
 import { VaultCard, HistoryCard, getKoreanRarityName } from "./CrateCards";
 

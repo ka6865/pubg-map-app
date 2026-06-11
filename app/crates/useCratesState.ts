@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { CrateTemplate, PrimeParcelItem } from "../actions/crates";
+import type { CrateTemplate } from "@/types/crates";
 import { drawSingleItem, drawSinglePrimeItem, tryDrawBonusItem } from "../../lib/crateUtils";
 import { DrawnCard, HistoryItem } from "./types";
 import { trackEvent } from "../../lib/analytics";
@@ -7,10 +7,9 @@ import { trackEvent } from "../../lib/analytics";
 interface UseCratesStateProps {
   initialCrates: CrateTemplate[];
   selectedCrateId: string;
-  exchangeRate: number;
 }
 
-export function useCratesState({ initialCrates, selectedCrateId, exchangeRate }: UseCratesStateProps) {
+export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStateProps) {
   // activeCrate 템플릿 탐색
   const activeCrate = initialCrates.find((c) => c.id === selectedCrateId);
 

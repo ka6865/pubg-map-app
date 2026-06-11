@@ -1,6 +1,6 @@
 import { Metadata } from 'next';
 import { getTabSeo } from '@/lib/seo-config';
-import MyPageClient from '@/components/MyPage';
+import MyPageClient from '@/components/mypage/MyPage';
 import { createClient } from '@/utils/supabase/server';
 import { redirect } from 'next/navigation';
 

@@ -8,8 +8,8 @@ import {
   upsertCategory,
   deactivateCategory,
   activateCategory,
-  type CategoryRow,
 } from "@/app/actions/map-settings";
+import type { CategoryRow } from "@/types/map-settings";
 
 const COLORS_PRESET = [
   "#ef4444", "#f97316", "#eab308", "#84cc16", "#10b981",

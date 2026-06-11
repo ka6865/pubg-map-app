@@ -2,9 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "../lib/supabase";
+import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
-import MiniStatWidget from "./stat/MiniStatWidget";
+import MiniStatWidget from "@/components/stat/MiniStatWidget";
 import { 
   User as UserIcon, Save, LogOut, Trash2, 
   Gamepad2, Settings, ShieldCheck, ExternalLink,
@@ -13,7 +13,7 @@ import {
 
 
 
-import type { UserProfile } from "../types/map";
+import type { UserProfile } from "@/types/map";
 import type { User } from '@supabase/supabase-js';
 
 interface MyPageProps {
@@ -26,7 +26,7 @@ interface MyPageProps {
   };
 }
 
-// 💎 고급 섹션 카드 컴포넌트
+// 고급 섹션 카드 컴포넌트
 function DashboardCard({ 
   children, 
   title, 
@@ -89,7 +89,7 @@ export default function MyPage({ initialCurrentUser, initialUserProfile, initial
   );
   const [isMobile, setIsMobile] = useState(false);
   
-  // 📊 실시간 활동 데이터 상태 (초기값은 서버에서 제공)
+  // 실시간 활동 데이터 상태 (초기값은 서버에서 제공)
   const activityStats = initialActivityStats;
 
   useEffect(() => {

@@ -1,20 +1,20 @@
-// 파일 위치: components/StatSearch.tsx
+// 파일 위치: components/stat/StatSearch.tsx
 "use client";
 import { trackEvent } from "@/lib/analytics";
 
 import React, { useState, useEffect, useId, useCallback, useRef } from "react";
-import { MatchCard } from "./stat/MatchCard";
-import { StatSummaryPanel } from "./stat/StatSummaryPanel";
-import { RecentAISummary } from "./stat/RecentAISummary";
-import SquadAnalysisPanel from "./stat/SquadAnalysisPanel";
-import { Shield, ChevronDown, Swords, Star, Clock, User, X, Zap, MapPin, LogIn, Trophy, Crosshair } from "lucide-react";
+import { MatchCard } from "./MatchCard";
+import { StatSummaryPanel } from "./StatSummaryPanel";
+import { RecentAISummary } from "./RecentAISummary";
+import SquadAnalysisPanel from "./SquadAnalysisPanel";
+import { Shield, ChevronDown, Swords, Star, Clock, User, X, Zap, MapPin, LogIn, Crosshair } from "lucide-react";
 
-import { STORAGE_KEY_RECENT, STORAGE_KEY_FAVORITES } from "../lib/pubg-analysis/constants";
+import { STORAGE_KEY_RECENT, STORAGE_KEY_FAVORITES } from "@/lib/pubg-analysis/constants";
 
-import type { UserProfile } from "../types/map";
-import { useAuth } from "./AuthProvider";
+import type { UserProfile } from "@/types/map";
+import { useAuth } from "@/components/AuthProvider";
 import { useRouter, useParams } from "next/navigation";
-import { supabase } from "../lib/supabase";
+import { supabase } from "@/lib/supabase";
 
 interface StatSearchProps {
   initialPlatform?: string;
@@ -865,222 +865,6 @@ function BanStatusButton({ banType, isMobile }: BanStatusButtonProps) {
         </div>
       )}
     </div>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────
-// 주력 총기 TOP 5 아스날 컴포넌트
-// ─────────────────────────────────────────────────────────────
-
-// 텔레메트리 내부 ID → 한국어 총기명 매핑
-const WEAPON_NAME_MAP: Record<string, string> = {
-  Item_Weapon_HK416_C: "M416",
-  Item_Weapon_ACE32_C: "ACE32",
-  Item_Weapon_BerylM762_C: "베릴 M762",
-  Item_Weapon_AKM_C: "AKM",
-  Item_Weapon_AK47_C: "AKM",
-  Item_Weapon_SCAR_C: "SCAR-L",
-  Item_Weapon_G36C_C: "G36C",
-  Item_Weapon_Mk12_C: "Mk12",
-  Item_Weapon_Mini14_C: "Mini-14",
-  Item_Weapon_QBZ95_C: "QBZ95",
-  Item_Weapon_AUG_C: "AUG",
-  Item_Weapon_Groza_C: "Groza",
-  Item_Weapon_M16A4_C: "M16A4",
-  Item_Weapon_M249_C: "M249",
-  Item_Weapon_DP28_C: "DP-28",
-  Item_Weapon_MG3_C: "MG3",
-  Item_Weapon_AWM_C: "AWM",
-  Item_Weapon_Kar98k_C: "Kar98k",
-  Item_Weapon_M24_C: "M24",
-  Item_Weapon_SLR_C: "SLR",
-  Item_Weapon_FNFal_C: "SLR",
-  Item_Weapon_SKS_C: "SKS",
-  Item_Weapon_VSS_C: "VSS",
-  Item_Weapon_Vector_C: "Vector",
-  Item_Weapon_UMP45_C: "UMP45",
-  Item_Weapon_Bizon_C: "PP-19 Bizon",
-  Item_Weapon_MP5K_C: "MP5K",
-  Item_Weapon_P90_C: "P90",
-  Item_Weapon_Thompson_C: "Tommy Gun",
-  Item_Weapon_Shotgun_C: "S12K",
-  Item_Weapon_Winchester_C: "Win94",
-  Item_Weapon_Lynx_C: "Lynx AMR",
-  Item_Weapon_Grenade_C: "수류탄",
-  Item_Weapon_Molotov_C: "화염병",
-  Item_Weapon_SmokeBomb_C: "연막탄",
-  Item_Weapon_FlashBang_C: "섬광탄",
-};
-
-function getWeaponLabel(id: string): string {
-  return WEAPON_NAME_MAP[id] ?? id.replace(/Item_Weapon_|_C$/g, "");
-}
-
-function getWeaponImageUrl(weaponId: string): string {
-  return `https://raw.githubusercontent.com/pubg/api-assets/master/Assets/Item/Weapon/Main/${weaponId}.png`;
-}
-
-function WeaponArsenal({ weapons }: { weapons: any[] }) {
-  const [mode, setMode] = React.useState<"normal" | "ranked">("normal");
-
-  const hasRankedData = weapons.some((w) => w.rankKills > 0 || w.rankDamagePlayer > 0);
-
-  return (
-    <div className="rounded-3xl border p-5"
-      style={{
-        background: "linear-gradient(145deg, rgba(10,8,0,0.95) 0%, rgba(20,15,0,0.9) 100%)",
-        borderColor: "rgba(242,169,0,0.15)",
-      }}
-    >
-      {/* 헤더 */}
-      <div className="flex items-center justify-between mb-5 flex-wrap gap-3">
-        <div className="flex items-center gap-2">
-          <div className="p-2 rounded-xl" style={{ background: "rgba(242,169,0,0.15)" }}>
-            <Trophy size={16} className="text-amber-400" />
-          </div>
-          <div>
-            <h3 className="text-sm font-black text-white">주력 총기 TOP 5 무기 마스터리</h3>
-            <p className="text-[10px] text-gray-500 font-bold">누적 합산 킬수 기준 • Kills → Level → XP 정렬</p>
-          </div>
-        </div>
-
-        {/* 일반/경쟁 토글 탭 */}
-        <div className="flex items-center gap-1 p-1 rounded-xl" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
-          {(["normal", "ranked"] as const).map((m) => (
-            <button
-              key={m}
-              onClick={() => setMode(m)}
-              className={`px-3 py-1.5 rounded-lg text-[11px] font-black transition-all ${
-                mode === m
-                  ? "bg-amber-500 text-black shadow-[0_0_12px_rgba(242,169,0,0.4)]"
-                  : "text-gray-500 hover:text-gray-300"
-              }`}
-            >
-              {m === "normal" ? "일반전" : "경쟁전"}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* 경쟁전 기록 없음 안내 */}
-      {mode === "ranked" && !hasRankedData && (
-        <div className="flex items-center justify-center py-6 gap-2 text-gray-600">
-          <Crosshair size={16} />
-          <span className="text-xs font-bold">경쟁전 무기 기록이 없습니다.</span>
-        </div>
-      )}
-
-      {/* 총기 카드 그리드 */}
-      {(mode === "normal" || hasRankedData) && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-          {weapons.map((w, i) => {
-            const kills = mode === "normal" ? w.kills : w.rankKills;
-            const damage = mode === "normal" ? w.damagePlayer : w.rankDamagePlayer;
-            const hs = mode === "normal" ? w.headShots : w.rankHeadShots;
-            const longest = mode === "normal" ? (w.longestDefeat ?? 0) : (w.rankLongestDefeat ?? 0);
-            const mostKills = mode === "normal" ? (w.mostDefeatsInAGame ?? 0) : (w.rankMostDefeatsInAGame ?? 0);
-            const labelName = getWeaponLabel(w.weaponId);
-            const xpForNextLevel = 1000;
-            const levelProgress = Math.min(((w.xp % xpForNextLevel) / xpForNextLevel) * 100, 100);
-
-            return (
-              <div
-                key={w.weaponId}
-                className="flex flex-col rounded-2xl p-3 border transition-all hover:scale-[1.02] hover:shadow-lg"
-                style={{
-                  background: i === 0
-                    ? "linear-gradient(145deg, rgba(242,169,0,0.12) 0%, rgba(15,10,0,0.95) 100%)"
-                    : "rgba(255,255,255,0.03)",
-                  borderColor: i === 0 ? "rgba(242,169,0,0.3)" : "rgba(255,255,255,0.07)",
-                }}
-              >
-                {/* 순위 배지 */}
-                <div className="flex items-center justify-between mb-2">
-                  <span
-                    className="text-[9px] font-black px-1.5 py-0.5 rounded-md"
-                    style={{
-                      color: i === 0 ? "#000" : "rgba(255,255,255,0.3)",
-                      background: i === 0 ? "#F2A900" : "rgba(255,255,255,0.06)",
-                    }}
-                  >
-                    #{i + 1}
-                  </span>
-                  <span className="text-[9px] font-bold text-amber-400/70">Lv. {w.level}</span>
-                </div>
-
-                {/* 무기 이미지 */}
-                <WeaponImage weaponId={w.weaponId} label={labelName} />
-
-                {/* 총기명 */}
-                <div className="text-[11px] font-black text-white text-center mb-2 truncate" title={labelName}>
-                  {labelName}
-                </div>
-
-                {/* 레벨 진척도 게이지 */}
-                <div className="w-full h-1 rounded-full mb-3" style={{ background: "rgba(255,255,255,0.06)" }}>
-                  <div
-                    className="h-1 rounded-full transition-all duration-500"
-                    style={{ width: `${levelProgress}%`, background: "linear-gradient(90deg, #F2A900, #ffcc44)" }}
-                  />
-                </div>
-
-                {/* 스탯 */}
-                <div className="flex flex-col gap-1">
-                  <div className="flex justify-between">
-                    <span className="text-[9px] text-gray-600 font-bold">킬</span>
-                    <span className="text-[10px] font-black text-white">{kills.toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[9px] text-gray-600 font-bold">딜량</span>
-                    <span className="text-[10px] font-black text-amber-400">{Math.round(damage).toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[9px] text-gray-600 font-bold">헤드샷 (타격)</span>
-                    <span className="text-[10px] font-black text-red-400">{hs.toLocaleString()}회</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[9px] text-gray-600 font-bold">최장거리 킬</span>
-                    <span className="text-[10px] font-black text-blue-400">{Math.round(longest).toLocaleString()}m</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-[9px] text-gray-600 font-bold">판당 최다 킬</span>
-                    <span className="text-[10px] font-black text-emerald-400">{mostKills.toLocaleString()}킬</span>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** 무기 이미지 — 로딩 실패 시 크로스헤어 아이콘 Fallback */
-function WeaponImage({ weaponId, label }: { weaponId: string; label: string }) {
-  const [failed, setFailed] = React.useState(false);
-  const src = getWeaponImageUrl(weaponId);
-
-  if (failed) {
-    return (
-      <div
-        className="w-full h-16 flex items-center justify-center rounded-xl mb-2"
-        style={{ background: "linear-gradient(135deg, rgba(242,169,0,0.06) 0%, rgba(255,255,255,0.02) 100%)" }}
-      >
-        <Crosshair size={24} className="text-amber-400/30" />
-      </div>
-    );
-  }
-
-  return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={src}
-      alt={label}
-      className="w-full h-16 object-contain mb-2"
-      style={{ filter: "drop-shadow(0 2px 8px rgba(0,0,0,0.6))" }}
-      onError={() => setFailed(true)}
-    />
   );
 }
 

@@ -3,7 +3,7 @@
 
 import { ImageResponse } from "next/og";
 import { NextRequest } from "next/server";
-import { getSquadAnalysisData } from "@/app/api/pubg/squad-analyze/route";
+import { getSquadAnalysisData } from "@/lib/pubg-analysis/squadAnalysis";
 
 export const runtime = "nodejs";
 
