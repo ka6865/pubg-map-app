@@ -6,7 +6,7 @@ import { trackAiUsage } from "@/lib/pubg-analysis/aiUsageTracker";
 import { AI_CACHE_VERSION } from "@/lib/pubg-analysis/constants";
 import { normalizeName } from "@/lib/pubg-analysis/utils";
 import crypto from "crypto";
-import { getSquadAnalysisData } from "@/app/api/pubg/squad-analyze/route";
+import { getSquadAnalysisData } from "@/lib/pubg-analysis/squadAnalysis";
 
 function extractValidJson(text: string): string {
   try {

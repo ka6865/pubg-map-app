@@ -2,6 +2,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { unstable_cache } from "next/cache";
+import type { CrateRarity, CrateTemplate } from "@/types/crates";
 
 const cleanEnv = (val: string | undefined) => (val || '').replace(/['";\s]+/g, '').trim();
 
@@ -10,48 +11,6 @@ const supabaseAnonKey = cleanEnv(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
 
 // Create a static public client that does not use cookies()
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
-
-export interface CrateItem {
-  id: string;
-  name: string;
-  rarity: "ULTIMATE" | "LEGENDARY" | "EPIC" | "RARE";
-  probability: number;
-  image_url: string;
-  is_prime_parcel: boolean;
-  token_count: number;
-}
-
-export interface PrimeParcelItem {
-  id: string;
-  name: string;
-  rarity: "ULTIMATE" | "LEGENDARY" | "EPIC" | "RARE";
-  probability: number;
-  image_url: string;
-}
-
-export interface BonusItem {
-  id: string;
-  name: string;
-  probability: number;
-  token_count: number;
-  is_prime_parcel: boolean;
-  is_extra_crate: boolean;
-  image_url: string;
-}
-
-export interface CrateTemplate {
-  id: string;
-  name: string;
-  type: "loot_crate" | "contraband";
-  price_gcoin: number;
-  bundle_price_gcoin: number;
-  image_url: string;
-  description: string;
-  items: CrateItem[];
-  prime_parcel_items: PrimeParcelItem[];
-  bonus_items?: BonusItem[];
-  end_date?: string;
-}
 
 /**
  * 활성화 상태인 가챠 상자와 그 하위 구성품(1차/2차) 데이터를 Supabase에서 조회합니다.
@@ -119,7 +78,7 @@ export const getActiveCrates = unstable_cache(
           items: (items || []).map((item) => ({
             id: item.id,
             name: item.name,
-            rarity: item.rarity as "ULTIMATE" | "LEGENDARY" | "EPIC" | "RARE",
+            rarity: item.rarity as CrateRarity,
             probability: Number(item.probability),
             image_url: item.image_url || "",
             is_prime_parcel: item.is_prime_parcel,
@@ -128,7 +87,7 @@ export const getActiveCrates = unstable_cache(
           prime_parcel_items: (primeItems || []).map((pItem) => ({
             id: pItem.id,
             name: pItem.name,
-            rarity: pItem.rarity as "ULTIMATE" | "LEGENDARY" | "EPIC" | "RARE",
+            rarity: pItem.rarity as CrateRarity,
             probability: Number(pItem.probability),
             image_url: pItem.image_url || "",
           })),

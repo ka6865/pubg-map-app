@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { Box, Sparkles } from "lucide-react";
-import { PrimeParcelItem } from "../actions/crates";
+import type { PrimeParcelItem } from "@/types/crates";
 import { DrawnCard, HistoryItem } from "./types";
 
 export const getKoreanRarityName = (rarity: string) => {

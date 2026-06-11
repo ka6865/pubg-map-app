@@ -18,19 +18,16 @@ import {
   EyeOff, 
   Save, 
   Trash2, 
-  Upload, 
   LogOut, 
   Map as MapIcon, 
   CheckCircle2, 
   ChevronRight,
   PlusCircle,
-  XCircle,
   FileJson,
   Search,
   X
 } from "lucide-react";
-import { supabase } from "../lib/supabase";
-import { CATEGORY_INFO } from "../lib/map_config";
+import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useMapSettings } from "@/hooks/useMapSettings";
 

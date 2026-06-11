@@ -1,17 +1,17 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { useState, useEffect, useMemo } from "react";
 import L from "leaflet";
 
 
-import { CATEGORY_INFO } from "../lib/map_config";
-import { useMapSettings } from "../hooks/useMapSettings";
-import { useMapData } from "../hooks/useMapData";
-import { useAuth } from "./AuthProvider";
-import MapShell from "./map/MapShell";
-import type { MapFilters, MapTab } from "../types/map";
-import { trackEvent } from "../lib/analytics";
+import { CATEGORY_INFO } from "@/lib/map_config";
+import { useMapSettings } from "@/hooks/useMapSettings";
+import { useMapData } from "@/hooks/useMapData";
+import { useAuth } from "@/components/AuthProvider";
+import MapShell from "./MapShell";
+import type { MapFilters, MapTab } from "@/types/map";
+import { trackEvent } from "@/lib/analytics";
 
 const createPinIcon = (colorCode: string, pathData: string, scale: number = 1) => {
   const width = 28 * scale;
@@ -54,7 +54,7 @@ interface MapProps {
   initialIsWriting?: boolean;
 }
 
-export default function Map({ initialMapId, postId }: MapProps) {
+export default function Map({ initialMapId }: MapProps) {
   const searchParams = useSearchParams();
   const activeMapId = initialMapId || searchParams?.get("tab") || "Erangel";
   const { user: authUser } = useAuth();

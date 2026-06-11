@@ -4,17 +4,15 @@ import React, { useState, useEffect } from "react";
 import { 
   Coins, 
   Sparkles, 
-  RotateCcw, 
   Layers, 
   Box, 
   ShoppingCart,
   Package,
   Ticket,
-  History,
   AlertTriangle
 } from "lucide-react";
 
-import { CrateTemplate } from "../actions/crates";
+import type { CrateTemplate } from "@/types/crates";
 import { CrateCard, getKoreanRarityName } from "./CrateCards";
 import { 
   ChargeModal, 
@@ -101,7 +99,6 @@ export default function CratesClient({ initialCrates, exchangeRate }: CratesClie
     quantityToBuy,
     setQuantityToBuy,
     quantityPaymentMethod,
-    setQuantityPaymentMethod,
     refillType,
     setRefillType,
     refillAmount,
@@ -125,7 +122,7 @@ export default function CratesClient({ initialCrates, exchangeRate }: CratesClie
     handleRefillAsset,
     handleResetSimulator,
     collectRemainingCards
-  } = useCratesState({ initialCrates, selectedCrateId, exchangeRate });
+  } = useCratesState({ initialCrates, selectedCrateId });
 
   const activeCrate = initialCrates.find((c) => c.id === selectedCrateId);
 
@@ -179,10 +176,6 @@ export default function CratesClient({ initialCrates, exchangeRate }: CratesClie
     
     // useCratesState 내부의 직접적인 가감 처리는 아래의 충전기/보충기 로직을 통해 처리하므로
     // useCratesState 훅에서 리턴받은 상태 세터를 활용해 동기화 처리
-    const matchedPrime = activeCrate?.prime_parcel_items.find(p => p.name === itemName);
-    const matchedNormal = activeCrate?.items.find(i => i.name === itemName);
-    const imgUrl = matchedPrime?.image_url || matchedNormal?.image_url || "";
-    
     // useCratesState 훅 내부의 handleCraftItem 액션을 간접 트리거하기 위한 handleRefillAsset 활용 또는
     // hook에 handleCraftItem 함수가 바인딩되어 있으므로 직접 호출
     const success = (useCratesState as any)({ initialCrates, selectedCrateId, exchangeRate }).handleCraftItem

@@ -5,7 +5,7 @@ import JsonLd from '@/components/seo/JsonLd';
 import { JsonLdProps } from '@/types/seo';
 
 // 메인 지도 컴포넌트 동적 로드 (SSR 비활성화 및 로딩 UI 지정)
-const Map = dynamic(() => import('../components/Map'), {
+const Map = dynamic(() => import('@/components/map/Map'), {
   ssr: false,
   loading: () => (
     <div style={{ width: '100%', height: '100vh', backgroundColor: '#0b0f19', color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

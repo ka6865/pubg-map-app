@@ -3,15 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { MAP_CATEGORIES, CATEGORY_INFO, ICON_LIBRARY } from "../lib/map_config";
 import { getMapSettings, getCategories, getAllCategories } from "../app/actions/map-settings";
-import type { CategoryRow } from "../app/actions/map-settings";
-
-// CATEGORY_INFO와 동일한 형태로 변환하기 위한 타입
-export type CategoryInfoMap = Record<string, {
-  label: string;
-  color: string;
-  path: string;
-  iconType: string;
-}>;
+import type { CategoryInfoMap, CategoryRow } from "@/types/map-settings";
 
 /**
  * DB의 categories 테이블 데이터를 CATEGORY_INFO 형태로 변환합니다.

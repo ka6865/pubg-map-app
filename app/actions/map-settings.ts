@@ -2,6 +2,7 @@
 
 import { createClient } from '@/utils/supabase/server';
 import { revalidatePath } from 'next/cache';
+import type { CategoryRow } from '@/types/map-settings';
 
 // =====================
 // 맵 설정 (map_settings)
@@ -40,16 +41,6 @@ export async function updateMapSettings(mapId: string, categories: string[]) {
 // =====================
 // 카테고리 마스터 (categories)
 // =====================
-
-export interface CategoryRow {
-  id: string;
-  label: string;
-  color: string;
-  icon_id: string;
-  is_active: boolean;
-  sort_order: number;
-  created_at?: string;
-}
 
 /**
  * 활성화된 카테고리만 조회 (일반 유저 화면용)

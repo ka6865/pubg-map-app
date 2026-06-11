@@ -51,7 +51,7 @@ vi.mock("@/lib/pubg-analysis/aiUsageTracker", () => ({
   trackAiUsage: mockTrackAiUsage,
 }));
 
-vi.mock("@/app/api/pubg/squad-analyze/route", () => ({
+vi.mock("@/lib/pubg-analysis/squadAnalysis", () => ({
   getSquadAnalysisData: mockGetSquadAnalysisData,
 }));
 

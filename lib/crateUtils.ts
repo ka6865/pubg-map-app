@@ -1,4 +1,4 @@
-import { CrateItem, PrimeParcelItem, BonusItem } from "../app/actions/crates";
+import type { BonusItem, CrateItem, PrimeParcelItem } from "@/types/crates";
 
 // 가중치 기반 단일 기본 아이템 추첨
 export const drawSingleItem = (items: CrateItem[]): CrateItem => {
