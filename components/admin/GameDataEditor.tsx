@@ -260,7 +260,7 @@ export default function GameDataEditor() {
       fetchDashboardData();
     };
     checkAdmin();
-  }, [router]);
+  }, [router, fetchDashboardData]);
 
   const fetchItems = useCallback(async () => {
     if (activeCategory === "system") {
@@ -320,7 +320,7 @@ export default function GameDataEditor() {
       setSelectedItem(null);
       setSelectedCrateDetail(null);
     }
-  }, [activeCategory]);
+  }, [activeCategory, fetchDashboardData, setItems, setSelectedCrateDetail, setSelectedItem]);
 
   useEffect(() => {
     if (isAuthorized) {
@@ -431,7 +431,9 @@ export default function GameDataEditor() {
 
   const handleDelete = async (id: string) => {
     const confirmMsg = activeCategory === "users"
-      ? "해당 유저를 강제 탈퇴(삭제) 처리하시겠습니까? 모든 프로필 정보가 영구히 소멸됩니다."
+      ? (selectedItem as any)?.is_orphan_profile
+        ? "Auth 계정 없이 남아 있는 유령 프로필을 정리하시겠습니까? 프로필 행이 영구 삭제됩니다."
+        : "해당 유저를 강제 탈퇴(삭제) 처리하시겠습니까? Auth 계정과 프로필 정보가 영구히 소멸됩니다."
       : "정말 삭제하시겠습니까? 관련 시뮬레이션에 영향이 있을 수 있습니다.";
       
     if (!confirm(confirmMsg)) return;
@@ -449,7 +451,9 @@ export default function GameDataEditor() {
         const result = await response.json();
         if (!response.ok) throw new Error(result.error || "유저 삭제 실패");
 
-        toast.success("유저 계정이 성공적으로 강제 탈퇴/삭제 처리되었습니다.");
+        toast.success(result.deletedAuthUser
+          ? "유저 계정과 프로필이 성공적으로 삭제되었습니다."
+          : "유령 프로필이 성공적으로 정리되었습니다.");
         fetchItems();
         return;
       }
@@ -675,9 +679,11 @@ export default function GameDataEditor() {
                 className={`p-4 border-b border-[#222] cursor-pointer transition-colors hover:bg-[#1a1a1a] ${
                   selectedItem?.id === item.id 
                     ? "bg-[#1a1a1a] border-l-4 border-l-[#F2A900]" 
-                    : (activeCategory === "users" && (item as any).is_missing_profile)
-                      ? "bg-red-950/20 border-l-4 border-l-red-500/50"
-                      : ""
+                    : (activeCategory === "users" && (item as any).is_orphan_profile)
+                      ? "bg-purple-950/20 border-l-4 border-l-purple-500/50"
+                      : (activeCategory === "users" && (item as any).is_missing_profile)
+                        ? "bg-red-950/20 border-l-4 border-l-red-500/50"
+                        : ""
                 }`}
               >
                 <div className="font-bold text-sm flex items-center justify-between gap-2">
@@ -687,6 +693,11 @@ export default function GameDataEditor() {
                   {activeCategory === "users" && (item as any).is_missing_profile && (
                     <span className="text-[9px] bg-red-950 text-red-400 border border-red-900/60 px-1.5 py-0.5 rounded font-bold shrink-0">
                       ⚠️ 누락
+                    </span>
+                  )}
+                  {activeCategory === "users" && (item as any).is_orphan_profile && (
+                    <span className="text-[9px] bg-purple-950 text-purple-300 border border-purple-900/60 px-1.5 py-0.5 rounded font-bold shrink-0">
+                      Auth 없음
                     </span>
                   )}
                 </div>
@@ -893,7 +904,9 @@ export default function GameDataEditor() {
                             )}
 
                             {/* 프로필 존재 여부 뱃지 */}
-                            {(selectedItem as any).is_missing_profile ? (
+                            {(selectedItem as any).is_orphan_profile ? (
+                              <span className="text-[10px] bg-purple-950/50 text-purple-300 border border-purple-900/60 px-2.5 py-1 rounded-full font-bold font-sans">⚠️ Auth 계정 없음</span>
+                            ) : (selectedItem as any).is_missing_profile ? (
                               <span className="text-[10px] bg-rose-950/50 text-rose-400 border border-rose-900/60 px-2.5 py-1 rounded-full font-bold font-sans">⚠️ DB 프로필 누락</span>
                             ) : (
                               <span className="text-[10px] bg-indigo-950/40 text-indigo-400 border border-indigo-900/50 px-2.5 py-1 rounded-full font-bold font-sans">✓ DB 프로필 정상</span>

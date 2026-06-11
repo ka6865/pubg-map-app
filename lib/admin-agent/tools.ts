@@ -1251,7 +1251,7 @@ function buildUserMetricRecommendations(summary: Awaited<ReturnType<typeof build
   if (summary.accounts.missingProfiles > 0) recommendations.push("누락된 profiles가 있으니 /admin 데이터 관리에서 유저 동기화를 실행하세요.");
   if (summary.accounts.orphanProfiles > 0) recommendations.push("Auth에 없는 profiles가 있어 과거/테스트 데이터인지 확인하세요.");
   if (summary.activity.analyticsEvents > 0 && summary.activity.analyticsLoggedInUsers === 0) {
-    recommendations.push("analytics_events에 로그인 user_id가 아직 없습니다. 배포 후 로그인 사용자 이벤트가 쌓이는지 다시 확인하세요.");
+    recommendations.push("현재까지 수집된 analytics_events에는 로그인 user_id가 없습니다. 배포 후 로그인 사용자 새 이벤트에 user_id가 붙는지 다시 확인하세요.");
   }
   if (!recommendations.length) recommendations.push("가입자/활동 유저 집계 권한은 정상입니다.");
   return recommendations;

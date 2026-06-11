@@ -19,6 +19,9 @@ import {
   Search,
   ShieldCheck
 } from "lucide-react";
+import { Drawer } from "vaul";
+import AdminAgentChat from "@/components/admin/AdminAgentChat";
+import AdminAgentMascot, { type AdminAgentMascotState } from "@/components/admin/AdminAgentMascot";
 import { supabase } from "@/lib/supabase";
 import type {
   AgentApproval,
@@ -30,9 +33,56 @@ import type {
 } from "@/types/admin-bot";
 
 type DashboardSection = "today" | "approvals" | "status" | "memories" | "guide";
+type MascotQuickActionId = "briefing" | "approval_help" | "ops_check" | "user_activity" | "checkout";
+
+interface MascotQuickAction {
+  id: MascotQuickActionId;
+  label: string;
+  description: string;
+  prompt: string;
+  icon: typeof MessageSquare;
+}
 
 const HIGH_RISK_ACTIONS = new Set(["flush_old_cache", "flush_player_cache", "flush_match_cache", "reset_benchmarks"]);
 const MEMORY_CATEGORIES = ["all", "incident", "policy", "report", "content", "operations"];
+const MASCOT_MENU_ID = "admin-agent-mascot-menu";
+const MASCOT_QUICK_ACTIONS: MascotQuickAction[] = [
+  {
+    id: "briefing",
+    label: "30초 브리핑",
+    description: "지금 할 일만 짧게 정리",
+    prompt: "30초 운영자 브리핑으로 지금 할 일만 알려줘",
+    icon: MessageSquare
+  },
+  {
+    id: "approval_help",
+    label: "승인 쉽게 설명",
+    description: "수락하면 바뀌는 것 확인",
+    prompt: "승인 대기 요청을 수락하면 무엇이 바뀌는지 쉬운 말로 설명해줘",
+    icon: ShieldCheck
+  },
+  {
+    id: "ops_check",
+    label: "운영 상태 점검",
+    description: "API, 비용, 배포 상태 확인",
+    prompt: "최근 PUBG API 에러, AI 비용, 배포 상태를 같이 점검해줘",
+    icon: Activity
+  },
+  {
+    id: "user_activity",
+    label: "유저 활동 요약",
+    description: "최근 24시간 이용 흐름 확인",
+    prompt: "최근 24시간 유저 활동을 운영자가 이해하기 쉽게 요약해줘",
+    icon: Bot
+  },
+  {
+    id: "checkout",
+    label: "마감 점검",
+    description: "오늘 마감 전 체크리스트",
+    prompt: "오늘 마감 전에 확인할 것만 체크리스트로 정리해줘",
+    icon: ClipboardCheck
+  }
+];
 
 export default function AdminDashboardPage() {
   const router = useRouter();
@@ -55,6 +105,10 @@ export default function AdminDashboardPage() {
   const [monitorSnapshot, setMonitorSnapshot] = useState<AgentMonitorSnapshot | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [monitorLoading, setMonitorLoading] = useState(false);
+  const [agentSheetOpen, setAgentSheetOpen] = useState(false);
+  const [agentSheetPrompt, setAgentSheetPrompt] = useState("");
+  const [agentSheetPrefillVersion, setAgentSheetPrefillVersion] = useState(0);
+  const [mascotMenuOpen, setMascotMenuOpen] = useState(false);
 
   useEffect(() => {
     async function checkAdmin() {
@@ -128,6 +182,34 @@ export default function AdminDashboardPage() {
 
   const traffic = commandCenter?.trafficSummary;
   const memoryCount = memorySummary?.active ?? commandCenter?.memories?.items?.length ?? 0;
+  const dashboardMascotState: AdminAgentMascotState = pendingApprovals.length > 0
+    ? "approval"
+    : refreshing || monitorLoading
+      ? "thinking"
+      : commandCenter?.severity === "warn" || commandCenter?.severity === "critical"
+        ? "alert"
+        : "idle";
+  const dashboardMascotBubble = pendingApprovals.length > 0
+    ? "확인할 일이 있어요."
+    : refreshing || monitorLoading
+      ? "자료 확인 중이에요."
+      : commandCenter?.severity === "warn" || commandCenter?.severity === "critical"
+        ? "주의 신호가 보여요."
+        : "오늘도 같이 볼게요.";
+  const recommendedQuickActionId: MascotQuickActionId = pendingApprovals.length > 0
+    ? "approval_help"
+    : commandCenter?.severity === "warn" || commandCenter?.severity === "critical"
+      ? "ops_check"
+      : "briefing";
+  const mascotQuickActions = useMemo(
+    () => [...MASCOT_QUICK_ACTIONS].sort((a, b) => Number(b.id === recommendedQuickActionId) - Number(a.id === recommendedQuickActionId)),
+    [recommendedQuickActionId]
+  );
+  const mascotMenuSummary = recommendedQuickActionId === "approval_help"
+    ? "수락 전에 쉽게 풀어볼까요?"
+    : recommendedQuickActionId === "ops_check"
+      ? "먼저 이상 신호부터 볼게요."
+      : "오늘은 차근차근 보면 돼요.";
 
   const refreshDashboard = async () => {
     setRefreshing(true);
@@ -268,8 +350,41 @@ export default function AdminDashboardPage() {
     router.replace(`/admin/dashboard?section=approvals&approval=${approval.id}`, { scroll: false });
   };
 
+  const openAgentSheet = (prompt = "") => {
+    setMascotMenuOpen(false);
+    if (prompt) {
+      setAgentSheetPrompt(prompt);
+      setAgentSheetPrefillVersion((value) => value + 1);
+    }
+    setAgentSheetOpen(true);
+  };
+
   const openBotPrompt = (prompt: string) => {
-    router.push(`/admin/bot?prompt=${encodeURIComponent(prompt)}`);
+    openAgentSheet(prompt);
+  };
+
+  const openMascotQuickAction = (action: MascotQuickAction) => {
+    openAgentSheet(action.prompt);
+  };
+
+  const handleAgentApprovalCreated = async (approvalId?: string) => {
+    await Promise.all([loadApprovals(), loadCommandCenter(), loadMemories()]);
+    setShowProcessedApprovals(false);
+    if (approvalId) setSelectedApprovalId(approvalId);
+  };
+
+  const openApprovalFromAgent = (approvalId?: string) => {
+    setMascotMenuOpen(false);
+    setAgentSheetOpen(false);
+    setShowProcessedApprovals(false);
+    setActiveSection("approvals");
+    setShowDeveloperInfo(false);
+    if (approvalId) {
+      setSelectedApprovalId(approvalId);
+      router.replace(`/admin/dashboard?section=approvals&approval=${encodeURIComponent(approvalId)}`, { scroll: false });
+      return;
+    }
+    updateSectionUrl("approvals");
   };
 
   if (isAdmin === null) {
@@ -300,7 +415,7 @@ export default function AdminDashboardPage() {
           </div>
           <div className="flex shrink-0 items-center gap-2">
             <button
-              onClick={() => router.push("/admin/bot")}
+              onClick={() => openAgentSheet()}
               className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-300 active:border-amber-400"
             >
               <MessageSquare className="h-4 w-4" />
@@ -718,6 +833,117 @@ export default function AdminDashboardPage() {
           </section>
         )}
       </div>
+
+      {!agentSheetOpen && (
+        <>
+          {mascotMenuOpen && (
+            <button
+              type="button"
+              aria-label="병아리 빠른 메뉴 닫기"
+              className="fixed inset-0 z-[6490] cursor-default bg-transparent"
+              onClick={() => setMascotMenuOpen(false)}
+            />
+          )}
+          <div className="fixed bottom-4 right-3 z-[6500] sm:bottom-6 sm:right-6">
+            {mascotMenuOpen && (
+              <div
+                id={MASCOT_MENU_ID}
+                role="menu"
+                className="absolute bottom-[calc(100%+0.75rem)] right-0 w-[calc(100vw-24px)] max-w-sm overflow-hidden rounded-2xl border border-amber-500/25 bg-zinc-950/95 p-3 text-zinc-100 shadow-2xl shadow-black/60 backdrop-blur-md sm:w-80"
+              >
+                <div className="mb-2 flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-zinc-100">병아리 빠른 실행</p>
+                    <p className="mt-1 text-[11px] leading-relaxed text-zinc-500">{mascotMenuSummary}</p>
+                  </div>
+                  <span className="shrink-0 rounded-full border border-zinc-800 bg-zinc-900 px-2 py-1 text-[10px] font-semibold text-zinc-500">
+                    입력만
+                  </span>
+                </div>
+
+                <div className="grid gap-1.5">
+                  {mascotQuickActions.map((action) => {
+                    const Icon = action.icon;
+                    const recommended = action.id === recommendedQuickActionId;
+                    return (
+                      <button
+                        key={action.id}
+                        type="button"
+                        role="menuitem"
+                        onClick={() => openMascotQuickAction(action)}
+                        className={`flex min-w-0 items-center gap-3 rounded-xl border p-2.5 text-left transition-colors ${
+                          recommended
+                            ? "border-amber-500/45 bg-amber-500/10 text-amber-100"
+                            : "border-zinc-800 bg-zinc-900/70 text-zinc-200 active:border-zinc-600"
+                        }`}
+                      >
+                        <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+                          recommended ? "bg-amber-500 text-zinc-950" : "bg-zinc-950 text-zinc-400"
+                        }`}>
+                          <Icon className="h-4 w-4" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex min-w-0 items-center gap-2">
+                            <span className="truncate text-xs font-bold">{action.label}</span>
+                            {recommended && (
+                              <span className="shrink-0 rounded-full bg-amber-400 px-1.5 py-0.5 text-[9px] font-black text-zinc-950">
+                                추천
+                              </span>
+                            )}
+                          </span>
+                          <span className="mt-0.5 block truncate text-[11px] text-zinc-500">{action.description}</span>
+                        </span>
+                        <ChevronRight className="h-4 w-4 shrink-0 text-zinc-600" />
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <p className="mt-2 text-[10px] leading-relaxed text-zinc-600">
+                  선택해도 바로 전송하지 않습니다. 문구를 확인한 뒤 직접 보내면 됩니다.
+                </p>
+              </div>
+            )}
+            <AdminAgentMascot
+              state={dashboardMascotState}
+              size="floating"
+              bubbleText={mascotMenuOpen ? undefined : dashboardMascotBubble}
+              approvalCount={pendingApprovals.length}
+              ariaControls={MASCOT_MENU_ID}
+              ariaExpanded={mascotMenuOpen}
+              onClick={() => setMascotMenuOpen((value) => !value)}
+            />
+          </div>
+        </>
+      )}
+
+      <Drawer.Root
+        open={agentSheetOpen}
+        onOpenChange={(open) => {
+          setAgentSheetOpen(open);
+          if (open) setMascotMenuOpen(false);
+        }}
+      >
+        <Drawer.Portal>
+          <Drawer.Overlay className="fixed inset-0 z-[7000] bg-black/60 backdrop-blur-sm" />
+          <Drawer.Content className="fixed bottom-0 left-0 right-0 z-[7001] h-[85dvh] max-h-[85dvh] overflow-hidden rounded-t-3xl border-t border-zinc-800 bg-zinc-950 outline-none shadow-2xl shadow-black/60 md:left-auto md:right-5 md:bottom-5 md:h-[82dvh] md:max-h-[720px] md:w-[720px] md:max-w-[calc(100vw-2rem)] md:rounded-2xl md:border">
+            <Drawer.Title className="sr-only">BGMS 미니 AI 비서</Drawer.Title>
+            <Drawer.Description className="sr-only">
+              운영 대시보드에서 페이지 이동 없이 AI 비서에게 질문하는 하단 채팅창입니다.
+            </Drawer.Description>
+            <div className="pointer-events-none absolute left-1/2 top-3 z-[1] h-1.5 w-12 -translate-x-1/2 rounded-full bg-zinc-700 md:hidden" />
+            <AdminAgentChat
+              mode="sheet"
+              prefillPrompt={agentSheetPrompt}
+              prefillVersion={agentSheetPrefillVersion}
+              onClose={() => setAgentSheetOpen(false)}
+              onOpenApprovals={openApprovalFromAgent}
+              onApprovalCreated={handleAgentApprovalCreated}
+              className="absolute inset-0 pt-5 md:pt-0"
+            />
+          </Drawer.Content>
+        </Drawer.Portal>
+      </Drawer.Root>
     </div>
   );
 }
