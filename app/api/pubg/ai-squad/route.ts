@@ -3,6 +3,10 @@ import { GoogleGenerativeAI, SchemaType, HarmCategory, HarmBlockThreshold } from
 import { jsonrepair } from "jsonrepair";
 import { withAuthGuard } from "@/utils/supabase/guard";
 import { trackAiUsage } from "@/lib/pubg-analysis/aiUsageTracker";
+import { AI_CACHE_VERSION } from "@/lib/pubg-analysis/constants";
+import { normalizeName } from "@/lib/pubg-analysis/utils";
+import crypto from "crypto";
+import { getSquadAnalysisData } from "@/app/api/pubg/squad-analyze/route";
 
 function extractValidJson(text: string): string {
   try {
@@ -33,44 +37,57 @@ function extractValidJson(text: string): string {
   }
 }
 
-import crypto from "crypto";
-import { getSquadAnalysisData } from "@/app/api/pubg/squad-analyze/route";
+function hashParts(parts: unknown[]): string {
+  return crypto
+    .createHash("sha256")
+    .update(JSON.stringify(parts))
+    .digest("hex");
+}
+
+const AI_SQUAD_TOTAL_TIMEOUT_MS = 22000;
+const AI_SQUAD_MODEL_TIMEOUT_MS = 8000;
 
 export async function POST(request: Request) {
+  let body: any = {};
   try {
     // 🔒 [Security] JWT Authentication Guard - Only logged-in users can call AI coaching
     const auth = await withAuthGuard();
     if (auth.error) return auth.error;
     const { supabaseAdmin: supabase } = auth;
 
-    const body = await request.json();
-    const { groupKey, stats, scores, roleProfiles, nickname, coachingStyle = "spicy", squadGrade = "B", benchmarkStats } = body;
+    body = await request.json();
+    const { groupKey, stats, scores, roleProfiles, nickname, platform = "steam", coachingStyle = "spicy", squadGrade = "B", benchmarkStats } = body;
     const isMild = coachingStyle === "mild";
+    const playerId = normalizeName(nickname);
+    const cachePlatform = String(platform || "steam").toLowerCase();
 
     const apiKey = process.env.GOOGLE_GEMINI_API_KEY;
     if (!apiKey) {
       return NextResponse.json({ error: "Missing Gemini API Key Configuration" }, { status: 500 });
     }
 
-    if (!groupKey || !stats || !scores || !roleProfiles) {
+    if (!groupKey || !stats || !scores || !Array.isArray(roleProfiles) || !nickname) {
       return NextResponse.json({ error: "Missing required squad parameters" }, { status: 400 });
     }
 
-    const platform = body.platform || "steam"; // Fallback to steam
-
     // 1. Calculate matchIdsHash based on the current squad matches in DB
-    let matchIdsHash = "legacy-squad-hash";
+    const requestMatchIds = Array.isArray(body.matchIds) ? body.matchIds.filter(Boolean) : [];
+    const roleProfileNames = Array.isArray(roleProfiles)
+      ? roleProfiles.map((p: any) => p?.name).filter(Boolean).sort()
+      : [];
+    let matchIdsHash = requestMatchIds.length > 0
+      ? hashParts(["matches", requestMatchIds.map(String).sort()])
+      : hashParts(["body", playerId, cachePlatform, groupKey, body.matchCount || 1, stats, scores, roleProfileNames]);
     try {
-      const squadData = await getSquadAnalysisData(nickname, platform, groupKey);
+      const squadData = await getSquadAnalysisData(nickname, cachePlatform, groupKey);
       if (squadData && "matchesSummary" in squadData && Array.isArray(squadData.matchesSummary)) {
         const matchIds = squadData.matchesSummary.map((m: any) => m.matchId || m.match_id).filter(Boolean);
-        matchIdsHash = crypto
-          .createHash("sha256")
-          .update(matchIds.sort().join(","))
-          .digest("hex");
+        if (matchIds.length > 0) {
+          matchIdsHash = hashParts(["matches", matchIds.map(String).sort()]);
+        }
       }
     } catch (hashErr) {
-      console.warn("[AI-SQUAD] Failed to compute matchIdsHash, falling back to static:", hashErr);
+      console.warn("[AI-SQUAD] Failed to compute DB matchIdsHash, using request hash:", hashErr);
     }
 
     // 2. Perform DB Cache Lookup
@@ -78,13 +95,15 @@ export async function POST(request: Request) {
       const { data: cached, error: cacheErr } = await supabase
         .from("squad_ai_coaching_cache")
         .select("ai_result")
+        .eq("player_id", playerId)
+        .eq("platform", cachePlatform)
         .eq("group_key", groupKey)
         .eq("match_ids_hash", matchIdsHash)
         .eq("coaching_style", coachingStyle)
+        .eq("prompt_version", AI_CACHE_VERSION)
         .maybeSingle();
 
       if (!cacheErr && cached && cached.ai_result) {
-        console.log(`[AI-SQUAD] Cache Hit! Restored squad AI coaching for group: ${groupKey}`);
         return NextResponse.json(cached.ai_result);
       }
     } catch (dbErr) {
@@ -211,8 +230,12 @@ Make sure to reference the GIVEN squadGrade "${squadGrade}" and the compared ben
     let selectedModelName = "";
     let usageMetadata: any = null;
 
+    const generationStartedAt = Date.now();
     for (const modelName of modelsToTry) {
       try {
+        const remainingMs = AI_SQUAD_TOTAL_TIMEOUT_MS - (Date.now() - generationStartedAt);
+        if (remainingMs <= 0) break;
+
         const model = genAI.getGenerativeModel({
           model: modelName,
           systemInstruction: systemInstruction,
@@ -248,9 +271,8 @@ Make sure to reference the GIVEN squadGrade "${squadGrade}" and the compared ben
           safetySettings
         });
 
-        // 20-second timeout
         const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("Timeout")), 20000)
+          setTimeout(() => reject(new Error("Timeout")), Math.min(AI_SQUAD_MODEL_TIMEOUT_MS, remainingMs))
         );
 
         const response = await Promise.race([
@@ -264,7 +286,6 @@ Make sure to reference the GIVEN squadGrade "${squadGrade}" and the compared ben
           responseText = response.response.text();
           selectedModelName = modelName;
           usageMetadata = response.response.usageMetadata;
-          console.log(`[AI-SQUAD] Successfully generated content using ${modelName}`);
           break;
         }
       } catch (err: any) {
@@ -283,14 +304,17 @@ Make sure to reference the GIVEN squadGrade "${squadGrade}" and the compared ben
     try {
       const { error: saveErr } = await supabase
         .from("squad_ai_coaching_cache")
-        .insert({
+        .upsert({
+          player_id: playerId,
+          platform: cachePlatform,
           group_key: groupKey,
           match_ids_hash: matchIdsHash,
           coaching_style: coachingStyle,
-          ai_result: resultJson
-        });
+          prompt_version: AI_CACHE_VERSION,
+          ai_result: resultJson,
+          updated_at: new Date().toISOString()
+        }, { onConflict: "player_id,platform,group_key,match_ids_hash,coaching_style,prompt_version" });
       if (saveErr) throw saveErr;
-      console.log(`[AI-SQUAD] Cache Saved! Successfully stored AI coaching cache for group: ${groupKey}`);
     } catch (saveErr: any) {
       console.warn("[AI-SQUAD] Failed to write cache to DB:", saveErr.message || saveErr);
     }
@@ -306,7 +330,7 @@ Make sure to reference the GIVEN squadGrade "${squadGrade}" and the compared ben
           selectedModelName,
           promptTokens,
           completionTokens,
-          "analyze"
+          "squad"
         );
       } catch (e) {
         console.warn("AI Usage tracking failed:", e);
@@ -319,17 +343,9 @@ Make sure to reference the GIVEN squadGrade "${squadGrade}" and the compared ben
     console.error("[AI-SQUAD-ERROR]", error);
     
     // Safety fallback data in case of API failure - bifurcated based on coachingStyle
-    let isMild = false;
-    let roleProfilesFallback: any[] = [];
-    let fallbackGrade = "B";
-    try {
-      const body = await request.clone().json().catch(() => ({}));
-      isMild = body.coachingStyle === "mild";
-      roleProfilesFallback = body.roleProfiles || [];
-      fallbackGrade = body.squadGrade || "B";
-    } catch (e) {
-      // ignore
-    }
+    const isMild = body.coachingStyle === "mild";
+    const roleProfilesFallback = Array.isArray(body.roleProfiles) ? body.roleProfiles : [];
+    const fallbackGrade = body.squadGrade || "B";
 
     const fallbackData = isMild
       ? {

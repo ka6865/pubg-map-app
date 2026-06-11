@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import { withAuthGuard } from "@/utils/supabase/guard";
 import { trackAiUsage } from "@/lib/pubg-analysis/aiUsageTracker";
+import { AI_CACHE_VERSION } from "@/lib/pubg-analysis/constants";
+import { normalizeName } from "@/lib/pubg-analysis/utils";
 
 export async function POST(request: Request) {
   try {
@@ -11,7 +13,7 @@ export async function POST(request: Request) {
     const { supabaseAdmin: supabase } = auth;
 
     const body = await request.json();
-    const { matchData, nickname, coachingStyle = "spicy" } = body;
+    const { matchData, nickname, platform = "steam", coachingStyle = "spicy" } = body;
     const isMild = coachingStyle === "mild";
 
     const apiKey = process.env.GOOGLE_GEMINI_API_KEY;
@@ -20,6 +22,8 @@ export async function POST(request: Request) {
 
     const matchId = matchData.matchId || matchData.match_id || matchData.id;
     if (!matchId) return NextResponse.json({ error: "Missing matchId" }, { status: 400 });
+    const playerId = normalizeName(nickname);
+    const cachePlatform = String(platform || "steam").toLowerCase();
 
     // 1. DB Cache Lookup
     try {
@@ -27,11 +31,13 @@ export async function POST(request: Request) {
         .from("match_ai_coaching_cache")
         .select("ai_result")
         .eq("match_id", matchId)
+        .eq("platform", cachePlatform)
+        .eq("player_id", playerId)
         .eq("coaching_style", coachingStyle)
+        .eq("prompt_version", AI_CACHE_VERSION)
         .maybeSingle();
 
       if (!cacheErr && cached && cached.ai_result) {
-        console.log(`[AI-ANALYZE] Cache Hit! Restored match AI coaching for match: ${matchId}`);
         const cachedData = cached.ai_result as any;
         const encoder = new TextEncoder();
         const stream = new ReadableStream({
@@ -145,7 +151,6 @@ export async function POST(request: Request) {
 
     for (const modelName of modelsToTry) {
       try {
-        // console.log(`[AI-ANALYZE] Attempting model: ${modelName}`);
         const model = genAI.getGenerativeModel({ model: modelName, safetySettings });
         try {
           streamResult = await model.generateContentStream(promptLines.join("\n") + "\n\n[분석 데이터]\n" + playerReportSummary);
@@ -178,7 +183,6 @@ export async function POST(request: Request) {
           if (streamResult) {
             for await (const chunk of streamResult.stream) {
               if (request.signal.aborted) {
-                console.log("[AI-STOP] Client aborted ai-analyze request, stopping Gemini stream.");
                 break;
               }
               const chunkText = chunk.text();
@@ -219,13 +223,16 @@ export async function POST(request: Request) {
             try {
               const { error: saveErr } = await supabase
                 .from("match_ai_coaching_cache")
-                .insert({
+                .upsert({
                   match_id: matchId,
+                  platform: cachePlatform,
+                  player_id: playerId,
                   coaching_style: coachingStyle,
-                  ai_result: { text: aiResponseText }
-                });
+                  prompt_version: AI_CACHE_VERSION,
+                  ai_result: { text: aiResponseText },
+                  updated_at: new Date().toISOString()
+                }, { onConflict: "match_id,platform,player_id,coaching_style,prompt_version" });
               if (saveErr) throw saveErr;
-              console.log(`[AI-ANALYZE] Cache Saved! Successfully stored AI coaching cache for match: ${matchId}`);
             } catch (saveErr: any) {
               console.warn("[AI-ANALYZE] Failed to write cache to DB:", saveErr.message || saveErr);
             }
