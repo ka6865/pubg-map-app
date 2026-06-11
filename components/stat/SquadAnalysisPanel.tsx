@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   Loader2,
   Flame,
@@ -16,6 +16,8 @@ import {
 } from "lucide-react";
 import dynamic from "next/dynamic";
 import { trackEvent } from "@/lib/analytics";
+import { useAuth } from "@/components/AuthProvider";
+import { toast } from "sonner";
 
 const Squad2DMap = dynamic(() => import("./Squad2DMap"), { ssr: false });
 
@@ -100,6 +102,8 @@ interface SquadAnalysisPanelProps {
 
 export default function SquadAnalysisPanel({ nickname, platform }: SquadAnalysisPanelProps) {
   const searchParams = useSearchParams();
+  const router = useRouter();
+  const { user } = useAuth();
   const urlGroupKey = searchParams.get("groupKey");
 
   const [groups, setGroups] = useState<any[]>([]);
@@ -191,6 +195,15 @@ export default function SquadAnalysisPanel({ nickname, platform }: SquadAnalysis
   // 3. Request AI squad coaching
   const requestAiCoaching = async () => {
     if (!analysisData) return;
+    if (!user) {
+      toast.error("AI 스쿼드 분석은 로그인 후 이용할 수 있습니다.", {
+        action: {
+          label: "로그인",
+          onClick: () => router.push("/login"),
+        },
+      });
+      return;
+    }
 
     // GA4 이벤트 트래킹: 스쿼드 시너지 분석 시작
     trackEvent({
@@ -212,7 +225,9 @@ export default function SquadAnalysisPanel({ nickname, platform }: SquadAnalysis
           stats: analysisData.stats,
           scores: analysisData.scores,
           roleProfiles: analysisData.roleProfiles,
+          matchIds: analysisData.matchesSummary.map((match) => match.matchId),
           nickname,
+          platform,
           coachingStyle,
           squadGrade: analysisData.squadGrade,
           benchmarkStats: analysisData.benchmarkStats

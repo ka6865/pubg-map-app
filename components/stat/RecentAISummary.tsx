@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { ShieldAlert, Clock, TrendingUp, TrendingDown, Minus, Flame, Wind, Heart, Skull, Target, HelpCircle, Zap, Brain, X, ChevronDown, ChevronUp, Sparkles, Trophy } from "lucide-react";
+import { ShieldAlert, Clock, TrendingUp, TrendingDown, Minus, Flame, Skull, Target, HelpCircle, Zap, Brain, X, ChevronDown, ChevronUp } from "lucide-react";
 import { getNextTierInfo } from "@/lib/pubg-analysis/benchmarkScore";
 
 import { IsolationRadar } from "./IsolationRadar";
@@ -166,9 +166,9 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
   const isLoadingRef = useRef(false);
   // [AUTO-RETRY] 일시적 Gemini 스트림 오류 자동 재시도
   const retryCountRef = useRef(0);
-  const MAX_AUTO_RETRIES = 2;
+  const MAX_AUTO_RETRIES = 1;
   const [retryMessage, setRetryMessage] = useState<string | null>(null);
-  const { isAnalyzing: isGlobalAnalyzing, activeId } = useAIStatus();
+  const { isAnalyzing: isGlobalAnalyzing } = useAIStatus();
   const { user } = useAuth();
   const router = useRouter();
 
@@ -229,7 +229,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
 
-    // [MOBILE-FIX] 타임아웃을 25초로 단축 + reader.cancel() 직접 호출
+    // 서버의 전체 AI 생성 제한(약 22초)보다 길게 두어 fallback 응답까지 수신한다.
     const safetyTimeout = setTimeout(() => {
       if (isLoadingRef.current) {
         console.warn("[AI-SUMMARY] Safety timeout triggered. Forcing cleanup.");
@@ -251,7 +251,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
           aiManager.stopAnalysis("summary");
         }
       }
-    }, 25000);
+    }, 35000);
 
     // GA4 이벤트 트래킹: 10경기 요약 시작
     trackEvent({
@@ -345,6 +345,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
                         ...finalJson,
                         visuals: prev?.visuals || finalJson.visuals
                       }));
+                      retryCountRef.current = 0;
 
                       // GA4 이벤트 트래킹: 10경기 요약 성공
                       trackEvent({
@@ -378,7 +379,7 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
           }
         } catch (readError: any) {
           if (readError.name === 'AbortError') {
-            console.log("[AI-SUMMARY] Fetch aborted");
+            // 사용자가 페이지를 이탈하거나 안전 타임아웃이 동작한 정상 중단입니다.
           } else {
             throw readError;
           }
@@ -463,7 +464,6 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
 
     return () => {
       if (abortControllerRef.current) {
-        console.log("[AI-CLEANUP] Unmounting, aborting + cancelling reader...");
         // [MOBILE-FIX] reader도 명시적으로 cancel
         readerRef.current?.cancel().catch(() => {});
         readerRef.current = null;

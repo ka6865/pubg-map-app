@@ -14,7 +14,7 @@ export function trackAiUsage(
   modelName: string,
   promptTokens: number,
   completionTokens: number,
-  analysisType: "analyze" | "summary"
+  analysisType: "analyze" | "summary" | "squad"
 ): void {
   try {
     if (!promptTokens && !completionTokens) return;

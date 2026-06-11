@@ -97,10 +97,12 @@ erDiagram
 ### 🧠 AI 캐시 및 운영 캐시 (AI Cache)
 | 테이블명 | 용도 | 설명 |
 | :--- | :--- | :--- |
-| **`match_ai_coaching_cache`** | **매치 AI 코칭 캐시** | 단일 매치 AI 분석 결과를 재사용해 비용과 응답 시간을 줄입니다. |
-| **`player_ai_summary_cache`** | **플레이어 AI 요약 캐시** | 여러 매치 기반 플레이어 요약 결과를 캐시합니다. |
-| **`squad_ai_coaching_cache`** | **스쿼드 AI 코칭 캐시** | 스쿼드/팀 분석 AI 결과를 캐시합니다. |
+| **`match_ai_coaching_cache`** | **매치 AI 코칭 캐시** | 단일 매치 AI 분석 결과를 재사용합니다. 고유키는 `match_id + platform + player_id + coaching_style + prompt_version`입니다. |
+| **`player_ai_summary_cache`** | **플레이어 AI 요약 캐시** | 여러 매치 기반 플레이어 요약 결과를 캐시합니다. 고유키는 `player_id + platform + match_ids_hash + prompt_version`입니다. |
+| **`squad_ai_coaching_cache`** | **스쿼드 AI 코칭 캐시** | 스쿼드/팀 분석 AI 결과를 캐시합니다. 고유키는 `player_id + platform + group_key + match_ids_hash + coaching_style + prompt_version`입니다. |
 | **`sync_history`** | **외부 동기화 이력** | 패치노트, 맵 데이터 등 외부 데이터 동기화 상태를 기록합니다. |
+
+AI 캐시 3개 테이블은 `ai_result jsonb`, `created_at`, `updated_at`, `prompt_version`을 기준 필드로 사용합니다. RLS는 활성화되어 있으며 클라이언트 직접 접근 정책 없이 서버 API의 service role 경유로만 사용합니다.
 
 ---
 
@@ -110,4 +112,4 @@ erDiagram
 3. **무기 마스터리 흐름**: `pubg_player_cache.id(accountId)` -> PUBG `weapon_mastery` 1회 호출 -> `pubg_player_cache.weapon_mastery_data` 저장.
 4. **Agent 승인 흐름**: `/admin/bot` -> `agent_runs`/`agent_steps` 기록 -> 위험 작업은 `agent_approvals` 대기 -> 승인 후 실행 결과 저장.
 5. **AI 비용 관리 흐름**: AI 호출 -> `ai_usage_logs` 기록 -> Admin Agent monitor가 비용 임계치와 사용량을 점검합니다.
-6. **캐싱 전략**: 무거운 연산 결과는 `processed_match_telemetry`, R2, AI 캐시 테이블에 저장되어 재조회 시 즉각적인 응답을 보장합니다.
+6. **캐싱 전략**: 무거운 연산 결과는 `processed_match_telemetry`, R2, AI 캐시 테이블에 저장되어 재조회 시 즉각적인 응답을 보장합니다. AI 캐시는 `AI_CACHE_VERSION`을 `prompt_version`으로 저장해 프롬프트/응답 구조 변경 시 안전하게 무효화합니다.

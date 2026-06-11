@@ -15,13 +15,7 @@ import {
   Clock,
   Swords,
   User,
-  Wind,
-  Heart,
-  Skull,
-  ShieldAlert,
-  TrendingUp,
   PlayCircle,
-  ExternalLink,
   X,
   Car,
   Video,
@@ -169,7 +163,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
   const tooltipRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const isAnalyzingRef = useRef(false); // [V46.0] 클로저 세이프 로딩 추적
-  const { isAnalyzing: isGlobalAnalyzing, activeId } = useAIStatus();
+  const { isAnalyzing: isGlobalAnalyzing } = useAIStatus();
   const { user } = useAuth();
   const router = useRouter();
 
@@ -186,7 +180,6 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
   useEffect(() => {
     return () => {
       if (abortControllerRef.current) {
-        console.log(`[AI-CLEANUP] Unmounting MatchCard ${matchId}, aborting analysis...`);
         abortControllerRef.current.abort();
         aiManager.stopAnalysis(matchId);
         setIsAnalyzing(false);
@@ -402,7 +395,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
         method: "POST",
         headers: { "Content-Type": "application/json" },
         signal: abortController.signal,
-        body: JSON.stringify({ matchData, nickname, coachingStyle })
+        body: JSON.stringify({ matchData, nickname, platform, coachingStyle })
       });
 
       if (!res.ok) throw new Error("분석 요청 실패");
@@ -429,8 +422,8 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                   accumulatedAnalysis += parsed.data;
                   setAnalysis(accumulatedAnalysis);
                 }
-              } catch (e) {
-                console.error("NDJSON Parse Error in MatchCard:", e, line);
+              } catch (err) {
+                console.error("NDJSON Parse Error in MatchCard:", err, line);
               }
             }
           }
@@ -492,12 +485,6 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
   
   const totalScale = matchData.totalTeams || 0;
   
-  const themeColor = isRanked ? "amber-500" : "indigo-500";
-  const borderColor = isRanked ? "border-amber-500/30 hover:border-amber-500/60" : "border-white/10 hover:border-white/20";
-  const bgGradient = isRanked 
-    ? "bg-gradient-to-br from-black/80 via-black/60 to-[#1a1508]" 
-    : "bg-black/40 hover:bg-black/50";
-
   return (
     <div className={`mb-4 rounded-[2rem] border transition-all duration-300 shadow-2xl relative
       ${showTierTooltip ? 'overflow-visible' : 'overflow-hidden'}
@@ -1121,7 +1108,6 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                       events={matchData!.timeline || []} 
                       nickname={nickname}
                       onEventClick={(event: any) => {
-                        console.log("Event Clicked:", event.type, "Coords:", event.x, event.y);
                         setSelectedEvent(event);
                       }}
                     />
@@ -1184,7 +1170,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                     try {
                       const jsonString = cleanAnalysis.replace(/^```json\n?/, '').replace(/\n?```$/, '').trim();
                       data = JSON.parse(jsonString);
-                    } catch (e) {
+                    } catch (err) {
                       if (isAnalyzing) {
                         return (
                           <div className="p-10 bg-black/40 rounded-[2.5rem] border border-white/10 flex flex-col items-center justify-center gap-4">
@@ -1193,7 +1179,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                           </div>
                         );
                       }
-                      throw e;
+                      throw err;
                     }
                     const isMildTheme = coachingStyle === "mild";
                     const accentColor = isMildTheme ? "emerald" : "red";
@@ -1265,7 +1251,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                         </div>
                       </div>
                     );
-                  } catch (e) {
+                  } catch {
                     return (
                       <div className="p-8 bg-black/40 rounded-[2.5rem] border border-white/10 prose prose-invert max-w-none">
                         {renderMarkdown(analysis!)}
@@ -1500,52 +1486,3 @@ const StatBox = ({ icon, label, value, color }: { icon: React.ReactNode, label: 
     <span className="text-lg font-black text-white">{value}</span>
   </div>
 );
-
-const TacticalBox = ({ icon, label, value, subLabel, color, bgColor, tooltip, isMobile }: { icon: React.ReactNode, label: string, value: number | string, subLabel: string, color: string, bgColor: string, tooltip?: string, isMobile?: boolean }) => {
-  const [showTooltip, setShowTooltip] = useState(false);
-  const tooltipRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!showTooltip || !isMobile) return;
-    const handleClickOutside = (event: MouseEvent) => {
-      if (tooltipRef.current && !tooltipRef.current.contains(event.target as Node)) {
-        setShowTooltip(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [showTooltip, isMobile]);
-
-  return (
-    <div className={`p-4 rounded-3xl border border-white/5 ${bgColor} flex flex-col gap-3 group/box hover:border-white/20 transition-all relative overflow-visible`} ref={tooltipRef}>
-      <div className="flex items-center justify-between">
-        <div className={`${color} group-hover/box:scale-110 transition-transform`}>{icon}</div>
-        <div className="flex items-center gap-1">
-          <span className="text-xl font-black text-white">{value}</span>
-          {tooltip && (
-            <div className="relative">
-              <button 
-                onMouseEnter={() => !isMobile && setShowTooltip(true)}
-                onMouseLeave={() => !isMobile && setShowTooltip(false)}
-                onClick={() => isMobile && setShowTooltip(!showTooltip)}
-                className={`w-3 h-3 rounded-full border flex items-center justify-center text-[8px] font-bold transition-colors ${showTooltip ? 'bg-white/10 border-white/40 text-white' : 'border-white/20 text-gray-500 hover:border-white/40 hover:text-gray-300'}`}
-              >
-                ?
-              </button>
-              <div className={`absolute bottom-full right-0 mb-2 w-56 p-3 bg-[#0a0a0a] backdrop-blur-xl border border-white/20 rounded-2xl text-[10px] text-gray-300 font-medium leading-relaxed transition-opacity z-[100] shadow-[0_10px_40px_rgba(0,0,0,0.8)] ${
-                showTooltip ? 'opacity-100' : 'opacity-0 pointer-events-none'
-              }`}>
-                {tooltip}
-                <div className="absolute top-full right-1 w-2 h-2 bg-black border-r border-b border-white/10 rotate-45 -translate-y-1" />
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-      <div>
-        <p className="text-[11px] text-white font-black uppercase tracking-tight">{label}</p>
-        <p className="text-[9px] text-gray-500 font-bold leading-tight mt-1">{subLabel}</p>
-      </div>
-    </div>
-  );
-};

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
-import { WEAPON_NAMES } from "@/lib/pubg-analysis/constants";
+import { AI_CACHE_VERSION, WEAPON_NAMES } from "@/lib/pubg-analysis/constants";
 import { estimateUserTier, getBaseTier } from "@/lib/pubg-analysis/benchmarkScore";
 import { classifyRole } from "@/lib/pubg-analysis/roleClassifier";
 import { normalizeName } from "@/lib/pubg-analysis/utils";
@@ -11,6 +11,9 @@ import { trackAiUsage } from "@/lib/pubg-analysis/aiUsageTracker";
 import crypto from "crypto";
 
 export const maxDuration = 60;
+
+const AI_SUMMARY_TOTAL_TIMEOUT_MS = 22000;
+const AI_SUMMARY_MODEL_TIMEOUT_MS = 8000;
 
 function normalizeWeaponName(weaponId: string): string {
   if (!weaponId) return "Unknown";
@@ -62,7 +65,7 @@ function extractValidJson(text: string): string {
 }
 
 
-function aggregateMatches(matches: any[], lowerNickname: string, myAccountId?: string) {
+function aggregateMatches(matches: any[]) {
   let totalKills = 0, totalDamage = 0, totalDamageImpact = 0, totalTeamDamageShare = 0, totalTeamKillShare = 0;
   let totalTeammateKnocks = 0, totalSuppCount = 0, totalTradeKills = 0, totalRescueSmokes = 0;
   let totalRevCount = 0, totalBaitCount = 0;
@@ -312,11 +315,12 @@ export async function POST(request: Request) {
     if (auth.error) return auth.error;
     const { supabaseAdmin: supabase } = auth;
 
-    const { matchIds, nickname, platform, force = false } = await request.json();
+    const { matchIds, nickname, platform = "steam", force = false } = await request.json();
     const lowerNickname = normalizeName(nickname);
-    console.log(`[AI-SUMMARY-SYNC-CHECK] Original: ${nickname}, Normalized: ${lowerNickname}`);
+    const cachePlatform = String(platform || "steam").toLowerCase();
 
-    if (!matchIds || matchIds.length === 0) return NextResponse.json({ error: "No matches" }, { status: 400 });
+    if (!Array.isArray(matchIds) || matchIds.length === 0) return NextResponse.json({ error: "No matches" }, { status: 400 });
+    if (!nickname) return NextResponse.json({ error: "Missing nickname" }, { status: 400 });
 
     // 1. Compute matchIdsHash
     const normalizedMatchIds = matchIds
@@ -328,30 +332,33 @@ export async function POST(request: Request) {
       .digest("hex");
 
     // 2. DB Cache Lookup
-    try {
-      const { data: cached, error: cacheErr } = await supabase
-        .from("player_ai_summary_cache")
-        .select("ai_result")
-        .eq("player_id", lowerNickname)
-        .eq("match_ids_hash", matchIdsHash)
-        .maybeSingle();
+    if (!force) {
+      try {
+        const { data: cached, error: cacheErr } = await supabase
+          .from("player_ai_summary_cache")
+          .select("ai_result")
+          .eq("player_id", lowerNickname)
+          .eq("platform", cachePlatform)
+          .eq("match_ids_hash", matchIdsHash)
+          .eq("prompt_version", AI_CACHE_VERSION)
+          .maybeSingle();
 
-      if (!cacheErr && cached && cached.ai_result) {
-        console.log(`[AI-SUMMARY] Cache Hit! Restored 10-match AI summary for player: ${lowerNickname}`);
-        const cachedData = cached.ai_result as any;
-        const encoder = new TextEncoder();
-        const stream = new ReadableStream({
-          start(controller) {
-            controller.enqueue(encoder.encode(JSON.stringify({ type: "visuals", data: cachedData.visuals }) + "\n"));
-            controller.enqueue(encoder.encode(JSON.stringify({ type: "final", data: cachedData.final }) + "\n"));
-            controller.enqueue(encoder.encode(JSON.stringify({ type: "done", valid: true }) + "\n"));
-            controller.close();
-          }
-        });
-        return new Response(stream, { headers: { "Content-Type": "application/x-ndjson", "Cache-Control": "no-cache" } });
+        if (!cacheErr && cached && cached.ai_result) {
+          const cachedData = cached.ai_result as any;
+          const encoder = new TextEncoder();
+          const stream = new ReadableStream({
+            start(controller) {
+              controller.enqueue(encoder.encode(JSON.stringify({ type: "visuals", data: cachedData.visuals }) + "\n"));
+              controller.enqueue(encoder.encode(JSON.stringify({ type: "final", data: cachedData.final }) + "\n"));
+              controller.enqueue(encoder.encode(JSON.stringify({ type: "done", valid: true }) + "\n"));
+              controller.close();
+            }
+          });
+          return new Response(stream, { headers: { "Content-Type": "application/x-ndjson", "Cache-Control": "no-cache" } });
+        }
+      } catch (dbErr) {
+        console.warn("[AI-SUMMARY] Cache lookup failed:", dbErr);
       }
-    } catch (dbErr) {
-      console.warn("[AI-SUMMARY] Cache lookup failed:", dbErr);
     }
 
     const geminiApiKey = process.env.GOOGLE_GEMINI_API_KEY;
@@ -363,8 +370,6 @@ export async function POST(request: Request) {
       .ilike("player_id", lowerNickname)
       .order('created_at', { ascending: false })
       .limit(50);
-
-    console.log(`[DB-Check] Found ${userBenchmarks?.length || 0} benchmarks for ${lowerNickname}`);
 
     // [V45.3] 10개의 유효한 분석 데이터를 확보하기 위해 조회 범위를 25개로 확장 (이벤트/아케이드 필터링 대비)
     const targetMatchIds = matchIds.slice(0, 25);
@@ -436,9 +441,6 @@ export async function POST(request: Request) {
 
     if (detailedMatches.length === 0) return NextResponse.json({ error: "유효한 전술 분석 데이터가 없습니다. (이벤트/아케이드 모드 제외)" }, { status: 400 });
 
-    const latestMatch = detailedMatches[0];
-    const myAccountId = latestMatch.stats?.playerId;
-
     // [V45.0] 잘한 판 5개 우선 분석 로직 (Best 5 Matches Selection)
     // 1. 최근 10판 중 벤치마크 점수가 높은 순으로 정렬하여 상위 5판 선정 (데이터가 5판 미만이면 전체 분석)
     const poolForBest = [...detailedMatches].slice(0, 10);
@@ -451,8 +453,8 @@ export async function POST(request: Request) {
     }).slice(0, 5);
 
     // [V45.1] 데이터 집계 이원화: AI용(Best 5) vs 마스터리용(Total 10)
-    const summaryStats = aggregateMatches(bestMatches, lowerNickname, myAccountId);
-    const masteryStats = aggregateMatches(poolForBest, lowerNickname, myAccountId);
+    const summaryStats = aggregateMatches(bestMatches);
+    const masteryStats = aggregateMatches(poolForBest);
 
     const {
       latestMatchTime, avgBackupLatency, avgReactionLatency, userInitiativeRate, avgPressureIndex,
@@ -499,7 +501,7 @@ export async function POST(request: Request) {
     const mapStatsList = Object.entries(mapGroups)
       .filter(([, matches]) => matches.length >= 2)
       .map(([mapName, matches]) => {
-        const s = aggregateMatches(matches, lowerNickname, myAccountId);
+        const s = aggregateMatches(matches);
         return {
           mapName,
           displayName: MAP_DISPLAY_NAMES[mapName] || mapName,
@@ -611,8 +613,8 @@ export async function POST(request: Request) {
     if (matchesForTrend.length >= 6) {
       const recentMatches = matchesForTrend.slice(0, 5);
       const olderMatches = matchesForTrend.slice(5);
-      const recentStats = aggregateMatches(recentMatches, lowerNickname, myAccountId);
-      const olderStats = aggregateMatches(olderMatches, lowerNickname, myAccountId);
+      const recentStats = aggregateMatches(recentMatches);
+      const olderStats = aggregateMatches(olderMatches);
       if (recentStats && olderStats) {
         const dmgTrend = Math.round(recentStats.avgDamage - olderStats.avgDamage);
         const winTrend = Number((recentStats.avgDuelWinRate - olderStats.avgDuelWinRate).toFixed(1));
@@ -728,12 +730,12 @@ export async function POST(request: Request) {
     }
 
     if (mainBench) {
-      const mainModeStats = aggregateMatches(groups[mainModeName] || [], lowerNickname, myAccountId);
+      const mainModeStats = aggregateMatches(groups[mainModeName] || []);
       const autoTopics = selectDebateTopics(mainModeStats, mainBench);
       userPrompt += `\n### [분석 집중 영역 (Debate Issues)]\n반드시 아래 3개 주제를 순서대로 다루어 주십시오:\n${autoTopics.map((t, i) => `${i + 1}. ${t}`).join(', ')}\n`;
     }
 
-    const mainModeStats = { ...aggregateMatches(groups[mainModeName] || [], lowerNickname, myAccountId), modeDistribution: { main: mainModeName } };
+    const mainModeStats = { ...aggregateMatches(groups[mainModeName] || []), modeDistribution: { main: mainModeName } };
     const roleInfo = classifyRole(mainModeStats, mainBench, mainUserTier);
     userPrompt += `\n### [유저 전술적 정체성]\n- 부여된 칭호: ${roleInfo.title}\n- 전술 직업군: ${roleInfo.roleLabel}\n- 특징 요약: ${roleInfo.description}\n- 주요 취약점: ${roleInfo.weakness || "식별된 약점 없음 (완성형)"}\n- 시그니처 무기: ${roleInfo.signatureWeapon} (${roleInfo.signatureWeaponStats?.kills}킬, ${roleInfo.signatureWeaponStats?.dbnos}기절, 사용 일관성: ${roleInfo.signatureWeaponStats?.consistency}%)\n`;
     userPrompt += `\n[INSTRUCTION] 'finalVerdict' 필드에 위 '주요 취약점'에 대한 분석과 전체 토론 내용을 결합하여, 유저에게 깊은 인상을 남길 수 있는 최종 판결문을 작성하십시오.`;
@@ -780,8 +782,12 @@ export async function POST(request: Request) {
       { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE }
     ];
 
+    const generationStartedAt = Date.now();
     for (const modelName of modelsToTry) {
       try {
+        const remainingMs = AI_SUMMARY_TOTAL_TIMEOUT_MS - (Date.now() - generationStartedAt);
+        if (remainingMs <= 0) break;
+
         const model = genAI.getGenerativeModel({
           model: modelName,
           systemInstruction: promptLines.join("\n"),
@@ -789,9 +795,8 @@ export async function POST(request: Request) {
           safetySettings
         });
 
-        // [V16.0] 타임아웃을 20초로 연장 (유저 요청)
         const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("Timeout")), 20000)
+          setTimeout(() => reject(new Error("Timeout")), Math.min(AI_SUMMARY_MODEL_TIMEOUT_MS, remainingMs))
         );
 
         streamResult = await Promise.race([
@@ -801,7 +806,6 @@ export async function POST(request: Request) {
 
         if (streamResult) {
           selectedModelName = modelName;
-          console.log(`[AI-SUMMARY] Selected Model: ${modelName}`);
           break;
         }
       } catch (err: any) {
@@ -872,7 +876,6 @@ export async function POST(request: Request) {
             for await (const chunk of streamResult.stream) {
               // [V54.2] 클라이언트가 연결을 끊었는지 체크 (토큰 낭비 방지 핵심)
               if (request.signal.aborted) {
-                console.log("[AI-STOP] Client aborted ai-summary request, stopping Gemini stream.");
                 break;
               }
 
@@ -913,16 +916,18 @@ export async function POST(request: Request) {
             try {
               const { error: saveErr } = await supabase
                 .from("player_ai_summary_cache")
-                .insert({
+                .upsert({
                   player_id: lowerNickname,
+                  platform: cachePlatform,
                   match_ids_hash: matchIdsHash,
+                  prompt_version: AI_CACHE_VERSION,
                   ai_result: {
                     visuals: precomputedVisuals,
                     final: validJsonString
-                  }
-                });
+                  },
+                  updated_at: new Date().toISOString()
+                }, { onConflict: "player_id,platform,match_ids_hash,prompt_version" });
               if (saveErr) throw saveErr;
-              console.log(`[AI-SUMMARY] Cache Saved! Successfully stored AI summary cache for player: ${lowerNickname}`);
             } catch (saveErr: any) {
               console.warn("[AI-SUMMARY] Failed to write cache to DB:", saveErr.message || saveErr);
             }
