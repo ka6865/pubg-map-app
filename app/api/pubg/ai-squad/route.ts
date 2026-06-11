@@ -5,6 +5,7 @@ import { withAuthGuard } from "@/utils/supabase/guard";
 import { trackAiUsage } from "@/lib/pubg-analysis/aiUsageTracker";
 import { AI_CACHE_VERSION } from "@/lib/pubg-analysis/constants";
 import { normalizeName } from "@/lib/pubg-analysis/utils";
+import { normalizePlatform } from "@/lib/pubg-analysis/cacheIdentity";
 import crypto from "crypto";
 import { getSquadAnalysisData } from "@/lib/pubg-analysis/squadAnalysis";
 
@@ -59,7 +60,7 @@ export async function POST(request: Request) {
     const { groupKey, stats, scores, roleProfiles, nickname, platform = "steam", coachingStyle = "spicy", squadGrade = "B", benchmarkStats } = body;
     const isMild = coachingStyle === "mild";
     const playerId = normalizeName(nickname);
-    const cachePlatform = String(platform || "steam").toLowerCase();
+    const cachePlatform = normalizePlatform(platform);
 
     const apiKey = process.env.GOOGLE_GEMINI_API_KEY;
     if (!apiKey) {

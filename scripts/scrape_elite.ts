@@ -3,6 +3,8 @@ import axios from 'axios';
 import dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
 import { RESULT_VERSION } from '../lib/pubg-analysis/constants';
+import { getValidFullResult } from '../lib/pubg-analysis/cacheIdentity';
+import { normalizeName } from '../lib/pubg-analysis/utils';
 
 // .env 및 .env.local 파일의 환경변수 로드
 dotenv.config({ path: '.env.local' });
@@ -13,6 +15,7 @@ const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 const BASE_URL = "https://api.pubg.com/shards/steam";
+const PLATFORM = "steam";
 const APP_URL = process.env.APP_URL || "http://localhost:3000";
 const MATCH_API_URL = `${APP_URL}/api/pubg/match`;
 
@@ -69,7 +72,7 @@ async function scrapeEliteData() {
           // 경쟁전은 보통 동일 시즌 ID를 공유하거나 약간의 딜레이가 있을 수 있음
           // pc-as 샤드의 경우 리더보드에서 경쟁전 데이터가 별도로 존재함
         }
-      } catch (err) {}
+      } catch {}
     }
 
     console.log(`🎯 총 ${playerPool.size}명의 타겟 플레이어 확보.`);
@@ -82,27 +85,33 @@ async function scrapeEliteData() {
       try {
         const pDetails = await axios.get(`${BASE_URL}/players/${accountId}`, { headers: HEADERS });
         matchIds = pDetails.data.data.relationships.matches.data.slice(0, MATCH_LIMIT).map((m: any) => m.id);
-      } catch (err) { continue; }
+      } catch { continue; }
 
       for (const matchId of matchIds) {
+        const playerId = normalizeName(nickname);
         // [Step 1] processed_match_telemetry 분석 캐시 최신 여부 확인
         const { data: existing } = await supabase
           .from("processed_match_telemetry")
           .select("data")
           .eq("match_id", matchId)
-          .eq("player_id", nickname.toLowerCase().trim())
-          .single();
+          .eq("platform", PLATFORM)
+          .eq("player_id", playerId)
+          .maybeSingle();
+
+        const existingFullResult = getValidFullResult(existing, playerId, PLATFORM);
 
         // 구버전 캐시 → 무조건 재분석
-        if (existing && (existing.data?.fullResult?.v || 0) < RESULT_VERSION) {
-          console.log(`   - MatchID(${matchId}): 구버전 발견(${existing.data?.fullResult?.v || "unknown"}) -> V${RESULT_VERSION} 재분석 시작...`);
-        } else if (existing) {
+        if (existingFullResult && (existingFullResult.v || 0) < RESULT_VERSION) {
+          console.log(`   - MatchID(${matchId}): 구버전 발견(${existingFullResult.v || "unknown"}) -> V${RESULT_VERSION} 재분석 시작...`);
+        } else if (existingFullResult) {
           // [Step 2] 최신 캐시가 있는 경우 → global_benchmarks 교차 검증
           // (벤치마크 초기화 이후 스킵 방지)
           const { data: benchmark } = await supabase
             .from("global_benchmarks")
             .select("id")
             .eq("match_id", matchId)
+            .eq("platform", PLATFORM)
+            .eq("player_id", playerId)
             .maybeSingle();
 
           if (benchmark) {
@@ -118,7 +127,7 @@ async function scrapeEliteData() {
         }
 
         // 벤치마크 누락 여부에 따라 force 파라미터 결정
-        const hasCacheButNoBenchmark = existing && (existing.data?.fullResult?.v || 0) >= RESULT_VERSION;
+        const hasCacheButNoBenchmark = existingFullResult && (existingFullResult.v || 0) >= RESULT_VERSION;
         const forceParam = hasCacheButNoBenchmark
           ? `&force=true&secret=${encodeURIComponent(process.env.ADMIN_REVALIDATE_TOKEN || '')}`
           : '';

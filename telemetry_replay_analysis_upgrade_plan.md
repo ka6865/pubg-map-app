@@ -1,6 +1,6 @@
 # BGMS 텔레메트리 리플레이 및 전적분석 고도화 계획서
 
-작성 기준: `telemetry_data_classification.md`와 현재 코드(`origin/develop` 반영 후)를 대조 검증한 결과입니다.
+작성 기준: `telemetry_data_classification.md`와 현재 작업 트리의 코드를 대조 검증한 결과입니다.
 
 ## 1. 목표
 
@@ -25,7 +25,8 @@
 
 의도적으로 보류:
 
-- `LogWeaponFireCount`, `LogWeaponFire`, `LogMatchEnd.allWeaponStats`는 저장량 증가 가능성이 있어 2차에서 샘플 크기 측정 후 적용한다.
+- `LogWeaponFireCount`, `LogWeaponFire`는 저장량 증가 가능성이 있어 2차에서 샘플 크기 측정 후 적용한다.
+- `LogMatchEnd.allWeaponStats`는 현재 `match/route.ts`에서 보존하고 `CombatHandler`에서 병합 처리하므로, 2차에서는 UI/AI 노출 범위와 회귀 검증을 확장한다.
 - 전 플레이어 `LogPlayerAttack` 수집은 무료 플랜에서는 위험하므로 full replay 모드가 필요할 때 별도 캐시 정책으로 분리한다.
 
 ## 2. 현재 코드 검증 결과
@@ -70,11 +71,9 @@
 
 `LogMatchEnd.allWeaponStats`
 
-- 문서 주장: 원본에는 존재하지만 현재 무기 통계 source of truth로 사용하지 않는다.
-- 코드 확인: `LogMatchEnd` 자체는 수집된다.
-- 코드 확인: `match/route.ts` 슬리밍에서 `allWeaponStats` 보존 로직은 없다.
-- 코드 확인: `AnalysisEngine`은 기존 `LogPlayerTakeDamage` 기반 `weaponStats`를 만든다.
-- 결론: 문서 내용이 맞다. 무기 숙련도 고도화의 핵심 후보이다.
+- 현재 구현: `LogMatchEnd`는 수집되며 `match/route.ts` 슬리밍에서 `allWeaponStats`와 `characters`를 보존한다.
+- 코드 확인: `CombatHandler`는 `allWeaponStats`를 순회해 본인/아군 무기 통계를 병합한다.
+- 결론: 보존/병합 자체는 구현되어 있다. 남은 과제는 명중률/부위별 성향/주무기 효율을 UI와 AI 요약에 안정적으로 노출하고 fixture 회귀 테스트를 확장하는 것이다.
 
 ### 2-2. 보완 검증이 필요한 항목
 
@@ -372,10 +371,9 @@ AI 피드백 예시:
 ### Phase 2: 무기 숙련도 분석
 
 1. `LogWeaponFireCount` 핸들러 추가
-2. `LogMatchEnd.allWeaponStats` 보존
-3. `weaponStats` 병합 로직 추가
-4. `AnalysisResult` 타입 확장
-5. MatchCard/AI 요약에 무기 숙련 섹션 추가
+2. 기존 `LogMatchEnd.allWeaponStats` 보존/병합 로직의 fixture 회귀 테스트 보강
+3. `weaponStats` 병합 결과를 안정적인 타입으로 확장
+4. MatchCard/AI 요약에 무기 숙련 섹션 추가
 
 예상 효과:
 

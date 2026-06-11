@@ -1,23 +1,24 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { normalizeName } from "@/lib/pubg-analysis/utils";
+import { buildProcessedTelemetryUpsert, normalizePlatform } from "@/lib/pubg-analysis/cacheIdentity";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-import { normalizeName } from "@/lib/pubg-analysis/utils";
-
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { matchId, playerNickname, finalResult, telData, matchAttr, rawParticipants, source } = body;
+    const { matchId, playerNickname, finalResult, matchAttr, rawParticipants, source } = body;
 
     if (!matchId || !playerNickname || !finalResult) {
       return NextResponse.json({ error: "Missing required data" }, { status: 400 });
     }
 
     const lowerNickname = normalizeName(playerNickname);
+    const platform = normalizePlatform(body.platform || finalResult.platform || matchAttr?.platformId);
     const backgroundTasks = [];
 
     // 1. match_master_telemetry 저장은 match route에서 처리하므로 중복 방지를 위해 제거 (성능 최적화)
@@ -26,6 +27,7 @@ export async function POST(request: Request) {
     if (rawParticipants && matchAttr) {
       const rawInserts = rawParticipants.map((p: any) => ({
         match_id: matchId,
+        platform,
         player_id: normalizeName(p.attributes.stats.name),
         damage: Math.floor(p.attributes.stats.damageDealt),
         kills: p.attributes.stats.kills,
@@ -33,14 +35,14 @@ export async function POST(request: Request) {
         game_mode: matchAttr.gameMode,
         map_name: matchAttr.mapName
       }));
-      backgroundTasks.push(supabase.from("match_stats_raw").upsert(rawInserts, { onConflict: 'match_id,player_id' }));
+      backgroundTasks.push(supabase.from("match_stats_raw").upsert(rawInserts, { onConflict: 'match_id,platform,player_id' }));
 
       // [V55.0] 자동완성 데이터베이스 확장: 모든 참여자를 캐시에 등록 (데드락 방지를 위해 Ingest에서만 수행)
       const playerCacheInserts = rawParticipants
         .filter((p: any) => !p.attributes.stats.playerId?.startsWith("ai."))
         .map((p: any) => ({
           id: p.attributes.stats.playerId || p.id,
-          platform: matchAttr.platformId || "steam",
+          platform,
           nickname: p.attributes.stats.name,
           lower_nickname: p.attributes.stats.name.toLowerCase(),
           updated_at: new Date().toISOString()
@@ -76,6 +78,7 @@ export async function POST(request: Request) {
       backgroundTasks.push(
         supabase.from("global_benchmarks").upsert({
           match_id: matchId,
+          platform,
           player_id: lowerNickname,
           damage: Math.floor(stats.damageDealt),
           kills: stats.kills,
@@ -113,18 +116,16 @@ export async function POST(request: Request) {
           death_phase: finalResult.deathPhase || 0,
           filter_version: 8,
           source: source || 'user'   // 'user' | 'scraper' — 출처 구분
-        }, { onConflict: 'match_id,player_id' })
+        }, { onConflict: 'match_id,platform,player_id' })
       );
     }
 
     // 4. processed_match_telemetry 저장 (최종 결과)
     backgroundTasks.push(
-      supabase.from("processed_match_telemetry").upsert({
-        match_id: matchId,
-        player_id: lowerNickname,
-        data: { fullResult: finalResult },
-        updated_at: new Date().toISOString()
-      }, { onConflict: 'match_id,player_id' })
+      supabase.from("processed_match_telemetry").upsert(
+        buildProcessedTelemetryUpsert(matchId, lowerNickname, platform, finalResult),
+        { onConflict: 'match_id,platform,player_id' }
+      )
     );
 
     await Promise.allSettled(backgroundTasks);

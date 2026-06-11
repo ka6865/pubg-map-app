@@ -108,12 +108,15 @@ function createRequest(body: any) {
 function createSummaryMatch(matchId = "match-1") {
   return {
     matchId,
+    player_id: "player_a",
+    platform: "kakao",
     createdAt: "2026-06-01T00:00:00.000Z",
     mapName: "Baltic_Main",
     gameMode: "squad",
     matchType: "competitive",
     totalTeams: 16,
     stats: {
+      name: "Player_A",
       kills: 2,
       assists: 1,
       DBNOs: 1,

@@ -1,7 +1,19 @@
 # [사실기반] BGMS 텔레메트리 데이터 실구현 명세서 (V60.0)
 *공식 PUBG API 텔레메트리 이벤트 + 오브젝트 전수 대조 및 V60.0 고정밀 정합성 패치 완료 (3D 바닥 격자 차폐 정합 및 지형 불투명화 추가)*
 
-2026-06-11 변경 기록: AI 전적분석 캐시 안정화 작업은 `match_ai_coaching_cache`, `player_ai_summary_cache`, `squad_ai_coaching_cache`의 키/버전/저장 정책만 변경했습니다. 이후 디렉터리 안정화 작업으로 상자/맵 설정 공유 타입과 스쿼드 분석 공용 서비스 위치가 정리되었지만, 텔레메트리 이벤트 수집 범위, 필드 분류, 파생 지표 해석은 변경하지 않았습니다.
+2026-06-11 변경 기록: AI 전적분석 캐시 안정화 작업은 `match_ai_coaching_cache`, `player_ai_summary_cache`, `squad_ai_coaching_cache`의 키/버전/저장 정책만 변경했습니다. 이후 디렉터리 안정화 작업으로 상자/맵 설정 공유 타입과 스쿼드 분석 공용 서비스 위치가 정리되었지만, 텔레메트리 이벤트 수집 범위, 필드 분류, 파생 지표 해석은 변경하지 않았습니다. 같은 날짜에 추가된 `lib/pubg-analysis/squadCauseScenes.ts`와 `scripts/experiment_squad_cause_scenes.ts`는 기존 `timeline`, `tradeStats`, `isolationData`를 읽어 AI 피드백 실험용 원인 장면 후보를 만드는 레이어이며, 신규 텔레메트리 필드 수집이나 기존 필드 의미 변경은 없습니다. 해당 실험 프롬프트는 `riskFlags`, `unsupportedClaims`를 통해 소생 시도 여부, 수비적 플레이, 심리/의도, 팀 응집력, 복구 능력, 전투력, 전투/교전 진입 각, 즉각적 공격/복구/백업 처방, 안전성, 엄폐물/시야, 교전 회피 필요성, 교전 진입 회피 단정, 전력 손실 인과, 전력 복구 실패, `totalTeamWipes` 주체 모호성 같은 미측정 또는 오해 가능 주장을 제한합니다. 2026-06-11 추가 테스트는 연막 없는 소생 성공, 리콜/복귀 성공, 다수 다운 이후 복구, 팀 전원 치명 이벤트 예외를 기존 `TEAM_REVIVE`, `RECALL`, `TEAM_RECALL`, `REDEPLOY` 타임라인 타입으로만 검증하며, 블루칩 회수자/회수 시점 확정은 원본 이벤트 추가 파싱 전까지 지원하지 않습니다. 후속 보정은 AI 입력 장면 선택 다양성, 타임라인 이벤트 타입별 facts 표현, 소생 성공 동반 고립 지표 장면 보정, 프롬프트 금지 표현, Gemini 재시도/대체 모델 호출, 문맥형 AI 응답 후처리 검증만 조정했으며, 신규 이벤트 수집이나 필드 의미 변경은 없습니다.
+
+2026-06-11 UI 연결 기록: `squad-analyze` 상세 응답의 `causeScenes`와 `components/stat/SquadCauseScenes.tsx`가 원인 장면을 모바일 대응 카드로 노출합니다. 모바일 기본 접힘 상태와 데스크톱 기본 펼침 상태는 표시 정책만 바꾸며, 사용자 노출 카드와 AI 응답 본문은 내부 장면 타입명 대신 한글 장면명만 사용하도록 제한합니다. 전력 복구 장면의 적 전원 처치 여부는 별도 적 스쿼드 전멸 기여 장면에서만 표현합니다. 고립 위험 장면은 `고립지수` 단독 문구 대신 팀 간격 거리, 위험 기준 거리, 팀 간격 위험도 순서로 설명합니다. 이 작업은 기존 `processed_match_telemetry.data.fullResult.timeline`, `tradeStats`, `isolationData` 기반 파생 표시입니다. CORE/AI/UI 수집 채널 분류나 원본 필드 의미는 바꾸지 않았습니다.
+
+2026-06-11 스쿼드 복구 지표 보정 기록: 스쿼드 리포트의 `totalSmokeRescues`와 `totalRevives`는 `tradeStats.smokeRescues/revCount` 저장값을 직접 합산하지 않고, `fullResult.timeline`의 팀 단위 `TEAM_KNOCK`/`DOWNED`, `ITEM_USE` 연막, `REVIVE`/`TEAM_REVIVE` 이벤트를 연결해 재산출합니다. 타임라인이 없거나 복구 관련 이벤트 신호가 없는 구 데이터에서만 기존 저장값으로 fallback합니다. 운영 DB 점검 결과 `KangHeeSung_` 최신 스쿼드 5경기 저장 요약값은 연막 구출 0회였지만, 타임라인 원본에는 연막 사용 12회, 소생 이벤트 7회, 엄격 조건의 연막 구출 후보 1회가 확인되었습니다.
+
+2026-06-11 개인 행동 지표 보정 기록: 단일 매치 `itemUseSummary.smokes/frags/molotovs/others`, `itemUseStats.heals/boosts`, `global_benchmarks.smoke_count/frag_count/lethal_throw_count`는 분석 대상 플레이어의 개인 행동량입니다. 팀원의 연막, 회복, 부스트 사용은 `timeline`의 `ITEM_USE`에는 남지만 개인 저장 지표에는 합산하지 않습니다. 이 보정 전 생성된 `itemUseSummary.smokes`와 `global_benchmarks.smoke_count` 일부는 팀원 연막이 섞였을 수 있으나, 집계 row만으로 안전한 자동 복구가 불가능해 신규 분석 차단과 재분석 시 자연 교체 정책을 사용합니다.
+
+2026-06-11 전적 분석 identity 안정화 기록: `processed_match_telemetry`, `match_stats_raw`, `global_benchmarks`는 `match_id + platform + player_id` 기준으로 저장/조회합니다. `processed_match_telemetry` 읽기 경로는 `fullResult.stats.name`, `fullResult.player_id`, `fullResult.platform`이 요청값과 다르면 기존 row를 오염 캐시로 보고 무시합니다. `/api/pubg/match`는 더 이상 같은 분석 결과를 팀원 전체에 복사 저장하지 않고 분석 대상 유저 1명만 저장합니다. 이 변경은 DB identity와 캐시 재사용 정책 변경이며, CORE/AI/UI 이벤트 수집 채널이나 텔레메트리 원본 필드 의미를 바꾸지 않습니다.
+
+2026-06-11 Admin Agent 데이터 품질 감시 기록: `processed_match_telemetry` identity mismatch는 `lib/admin-agent/data-quality.ts` 공용 helper로 dry-run 감사합니다. GitHub Actions는 삭제 없는 `scripts/audit_processed_telemetry_identity.ts --recent-days 2 --max-rows 1000` 검사를 수행하고, Admin Agent monitor는 mismatch가 있을 때 `repair_processed_telemetry_identity` 승인 요청을 생성합니다. 실제 삭제는 승인 패널에서 impact 확인 후 targets 재검증을 통과한 row에만 제한됩니다. 이 작업은 운영 감시/승인 흐름 추가이며 CORE/AI/UI 수집 채널 분류나 원본 필드 의미를 바꾸지 않습니다.
+
+2026-06-11 Analytics/Admin 안정화 기록: `analytics_events`에 `client_environment`, `source_host`, `is_internal` 원천 메타데이터를 추가하고, 로컬/개발 host의 Supabase analytics mirror 저장을 기본 차단했습니다. Admin Agent 유저 활동 요약은 전적 검색 대상 닉네임과 로그인 활동 회원을 분리해 해석합니다. `lib/admin-agent/storage-health.ts`는 Supabase DB 용량과 R2 캐시 용량을 운영 관제용으로 계산합니다. 이 변경은 사이트 운영 analytics 및 관리자 관제 메타데이터이며, PUBG 텔레메트리 원본 이벤트 수집 범위와 CORE/AI/UI 필드 분류를 바꾸지 않습니다.
 
 ---
 
@@ -14,13 +26,13 @@
 | LogGameStatePeriodic | 주기적 상태 | O | O | O | CORE: 실시간 자기장(White/Blue) 반경 시각화 (※ 공식 필드 역매핑 물리 팩트 적용됨) |
 | LogPhaseChange | 페이즈 변경 | O | O | O | CORE: 페이즈 전환 인식 및 타임라인 연동 |
 | LogPlayerCreate | 플레이어 생성 | O | O | O | CORE: 초기 참가자 정보 및 복귀전 세션 준비 |
-| LogParachuteLanding | 낙하산 착지 | O | O | O | CORE: 초기 파밍 지역 판정 및 크론 작업([hotdrop/route.ts](file:///Users/kangheesung/pubg-map-app-local/app/api/cron/hotdrop/route.ts))을 통한 핫드랍 히트맵 추출 가동 |
+| LogParachuteLanding | 낙하산 착지 | O | O | O | CORE: 초기 파밍 지역 판정 및 크론 작업(`app/api/cron/hotdrop/route.ts`)을 통한 핫드랍 히트맵 추출 가동 |
 | LogPlayerPosition | 위치 정보 | O | O | O | CORE: `isolationIndex` 및 리플레이 경로 빌드. <br> ※ 리플레이 수집 시 적군은 10번에 1번만 기록(`mode !== "full"` 일 때 10% Slimming 최적화)하여 저장 용량 초경량 보존. 최상위 `vehicle` 필드로 캐릭터 탑승 정보 수집. <br> ※ 3D 리플레이 고도 시각화 및 정합을 위해 하이트맵 포맷에 맞춤화된 이원화(하이브리드) 공식 적용. PNG 맵(에란겔/미라마/비켄디)은 브라우저 Canvas의 sRGB 감마 2.2 보정을 역산하기 위해 `const R_linear = Math.pow(R / 255, 2.2) * 255;` 역 감마 보정을 거친 후, 맵별 물리 스케일에 정합되는 `(R_linear - zOffset) * zScale` 수식을 사용함 (미라마는 고지대 정합을 위해 `zScale = 3.0`, `zOffset = 135` 적용, 타 PNG 맵은 `zScale = 2.048`, `zOffset = 128` 적용). JPG 맵(론도/태이고/데스턴)은 `MAP_ELEVATION_CONFIGS` 테이블 기반 공식을 적용하여 텔레메트리 절대 고도와 1:1 싱크 정합. 특히 3D 지형 메쉬의 X축 -90도 회전(Local Y -> World -Z)에 따른 세로축(남북 Z축)의 기하학적 매핑에 대해, 비동기 로딩되는 그리드 캐시 조회 시 Z축 반전 계산 오류(`1 - percentZ`)를 제거하여 폴백 방식 픽셀 쿼리와의 1:1 기하학적 정합성을 바로잡았음. 또한 128x128 격자망 **이중 선형 보간 격자 고도 캐시**를 탑재하여 캐릭터가 지면 아래로 파묻히는 비주얼 버그를 차단하였으며, 지상 스냅 알고리즘을 지능적으로 고도화하여 캐릭터가 땅속으로 묻히는 지하 매몰 현상을 즉각 차단(diffM < 0일 때 무조건 스냅)하고, 일반 차량 탑승 상태(isInVehicle) 시에는 급경사 오차를 커버하기 위해 25m 완화 스냅을 적용하며, 도보 시에는 옥상 교전 분리 가독성을 위해 8m 완화 스냅을 동적으로 교차 적용하는 다단계 지상 안착 필터링을 구축하여 산악 지형 급사면에서의 캐릭터/차량 붕뜸 버그를 차단함. 더불어, 바닥의 가이드 격자망(GridHelper)이 특정 저지대(음수 고도 지역) 지면 위로 뚫고 나와 붕 뜨는 현상을 해결하기 위해, 지형 메쉬 재질을 완전히 불투명하게 만들고(transparent: false) 하이트맵 로딩 콜백 내에서 지형의 최저 고도(minElevation) 값을 계산하여 격자망의 Y 좌표를 이보다 아래인 `minElevation - 0.05`로 동적 스냅 정합시킴으로써 격자가 지상 위로 돌출되는 물리적 한계를 해소하였음. |
 | LogPlayerAttack | 공격/사격 | X | **O (100% 정상)** | O | **E2E 실증**: 리플레이 전용 API(`telemetry/route.ts`)는 원본 전체를 분석하므로 `"shot"` 및 `"throw"`로 100% 완벽히 가공/스토리지 캐싱 완료. 다만 AI DB 수집기(`match/route.ts`)에서만 필터 누락되어 통계 미반영. |
 | LogPlayerTakeDamage | 피격 정보 | O | O | O | CORE: HP 감쇄 피해량 및 교전 딜레이(latency) 산출. 리플레이에서 탄도선 및 탄착 VFX 렌더링에 직접 소비. <br> **[V58.4 패치]**: 아군 사격(Friendly Fire) 및 자해 데미지는 본인 무기 교전 통계 및 시간대별 딜량(`goldenTimeDamage`)에서 완전히 제외하여 딜량 오염 차단. 또한 피해자가 이미 기절(`groggy`) 또는 사망 상태인 경우 확킬 딜량 오염 방지를 위해 무기 딜량 및 타격 가산 제외. |
 | LogPlayerMakeGroggy | 기절(Knock) | O | O | O | CORE: 기절 스탯 누적 및 연막 세이브 판정 트리거. <br> **[V58.4 패치]**: 기절 발생 시 피해자의 생존 상태를 실시간 `"groggy"`로 추적하여 확킬 데미지 차단 필터와 연동. 공격자/피해자의 차량 탑승 상태(isInVehicle)를 기반으로 **순수 무기 리드샷(Lead Shot) 기절 및 라이딩샷(Riding Shot) 기절** 지표를 실시간 가산. |
 | LogPlayerKillV2 | 확킬(Kill) | O | O | O | CORE: KDA, 처치 공헌도 및 타임라인 핵심 지표. <br> **[V58.4 패치]**: 공격자/피해자의 차량 탑승 상태(isInVehicle)를 기반으로 **순수 무기 리드샷(Lead Shot) 킬 및 라이딩샷(Riding Shot) 킬** 지표를 실시간 가산. 사망한 플레이어 상태를 실시간으로 기록하여 딜량 가산 예외 처리 연동. |
-| LogPlayerRevive | 부활(소생) | O | O | O | CORE: 팀원 소생 횟수 집계 및 연막 내 소생 세이브 완료. 소생 성공 시 대상 플레이어 상태를 생존 상태로 갱신하여 딜량 필터 복구. |
+| LogPlayerRevive | 부활(소생) | O | O | O | CORE: 팀원 소생 횟수 집계 및 연막 내 소생 세이브 완료. 소생 성공 시 대상 플레이어 상태를 생존 상태로 갱신하여 딜량 필터 복구. 스쿼드 리포트는 저장된 개인 소생 지표 대신 `timeline`의 `REVIVE`/`TEAM_REVIVE`를 팀 단위로 재집계함. |
 | LogPlayerRecall(Ship) | 블루칩 부활 | O | O | O | **(공식 문서 미등록, 실측 및 수집 완료)** `match/route.ts`에 정상 수집되며 `CombatHandler.ts` 및 `MapReplayHandler.ts` 부활 분기 100% 정상 작동 |
 | LogExplosiveExplode | 폭발물 기폭 | X | **X (Dead)** | O | **E2E 실증**: PUBG 텔레메트리 자체에 존재하지 않는 데드 이벤트임이 확정됨. `MapReplayHandler`는 수집 누락 시에도 투척 시점으로부터 2.5초 뒤 20m 전방 가상 폭발(`isEstimated: true`)을 생성하여 우회 렌더링을 지원함. |
 | LogPlayerRedeploy(BR) | 재배치 | O | O | O | CORE: 블루칩 무전 소생 분석 및 스태츠 보정 |
@@ -107,7 +119,7 @@
 
 ## 4. 실측 Telemetry 원본 데이터 교차 검증 및 사실 입증 (59c397ee 매치 기준)
 
-본 섹션은 실제 인게임 스팀 PC 경쟁전 원본 텔레메트리 파일([raw_telemetry_59c397ee.json](file:///Users/kangheesung/pubg-map-app-local/scratch/raw_telemetry_59c397ee.json) - 크기 19.87MB, 총 31,497건 이벤트)을 직접 메모리 단위로 전체 파싱 및 대조 분석하여 획득한 **100% 실측 물리 팩트**입니다.
+본 섹션은 실제 인게임 스팀 PC 경쟁전 원본 텔레메트리 파일(`scratch/raw_telemetry_59c397ee.json`, 크기 19.87MB, 총 31,497건 이벤트)을 직접 메모리 단위로 전체 파싱 및 대조 분석하여 획득한 실측 물리 팩트입니다.
 
 ### 4-1. 실측 이벤트 발생 빈도 (1순위 고빈도순 정렬)
 *   **LogPlayerPosition**: 5,731회 (전체 위치 이동 추적용 최고 빈도 데이터)
@@ -162,7 +174,7 @@
 
 ### 4-3. 신규 텔레메트리 원본 2종(recent_1, recent_2) 추가 교차 검증 및 사실 입증
 
-추가로 제공된 매치 극초반 로그인/로비 세션 데이터 2종([raw_telemetry_recent_1.json](file:///Users/kangheesung/pubg-map-app-local/scratch/raw_telemetry_recent_1.json), [raw_telemetry_recent_2.json](file:///Users/kangheesung/pubg-map-app-local/scratch/raw_telemetry_recent_2.json) - 각 100건)을 전수 정밀 파싱하여, 우리 백엔드 수집 로직 및 데이터 필드 정합성에 대한 교차 마스터 검증을 완료했습니다.
+추가로 제공된 매치 극초반 로그인/로비 세션 데이터 2종(`scratch/raw_telemetry_recent_1.json`, `scratch/raw_telemetry_recent_2.json`, 각 100건)을 전수 정밀 파싱하여, 우리 백엔드 수집 로직 및 데이터 필드 정합성에 대한 교차 검증을 완료했습니다.
 
 1.  **매치 대기실/로비(isGame: 0) 판정 무결성**
     *   **팩트**: 최근 두 파일 모두에서 매치 로딩 극초반의 `LogPlayerPosition` 내 `common.isGame` 필드가 **`0`**으로 기록되어 들어옵니다. 게임 진행 시에는 이 값이 실수형 값(`1.0` 등)으로 전환됩니다.
@@ -230,7 +242,7 @@ PUBG 공식 텔레메트리 스펙 문서의 필드 명칭과 게임 내 실제 
 
 > [!WARNING]
 > **절대로 직관적인 영단어의 뜻에 속지 마십시오.**  
-> `safetyZone`은 이름과 달리 안전 구역이 아니라 **파란색 자기장**이며, `poisonGasWarning`은 독가스 구역이 아니라 **다음 안전지대(흰 원)**입니다. 해당 필드는 [MapReplayHandler.ts](file:///Users/kangheesung/pubg-map-app-local/lib/pubg-analysis/handlers/MapReplayHandler.ts) 및 [ZoneHandler.ts](file:///Users/kangheesung/pubg-map-app-local/lib/pubg-analysis/handlers/ZoneHandler.ts)에서 이미 철저하게 대조 교정되어 100% 정상 작동 중이므로, 코드를 수정할 때 명칭을 임의로 재변경해서는 안 됩니다.
+> `safetyZone`은 이름과 달리 안전 구역이 아니라 **파란색 자기장**이며, `poisonGasWarning`은 독가스 구역이 아니라 **다음 안전지대(흰 원)**입니다. 해당 필드는 `lib/pubg-analysis/handlers/MapReplayHandler.ts` 및 `lib/pubg-analysis/handlers/ZoneHandler.ts`에서 대조 교정되어 있으므로, 코드를 수정할 때 명칭을 임의로 재변경해서는 안 됩니다.
 
 ---
 

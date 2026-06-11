@@ -1,0 +1,165 @@
+{
+  "squadContext": {
+    "nickname": "Player_A",
+    "groupKey": "Beta, Charlie, Delta",
+    "squadGrade": "B-",
+    "matchCount": 2,
+    "stats": {
+      "avgIsolation": 2.8,
+      "avgTradeLatency": 18100,
+      "totalSmokeRescues": 1,
+      "totalRevives": 1,
+      "avgCoverRate": 0.34,
+      "totalTeamWipes": 1
+    },
+    "scores": {
+      "formation": 43,
+      "backupSpeed": 35,
+      "survivalCare": 55,
+      "focusFire": 74,
+      "teamWipe": 72
+    },
+    "benchmarkStats": {
+      "tier": "B",
+      "avgIsolation": 1.53,
+      "avgTradeLatency": 11642,
+      "avgReviveRate": 9.53,
+      "avgSmokeRate": 3.62,
+      "avgTeamWipes": 2.8
+    }
+  },
+  "matches": [
+    {
+      "matchId": "fixture-late-trade",
+      "mapName": "Baltic_Main",
+      "mapDisplayName": "에란겔",
+      "winPlace": 11,
+      "createdAt": "2026-06-11T02:43:36.181Z",
+      "fullResult": {
+        "mapName": "Baltic_Main",
+        "gameMode": "squad",
+        "stats": {
+          "winPlace": 11
+        },
+        "isolationData": {
+          "deathIsolation": 3.1,
+          "minDist": 96,
+          "isolationIndex": 2.8
+        },
+        "tradeStats": {
+          "tradeLatencyMs": 19000,
+          "teammateKnocks": 2,
+          "smokeRescues": 0,
+          "revCount": 0,
+          "enemyTeamWipes": 0
+        },
+        "timeline": [
+          {
+            "ts": 742000,
+            "type": "TEAM_KNOCK",
+            "attacker": "Enemy_B",
+            "victim": "Beta",
+            "weapon": "베릴 M762",
+            "x": 3200,
+            "y": 4900
+          },
+          {
+            "ts": 761000,
+            "type": "KILL",
+            "victim": "Enemy_B",
+            "weapon": "M416",
+            "x": 3270,
+            "y": 4820
+          },
+          {
+            "ts": 768000,
+            "type": "TEAM_DIED",
+            "attacker": "Enemy_C",
+            "victim": "Beta",
+            "weapon": "AKM",
+            "x": 3210,
+            "y": 4890
+          }
+        ]
+      }
+    },
+    {
+      "matchId": "fixture-focus-fire",
+      "mapName": "Desert_Main",
+      "mapDisplayName": "미라마",
+      "winPlace": 4,
+      "createdAt": "2026-06-11T02:43:32.748Z",
+      "fullResult": {
+        "mapName": "Desert_Main",
+        "gameMode": "squad",
+        "stats": {
+          "winPlace": 4
+        },
+        "isolationData": {
+          "deathIsolation": 1.2,
+          "minDist": 28,
+          "isolationIndex": 1.4
+        },
+        "tradeStats": {
+          "tradeLatencyMs": 8000,
+          "teammateKnocks": 1,
+          "smokeRescues": 1,
+          "revCount": 1,
+          "enemyTeamWipes": 1
+        },
+        "timeline": [
+          {
+            "ts": 920000,
+            "type": "TEAM_KNOCK",
+            "attacker": "Enemy_D",
+            "victim": "Charlie",
+            "weapon": "SLR",
+            "x": 5160,
+            "y": 2800
+          },
+          {
+            "ts": 926000,
+            "type": "ITEM_USE",
+            "weapon": "연막탄",
+            "attacker": "Player_A",
+            "x": 5140,
+            "y": 2820
+          },
+          {
+            "ts": 937000,
+            "type": "TEAM_REVIVE",
+            "attacker": "Delta",
+            "victim": "Charlie",
+            "x": 5160,
+            "y": 2800
+          },
+          {
+            "ts": 950000,
+            "type": "KNOCK",
+            "victim": "Enemy_D",
+            "weapon": "Mini14",
+            "x": 5200,
+            "y": 2840
+          },
+          {
+            "ts": 954000,
+            "type": "TEAM_KILL",
+            "attacker": "Beta",
+            "victim": "Enemy_E",
+            "weapon": "M416",
+            "x": 5220,
+            "y": 2860
+          },
+          {
+            "ts": 958000,
+            "type": "KILL",
+            "victim": "Enemy_F",
+            "weapon": "베릴 M762",
+            "x": 5250,
+            "y": 2870
+          }
+        ]
+      }
+    }
+  ]
+}

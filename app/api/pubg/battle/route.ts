@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { normalizeName } from "@/lib/pubg-analysis/utils";
-import { TIER_RANK, Tier } from "@/lib/pubg-analysis/constants";
+import { estimateAverageTierFromRows } from "@/lib/pubg-analysis/tierAveraging";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -72,7 +72,7 @@ export async function GET(request: Request) {
 
   const SELECT_COLS = [
     "damage", "kills", "initiative_rate", "reversal_rate", "counter_latency_ms", "revive_rate", "trade_rate",
-    "duel_win_rate", "solo_kill_rate", "death_phase", "tier", "game_mode", "created_at",
+    "duel_win_rate", "solo_kill_rate", "death_phase", "tier", "score", "game_mode", "created_at",
   ].join(", ");
 
   const buildQuery = (nickname: string) => {
@@ -145,32 +145,8 @@ export async function GET(request: Request) {
     return { ...m, v1: v1 ?? 0, v2: v2 ?? 0, winner };
   });
 
-  // 티어 점수 평균 계산 로직 (수치화 -> 평균 -> 티어 환산)
-  const getAvgTier = (rows: any[]) => {
-    if (!rows.length) return "D-";
-    const tierScores: Record<string, number> = {
-      'S': 90, 'A+': 80, 'A': 75, 'A-': 68, 'B+': 60, 'B': 52, 'B-': 44, 'C+': 36, 'C': 28, 'C-': 20, 'D+': 12, 'D': 6, 'D-': 0
-    };
-    const avgScore = rows.reduce((acc, row) => acc + (tierScores[row.tier as string] ?? 0), 0) / rows.length;
-    
-    // 다시 문자로 변환
-    if (avgScore >= 85) return 'S';
-    if (avgScore >= 78) return 'A+';
-    if (avgScore >= 71) return 'A';
-    if (avgScore >= 64) return 'A-';
-    if (avgScore >= 56) return 'B+';
-    if (avgScore >= 48) return 'B';
-    if (avgScore >= 40) return 'B-';
-    if (avgScore >= 32) return 'C+';
-    if (avgScore >= 24) return 'C';
-    if (avgScore >= 16) return 'C-';
-    if (avgScore >= 10) return 'D+';
-    if (avgScore >= 5)  return 'D';
-    return 'D-';
-  };
-
-  const tier1 = getAvgTier(rows1);
-  const tier2 = getAvgTier(rows2);
+  const tier1 = estimateAverageTierFromRows(rows1);
+  const tier2 = estimateAverageTierFromRows(rows2);
 
   const score = {
     nick1: comparisons.filter((c) => c.winner === "nick1").length,

@@ -4,11 +4,18 @@ import { WEAPON_NAMES } from '../constants';
 
 export class UtilityHandler extends BaseHandler {
   private processedThrowIds = new Set<string>();
-  private savedKnockTimestamps = new Set<number>();
   private underCoverKnocks = new Set<number>(); // 연막 보호 중인 기절 이벤트
   private victimToKnockTs = new Map<string, number>(); // 피해자 이름 -> 기절 시점 매핑
 
-  handleEvent(e: any, ts: number, _elapsed: number): void {
+  private getThrowEventKey(e: any, ts: number, actorName: string, itemId: string): string {
+    const rawAttackId = e.attackId ?? e.attack_id ?? e.projectileId;
+    if (rawAttackId !== undefined && rawAttackId !== null && rawAttackId !== "") {
+      return `attack:${String(rawAttackId)}`;
+    }
+    return `fallback:${actorName || "unknown"}:${itemId || "unknown"}:${ts}`;
+  }
+
+  handleEvent(e: any, ts: number): void {
     switch (e._T) {
       case "LogPlayerTakeDamage":
         this.handleUtilityDamage(e);
@@ -47,15 +54,15 @@ export class UtilityHandler extends BaseHandler {
 
   private handleUseThrowable(e: any, ts: number) {
     const attackerName = normalizeName(e.attacker?.name || e.character?.name || "");
-    const attackId = e.attackId || 0;
     const itemId = (e.weaponId || e.weapon?.itemId || e.weapon?.name || "").toLowerCase();
+    const throwKey = this.getThrowEventKey(e, ts, attackerName, itemId);
 
     const isMeAttacker = this.isMe(e.attacker || e.character);
     const isTeammateAttacker = this.isTeammate(e.attacker || e.character);
 
     // 본인 또는 팀원이 투척물을 던진 경우
-    if (isTeammateAttacker && !this.processedThrowIds.has(attackId)) {
-      this.processedThrowIds.add(attackId);
+    if (isTeammateAttacker && !this.processedThrowIds.has(throwKey)) {
+      this.processedThrowIds.add(throwKey);
       if (isMeAttacker) {
         this.state.itemUseStats.throwCount++;
       }
@@ -77,10 +84,10 @@ export class UtilityHandler extends BaseHandler {
       });
 
       if (itemId.includes("smoke") || itemId.includes("m79")) {
-        this.state.itemUseSummary.smokes = (this.state.itemUseSummary.smokes || 0) + 1;
-
-        // [V14.2] handleUseThrowable에서도 세이브 판정 로직 수행 (LogThrowableUse 누락 대비)
         if (isMeAttacker) {
+          this.state.itemUseSummary.smokes = (this.state.itemUseSummary.smokes || 0) + 1;
+
+          // [V14.2] handleUseThrowable에서도 세이브 판정 로직 수행 (LogThrowableUse 누락 대비)
           const myLoc = this.state.playerLocations.get(this.state.myAccountId) || this.state.playerLocations.get(this.state.lowerNickname);
           const lastKnock = this.state.teammateKnockEvents.find(kts => {
             if (ts >= kts && ts - kts < 20000) {
@@ -103,13 +110,19 @@ export class UtilityHandler extends BaseHandler {
           }
         }
       } else if (itemId.includes("grenade") || itemId.includes("c4")) {
-        this.state.itemUseSummary.frags = (this.state.itemUseSummary.frags || 0) + 1;
-        this.state.itemUseStats.lethalThrowCount++;
+        if (isMeAttacker) {
+          this.state.itemUseSummary.frags = (this.state.itemUseSummary.frags || 0) + 1;
+          this.state.itemUseStats.lethalThrowCount++;
+        }
       } else if (itemId.includes("molotov")) {
-        this.state.itemUseSummary.molotovs = (this.state.itemUseSummary.molotovs || 0) + 1;
-        this.state.itemUseStats.lethalThrowCount++;
+        if (isMeAttacker) {
+          this.state.itemUseSummary.molotovs = (this.state.itemUseSummary.molotovs || 0) + 1;
+          this.state.itemUseStats.lethalThrowCount++;
+        }
       } else {
-        this.state.itemUseSummary.others = (this.state.itemUseSummary.others || 0) + 1;
+        if (isMeAttacker) {
+          this.state.itemUseSummary.others = (this.state.itemUseSummary.others || 0) + 1;
+        }
       }
     }
   }
@@ -171,6 +184,8 @@ export class UtilityHandler extends BaseHandler {
         y: scaleCoordinate(this.state.playerLocations.get(characterName)?.y || e.character?.location?.y || 0, this.state.mapSize)
       });
 
+      if (!isMe) return;
+
       if (itemId.includes("firstaid") || itemId.includes("medkit") || itemId.includes("bandage")) {
         this.state.itemUseStats.heals++;
       } else if (itemId.includes("energydrink") || itemId.includes("painkiller") || itemId.includes("adrenaline")) {
@@ -204,12 +219,12 @@ export class UtilityHandler extends BaseHandler {
 
   private handleThrowable(e: any, ts: number) {
     const isMe = this.isMe(e.attacker || e.character);
-    const attackId = e.attackId;
+    const actorName = normalizeName(e.attacker?.name || e.character?.name || "");
+    const wId = (e.weaponId || e.weapon?.itemId || e.weapon?.name || "").toLowerCase();
+    const throwKey = this.getThrowEventKey(e, ts, actorName, wId);
 
-    if (isMe && attackId && !this.processedThrowIds.has(attackId)) {
-      this.processedThrowIds.add(attackId);
-      const wId = (e.weaponId || e.weapon?.itemId || e.weapon?.name || "").toLowerCase();
-      console.log(`[DEBUG-THROW] Item: ${wId}, AttackId: ${attackId}`);
+    if (isMe && !this.processedThrowIds.has(throwKey)) {
+      this.processedThrowIds.add(throwKey);
 
       // 연막 세이브 판정 강화 (V14.2: 시간 + 거리 기반)
       if (wId.includes("smoke") || wId.includes("m79")) {
@@ -238,7 +253,7 @@ export class UtilityHandler extends BaseHandler {
       }
 
       this.state.myActionTimestamps.push(ts);
-      this.state.utilityTracker.set(e.attackId, {
+      this.state.utilityTracker.set(e.attackId ?? throwKey, {
         type: wId, ts, damage: 0, hits: 0, kills: 0, isLanded: false
       });
       this.state.itemUseStats.throwCount++;
@@ -262,7 +277,8 @@ export class UtilityHandler extends BaseHandler {
     const weaponId = (e.weaponId || "").toLowerCase();
 
     if (this.isMe(e.character) && weaponId.includes("m79")) {
-      const fireId = e.attackId || `${ts}-${weaponId}`;
+      const actorName = normalizeName(e.character?.name || "");
+      const fireId = this.getThrowEventKey(e, ts, actorName, weaponId);
       if (this.processedThrowIds.has(fireId)) return;
       this.processedThrowIds.add(fireId);
 
@@ -287,6 +303,7 @@ export class UtilityHandler extends BaseHandler {
         this.state.totalSmokeCount++;
         this.underCoverKnocks.add(lastKnock);
       }
+      this.state.itemUseStats.throwCount++;
       this.state.itemUseSummary.smokes = (this.state.itemUseSummary.smokes || 0) + 1;
     }
   }

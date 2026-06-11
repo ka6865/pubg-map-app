@@ -228,11 +228,12 @@ export function classifyRole(stats: any, bench: any, overallTier: string): RoleI
 
   // 4. 팀의 방패 (Shield)
   const knockBase = Math.max(stats.totalTeammateKnocks, 3 * mLen);
-  const smokeEfficiency = (stats.totalSmokeCount / knockBase) * 40;
+  const smokeRescueScore = ((stats.totalSmokeRescues || 0) / knockBase) * 40;
+  const smokeAttemptSupport = ((stats.totalSmokeCount || 0) / knockBase) * 10;
   const rescueRate = ((stats.totalRevCount + stats.totalTradeKills) / knockBase) * 50;
   
   scores.shield = isSoloMode ? 0 
-    : Math.min(50, rescueRate) + Math.min(50, smokeEfficiency);
+    : Math.min(50, rescueRate) + Math.min(50, smokeRescueScore + smokeAttemptSupport);
 
   // 5. 전장 통제자 (Zone Controller)
   const edgePlayPerMatch = stats.totalEdgePlay / mLen;
