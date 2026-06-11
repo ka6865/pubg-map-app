@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { unstable_cache } from "next/cache"; // [ISR V1.0] Next.js 16 캐싱 API
 import { AnalysisEngine } from "@/lib/pubg-analysis/AnalysisEngine";
-import { getBaseTier } from "@/lib/pubg-analysis/benchmarkScore";
 import { RESULT_VERSION, TELEMETRY_VERSION } from "@/lib/pubg-analysis/constants";
 import { normalizeName } from "@/lib/pubg-analysis/utils";
 import { adaptBenchmark } from "@/lib/pubg-analysis/benchmarkAdapter";
+import { fetchTierBenchmarkStats } from "@/lib/pubg-analysis/benchmarkLookup";
+import { buildProcessedTelemetryUpsert, getValidFullResult, normalizePlatform } from "@/lib/pubg-analysis/cacheIdentity";
 import { uploadToR2, downloadFromR2 } from "@/lib/pubg-analysis/r2Service";
 import { trackPubgRateLimit } from "@/lib/pubg-analysis/pubgApiTracker";
 import { reportPubgApiError } from "@/lib/pubg/apiHelper";
@@ -45,12 +46,12 @@ const MAP_NAMES: Record<string, string> = {
  * - revalidateTag('match-analysis') 호출 시: 모든 캐시 엔트리 즉각 만료
  */
 const getCachedMatchTelemetry = unstable_cache(
-  async (matchId: string, lowerNickname: string) => {
-    console.log(`[NEXT-CACHE-MISS] Supabase DB 직접 조회 기동: ${matchId}/${lowerNickname}`);
+  async (matchId: string, lowerNickname: string, platform: string) => {
     const { data: cachedResult, error } = await supabase
       .from("processed_match_telemetry")
       .select("data")
       .eq("match_id", matchId)
+      .eq("platform", normalizePlatform(platform))
       .eq("player_id", lowerNickname)
       .maybeSingle();
 
@@ -58,7 +59,7 @@ const getCachedMatchTelemetry = unstable_cache(
       console.error(`[NEXT-CACHE-MISS] DB 조회 오류:`, error.message);
       return null;
     }
-    return cachedResult?.data || null;
+    return cachedResult || null;
   },
   ["match-telemetry"], // 캐시 네임스페이스 키
   {
@@ -77,7 +78,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const matchId = searchParams.get("matchId");
   const nickname = searchParams.get("nickname");
-  const platform = searchParams.get("platform") || "steam";
+  const platform = normalizePlatform(searchParams.get("platform") || "steam");
   const lowerNickname = normalizeName(nickname || "");
   const force = searchParams.get("force") === "true";
   const secret = searchParams.get("secret");
@@ -167,14 +168,13 @@ export async function GET(request: NextRequest) {
     // [ISR V1.0] unstable_cache 프록시를 통한 DB 캐시 조회
     let cachedData = null;
     if (!shouldForce) {
-      cachedData = await getCachedMatchTelemetry(matchId, lowerNickname) as any;
-      if (cachedData?.fullResult) {
-        const cachedVersion = cachedData.fullResult.v || 0;
+      cachedData = await getCachedMatchTelemetry(matchId, lowerNickname, platform) as any;
+      const cachedFullResult = getValidFullResult(cachedData, lowerNickname, platform);
+      if (cachedFullResult) {
+        const cachedVersion = cachedFullResult.v || 0;
         
         // [Stale-While-Revalidate] 캐시 데이터 버전이 낮으면 백그라운드 재분석 기동
         if (cachedVersion < RESULT_VERSION) {
-          console.log(`[SWR-TRIGGER] Old version detected (v${cachedVersion} < v${RESULT_VERSION}). Re-analyzing in background: ${matchId}/${lowerNickname}`);
-          
           const reanalyzePromise = reanalyzeAndSave(
             matchId, nickname, platform, lowerNickname, matchData, teamNames, teamAccountIds,
             myRosterId, myParticipant, teamStats, rankPct, matchAttr, rosters, participants, request.url,
@@ -199,9 +199,11 @@ export async function GET(request: NextRequest) {
           .slice(0, 5);
 
         return NextResponse.json({
-          ...cachedData.fullResult,
+          ...cachedFullResult,
           sampleParticipants
         });
+      } else if (cachedData?.data?.fullResult) {
+        console.warn(`[MATCH-CACHE] Ignored mismatched cache row: ${matchId}/${platform}/${lowerNickname}`);
       }
     }
 
@@ -355,12 +357,11 @@ async function reanalyzeAndSave(
   };
   const matchTier = getMatchTier(rankPct);
 
-  const { data: tierStats } = await supabase
-    .from('benchmark_stats_by_tier')
-    .select('*')
-    .eq('game_mode', matchAttr.gameMode)
-    .eq('tier', getBaseTier(matchTier))
-    .maybeSingle();
+  const tierStats = await fetchTierBenchmarkStats(supabase, {
+    gameMode: matchAttr.gameMode,
+    matchType: matchAttr.matchType,
+    tier: matchTier
+  });
 
   const bench = adaptBenchmark(tierStats);
 
@@ -410,24 +411,19 @@ async function reanalyzeAndSave(
   const { mapData, ...tacticalResult } = fullResult;
   const mapCachePath = `${matchId}_v${TELEMETRY_VERSION}_map.json`;
 
-  // 1. 아군 전체 멤버(나 포함)에 대한 Supabase processed_match_telemetry Co-Upsert 생성
-  const dbUpsertPromises = Array.from(teamNames).map((memberNickname) => {
-    const lowerMemberName = normalizeName(memberNickname);
-    const memberTacticalResult = {
-      ...tacticalResult,
-      player_id: lowerMemberName
-    };
-    return supabase.from("processed_match_telemetry").upsert({
-      match_id: matchId,
-      player_id: lowerMemberName,
-      data: { fullResult: memberTacticalResult },
-      updated_at: new Date().toISOString()
-    });
-  });
+  const processedTelemetryRecord = buildProcessedTelemetryUpsert(
+    matchId,
+    lowerNickname,
+    platform,
+    tacticalResult
+  );
 
   await Promise.all([
     uploadToR2(mapCachePath, JSON.stringify(mapData), 'application/json'),
-    ...dbUpsertPromises,
+    supabase.from("processed_match_telemetry").upsert(
+      processedTelemetryRecord,
+      { onConflict: "match_id,platform,player_id" }
+    ),
     supabase.from("match_master_telemetry").upsert({
       match_id: matchId,
       map_name: matchAttr.mapId,
@@ -444,6 +440,7 @@ async function reanalyzeAndSave(
       matchId, 
       playerNickname: lowerNickname, 
       finalResult: tacticalResult,
+      platform,
       matchAttr,
       rawParticipants: participants,
       source  // 'user' | 'scraper' — global_benchmarks 출처 구분

@@ -79,8 +79,20 @@ describe("analytics event API", () => {
       event_name: "page_view",
       user_id: null,
       session_id: "session-1",
-      page_path: "/"
+      page_path: "/",
+      client_environment: "production",
+      source_host: "bgms.test",
+      is_internal: false
     }));
+  });
+
+  it("로컬 host 이벤트는 기본 저장하지 않는다", async () => {
+    const response = await POST(buildRequest(undefined, "http://localhost/api/analytics/event"));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.skipped).toBe("local_environment");
+    expect(mockAnalyticsInsert).not.toHaveBeenCalled();
   });
 
   it("Authorization 토큰이 있으면 검증된 user_id를 저장한다", async () => {
@@ -121,8 +133,8 @@ describe("analytics event API", () => {
   });
 });
 
-function buildRequest(authorization?: string) {
-  return new Request("http://localhost/api/analytics/event", {
+function buildRequest(authorization?: string, url = "https://bgms.test/api/analytics/event") {
+  return new Request(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -133,7 +145,9 @@ function buildRequest(authorization?: string) {
       params: { path: "/", title: "BGMS" },
       sessionId: "session-1",
       pagePath: "/",
-      pageTitle: "BGMS"
+      pageTitle: "BGMS",
+      clientEnvironment: "production",
+      sourceHost: "bgms.test"
     })
   });
 }

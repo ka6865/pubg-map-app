@@ -114,6 +114,7 @@ interface DebateData {
       counts?: {
         knocks: number;
         smokes: number;
+        rescueSmokes?: number;
         smokeRescues: number;
         revives: number;
         trades: number;
@@ -1208,13 +1209,13 @@ export const RecentAISummary = ({ matchIds, nickname, platform, isMobile }: { ma
                   </div>
                 </div>
                 <div className="flex flex-col gap-1">
-                  <span className="text-[10px] text-blue-400 font-black uppercase">연막 세이브 확률</span>
+                  <span className="text-[10px] text-blue-400 font-black uppercase">연막 구출 성공률</span>
                   <span className="text-2xl font-black text-white">
                     {debateData?.visuals?.tactical?.smokeRate || "0%"}
                   </span>
                   {debateData?.visuals?.tactical?.counts && (
                     <span className="text-[10px] text-blue-300/60 font-bold">
-                      (기절 {debateData.visuals.tactical.counts.knocks} / 연막 {debateData.visuals.tactical.counts.smokes} / 부활 {debateData.visuals.tactical.counts.smokeRescues})
+                      (시도 {debateData.visuals.tactical.counts.rescueSmokes ?? 0} / 성공 {debateData.visuals.tactical.counts.smokeRescues} / 전체 연막 {debateData.visuals.tactical.counts.smokes})
                     </span>
                   )}
                   <div className="w-full h-1 bg-white/5 rounded-full mt-1 overflow-hidden">

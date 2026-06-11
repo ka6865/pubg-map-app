@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { GET } from '../app/api/pubg/player/route';
+import { config } from 'dotenv';
+config({ path: '.env.local' });
 
 // Supabase Server Client Mock
 vi.mock('@/utils/supabase/server', () => {
@@ -36,6 +37,9 @@ beforeEach(() => {
 
 describe('유사 닉네임 추천 404 Fallback API 테스트', () => {
   it('존재하지 않는 닉네임(404) 조회 시 pg_trgm RPC를 통해 유사 닉네임 목록을 suggestions 배열로 반환해야 함', async () => {
+    // dotenv가 완벽히 바인딩된 후 dynamic import하여 모듈 초기화 시점의 환경변수 미지정 오류 해결
+    const { GET } = await import('../app/api/pubg/player/route');
+
     // PUBG API가 404를 반환하도록 Mocking
     global.fetch = vi.fn().mockResolvedValue({
       ok: false,

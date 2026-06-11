@@ -18,6 +18,7 @@ import dynamic from "next/dynamic";
 import { trackEvent } from "@/lib/analytics";
 import { useAuth } from "@/components/AuthProvider";
 import { toast } from "sonner";
+import SquadCauseScenes, { SquadCauseSceneCardData } from "./SquadCauseScenes";
 
 const Squad2DMap = dynamic(() => import("./Squad2DMap"), { ssr: false });
 
@@ -58,6 +59,7 @@ interface SquadAnalysisData {
     totalRevives: number;
     avgCoverRate: number;
     totalTeamWipes: number;
+    totalTeammateKnocks?: number;
   };
   scores: {
     formation: number;
@@ -76,6 +78,7 @@ interface SquadAnalysisData {
     avgTeamWipes: number;
   };
   roleProfiles: Teammate[];
+  causeScenes?: SquadCauseSceneCardData[];
 }
 
 interface TeammateFeedback {
@@ -399,6 +402,24 @@ export default function SquadAnalysisPanel({ nickname, platform }: SquadAnalysis
     }
   };
 
+  const handleSelectCauseSceneMatch = (matchId: string) => {
+    setSelectedMapMatchId(matchId);
+    setShowMap(true);
+    trackEvent({
+      name: "replay_2d_opened",
+      params: {
+        nickname,
+        match_id: matchId
+      }
+    });
+    window.setTimeout(() => {
+      document.getElementById("squad-2d-map-feedback")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start"
+      });
+    }, 80);
+  };
+
   // Helper to compute SVG polygon points for Radar Chart
   const getRadarPoints = (scores: SquadAnalysisData["scores"]) => {
     const metrics = [
@@ -704,6 +725,14 @@ export default function SquadAnalysisPanel({ nickname, platform }: SquadAnalysis
           </div>
         </div>
       )}
+
+      {analysisData?.causeScenes && analysisData.causeScenes.length > 0 && (
+        <SquadCauseScenes
+          scenes={analysisData.causeScenes}
+          selectedMatchId={selectedMapMatchId}
+          onSelectMatch={handleSelectCauseSceneMatch}
+        />
+      )}
  
       {/* AI Coaching Section */}
       {analysisData && (
@@ -909,7 +938,7 @@ export default function SquadAnalysisPanel({ nickname, platform }: SquadAnalysis
 
       {/* 2D Map Trajectory Section (V3.2) */}
       {analysisData && analysisData.matchesSummary && analysisData.matchesSummary.length > 0 && (
-        <div className="rounded-xl border border-zinc-800/60 bg-zinc-900/10 p-5 space-y-4">
+        <div id="squad-2d-map-feedback" className="scroll-mt-24 rounded-xl border border-zinc-800/60 bg-zinc-900/10 p-5 space-y-4">
           <button
             onClick={() => setShowMap(!showMap)}
             className="w-full flex items-center justify-between text-left cursor-pointer group focus:outline-none"

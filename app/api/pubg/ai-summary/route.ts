@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 import { AI_CACHE_VERSION, WEAPON_NAMES } from "@/lib/pubg-analysis/constants";
-import { estimateUserTier, getBaseTier } from "@/lib/pubg-analysis/benchmarkScore";
+import { estimateUserTier } from "@/lib/pubg-analysis/benchmarkScore";
 import { classifyRole } from "@/lib/pubg-analysis/roleClassifier";
 import { normalizeName } from "@/lib/pubg-analysis/utils";
 import { adaptBenchmark } from "@/lib/pubg-analysis/benchmarkAdapter";
+import { fetchTierBenchmarkStats } from "@/lib/pubg-analysis/benchmarkLookup";
+import { getValidFullResult, normalizePlatform } from "@/lib/pubg-analysis/cacheIdentity";
 import { jsonrepair } from "jsonrepair";
 import { withAuthGuard } from "@/utils/supabase/guard";
 import { trackAiUsage } from "@/lib/pubg-analysis/aiUsageTracker";
@@ -317,7 +319,7 @@ export async function POST(request: Request) {
 
     const { matchIds, nickname, platform = "steam", force = false } = await request.json();
     const lowerNickname = normalizeName(nickname);
-    const cachePlatform = String(platform || "steam").toLowerCase();
+    const cachePlatform = normalizePlatform(platform);
 
     if (!Array.isArray(matchIds) || matchIds.length === 0) return NextResponse.json({ error: "No matches" }, { status: 400 });
     if (!nickname) return NextResponse.json({ error: "Missing nickname" }, { status: 400 });
@@ -367,6 +369,7 @@ export async function POST(request: Request) {
     const { data: userBenchmarks } = await supabase
       .from("global_benchmarks")
       .select("*")
+      .eq("platform", cachePlatform)
       .ilike("player_id", lowerNickname)
       .order('created_at', { ascending: false })
       .limit(50);
@@ -379,12 +382,14 @@ export async function POST(request: Request) {
     const { data: cachedMatches } = await supabase.from("processed_match_telemetry")
       .select("match_id, data")
       .in("match_id", searchMatchIds)
-      .or(`player_id.ilike.${lowerNickname},player_id.ilike.${nickname.toLowerCase().replace(/\s/g, "")}`);
+      .eq("platform", cachePlatform)
+      .eq("player_id", lowerNickname)
+      .limit(searchMatchIds.length || 1);
 
     const cachedMap = new Map();
     if (cachedMatches) {
       cachedMatches.forEach(m => {
-        const fullResult = (m.data as any)?.fullResult;
+        const fullResult = getValidFullResult(m, lowerNickname, cachePlatform);
         // [ISR V1.0] RESULT_VERSION 비교 로직 소각 — 캐시 무효화는 revalidateTag가 전담
         // 완료된 매치는 결과가 고정이므로 새로고침(force) 시에도 DB 캐시를 100% 재사용
         if (fullResult) {
@@ -392,6 +397,8 @@ export async function POST(request: Request) {
           const normalizedData = { ...fullResult, matchId: pureId };
           cachedMap.set(pureId, normalizedData);
           cachedMap.set(m.match_id, normalizedData);
+        } else {
+          console.warn(`[AI-SUMMARY] Ignored mismatched processed cache row: ${m.match_id}/${cachePlatform}/${lowerNickname}`);
         }
       });
     }
@@ -600,12 +607,13 @@ export async function POST(request: Request) {
 
     if (goldenTimeAvg) {
       const smokeRescueRate = summaryStats.totalSmokeCount > 0 ? Math.round((summaryStats.totalSmokeRescues / summaryStats.totalSmokeCount) * 100) : 0;
+      const smokeOpportunityRate = summaryStats.totalTeammateKnocks > 0 ? Math.round((summaryStats.totalSmokeRescues / summaryStats.totalTeammateKnocks) * 100) : 0;
       userPrompt += `\n### [전술 지표 분석]\n`;
       userPrompt += `- 교전 타이밍(GoldenTime): ${getGoldenTimePattern(summaryStats.goldenTimeAvg)}\n`;
       userPrompt += `- 평균 백업 속도(Trade): ${summaryStats.avgBackupLatency} (아군 기절 시 적 제압 시간)\n`;
       userPrompt += `- 대응 사격 속도(Reaction): ${summaryStats.avgReactionLatency} (피격 시 반격 시간)\n`;
-      userPrompt += `- 유틸리티 활용: 총 투척 ${summaryStats.totalUtilityThrows}회 (연막 ${summaryStats.totalSmokes}회 사용)\n`;
-      userPrompt += `- 전술적 구출: 연막 활용 아군 구출 성공률 ${smokeRescueRate}% (구출 시도: ${summaryStats.totalSmokeCount}회, 성공: ${summaryStats.totalSmokeRescues}회)\n`;
+      userPrompt += `- 유틸리티 활용: 총 투척 ${summaryStats.totalUtilityThrows}회 (내 연막 ${summaryStats.totalSmokes}회 사용)\n`;
+      userPrompt += `- 개인 전술 구출: 내 구출 연막 성공률 ${smokeRescueRate}% (구출 연막 시도 ${summaryStats.totalSmokeCount}회, 성공 ${summaryStats.totalSmokeRescues}회), 아군 기절 대비 연막 구출률 ${smokeOpportunityRate}%\n`;
     }
 
     let trendsData = null;
@@ -694,14 +702,11 @@ export async function POST(request: Request) {
       const dominantMatchType = compCount >= gMatches.length / 2 ? "competitive" : "official";
 
       const userTier = estimateUserTier(avgScore);
-      // [V26.2] benchmark_stats_by_tier 뷰 기반 모드 및 매치 타입별 정밀 벤치마크 조회
-      const { data: rawTierStats } = await supabase
-        .from('benchmark_stats_by_tier')
-        .select('*')
-        .eq('game_mode', mode)
-        .eq('match_type', dominantMatchType)
-        .eq('tier', getBaseTier(userTier))
-        .maybeSingle();
+      const rawTierStats = await fetchTierBenchmarkStats(supabase, {
+        gameMode: mode,
+        matchType: dominantMatchType,
+        tier: userTier
+      });
 
       const bench = adaptBenchmark(rawTierStats);
 
@@ -718,7 +723,9 @@ export async function POST(request: Request) {
       const benchDuelWinRate = bench.avgDuelWinRate;
       userPrompt += `- [교전 결정력] 1:1 교전 승률: ${gStats.avgDuelWinRate}% (Benchmark: ${benchDuelWinRate}%, 승리: ${gStats.totalDuelWins}회, 패배: ${gStats.totalDuelLosses}회, 역전승: ${gStats.totalReversalWins}회)\n- [교전 압박] 평균 압박 지수: ${gStats.avgPressureIndex} (Benchmark: ${bench.avgPressureIndex}), 최대 교전 거리: ${gStats.totalMaxHitDist}m\n`;
       if (mode !== 'solo') {
-        userPrompt += `- [팀 내 영향력(딜량/킬 비중)] 적 팀 전멸 기여: ${gStats.totalTeamWipes}회, 화력 집중(점사): ${gStats.totalFocusFireCount}회\n- [팀플레이] 아군 기절 ${gStats.totalTeammateKnocks}회 → 부활: ${gStats.totalRevCount}회, 복수(Trade): ${gStats.totalTradeKills}회 (복수 성공률: ${gStats.totalTeammateKnocks > 0 ? Math.round((gStats.totalTradeKills / gStats.totalTeammateKnocks) * 100) : 0}% vs 상위권: ${bench.avgTradeRate}%)\n- [전술 기여] 견제 지원율: ${gStats.totalTeammateKnocks > 0 ? Math.round((gStats.totalSuppCount / gStats.totalTeammateKnocks) * 100) : 0}%, 미끼: ${gStats.totalBaitCount}회, 연막 활용(구출시도/총사용): ${gStats.totalSmokeCount}/${gStats.itemUseSummary.smokes}회 (상위권 평균: ${bench.avgSmokeRate}% 구출 성공)\n`;
+        const smokeRescueSuccessRate = gStats.totalSmokeCount > 0 ? Math.round((gStats.totalSmokeRescues / gStats.totalSmokeCount) * 100) : 0;
+        const smokeRescueOpportunityRate = gStats.totalTeammateKnocks > 0 ? Math.round((gStats.totalSmokeRescues / gStats.totalTeammateKnocks) * 100) : 0;
+        userPrompt += `- [팀 내 영향력(딜량/킬 비중)] 적 팀 전멸 기여: ${gStats.totalTeamWipes}회, 화력 집중(점사): ${gStats.totalFocusFireCount}회\n- [개인 팀플레이 기여] 아군 기절 ${gStats.totalTeammateKnocks}회 → 내가 한 소생: ${gStats.totalRevCount}회, 내가 만든 복수(Trade): ${gStats.totalTradeKills}회 (복수 성공률: ${gStats.totalTeammateKnocks > 0 ? Math.round((gStats.totalTradeKills / gStats.totalTeammateKnocks) * 100) : 0}% vs 상위권: ${bench.avgTradeRate}%)\n- [개인 전술 기여] 견제 지원율: ${gStats.totalTeammateKnocks > 0 ? Math.round((gStats.totalSuppCount / gStats.totalTeammateKnocks) * 100) : 0}%, 미끼: ${gStats.totalBaitCount}회, 내 연막 구출 시도/성공: ${gStats.totalSmokeCount}/${gStats.totalSmokeRescues}회, 내 연막 구출 성공률: ${smokeRescueSuccessRate}%, 아군 기절 대비 연막 구출률: ${smokeRescueOpportunityRate}% (상위권 기회 대비 평균: ${bench.avgSmokeRate}%, 내 총 연막 사용: ${gStats.totalSmokes}회)\n`;
       }
       const reactionStr = gStats.avgReactionLatency === "측정 불가"
         ? "측정 불가 (선제 공격 중심 플레이로 피격 후 반격 샘플 없음 — 이 항목을 언급하거나 추론하지 말 것)"
@@ -830,7 +837,7 @@ export async function POST(request: Request) {
       tactical: {
         suppRate: totalTeammateKnocks > 0 ? Math.round((totalSuppCount / totalTeammateKnocks) * 100) + "%" : "0%",
         tradeRate: totalTeammateKnocks > 0 ? Math.round((totalTradeKills / totalTeammateKnocks) * 100) + "%" : "0%",
-        smokeRate: totalTeammateKnocks > 0 ? Math.round((masteryStats.totalSmokeCount / totalTeammateKnocks) * 100) + "%" : "0%",
+        smokeRate: masteryStats.totalSmokeCount > 0 ? Math.round((totalSmokeRescues / masteryStats.totalSmokeCount) * 100) + "%" : "0%",
         reviveRate: totalTeammateKnocks > 0 ? Math.round((totalRevCount / totalTeammateKnocks) * 100) + "%" : "0%",
         counts: {
           knocks: totalTeammateKnocks,

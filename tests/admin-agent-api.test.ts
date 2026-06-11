@@ -3808,7 +3808,9 @@ function chain(options: {
     or: vi.fn(() => query),
     order: vi.fn(() => query),
     limit: vi.fn(() => query),
+    range: vi.fn(() => query),
     insert: vi.fn(() => query),
+    delete: vi.fn(() => query),
     update: vi.fn(() => query),
     single: vi.fn(() => Promise.resolve(options.singleResult || options.insertSingle || { data: options.data?.[0] || null, error: options.error || null })),
     maybeSingle: vi.fn(() => Promise.resolve(options.maybeSingle || { data: options.data?.[0] || null, error: options.error || null }))

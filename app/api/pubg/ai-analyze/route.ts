@@ -4,6 +4,7 @@ import { withAuthGuard } from "@/utils/supabase/guard";
 import { trackAiUsage } from "@/lib/pubg-analysis/aiUsageTracker";
 import { AI_CACHE_VERSION } from "@/lib/pubg-analysis/constants";
 import { normalizeName } from "@/lib/pubg-analysis/utils";
+import { normalizePlatform } from "@/lib/pubg-analysis/cacheIdentity";
 
 export async function POST(request: Request) {
   try {
@@ -23,7 +24,7 @@ export async function POST(request: Request) {
     const matchId = matchData.matchId || matchData.match_id || matchData.id;
     if (!matchId) return NextResponse.json({ error: "Missing matchId" }, { status: 400 });
     const playerId = normalizeName(nickname);
-    const cachePlatform = String(platform || "steam").toLowerCase();
+    const cachePlatform = normalizePlatform(platform);
 
     // 1. DB Cache Lookup
     try {
@@ -67,6 +68,9 @@ export async function POST(request: Request) {
     const ridingKills = stats?.ridingShotKills ?? matchData.ridingShotKills ?? 0;
     const ridingKnocks = stats?.ridingShotKnocks ?? matchData.ridingShotKnocks ?? 0;
     const hasVehicleCombat = leadKills > 0 || leadKnocks > 0 || ridingKills > 0 || ridingKnocks > 0;
+    const personalReviveRate = tradeStats.teammateKnocks > 0 ? Math.round((tradeStats.revCount / tradeStats.teammateKnocks) * 100) : 0;
+    const smokeOpportunityRate = tradeStats.teammateKnocks > 0 ? Math.round((tradeStats.smokeRescues / tradeStats.teammateKnocks) * 100) : 0;
+    const smokeAttemptSuccessRate = tradeStats.smokeCount > 0 ? Math.round((tradeStats.smokeRescues / tradeStats.smokeCount) * 100) : 0;
 
     const playerReportSummary = `
 [기본 성적]
@@ -85,7 +89,7 @@ export async function POST(request: Request) {
 - 대응 사격 속도(반응): ${tradeStats.reactionLatencyMs > 0 ? (tradeStats.reactionLatencyMs/1000).toFixed(2) : "데이터 부족"}s (Elite Avg: ${eliteBenchmark.avgCounterLatency !== undefined ? eliteBenchmark.avgCounterLatency : 0.5}s)
 - 백업(Trade) 속도: ${tradeStats.tradeLatencyMs > 0 ? (tradeStats.tradeLatencyMs/1000).toFixed(1) : "데이터 부족"}s (Elite Avg: ${eliteBenchmark.avgTradeLatency !== undefined ? eliteBenchmark.avgTradeLatency : 12.0}s)
 - 전술 지원: 견제사격 ${tradeStats.suppCount || 0}회 (Elite Avg: ${eliteBenchmark.avgSuppCount || 3.0}회)
-- 위기 관리: 소생률 ${tradeStats.teammateKnocks > 0 ? Math.round((tradeStats.revCount / tradeStats.teammateKnocks) * 100) : 0}% (Elite Avg: ${eliteBenchmark.avgReviveRate || 80}%) / 연막 엄호율 ${tradeStats.teammateKnocks > 0 ? Math.round((tradeStats.smokeCount / tradeStats.teammateKnocks) * 100) : 0}% (Elite Avg: ${eliteBenchmark.avgSmokeRate || 60}%)
+- 위기 관리: 내가 한 소생률 ${personalReviveRate}% (아군 기절 ${tradeStats.teammateKnocks || 0}회 중 내 소생 ${tradeStats.revCount || 0}회, Elite Avg: ${eliteBenchmark.avgReviveRate || 80}%) / 내 연막 구출률 ${smokeOpportunityRate}% (아군 기절 대비 성공, Elite Avg: ${eliteBenchmark.avgSmokeRate || 60}%) / 구출 연막 시도 성공률 ${smokeAttemptSuccessRate}% (시도 ${tradeStats.smokeCount || 0}회, 성공 ${tradeStats.smokeRescues || 0}회)
 - 공간 전술: 고립 지수 ${isolationData?.isolationIndex || "데이터 부족"} (Elite Avg: ${eliteBenchmark.avgIsolationIndex || 1.0}) / 아군 평균 거리: ${isolationData?.minDist || 0}m / 고도차 ${isolationData?.heightDiff || 0}m / 십자포화 노출: ${isolationData?.isCrossfire ? "있음" : "없음"}
 - 유틸리티 정밀: 총 투척 ${combatPressure.utilityStats?.throwCount || 0}회 / 정확도 ${combatPressure.utilityStats?.accuracy || 0}% / 개당 평균 딜 ${combatPressure.utilityStats?.avgDamagePerThrow || 0}
 - 교전 압박: 압박 지수 ${combatPressure.pressureIndex || 0} (Elite Avg: ${eliteBenchmark.avgPressureIndex || 3.0}) / 투척물 딜량 ${combatPressure.utilityDamage || 0}

@@ -220,3 +220,203 @@ describe('티어 산정 및 조기 탈락 폴백 엔진 검증', () => {
     expect(getNextTierInfo(95)).toBeNull();
   });
 });
+
+describe('AnalysisEngine 연막 구출 지표 검증', () => {
+  const baseTime = Date.parse("2026-06-11T10:00:00Z");
+  const at = (ms: number) => new Date(baseTime + ms).toISOString();
+
+  const matchAttr = {
+    id: "smoke-rescue-match",
+    createdAt: at(0),
+    gameMode: "squad",
+    mapName: "Baltic_Main",
+    matchType: "official"
+  };
+
+  const participants = [
+    {
+      id: "p-me",
+      attributes: {
+        stats: {
+          name: "Player_A",
+          playerId: "account.me",
+          damageDealt: 300,
+          kills: 0,
+          assists: 0,
+          DBNOs: 0,
+          winPlace: 5,
+          timeSurvived: 900
+        },
+        accountId: "account.me"
+      }
+    },
+    {
+      id: "p-team",
+      attributes: {
+        stats: {
+          name: "Team_B",
+          playerId: "account.team",
+          damageDealt: 100,
+          kills: 0,
+          assists: 0,
+          DBNOs: 0,
+          winPlace: 5,
+          timeSurvived: 900
+        },
+        accountId: "account.team"
+      }
+    }
+  ];
+
+  const rosters = [
+    {
+      id: "roster-1",
+      relationships: {
+        participants: {
+          data: [{ id: "p-me" }, { id: "p-team" }]
+        }
+      }
+    }
+  ];
+
+  it('팀원 연막은 타임라인에 남기되 개인 연막/구출 지표에는 합산하지 않는다', () => {
+    const telemetry = [
+      { _T: "LogMatchStart", _D: at(0) },
+      {
+        _T: "LogPlayerPosition",
+        _D: at(1_000),
+        character: { name: "Player_A", accountId: "account.me", location: { x: 1000, y: 1000, z: 0 } }
+      },
+      {
+        _T: "LogPlayerPosition",
+        _D: at(1_000),
+        character: { name: "Team_B", accountId: "account.team", location: { x: 1050, y: 1000, z: 0 } }
+      },
+      {
+        _T: "LogPlayerMakeGroggy",
+        _D: at(10_000),
+        attacker: { name: "Enemy", accountId: "account.enemy", location: { x: 2000, y: 2000, z: 0 } },
+        victim: { name: "Team_B", accountId: "account.team", location: { x: 1050, y: 1000, z: 0 } },
+        damageCauserName: "WeapBerylM762_C"
+      },
+      {
+        _T: "LogPlayerUseThrowable",
+        _D: at(11_000),
+        attackId: 101,
+        character: { name: "Team_B", accountId: "account.team", location: { x: 1050, y: 1000, z: 0 } },
+        weaponId: "Item_Weapon_SmokeBomb_C"
+      },
+      {
+        _T: "LogPlayerUseThrowable",
+        _D: at(12_000),
+        attackId: 102,
+        character: { name: "Player_A", accountId: "account.me", location: { x: 1000, y: 1000, z: 0 } },
+        weaponId: "Item_Weapon_SmokeBomb_C"
+      },
+      {
+        _T: "LogThrowableUse",
+        _D: at(12_000),
+        attackId: 102,
+        character: { name: "Player_A", accountId: "account.me", location: { x: 1000, y: 1000, z: 0 } },
+        weaponId: "Item_Weapon_SmokeBomb_C"
+      },
+      {
+        _T: "LogPlayerRevive",
+        _D: at(25_000),
+        reviver: { name: "Player_A", accountId: "account.me", location: { x: 1000, y: 1000, z: 0 } },
+        victim: { name: "Team_B", accountId: "account.team", location: { x: 1050, y: 1000, z: 0 } }
+      }
+    ];
+
+    const engine = new AnalysisEngine(
+      "Player_A",
+      "account.me",
+      new Set(["player_a", "team_b"]),
+      new Set(["account.me", "account.team"]),
+      new Set(),
+      new Set(),
+      "roster-1"
+    );
+
+    const result = engine.run(
+      telemetry,
+      matchAttr,
+      rosters,
+      participants,
+      participants[0].attributes.stats,
+      participants.map(p => p.attributes.stats),
+      {}
+    );
+
+    expect(result.itemUseSummary.smokes).toBe(1);
+    expect(result.tradeStats.smokeCount).toBe(1);
+    expect(result.tradeStats.smokeRescues).toBe(1);
+    expect(result.tradeStats.revCount).toBe(1);
+    expect(result.tradeStats.teammateKnocks).toBe(1);
+    expect(result.timeline.filter(event => event.type === "ITEM_USE")).toHaveLength(2);
+  });
+
+  it('팀원 회복템은 타임라인에 남기되 개인 회복/부스트 지표에는 합산하지 않는다', () => {
+    const telemetry = [
+      { _T: "LogMatchStart", _D: at(0) },
+      {
+        _T: "LogPlayerPosition",
+        _D: at(1_000),
+        character: { name: "Player_A", accountId: "account.me", location: { x: 1000, y: 1000, z: 0 } }
+      },
+      {
+        _T: "LogPlayerPosition",
+        _D: at(1_000),
+        character: { name: "Team_B", accountId: "account.team", location: { x: 1050, y: 1000, z: 0 } }
+      },
+      {
+        _T: "LogHeal",
+        _D: at(10_000),
+        character: { name: "Team_B", accountId: "account.team", location: { x: 1050, y: 1000, z: 0 } },
+        item: { itemId: "Item_Heal_FirstAid_C" }
+      },
+      {
+        _T: "LogPlayerUseHeal",
+        _D: at(11_000),
+        character: { name: "Team_B", accountId: "account.team", location: { x: 1050, y: 1000, z: 0 } },
+        item: { itemId: "Item_Boost_EnergyDrink_C" }
+      },
+      {
+        _T: "LogHeal",
+        _D: at(12_000),
+        character: { name: "Player_A", accountId: "account.me", location: { x: 1000, y: 1000, z: 0 } },
+        item: { itemId: "Item_Heal_Bandage_C" }
+      },
+      {
+        _T: "LogPlayerUseHeal",
+        _D: at(13_000),
+        character: { name: "Player_A", accountId: "account.me", location: { x: 1000, y: 1000, z: 0 } },
+        item: { itemId: "Item_Boost_PainKiller_C" }
+      }
+    ];
+
+    const engine = new AnalysisEngine(
+      "Player_A",
+      "account.me",
+      new Set(["player_a", "team_b"]),
+      new Set(["account.me", "account.team"]),
+      new Set(),
+      new Set(),
+      "roster-1"
+    );
+
+    const result = engine.run(
+      telemetry,
+      matchAttr,
+      rosters,
+      participants,
+      participants[0].attributes.stats,
+      participants.map(p => p.attributes.stats),
+      {}
+    );
+
+    expect(result.itemUseStats.heals).toBe(1);
+    expect(result.itemUseStats.boosts).toBe(1);
+    expect(result.timeline.filter(event => event.type === "ITEM_USE")).toHaveLength(4);
+  });
+});

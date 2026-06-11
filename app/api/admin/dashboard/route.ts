@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient as createSupabaseAdminClient } from "@supabase/supabase-js";
 import { createClient } from "@/utils/supabase/server";
-import { listR2Files } from "@/lib/pubg-analysis/r2Service";
+import { buildStorageHealth } from "@/lib/admin-agent/storage-health";
 
 // 관리자 권한 검증 및 Supabase Admin 클라이언트 반환
 async function verifyAdmin() {
@@ -25,7 +25,7 @@ async function verifyAdmin() {
   return null;
 }
 
-export async function GET(request: Request) {
+export async function GET() {
   const adminContext = await verifyAdmin();
   if (!adminContext) {
     return NextResponse.json({ error: "🔒 관리자 권한이 없습니다." }, { status: 403 });
@@ -90,16 +90,8 @@ export async function GET(request: Request) {
 
     if (pendingErr) throw pendingErr;
 
-    // 2. ⚡ R2 스토리지 캐시 모니터링
-    let r2FileCount = 0;
-    let r2TotalSize = 0;
-    try {
-      const r2Files = await listR2Files(1000);
-      r2FileCount = r2Files.length;
-      r2TotalSize = r2Files.reduce((sum, f) => sum + f.size, 0);
-    } catch (r2Err) {
-      console.error("[Dashboard API] R2 storage list error:", r2Err);
-    }
+    // 2. ⚡ Supabase DB / R2 스토리지 캐시 모니터링
+    const storageHealth = await buildStorageHealth(adminContext.supabaseAdmin);
 
     // 3. 📊 PUBG API Rate Limit
     const { data: pubgStatus, error: pubgErr } = await adminContext.supabaseAdmin
@@ -152,9 +144,13 @@ export async function GET(request: Request) {
     return NextResponse.json({
       pendingMarkersCount: pendingCount || 0,
       r2Cache: {
-        fileCount: r2FileCount,
-        totalSizeBytes: r2TotalSize
+        fileCount: storageHealth.r2.fileCount,
+        totalSizeBytes: storageHealth.r2.totalSizeBytes,
+        truncated: storageHealth.r2.truncated,
+        scannedPages: storageHealth.r2.scannedPages,
+        status: storageHealth.r2.status
       },
+      storageHealth,
       pubgApi: pubgStatus ? {
         limit: pubgStatus.api_limit,
         remaining: pubgStatus.remaining,
@@ -167,7 +163,7 @@ export async function GET(request: Request) {
         squadMatches,
         estimatedSquadGroups,
         savedApiCalls: totalMatches * 2,
-        savedBandwidthBytes: r2TotalSize
+        savedBandwidthBytes: storageHealth.r2.totalSizeBytes
       }
     });
   } catch (error: any) {

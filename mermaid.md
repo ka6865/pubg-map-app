@@ -43,11 +43,11 @@ erDiagram
 ### ⚔️ 전술 분석 도메인 (Tactical Analytics)
 | 테이블명 | 용도 | 설명 |
 | :--- | :--- | :--- |
-| **`processed_match_telemetry`** | **전술 분석 결과 캐시** | 분석 엔진이 처리한 최종 데이터(JSON)를 저장하여 재연산을 방지합니다. `RESULT_VERSION`에 따라 관리됩니다. |
+| **`processed_match_telemetry`** | **전술 분석 결과 캐시** | 분석 엔진이 처리한 최종 데이터(JSON)를 저장하여 재연산을 방지합니다. 고유키는 `match_id + platform + player_id`이며, 읽기 시 내부 `fullResult.stats.name/platform`이 요청값과 다르면 오염 row로 보고 무시합니다. |
 | **`match_master_telemetry`** | **경기 메타데이터** | 분석된 매치의 기본 정보(시간, 맵, 버전)와 텔레메트리 파일 경로(S3/Storage)를 저장합니다. |
-| **`global_benchmarks`** | **글로벌 벤치마크 지표** | 티어 판별(S~D)의 기준이 되는 전 세계 유저들의 평균 전술 스탯을 샘플링하여 저장합니다. |
-| **`benchmark_stats_by_tier`** | **티어별 벤치마크 뷰/집계** | 매치 분석과 AI 요약에서 티어별 비교 기준을 빠르게 조회합니다. |
-| **`match_stats_raw`** | **참가자 기본 통계** | 특정 매치에 참여한 모든 플레이어의 기본 스탯(딜량, 킬, 순위 등)을 저장합니다. |
+| **`global_benchmarks`** | **글로벌 벤치마크 지표** | 티어 판별(S~D)의 기준이 되는 전 세계 유저들의 평균 전술 스탯을 샘플링하여 저장합니다. 고유 기준은 `match_id + platform + player_id`입니다. |
+| **`benchmark_stats_by_tier`** | **티어별 벤치마크 뷰/집계** | 매치 분석과 AI 요약에서 `game_mode + match_type + tier` exact 조회를 먼저 사용하고, 없으면 같은 티어군 가중 평균 fallback으로 비교 기준을 만듭니다. |
+| **`match_stats_raw`** | **참가자 기본 통계** | 특정 매치에 참여한 모든 플레이어의 기본 스탯(딜량, 킬, 순위 등)을 저장합니다. 고유키는 `match_id + platform + player_id`입니다. |
 | **`pubg_player_cache`** | **플레이어 검색/전적 캐시** | Nickname, AccountId, 플랫폼, 클랜, 무기 숙련도(`weapon_mastery_data`, `mastery_updated_at`)를 저장합니다. |
 | **`pubg_api_errors`** | **PUBG API 장애 이력** | PUBG API 실패 route/status/message를 기록해 운영 진단과 파트너 리포트에 사용합니다. |
 | **`pubg_api_status`** | **PUBG API 호출 한도 상태** | PUBG API rate limit header를 저장해 남은 호출량과 reset 시점을 추적합니다. |
@@ -107,9 +107,9 @@ AI 캐시 3개 테이블은 `ai_result jsonb`, `created_at`, `updated_at`, `prom
 ---
 
 ## 3. 핵심 데이터 흐름
-1. **분석 흐름**: `PUBG API` -> `match_master_telemetry` -> `Telemetry Parsing` -> `processed_match_telemetry` 저장.
-2. **벤치마크 흐름**: `scrape_elite.ts` -> `global_benchmarks` 수집 -> `Stat Analysis` 시 티어 비교군으로 활용.
+1. **분석 흐름**: `PUBG API` -> `match_master_telemetry` -> `Telemetry Parsing` -> 분석 대상 유저 1명의 `processed_match_telemetry(match_id + platform + player_id)` 저장.
+2. **벤치마크 흐름**: `scrape_elite.ts` 및 유저 분석 ingest -> `global_benchmarks(match_id + platform + player_id)` 수집 -> `Stat Analysis` 시 `game_mode + match_type + tier` 비교군으로 활용.
 3. **무기 마스터리 흐름**: `pubg_player_cache.id(accountId)` -> PUBG `weapon_mastery` 1회 호출 -> `pubg_player_cache.weapon_mastery_data` 저장.
 4. **Agent 승인 흐름**: `/admin/bot` -> `agent_runs`/`agent_steps` 기록 -> 위험 작업은 `agent_approvals` 대기 -> 승인 후 실행 결과 저장.
 5. **AI 비용 관리 흐름**: AI 호출 -> `ai_usage_logs` 기록 -> Admin Agent monitor가 비용 임계치와 사용량을 점검합니다.
-6. **캐싱 전략**: 무거운 연산 결과는 `processed_match_telemetry`, R2, AI 캐시 테이블에 저장되어 재조회 시 즉각적인 응답을 보장합니다. AI 캐시는 `AI_CACHE_VERSION`을 `prompt_version`으로 저장해 프롬프트/응답 구조 변경 시 안전하게 무효화합니다.
+6. **캐싱 전략**: 무거운 연산 결과는 `processed_match_telemetry`, R2, AI 캐시 테이블에 저장되어 재조회 시 즉각적인 응답을 보장합니다. 전적 분석 캐시는 `platform/player_id`와 내부 `fullResult` identity를 함께 검증하고, AI 캐시는 `AI_CACHE_VERSION`을 `prompt_version`으로 저장해 프롬프트/응답 구조 변경 시 안전하게 무효화합니다.

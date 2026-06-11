@@ -1,18 +1,28 @@
 import { createClient } from "@/utils/supabase/server";
+import {
+  extractSquadCauseScenes,
+  SquadCauseScene,
+  SquadCauseSceneMatchInput
+} from "@/lib/pubg-analysis/squadCauseScenes";
+import {
+  deriveSquadRecoveryStatsFromTimeline,
+  hasSquadRecoveryTimelineSignals
+} from "@/lib/pubg-analysis/squadRecoveryStats";
+import { getValidFullResult, normalizePlatform } from "@/lib/pubg-analysis/cacheIdentity";
 
 function normalizeSquadName(name: string): string {
   return name.replace(/[^a-zA-Z0-9_]/g, "").toLowerCase();
 }
 
-export async function getSquadAnalysisData(nickname: string, _platform: string = "steam", groupKey?: string | null) {
-  void _platform;
-
-  const lowerNickname = nickname.toLowerCase();
+export async function getSquadAnalysisData(nickname: string, platform: string = "steam", groupKey?: string | null) {
+  const lowerNickname = normalizeSquadName(nickname);
+  const cachePlatform = normalizePlatform(platform);
   const supabase = await createClient();
 
   const { data: matchData, error: dbError } = await supabase
     .from("processed_match_telemetry")
     .select("match_id, data, updated_at")
+    .eq("platform", cachePlatform)
     .eq("player_id", lowerNickname)
     .order("updated_at", { ascending: false })
     .limit(20);
@@ -22,14 +32,28 @@ export async function getSquadAnalysisData(nickname: string, _platform: string =
     throw new Error("Database error occurred.");
   }
 
-  if (!matchData || matchData.length === 0) {
+  const validMatchData = (matchData || [])
+    .map((m: any) => {
+      const fullResult = getValidFullResult(m, lowerNickname, cachePlatform);
+      if (!fullResult) return null;
+      return {
+        ...m,
+        data: {
+          ...(m.data || {}),
+          fullResult
+        }
+      };
+    })
+    .filter(Boolean) as any[];
+
+  if (validMatchData.length === 0) {
     return {
       message: "No match records found. Please search and analyze matches first.",
       groups: []
     };
   }
 
-  const squadMatches = matchData.filter(m => {
+  const squadMatches = validMatchData.filter(m => {
     const fullResult = m.data?.fullResult;
     if (!fullResult) return false;
     const mode = fullResult.gameMode || "";
@@ -107,6 +131,9 @@ export async function getSquadAnalysisData(nickname: string, _platform: string =
     const fullResult = data.fullResult || {};
     const isolationData = fullResult.isolationData || {};
     const tradeStats = fullResult.tradeStats || {};
+    const timeline = Array.isArray(fullResult.timeline) ? fullResult.timeline : [];
+    const squadRecoveryStats = deriveSquadRecoveryStatsFromTimeline(timeline);
+    const hasRecoveryTimeline = hasSquadRecoveryTimelineSignals(timeline);
 
     accumIsolation += isolationData.isolationIndex !== undefined ? isolationData.isolationIndex : 2.0;
 
@@ -116,13 +143,13 @@ export async function getSquadAnalysisData(nickname: string, _platform: string =
       validTradeLatencyCount++;
     }
 
-    totalSmokeRescues += tradeStats.smokeRescues || 0;
-    totalRevives += tradeStats.revCount || 0;
+    totalSmokeRescues += hasRecoveryTimeline ? squadRecoveryStats.squadSmokeRescues : (tradeStats.smokeRescues || 0);
+    totalRevives += hasRecoveryTimeline ? squadRecoveryStats.squadRevives : (tradeStats.revCount || 0);
     accumCoverRate += tradeStats.coverRate !== undefined ? tradeStats.coverRate : 0.3;
     totalTeamWipes += tradeStats.enemyTeamWipes || 0;
     accumTeammateKnocks += tradeStats.teammateKnocks || 0;
 
-    const matchTier = fullResult.matchInfo?.tier || fullResult.benchmark?.tier;
+    const matchTier = fullResult.benchmark?.tier || fullResult.matchInfo?.tier;
     if (matchTier) {
       tierCounts[matchTier] = (tierCounts[matchTier] || 0) + 1;
     }
@@ -177,6 +204,7 @@ export async function getSquadAnalysisData(nickname: string, _platform: string =
     const { data: dbBench, error: benchError } = await supabase
       .from("global_benchmarks")
       .select("isolation_index, trade_latency_ms, revive_rate, smoke_rate, team_wipes")
+      .eq("platform", cachePlatform)
       .eq("tier", detectedTier)
       .in("game_mode", ["squad", "squad-fpp"]);
 
@@ -211,6 +239,7 @@ export async function getSquadAnalysisData(nickname: string, _platform: string =
       const { data: dbBenchBase, error: benchBaseError } = await supabase
         .from("global_benchmarks")
         .select("isolation_index, trade_latency_ms, revive_rate, smoke_rate, team_wipes")
+        .eq("platform", cachePlatform)
         .like("tier", `${targetTier}%`)
         .in("game_mode", ["squad", "squad-fpp"]);
 
@@ -392,6 +421,24 @@ export async function getSquadAnalysisData(nickname: string, _platform: string =
     };
   }).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
+  const causeSceneInputs: SquadCauseSceneMatchInput[] = targetMatches.map(m => {
+    const fullResult = (m.data as any)?.fullResult || {};
+    const mapName = fullResult.mapName || "Unknown";
+    return {
+      matchId: m.match_id,
+      mapName,
+      mapDisplayName: MAP_DISPLAY_NAMES[mapName] || mapName,
+      winPlace: fullResult.stats?.winPlace || 0,
+      createdAt: fullResult.createdAt || m.updated_at,
+      fullResult
+    };
+  });
+
+  const causeScenes: SquadCauseScene[] = extractSquadCauseScenes(causeSceneInputs, {
+    maxScenes: 5,
+    benchmarkTradeLatencyMs: Math.round(benchmark.avgTradeLatency)
+  });
+
   return {
     groupKey,
     matchCount,
@@ -402,11 +449,13 @@ export async function getSquadAnalysisData(nickname: string, _platform: string =
       totalSmokeRescues,
       totalRevives,
       avgCoverRate: Number(avgCoverRate.toFixed(2)),
-      totalTeamWipes
+      totalTeamWipes,
+      totalTeammateKnocks: accumTeammateKnocks
     },
     scores,
     squadGrade,
     roleProfiles,
+    causeScenes,
     benchmarkStats: {
       tier: detectedTier,
       avgIsolation: Number(benchmark.avgIsolation.toFixed(2)),

@@ -1,3 +1,5 @@
+import { validateProcessedTelemetryIdentityTargets } from "@/lib/admin-agent/data-quality";
+
 export type ApprovalImpact = {
   summary: string;
   risk: "low" | "medium" | "high";
@@ -47,10 +49,11 @@ const SUPPORTED_APPROVAL_ACTIONS = new Set([
   "flush_player_cache",
   "flush_match_cache",
   "reset_benchmarks",
+  "repair_processed_telemetry_identity",
   "save_agent_memory",
   "save_agent_report"
 ]);
-const HIGH_RISK_GATE_ACTIONS = new Set(["flush_old_cache", "flush_player_cache", "flush_match_cache", "reset_benchmarks"]);
+const HIGH_RISK_GATE_ACTIONS = new Set(["flush_old_cache", "flush_player_cache", "flush_match_cache", "reset_benchmarks", "repair_processed_telemetry_identity"]);
 
 export function buildApprovalExecutionGate(
   actionType: string,
@@ -84,6 +87,18 @@ export function buildApprovalExecutionGate(
   if (actionType === "flush_match_cache" && !String(payload.matchId || "").trim()) {
     reasons.push("매치 캐시 삭제 대상 matchId가 없습니다.");
     requiredBeforeApproval.push("대상 matchId를 지정한 캐시 삭제 요청을 다시 생성하세요.");
+  }
+
+  if (actionType === "repair_processed_telemetry_identity") {
+    const targets = Array.isArray(payload.targets) ? payload.targets : [];
+    if (targets.length === 0) {
+      reasons.push("identity mismatch 삭제 대상 targets가 없습니다.");
+      requiredBeforeApproval.push("Agent monitor를 다시 실행해 targets가 포함된 요청을 생성하세요.");
+    }
+    if (targets.some((target: any) => !target.match_id || !target.platform || !target.player_id)) {
+      reasons.push("targets 중 match_id/platform/player_id가 누락된 항목이 있습니다.");
+      requiredBeforeApproval.push("필수 식별자가 포함된 요청으로 다시 생성하세요.");
+    }
   }
 
   if ((actionType === "save_agent_memory" || actionType === "save_agent_report")) {
@@ -329,6 +344,56 @@ export async function calculateApprovalImpact(
         "벤치마크는 재계산 전까지 통계 기준값에 영향을 줄 수 있습니다.",
         "서비스 트래픽이 낮은 시간대 실행을 권장합니다."
       ], rows.error)
+    };
+  }
+
+  if (actionType === "repair_processed_telemetry_identity") {
+    const targets = Array.isArray(payload.targets) ? payload.targets : [];
+    const validation = targets.length
+      ? await validateProcessedTelemetryIdentityTargets(supabase, targets)
+      : { valid: [], skipped: [] };
+    const validCount = validation.valid.length;
+    const skippedCount = validation.skipped.length;
+    return {
+      risk: "high",
+      estimatedRows: validCount,
+      summary: `processed_match_telemetry identity mismatch ${validCount}개 삭제 예상`,
+      details: {
+        auditWindowDays: payload.auditWindowDays || null,
+        requestedTargets: targets.length,
+        validTargets: validCount,
+        skippedTargets: skippedCount,
+        mismatchCountAtAudit: payload.mismatchCount || null,
+        deletionCandidateCountAtAudit: payload.deletionCandidateCount || null,
+        skipped: validation.skipped.slice(0, 10)
+      },
+      preview: {
+        headline: "전적 분석 identity mismatch 정리 미리보기",
+        items: [
+          { label: "대상", value: "processed_match_telemetry" },
+          { label: "조건", value: "match_id + platform + player_id 대상 row 재검증 후 삭제" },
+          { label: "요청 targets", value: `${targets.length.toLocaleString("ko-KR")}개` },
+          { label: "현재 삭제 가능", value: `${validCount.toLocaleString("ko-KR")}개` },
+          { label: "스킵 예정", value: `${skippedCount.toLocaleString("ko-KR")}개` }
+        ],
+        bodyPreview: trimText(JSON.stringify({
+          samples: payload.samples || [],
+          targets: targets.slice(0, 10),
+          skipped: validation.skipped.slice(0, 5)
+        }, null, 2), 1200),
+        warnings: [
+          "원본 match_master_telemetry와 R2 텔레메트리는 삭제하지 않습니다.",
+          "승인 직전에도 현재 row가 identity mismatch인지 다시 검증합니다.",
+          "연막/회복 집계값 오염 가능성은 이 작업으로 삭제하지 않습니다.",
+          ...(validCount === 0 ? ["현재 삭제 가능한 mismatch target이 없습니다. 승인하지 말고 거절하세요."] : [])
+        ]
+      },
+      checklist: cacheChecklist([
+        targets.length ? `요청 targets: ${targets.length.toLocaleString("ko-KR")}개` : "삭제 대상 targets가 없습니다.",
+        `현재 재검증된 mismatch target: ${validCount.toLocaleString("ko-KR")}개`,
+        skippedCount ? `스킵 예정 target: ${skippedCount.toLocaleString("ko-KR")}개` : "스킵 예정 target 없음",
+        "삭제는 processed_match_telemetry 캐시 row에만 제한됩니다."
+      ], targets.length === 0 || validCount === 0)
     };
   }
 

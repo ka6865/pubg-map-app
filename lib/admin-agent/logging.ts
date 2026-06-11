@@ -123,7 +123,7 @@ export async function createApprovalRequest(
   input: {
     runId?: string | null;
     stepId?: string | null;
-    requestedBy: string;
+    requestedBy?: string | null;
     toolName: string;
     actionType: string;
     payload: Record<string, unknown>;
@@ -135,7 +135,7 @@ export async function createApprovalRequest(
       .insert({
         run_id: input.runId || null,
         step_id: input.stepId || null,
-        requested_by: input.requestedBy,
+        requested_by: input.requestedBy || null,
         tool_name: input.toolName,
         action_type: input.actionType,
         payload: redactForAgentLog(input.payload || {}),

@@ -3,6 +3,15 @@ import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 let r2ClientInstance: S3Client | null = null;
 
+export type R2BucketUsage = {
+  bucketName: string;
+  fileCount: number;
+  totalSizeBytes: number;
+  scannedPages: number;
+  truncated: boolean;
+  configured: boolean;
+};
+
 function getR2Client(): S3Client {
   if (!r2ClientInstance) {
     r2ClientInstance = new S3Client({
@@ -43,7 +52,6 @@ export async function uploadToR2(key: string, body: string | Buffer, contentType
 
   try {
     await getR2Client().send(command);
-    console.log(`[R2 Success] File successfully uploaded to R2: ${key}`);
   } catch (error) {
     console.error(`[R2 Error] Failed to upload file to R2: ${key}`, error);
     throw error;
@@ -121,7 +129,6 @@ export async function deleteFromR2(key: string): Promise<void> {
 
   try {
     await getR2Client().send(command);
-    console.log(`[R2 Success] File successfully deleted from R2: ${key}`);
   } catch (error) {
     console.error(`[R2 Error] Failed to delete file from R2: ${key}`, error);
     throw error;
@@ -155,7 +162,6 @@ export async function deleteMultipleFromR2(keys: string[]): Promise<void> {
 
     try {
       await getR2Client().send(command);
-      console.log(`[R2 Success] Batch deleted ${chunk.length} files from R2.`);
     } catch (error) {
       console.error('[R2 Error] Failed to batch delete files from R2', error);
       throw error;
@@ -173,22 +179,87 @@ export async function listR2Files(limit: number = 1000): Promise<{ key: string; 
     return [];
   }
 
-  const command = new ListObjectsV2Command({
-    Bucket: getBucketName(),
-    MaxKeys: limit,
-  });
-
+  const files: { key: string; size: number }[] = [];
+  let continuationToken: string | undefined;
   try {
-    const response = await getR2Client().send(command);
-    if (!response.Contents) {
-      return [];
-    }
-    return response.Contents.map(item => ({
-      key: item.Key || '',
-      size: item.Size || 0
-    })).filter(item => item.key !== '');
+    do {
+      const remaining = Math.max(limit - files.length, 0);
+      if (remaining === 0) break;
+      const command = new ListObjectsV2Command({
+        Bucket: getBucketName(),
+        MaxKeys: Math.min(remaining, 1000),
+        ContinuationToken: continuationToken,
+      });
+      const response = await getR2Client().send(command);
+      response.Contents?.forEach(item => {
+        if (!item.Key || files.length >= limit) return;
+        files.push({ key: item.Key, size: item.Size || 0 });
+      });
+      continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
+    } while (continuationToken);
+    return files;
   } catch (error) {
     console.error('[R2 Error] Failed to list files from R2 Bucket', error);
+    throw error;
+  }
+}
+
+/**
+ * Calculates R2 bucket usage with pagination without holding every object in memory.
+ */
+export async function getR2BucketUsage(options: { maxObjects?: number; pageSize?: number } = {}): Promise<R2BucketUsage> {
+  const bucketName = getBucketName();
+  if (!process.env.CLOUDFLARE_R2_ENDPOINT) {
+    console.warn('[R2 Warning] Cloudflare R2 Credentials are not configured. Returning zero usage.');
+    return {
+      bucketName,
+      fileCount: 0,
+      totalSizeBytes: 0,
+      scannedPages: 0,
+      truncated: false,
+      configured: false
+    };
+  }
+
+  const maxObjects = Math.max(1, options.maxObjects || 100000);
+  const pageSize = Math.min(Math.max(options.pageSize || 1000, 1), 1000);
+  let continuationToken: string | undefined;
+  let fileCount = 0;
+  let totalSizeBytes = 0;
+  let scannedPages = 0;
+  let truncated = false;
+
+  try {
+    do {
+      const command = new ListObjectsV2Command({
+        Bucket: bucketName,
+        MaxKeys: Math.min(pageSize, maxObjects - fileCount),
+        ContinuationToken: continuationToken,
+      });
+      const response = await getR2Client().send(command);
+      scannedPages += 1;
+      response.Contents?.forEach(item => {
+        if (fileCount >= maxObjects) return;
+        fileCount += 1;
+        totalSizeBytes += item.Size || 0;
+      });
+      continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
+      if (fileCount >= maxObjects && continuationToken) {
+        truncated = true;
+        break;
+      }
+    } while (continuationToken);
+
+    return {
+      bucketName,
+      fileCount,
+      totalSizeBytes,
+      scannedPages,
+      truncated,
+      configured: true
+    };
+  } catch (error) {
+    console.error('[R2 Error] Failed to calculate R2 bucket usage', error);
     throw error;
   }
 }
