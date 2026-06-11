@@ -50,6 +50,13 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: npx tsx scripts/cleanup_ai_cache.ts
 
+      - name: Audit PUBG Analysis Data Quality
+        continue-on-error: true
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: npx tsx scripts/audit_processed_telemetry_identity.ts --recent-days 2 --max-rows 1000 --target-limit 50
+
       - name: Run Smart Scraper
         env:
           PUBG_API_KEY: ${{ secrets.PUBG_API_KEY }}

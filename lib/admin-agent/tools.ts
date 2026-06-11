@@ -4,6 +4,7 @@ import { buildAgentBriefing, renderBriefingText } from "@/lib/admin-agent/briefi
 import { buildContentDraft } from "@/lib/admin-agent/content";
 import { buildContentPerformanceReport } from "@/lib/admin-agent/content-performance";
 import { buildAgentDailyCheckout } from "@/lib/admin-agent/daily-checkout";
+import { auditProcessedTelemetryIdentity, buildProcessedTelemetryIdentityRepairPayload } from "@/lib/admin-agent/data-quality";
 import { buildAgentDecisionTrace } from "@/lib/admin-agent/decision-trace";
 import { buildAgentFinalReadiness } from "@/lib/admin-agent/final-readiness";
 import { buildAgentHandoffPacket } from "@/lib/admin-agent/handoff";
@@ -34,7 +35,7 @@ import { buildAgentToolCatalog } from "@/lib/admin-agent/tool-catalog";
 import { buildTrafficSummary, renderTrafficSummaryText } from "@/lib/admin-agent/traffic-summary";
 import { getAgentThresholds } from "@/lib/admin-agent/thresholds";
 import { buildUserMetricsSummary, renderUserMetricsSummaryText } from "@/lib/admin-agent/user-metrics";
-import { listR2Files } from "@/lib/pubg-analysis/r2Service";
+import { buildStorageHealth } from "@/lib/admin-agent/storage-health";
 import { createApprovalRequest } from "./logging";
 import type { AdminAgentContext, AdminAgentTool, AgentToolResult } from "./types";
 
@@ -478,6 +479,32 @@ const requestCacheCleanupDecl: FunctionDeclaration = {
   }
 };
 
+const inspectDataQualityDecl: FunctionDeclaration = {
+  name: "inspect_data_quality",
+  description: "전적 분석 캐시의 데이터 품질을 점검합니다. processed_match_telemetry identity mismatch를 dry-run으로 검사하며 삭제하지 않습니다.",
+  parameters: {
+    type: SchemaType.OBJECT,
+    properties: {
+      recentDays: { type: SchemaType.NUMBER, description: "최근 며칠 범위를 검사할지 지정합니다. 기본 2일." },
+      maxRows: { type: SchemaType.NUMBER, description: "최대 검사 row 수입니다. 기본 1000." }
+    }
+  }
+};
+
+const requestDataQualityRepairDecl: FunctionDeclaration = {
+  name: "request_data_quality_repair",
+  description: "전적 분석 identity mismatch 정리를 승인 대기 요청으로 등록합니다. 실제 삭제는 관리자 승인 후 targets 재검증을 거쳐 실행됩니다.",
+  parameters: {
+    type: SchemaType.OBJECT,
+    properties: {
+      recentDays: { type: SchemaType.NUMBER, description: "최근 며칠 범위를 검사할지 지정합니다. 기본 2일." },
+      maxRows: { type: SchemaType.NUMBER, description: "최대 검사 row 수입니다. 기본 1000." },
+      targetLimit: { type: SchemaType.NUMBER, description: "승인 요청에 포함할 최대 삭제 후보 수입니다. 기본 50." },
+      reason: { type: SchemaType.STRING, description: "관리자가 승인할 수 있도록 남기는 정리 사유" }
+    }
+  }
+};
+
 const takeMapScreenshotDecl: FunctionDeclaration = {
   name: "take_map_screenshot",
   description: "특정 지도 화면을 가상 브라우저로 캡처하고 Storage 업로드 후 이미지 URL을 반환합니다.",
@@ -764,18 +791,14 @@ async function inspectOperations(args: any, supabase: any): Promise<string> {
 
   if (focus === "cache_health" || focus === "overview") {
     const telemetryCount = await countRows(supabase, "processed_match_telemetry");
-    let r2 = { fileCount: 0, totalSizeBytes: 0, error: null as string | null };
-    try {
-      const files = await listR2Files(1000);
-      r2 = {
-        fileCount: files.length,
-        totalSizeBytes: files.reduce((sum, file) => sum + Number(file.size || 0), 0),
-        error: null
-      };
-    } catch (error: any) {
-      r2.error = error.message || String(error);
-    }
-    result.cacheHealth = { processedTelemetryRows: telemetryCount, r2 };
+    const storageHealth = await buildStorageHealth(supabase);
+    result.cacheHealth = {
+      processedTelemetryRows: telemetryCount,
+      r2: storageHealth.r2,
+      database: storageHealth.database,
+      tables: storageHealth.tables,
+      recommendations: storageHealth.recommendations
+    };
   }
 
   if (focus === "pending_markers" || focus === "overview") {
@@ -1251,7 +1274,10 @@ function buildUserMetricRecommendations(summary: Awaited<ReturnType<typeof build
   if (summary.accounts.missingProfiles > 0) recommendations.push("누락된 profiles가 있으니 /admin 데이터 관리에서 유저 동기화를 실행하세요.");
   if (summary.accounts.orphanProfiles > 0) recommendations.push("Auth에 없는 profiles가 있어 과거/테스트 데이터인지 확인하세요.");
   if (summary.activity.analyticsEvents > 0 && summary.activity.analyticsLoggedInUsers === 0) {
-    recommendations.push("현재까지 수집된 analytics_events에는 로그인 user_id가 없습니다. 배포 후 로그인 사용자 새 이벤트에 user_id가 붙는지 다시 확인하세요.");
+    recommendations.push("analytics_events에는 로그인 user_id가 없으므로 로컬/비로그인 유입 여부를 확인하고, 새 배포 후 로그인 사용자 이벤트에 user_id가 붙는지 재검증하세요.");
+  }
+  if (summary.topSearchedTargets[0]) {
+    recommendations.push(`전적 검색 대상 ${summary.topSearchedTargets[0].nickname}은 조회 대상 닉네임이며 해당 회원의 로그인 활동으로 단정하지 마세요.`);
   }
   if (!recommendations.length) recommendations.push("가입자/활동 유저 집계 권한은 정상입니다.");
   return recommendations;
@@ -2748,6 +2774,78 @@ async function requestCacheCleanup(args: any, context: AdminAgentContext): Promi
   };
 }
 
+async function inspectDataQuality(args: any, supabase: any): Promise<string> {
+  const audit = await auditProcessedTelemetryIdentity(supabase, {
+    recentDays: Number(args.recentDays || 2),
+    maxRows: Number(args.maxRows || 1000),
+    sampleLimit: 10,
+    targetLimit: Number(args.targetLimit || 50)
+  });
+
+  return JSON.stringify({
+    summary: {
+      scannedRows: audit.scannedRows,
+      mismatchCount: audit.mismatchCount,
+      deletionCandidateCount: audit.deletionCandidateCount,
+      missingPlatformColumnRows: audit.missingPlatformColumnRows,
+      truncated: audit.truncated,
+      generatedAt: audit.generatedAt
+    },
+    samples: audit.samples,
+    recommendation: audit.mismatchCount > 0
+      ? "identity mismatch row는 읽기 차단 대상입니다. request_data_quality_repair로 승인 요청을 만들고, 승인 전 impact를 확인하세요."
+      : "identity mismatch가 감지되지 않았습니다."
+  });
+}
+
+async function requestDataQualityRepair(args: any, context: AdminAgentContext): Promise<AgentToolResult> {
+  const audit = await auditProcessedTelemetryIdentity(context.supabase, {
+    recentDays: Number(args.recentDays || 2),
+    maxRows: Number(args.maxRows || 1000),
+    sampleLimit: 10,
+    targetLimit: Number(args.targetLimit || 50)
+  });
+
+  if (audit.mismatchCount === 0 || audit.deletionTargets.length === 0) {
+    return ok(JSON.stringify({
+      approvalRequired: false,
+      message: audit.mismatchCount === 0
+        ? "identity mismatch가 감지되지 않아 승인 요청을 만들지 않았습니다."
+        : "mismatch는 있으나 platform/match/player 기준으로 안전하게 삭제할 targets가 없어 승인 요청을 만들지 않았습니다.",
+      audit
+    }));
+  }
+
+  const payload = buildProcessedTelemetryIdentityRepairPayload(audit, Number(args.targetLimit || 50));
+  const approvalId = await createApprovalRequest(context.supabase, {
+    runId: context.runId,
+    stepId: context.stepId,
+    requestedBy: context.userId,
+    toolName: "request_data_quality_repair",
+    actionType: "repair_processed_telemetry_identity",
+    payload: {
+      ...payload,
+      reason: args.reason || payload.reason,
+      source: "admin-bot"
+    }
+  });
+
+  return {
+    status: "approval_required",
+    approvalId: approvalId || undefined,
+    result: JSON.stringify({
+      approvalRequired: true,
+      approvalId,
+      message: "전적 분석 identity mismatch 정리 작업이 승인 대기열에 등록되었습니다.",
+      audit: {
+        scannedRows: audit.scannedRows,
+        mismatchCount: audit.mismatchCount,
+        targetCount: payload.targetCount
+      }
+    })
+  };
+}
+
 async function takeMapScreenshot(mapName: string, layer: string, supabase: any): Promise<string> {
   let browser = null;
   try {
@@ -3068,6 +3166,17 @@ export const adminAgentTools: Record<string, AdminAgentTool> = {
       }
     }
   },
+  inspect_data_quality: {
+    declaration: inspectDataQualityDecl,
+    safetyLevel: "read",
+    run: async (args, context) => {
+      try {
+        return ok(await inspectDataQuality(args, context.supabase));
+      } catch (error) {
+        return failed(error);
+      }
+    }
+  },
   inspect_incident_timeline: {
     declaration: inspectIncidentTimelineDecl,
     safetyLevel: "read",
@@ -3330,6 +3439,11 @@ export const adminAgentTools: Record<string, AdminAgentTool> = {
     declaration: requestCacheCleanupDecl,
     safetyLevel: "dangerous",
     run: requestCacheCleanup
+  },
+  request_data_quality_repair: {
+    declaration: requestDataQualityRepairDecl,
+    safetyLevel: "dangerous",
+    run: requestDataQualityRepair
   },
   take_map_screenshot: {
     declaration: takeMapScreenshotDecl,

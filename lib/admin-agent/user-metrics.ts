@@ -19,6 +19,8 @@ type AnalyticsUserRow = {
   event_name: string;
   session_id: string | null;
   user_id: string | null;
+  page_path: string | null;
+  params: Record<string, unknown> | null;
   created_at: string;
 };
 
@@ -50,6 +52,12 @@ export type UserMetricsSummary = {
     label: string;
     lastActiveAt: string | null;
     lastSignInAt: string | null;
+  }>;
+  topSearchedTargets: Array<{
+    nickname: string;
+    platform: string | null;
+    count: number;
+    matchingProfileLabels: string[];
   }>;
   notes: string[];
   error?: string;
@@ -89,6 +97,7 @@ export async function buildUserMetricsSummary(supabase: any, windowHours = 24): 
     const nonAdminAnalyticsRows = analyticsRows.filter((row) => !row.user_id || profilesById.get(row.user_id)?.role !== "admin");
     const sessionHasUser = new Map<string, boolean>();
     const analyticsUserIds = new Set<string>();
+    const topSearchedTargets = buildTopSearchedTargets(nonAdminAnalyticsRows, nonAdminProfiles);
 
     nonAdminAnalyticsRows.forEach((row) => {
       if (row.session_id) {
@@ -147,6 +156,7 @@ export async function buildUserMetricsSummary(supabase: any, windowHours = 24): 
         analyticsEvents: nonAdminAnalyticsRows.length
       },
       topActiveUsers,
+      topSearchedTargets,
       notes
     };
   } catch (error: any) {
@@ -174,6 +184,7 @@ export async function buildUserMetricsSummary(supabase: any, windowHours = 24): 
         analyticsEvents: 0
       },
       topActiveUsers: [],
+      topSearchedTargets: [],
       notes: ["유저 집계를 조회할 수 없습니다."],
       error: error.message || String(error)
     };
@@ -189,6 +200,14 @@ export function renderUserMetricsSummaryText(summary: UserMetricsSummary) {
     .slice(0, 3)
     .map((user) => `${user.label}${user.lastActiveAt ? `(${formatDateTime(user.lastActiveAt)})` : ""}`)
     .join(", ") || "최근 활동 회원 없음";
+  const topTargets = summary.topSearchedTargets
+    .slice(0, 3)
+    .map((target) => {
+      const platform = target.platform ? `/${target.platform}` : "";
+      const matched = target.matchingProfileLabels.length > 0 ? "프로필 닉네임 일치" : "프로필 미일치";
+      return `${target.nickname}${platform} ${target.count}회(${matched})`;
+    })
+    .join(", ") || "전적 검색 대상 없음";
 
   return [
     `가입자 기준: Supabase Auth 유저 ${summary.accounts.authUsersNotDeleted}명, Auth와 연결된 profiles ${summary.accounts.authLinkedProfiles}개입니다.`,
@@ -196,6 +215,7 @@ export function renderUserMetricsSummaryText(summary: UserMetricsSummary) {
     `최근 ${summary.windowHours}시간 활동 기준: 로그인 기록 ${summary.activity.authSignedInUsers}명, profile last_active ${summary.activity.profileActiveUsers}명, 수집 세션 ${summary.activity.analyticsSessions}개입니다.`,
     `현재 수집된 analytics 이벤트 기준 세션은 회원 ${summary.activity.analyticsMemberSessions}개, 비회원 ${summary.activity.analyticsGuestSessions}개이며, user_id가 붙은 로그인 회원 이벤트는 ${summary.activity.analyticsLoggedInUsers}명 기준입니다.`,
     `최근 활동 회원: ${topUsers}`,
+    `많이 조회된 전적 대상: ${topTargets}. 이 값은 조회 대상 닉네임이며 해당 회원의 로그인 활동으로 해석하지 않습니다.`,
     summary.notes.length > 0 ? `주의: ${summary.notes.join(" / ")}` : null
   ].filter(Boolean).join("\n");
 }
@@ -229,7 +249,7 @@ async function fetchProfiles(supabase: any): Promise<UserProfileRow[]> {
 async function fetchAnalyticsRows(supabase: any, since: string): Promise<AnalyticsUserRow[]> {
   const { data, error } = await supabase
     .from("analytics_events")
-    .select("event_name, session_id, user_id, created_at")
+    .select("event_name, session_id, user_id, page_path, params, created_at")
     .gte("created_at", since)
     .order("created_at", { ascending: false })
     .limit(10000);
@@ -248,10 +268,71 @@ function buildUserMetricNotes(input: {
   if (input.missingProfiles > 0) notes.push(`Auth 유저 중 profiles 누락 ${input.missingProfiles}명`);
   if (input.orphanProfiles > 0) notes.push(`Auth에 없는 profiles ${input.orphanProfiles}개`);
   if (input.analyticsEvents > 0 && input.analyticsLoggedInUsers === 0) {
-    notes.push("현재까지 수집된 analytics_events에는 로그인 user_id가 없습니다. 토큰 기반 식별은 새 이벤트부터 반영되므로 배포 후 로그인 사용자 활동을 다시 확인하세요.");
+    notes.push("현재까지 수집된 analytics_events에는 로그인 user_id가 없습니다. 로컬/비로그인 이벤트가 섞였을 수 있으므로 새 배포 후 로그인 사용자 이벤트를 다시 확인하세요.");
   }
   if (input.profileActiveUsers === 0) notes.push("최근 profile last_active_at 갱신 유저가 없습니다.");
   return notes;
+}
+
+function buildTopSearchedTargets(rows: AnalyticsUserRow[], profiles: UserProfileRow[]) {
+  const counts = new Map<string, { nickname: string; platform: string | null; count: number }>();
+  rows.forEach((row) => {
+    const target = extractStatsTarget(row);
+    if (!target) return;
+    const key = `${target.platform || "unknown"}:${target.nickname.toLowerCase()}`;
+    const current = counts.get(key);
+    counts.set(key, {
+      nickname: current?.nickname || target.nickname,
+      platform: current?.platform || target.platform,
+      count: (current?.count || 0) + 1
+    });
+  });
+
+  return Array.from(counts.values())
+    .map((target) => ({
+      ...target,
+      matchingProfileLabels: findMatchingProfileLabels(target.nickname, profiles)
+    }))
+    .sort((a, b) => b.count - a.count || a.nickname.localeCompare(b.nickname))
+    .slice(0, 5);
+}
+
+function extractStatsTarget(row: AnalyticsUserRow) {
+  const paramNickname = typeof row.params?.nickname === "string" ? row.params.nickname.trim() : "";
+  if (row.event_name === "stats_searched" && paramNickname) {
+    return {
+      nickname: paramNickname,
+      platform: typeof row.params?.platform === "string" ? row.params.platform.trim() || null : null
+    };
+  }
+
+  const match = row.page_path?.match(/^\/stats\/([^/]+)\/([^/?#]+)/);
+  if (!match) return null;
+  return {
+    platform: safeDecode(match[1]),
+    nickname: safeDecode(match[2])
+  };
+}
+
+function findMatchingProfileLabels(nickname: string, profiles: UserProfileRow[]) {
+  const normalized = nickname.toLowerCase();
+  return profiles
+    .filter((profile) => {
+      const nicknames = [profile.nickname, profile.pubg_nickname]
+        .filter(Boolean)
+        .map((value) => String(value).toLowerCase());
+      return nicknames.includes(normalized);
+    })
+    .map((profile) => profile.nickname || profile.pubg_nickname || `회원 ${profile.id.slice(0, 8)}`)
+    .slice(0, 3);
+}
+
+function safeDecode(value: string) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
 }
 
 function isSince(value: string | null | undefined, since: string) {

@@ -1,15 +1,17 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
-import { RESULT_VERSION } from "@/lib/pubg-analysis/constants";
-
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+import { verifyAdminRole } from "@/lib/admin-agent/logging";
+import { withAuthGuard } from "@/utils/supabase/guard";
 
 export async function POST(req: Request) {
   try {
+    const auth = await withAuthGuard();
+    if (auth.error) return auth.error;
+    const adminError = await verifyAdminRole(auth.supabaseAdmin, auth.user.id);
+    if (adminError) return adminError;
+
     const body = await req.json();
     const { action, nickname, matchId } = body;
-    const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const supabaseAdmin = auth.supabaseAdmin;
 
     if (action === "flush_old_cache") {
       // 🚀 모든 분석 완료 데이터(가공된 데이터)만 삭제

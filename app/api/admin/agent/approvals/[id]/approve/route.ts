@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { buildApprovalPostExecution } from "@/lib/admin-agent/approval-execution";
+import { deleteProcessedTelemetryIdentityTargets } from "@/lib/admin-agent/data-quality";
 import { buildApprovalExecutionGate, calculateApprovalImpact } from "@/lib/admin-agent/impact";
 import { redactForAgentLog } from "@/lib/admin-agent/redaction";
 import { executeBoardPost } from "@/lib/admin-agent/tools";
@@ -10,7 +11,7 @@ type RouteContext = {
   params: Promise<{ id: string }>;
 };
 
-const HIGH_RISK_APPROVAL_ACTIONS = new Set(["flush_old_cache", "flush_player_cache", "flush_match_cache", "reset_benchmarks"]);
+const HIGH_RISK_APPROVAL_ACTIONS = new Set(["flush_old_cache", "flush_player_cache", "flush_match_cache", "reset_benchmarks", "repair_processed_telemetry_identity"]);
 
 export async function POST(request: Request, context: RouteContext) {
   const auth = await withAuthGuard();
@@ -178,6 +179,17 @@ async function executeApprovedAction(actionType: string, payload: any, supabase:
       .neq("id", -1);
     if (error) throw error;
     return JSON.stringify({ success: true, message: `벤치마크 데이터 ${count || 0}개가 초기화되었습니다.` });
+  }
+
+  if (actionType === "repair_processed_telemetry_identity") {
+    const targets = Array.isArray(payload.targets) ? payload.targets : [];
+    if (targets.length === 0) throw new Error("identity mismatch 삭제 대상 targets가 필요합니다.");
+    const result = await deleteProcessedTelemetryIdentityTargets(supabase, targets);
+    return JSON.stringify({
+      success: result.failed === 0,
+      message: `전적 분석 identity mismatch 캐시 ${result.deleted}개 삭제, ${result.skipped}개 스킵, ${result.failed}개 실패`,
+      ...result
+    });
   }
 
   if (actionType === "save_agent_memory" || actionType === "save_agent_report") {

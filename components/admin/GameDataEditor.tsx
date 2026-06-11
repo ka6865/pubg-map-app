@@ -80,6 +80,24 @@ export default function GameDataEditor() {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
   }, []);
 
+  const formatPercent = useCallback((value: number | undefined | null) => {
+    return `${Number(value || 0).toFixed(2)}%`;
+  }, []);
+
+  const usageStatusLabel = useCallback((status: string | undefined | null) => {
+    if (status === "critical") return "위험";
+    if (status === "warn") return "주의";
+    if (status === "unavailable") return "확인 필요";
+    return "안정";
+  }, []);
+
+  const usageStatusClass = useCallback((status: string | undefined | null) => {
+    if (status === "critical") return "text-red-400 bg-red-500/10 border-red-500/30";
+    if (status === "warn") return "text-amber-300 bg-amber-500/10 border-amber-500/30";
+    if (status === "unavailable") return "text-gray-300 bg-gray-500/10 border-gray-500/30";
+    return "text-emerald-300 bg-emerald-500/10 border-emerald-500/30";
+  }, []);
+
   const userStats = useMemo(() => {
     if (activeCategory !== "users" || !items || items.length === 0) return null;
     
@@ -1174,20 +1192,76 @@ export default function GameDataEditor() {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* R2 스토리지 정보 */}
+                  {/* 저장소 용량 상태 */}
                   <div className="bg-[#1a1a1a] p-6 rounded-2xl border border-[#333] space-y-4">
-                    <h3 className="text-xs font-black text-gray-500 uppercase tracking-wider">⚡ R2 텔레메트리 캐시 스토리지</h3>
-                    <div className="space-y-2 pt-2">
-                      <div className="flex justify-between text-xs">
-                        <span className="text-gray-400">캐시 파일 수</span>
-                        <span className="font-bold font-mono text-white">{dashboardData?.r2Cache?.fileCount || 0} 개</span>
+                    <div className="flex items-start justify-between gap-3">
+                      <h3 className="text-xs font-black text-gray-500 uppercase tracking-wider">저장소 용량 및 캐시 상태</h3>
+                      <span className={`text-[10px] px-2 py-1 rounded border font-black ${usageStatusClass(dashboardData?.storageHealth?.database?.status)}`}>
+                        DB {usageStatusLabel(dashboardData?.storageHealth?.database?.status)}
+                      </span>
+                    </div>
+                    <div className="space-y-4 pt-1">
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-gray-400">Supabase DB</span>
+                          <span className="font-bold font-mono text-white">
+                            {formatBytes(dashboardData?.storageHealth?.database?.usedBytes || 0)} / {formatBytes(dashboardData?.storageHealth?.database?.limitBytes || 0)}
+                          </span>
+                        </div>
+                        <div className="w-full bg-[#111] h-2 rounded-full overflow-hidden border border-[#222]">
+                          <div
+                            className={`h-full transition-all duration-500 ${
+                              dashboardData?.storageHealth?.database?.status === "critical"
+                                ? "bg-red-500"
+                                : dashboardData?.storageHealth?.database?.status === "warn"
+                                  ? "bg-amber-500"
+                                  : "bg-emerald-500"
+                            }`}
+                            style={{ width: `${Math.min(dashboardData?.storageHealth?.database?.usagePercent || 0, 100)}%` }}
+                          />
+                        </div>
+                        <div className="text-[10px] text-gray-500 text-right font-mono">
+                          {formatPercent(dashboardData?.storageHealth?.database?.usagePercent)}
+                        </div>
                       </div>
-                      <div className="flex justify-between text-xs">
-                        <span className="text-gray-400">총 누적 용량</span>
-                        <span className="font-bold font-mono text-white">{formatBytes(dashboardData?.r2Cache?.totalSizeBytes || 0)}</span>
+
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between text-xs">
+                          <span className="text-gray-400">R2 텔레메트리 캐시</span>
+                          <span className="font-bold font-mono text-white">
+                            {formatBytes(dashboardData?.r2Cache?.totalSizeBytes || 0)} / {formatBytes(dashboardData?.storageHealth?.r2?.limitBytes || 0)}
+                          </span>
+                        </div>
+                        <div className="w-full bg-[#111] h-2 rounded-full overflow-hidden border border-[#222]">
+                          <div
+                            className={`h-full transition-all duration-500 ${
+                              dashboardData?.storageHealth?.r2?.status === "critical"
+                                ? "bg-red-500"
+                                : dashboardData?.storageHealth?.r2?.status === "warn"
+                                  ? "bg-amber-500"
+                                  : "bg-sky-500"
+                            }`}
+                            style={{ width: `${Math.min(dashboardData?.storageHealth?.r2?.usagePercent || 0, 100)}%` }}
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-[10px] text-gray-500 font-mono">
+                          <span>{dashboardData?.r2Cache?.fileCount || 0}개 파일</span>
+                          <span className="text-right">{formatPercent(dashboardData?.storageHealth?.r2?.usagePercent)}</span>
+                        </div>
                       </div>
-                      <div className="text-[10px] text-gray-500 mt-4 leading-relaxed">
-                        * 원본 텔레메트리 리플레이 및 경기 분석 임시 캐시 데이터입니다.
+
+                      <div className="border-t border-[#222] pt-3 space-y-1.5">
+                        {(dashboardData?.storageHealth?.tables || []).slice(0, 4).map((table: any) => (
+                          <div key={table.table} className="flex justify-between text-[10px]">
+                            <span className="text-gray-500">{table.table}</span>
+                            <span className="font-mono text-gray-300">{table.count?.toLocaleString?.() || 0} rows</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="text-[10px] text-gray-500 leading-relaxed">
+                        * 로컬 analytics 이벤트는 기본 차단되며, R2는 페이지네이션으로 전수 집계합니다.
+                        {dashboardData?.r2Cache?.truncated ? " 집계 상한 초과로 일부 객체는 제외되었습니다." : ""}
                       </div>
                     </div>
                   </div>

@@ -38,6 +38,7 @@ function getActionTitle(actionType: string) {
   if (actionType === "flush_player_cache") return "플레이어 캐시 삭제";
   if (actionType === "flush_match_cache") return "매치 캐시 삭제";
   if (actionType === "reset_benchmarks") return "벤치마크 초기화";
+  if (actionType === "repair_processed_telemetry_identity") return "전적 분석 identity mismatch 정리";
   if (actionType === "save_agent_report") return "운영 리포트 저장";
   if (actionType === "save_agent_memory") return "운영 기억 저장";
   return actionType;
@@ -62,6 +63,12 @@ function buildMetrics(actionType: string, payload: Record<string, any>, executio
     if (payload.matchId) metrics.push({ label: "Match", value: String(payload.matchId) });
     if (payload.nickname) metrics.push({ label: "Player", value: String(payload.nickname) });
     if (typeof execution?.storageCleared === "boolean") metrics.push({ label: "Storage cleared", value: execution.storageCleared ? "yes" : "check required" });
+  }
+  if (actionType === "repair_processed_telemetry_identity") {
+    metrics.push({ label: "Requested targets", value: Number(payload.targets?.length || 0).toLocaleString("ko-KR") });
+    if (typeof execution?.deleted === "number") metrics.push({ label: "Deleted", value: execution.deleted.toLocaleString("ko-KR") });
+    if (typeof execution?.skipped === "number") metrics.push({ label: "Skipped", value: execution.skipped.toLocaleString("ko-KR") });
+    if (typeof execution?.failed === "number") metrics.push({ label: "Failed", value: execution.failed.toLocaleString("ko-KR") });
   }
   if ((actionType === "save_agent_report" || actionType === "save_agent_memory") && execution?.memoryId) {
     metrics.push({ label: "Memory ID", value: String(execution.memoryId) });
@@ -89,6 +96,13 @@ function buildFollowUp(actionType: string, payload: Record<string, any>, executi
       "랭킹/통계 페이지가 정상 응답하는지 배포 후 한 번 점검하세요."
     ];
   }
+  if (actionType === "repair_processed_telemetry_identity") {
+    return [
+      "수동 점검 또는 다음 Agent monitor에서 identity mismatch 수가 줄었는지 확인하세요.",
+      "삭제된 캐시는 유저 재분석 시 새 identity 기준으로 다시 생성됩니다.",
+      "연막/회복 집계값 오염 가능성은 별도 재분석 후보로만 다루고 자동 삭제하지 마세요."
+    ];
+  }
   if (actionType === "save_agent_report" || actionType === "save_agent_memory") {
     return [
       "운영 기억 패널에서 저장된 항목이 active 상태인지 확인하세요.",
@@ -105,6 +119,7 @@ function buildFollowUp(actionType: string, payload: Record<string, any>, executi
 function getRelatedResource(actionType: string, payload: Record<string, any>, execution: any) {
   if (actionType === "create_board_post" && execution?.postId) return `/board/${execution.postId}`;
   if (actionType === "flush_match_cache" && payload.matchId) return `match:${payload.matchId}`;
+  if (actionType === "repair_processed_telemetry_identity") return "processed_match_telemetry";
   if (actionType === "flush_player_cache" && payload.nickname) return `player:${payload.nickname}`;
   if ((actionType === "save_agent_report" || actionType === "save_agent_memory") && execution?.memoryId) return `memory:${execution.memoryId}`;
   return null;
