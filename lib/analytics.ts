@@ -27,6 +27,7 @@ export const ANALYTICS_EVENT_NAMES = [
 
 const MIRRORED_EVENTS = new Set<string>(ANALYTICS_EVENT_NAMES);
 const SESSION_STORAGE_KEY = "bgms_analytics_session_id";
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1"]);
 
 export type BgmsEvent =
   | {
@@ -173,6 +174,7 @@ export function trackEvent(event: BgmsEvent): void {
 async function mirrorEventToSupabase(event: BgmsEvent): Promise<void> {
   if (!MIRRORED_EVENTS.has(event.name)) return;
   if (process.env.NEXT_PUBLIC_ANALYTICS_MIRROR_DISABLED === "true") return;
+  if (getAnalyticsMirrorSkipReason()) return;
 
   try {
     const payload = JSON.stringify({
@@ -181,7 +183,10 @@ async function mirrorEventToSupabase(event: BgmsEvent): Promise<void> {
       sessionId: getOrCreateSessionId(),
       pagePath: window.location.pathname,
       pageTitle: document.title || (event.name === "page_view" ? event.params.title : undefined),
-      referrerPath: document.referrer ? toPath(document.referrer) : undefined
+      referrerPath: document.referrer ? toPath(document.referrer) : undefined,
+      clientEnvironment: getClientAnalyticsEnvironment(),
+      sourceHost: window.location.hostname,
+      isInternal: isLocalHostname(window.location.hostname)
     });
 
     const accessToken = await getCurrentAccessToken();
@@ -219,6 +224,33 @@ async function mirrorEventToSupabase(event: BgmsEvent): Promise<void> {
   } catch {
     // Ignore analytics mirror errors by design.
   }
+}
+
+function getAnalyticsMirrorSkipReason() {
+  const allowLocalMirror = process.env.NEXT_PUBLIC_ANALYTICS_MIRROR_LOCAL === "true";
+  const host = window.location.hostname;
+  if (!allowLocalMirror && process.env.NODE_ENV === "development") return "development_environment";
+  if (!allowLocalMirror && isLocalHostname(host)) return "local_host";
+
+  const allowedHosts = (process.env.NEXT_PUBLIC_ANALYTICS_ALLOWED_HOSTS || "")
+    .split(",")
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+  if (allowedHosts.length > 0 && !allowedHosts.includes(host.toLowerCase())) {
+    return "host_not_allowed";
+  }
+  return null;
+}
+
+function getClientAnalyticsEnvironment() {
+  const vercelEnv = process.env.NEXT_PUBLIC_VERCEL_ENV;
+  if (vercelEnv) return vercelEnv;
+  return process.env.NODE_ENV === "development" ? "development" : "production";
+}
+
+function isLocalHostname(hostname: string) {
+  const normalized = hostname.toLowerCase();
+  return LOCAL_HOSTS.has(normalized) || normalized.endsWith(".local");
 }
 
 async function getCurrentAccessToken() {

@@ -8,10 +8,16 @@ const clean = (value: string | undefined) => (value || "").replace(/['";\s]+/g, 
 const MAX_PAYLOAD_BYTES = 8 * 1024;
 const MAX_PARAM_BYTES = 2 * 1024;
 const ALLOWED_EVENT_NAMES = new Set<string>(ANALYTICS_EVENT_NAMES);
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1"]);
 
 type SanitizedParam = string | number | boolean | null;
 
 export async function POST(request: Request) {
+  const requestHost = getRequestHost(request);
+  if (isLocalHost(requestHost) && process.env.ANALYTICS_ACCEPT_LOCAL !== "true") {
+    return NextResponse.json({ success: true, skipped: "local_environment" });
+  }
+
   const contentLength = Number(request.headers.get("content-length") || 0);
   if (contentLength > MAX_PAYLOAD_BYTES) {
     return NextResponse.json({ error: "이벤트 payload가 너무 큽니다." }, { status: 413 });
@@ -48,15 +54,20 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, skipped: "admin_activity" });
   }
 
-  const { error } = await supabaseAdmin.from("analytics_events").insert({
+  const insertPayload = {
     event_name: eventName,
     user_id: userProfile?.id || null,
     session_id: sessionId,
     page_path: pagePath,
     page_title: sanitizeText(body.pageTitle, 160),
     referrer_path: sanitizePath(body.referrerPath),
-    params
-  });
+    params,
+    client_environment: sanitizeText(body.clientEnvironment, 40) || getServerAnalyticsEnvironment(),
+    source_host: sanitizeText(body.sourceHost, 160) || requestHost,
+    is_internal: Boolean(body.isInternal) || isLocalHost(requestHost) || sanitizeText(body.clientEnvironment, 40) === "development"
+  };
+
+  const { error } = await insertAnalyticsEvent(supabaseAdmin, insertPayload);
 
   if (error) {
     console.warn("[analytics:event] insert failed:", error.message);
@@ -64,6 +75,25 @@ export async function POST(request: Request) {
   }
 
   return NextResponse.json({ success: true });
+}
+
+async function insertAnalyticsEvent(supabaseAdmin: any, insertPayload: Record<string, unknown>) {
+  const result = await supabaseAdmin.from("analytics_events").insert(insertPayload);
+  if (!isMissingAnalyticsOriginColumn(result.error)) return result;
+
+  const legacyPayload = { ...insertPayload };
+  delete legacyPayload.client_environment;
+  delete legacyPayload.source_host;
+  delete legacyPayload.is_internal;
+  return supabaseAdmin.from("analytics_events").insert(legacyPayload);
+}
+
+function isMissingAnalyticsOriginColumn(error: any) {
+  if (!error) return false;
+  const message = `${error.message || ""} ${error.details || ""}`.toLowerCase();
+  return message.includes("client_environment")
+    || message.includes("source_host")
+    || message.includes("is_internal");
 }
 
 async function getOptionalUserProfile(supabaseAdmin: any, request: Request) {
@@ -103,6 +133,22 @@ function getBearerToken(request: Request) {
   const authorization = request.headers.get("authorization") || "";
   const match = authorization.match(/^Bearer\s+(.+)$/i);
   return match?.[1]?.trim() || null;
+}
+
+function getRequestHost(request: Request) {
+  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const rawHost = forwardedHost || request.headers.get("host") || new URL(request.url).host;
+  return rawHost.replace(/:\d+$/, "").toLowerCase();
+}
+
+function isLocalHost(host: string | null | undefined) {
+  if (!host) return false;
+  const normalized = host.toLowerCase();
+  return LOCAL_HOSTS.has(normalized) || normalized.endsWith(".local");
+}
+
+function getServerAnalyticsEnvironment() {
+  return process.env.VERCEL_ENV || process.env.NODE_ENV || "unknown";
 }
 
 async function getProfileFromAccessToken(supabaseAdmin: any, accessToken: string) {
