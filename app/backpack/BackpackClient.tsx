@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 import {
@@ -96,14 +96,6 @@ const InventoryItemRow = ({
           onClick={(e) => {
             e.stopPropagation();
             const target = source === 'backpack' ? 'trunk' : 'backpack';
-            // handleDrop과 유사한 로직을 직접 호출하거나 이벤트를 에뮬레이션
-            // 여기서는 단순화를 위해 handleDrop 로직을 별도 함수로 분리하지 않았으므로 직접 구현
-            const moveEvent = {
-              preventDefault: () => {},
-              dataTransfer: {
-                getData: () => JSON.stringify({ item, source }),
-              }
-            } as any;
             (window as any)._handleMobileMove?.(item, source, target);
           }}
           className="xl:hidden w-7 h-7 flex items-center justify-center bg-[#F2A900]/20 text-[#F2A900] rounded-lg border border-[#F2A900]/30 active:scale-95"
@@ -138,6 +130,7 @@ export default function BackpackSimulator() {
 
   const [dropTarget, setDropTarget] = useState<'backpack' | 'trunk' | null>(null);
   const [editingKey, setEditingKey] = useState<string | null>(null);
+  const hasTrackedBackpackSuccessRef = useRef(false);
 
   useEffect(() => {
     // GA4 가방 계산기 피처 소비 시작 트래킹
@@ -154,10 +147,8 @@ export default function BackpackSimulator() {
       
       // 10초 후 강제 로딩 해제 (무한 로딩 방지)
       const timeoutId = setTimeout(() => {
-        if (loading) {
-          console.warn("[Backpack] 데이터 로드 타임아웃 발생 (10초)");
-          setLoading(false);
-        }
+        console.warn("[Backpack] 데이터 로드 타임아웃 발생 (10초)");
+        setLoading(false);
       }, 10000);
 
       try {
@@ -291,6 +282,19 @@ export default function BackpackSimulator() {
     e.dataTransfer.effectAllowed = "move";
   }, []);
 
+  const trackBackpackSuccessOnce = useCallback(() => {
+    if (hasTrackedBackpackSuccessRef.current) return;
+    hasTrackedBackpackSuccessRef.current = true;
+
+    trackEvent({
+      name: "feature_consumption",
+      params: {
+        feature_name: "backpack-calculator",
+        status: "success"
+      }
+    });
+  }, []);
+
   const handleDrop = (e: React.DragEvent, target: 'backpack' | 'trunk') => {
     e.preventDefault();
     setDropTarget(null);
@@ -356,14 +360,7 @@ export default function BackpackSimulator() {
       });
     }
 
-    // GA4 가방 계산기 피처 소비 성공 트래킹
-    trackEvent({
-      name: "feature_consumption",
-      params: {
-        feature_name: "backpack-calculator",
-        status: "success"
-      }
-    });
+    trackBackpackSuccessOnce();
   };
 
   if (loading) {

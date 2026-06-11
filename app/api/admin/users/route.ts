@@ -25,7 +25,7 @@ async function verifyAdmin() {
 }
 
 // 1. GET: auth.users 기준으로 profiles 테이블 정보와 병합하여 전체 목록 반환 (누락 식별 플래그 포함)
-export async function GET(request: Request) {
+export async function GET() {
   const adminContext = await verifyAdmin();
   if (!adminContext) {
     return NextResponse.json({ error: "🔒 관리자 권한이 없습니다." }, { status: 403 });
@@ -44,6 +44,7 @@ export async function GET(request: Request) {
     if (uErr) throw uErr;
 
     // C. 두 정보 결합 (auth.users 기준으로 병합하여 프로필 누락 유저 식별)
+    const authUserIds = new Set(users.map(authUser => authUser.id));
     const mergedUsers = users.map(authUser => {
       const profile = profiles?.find(p => p.id === authUser.id);
       
@@ -60,7 +61,8 @@ export async function GET(request: Request) {
           last_sign_in_at: authUser.last_sign_in_at || null,
           provider: provider,
           email_confirmed: !!authUser.email_confirmed_at,
-          is_missing_profile: false
+          is_missing_profile: false,
+          is_orphan_profile: false
         };
       }
 
@@ -82,18 +84,36 @@ export async function GET(request: Request) {
         last_sign_in_at: authUser.last_sign_in_at || null,
         provider: provider,
         email_confirmed: !!authUser.email_confirmed_at,
-        is_missing_profile: true
+        is_missing_profile: true,
+        is_orphan_profile: false
       };
     });
 
-    // 정렬: 프로필 누락 회원(is_missing_profile: true)을 목록 상단에 먼저 노출하고, 그 안에서 닉네임 알파벳 순 정렬
-    mergedUsers.sort((a, b) => {
+    const orphanProfiles = (profiles || [])
+      .filter(profile => !authUserIds.has(profile.id))
+      .map(profile => ({
+        ...profile,
+        email: "Auth 계정 없음",
+        created_at: profile.updated_at || null,
+        last_sign_in_at: null,
+        provider: "orphan",
+        email_confirmed: false,
+        is_missing_profile: false,
+        is_orphan_profile: true
+      }));
+
+    const usersWithConsistencyFlags = [...orphanProfiles, ...mergedUsers];
+
+    // 정렬: 유령 프로필과 프로필 누락 회원을 목록 상단에 먼저 노출
+    usersWithConsistencyFlags.sort((a, b) => {
+      if (a.is_orphan_profile && !b.is_orphan_profile) return -1;
+      if (!a.is_orphan_profile && b.is_orphan_profile) return 1;
       if (a.is_missing_profile && !b.is_missing_profile) return -1;
       if (!a.is_missing_profile && b.is_missing_profile) return 1;
       return (a.nickname || "").localeCompare(b.nickname || "");
     });
 
-    return NextResponse.json(mergedUsers);
+    return NextResponse.json(usersWithConsistencyFlags);
   } catch (error: any) {
     console.error("Fetch admin users error:", error);
     return NextResponse.json({ error: error.message || "유저 정보를 불러올 수 없습니다." }, { status: 500 });
@@ -197,7 +217,8 @@ export async function POST(request: Request) {
   }
 }
 
-// 3. DELETE: 유저 강제 회원탈퇴 처리 (auth.users 삭제 -> profiles 등 종속 레코드 자동 CASCADE 소멸)
+// 3. DELETE: 유저 강제 회원탈퇴 처리
+// profiles.id에는 auth.users FK가 없으므로 Auth 삭제 후 profile도 명시적으로 정리합니다.
 export async function DELETE(request: Request) {
   const adminContext = await verifyAdmin();
   if (!adminContext) {
@@ -212,10 +233,36 @@ export async function DELETE(request: Request) {
   }
 
   try {
-    const { error: deleteErr } = await adminContext.supabaseAdmin.auth.admin.deleteUser(id);
-    if (deleteErr) throw deleteErr;
+    if (id === adminContext.user.id) {
+      return NextResponse.json({ error: "현재 로그인한 관리자 계정은 여기서 삭제할 수 없습니다." }, { status: 400 });
+    }
 
-    return NextResponse.json({ success: true });
+    const { data: profileBeforeDelete } = await adminContext.supabaseAdmin
+      .from("profiles")
+      .select("id")
+      .eq("id", id)
+      .maybeSingle();
+
+    const { data: { users }, error: listErr } = await adminContext.supabaseAdmin.auth.admin.listUsers();
+    if (listErr) throw listErr;
+    const authUserExists = users.some(user => user.id === id);
+
+    if (authUserExists) {
+      const { error: deleteErr } = await adminContext.supabaseAdmin.auth.admin.deleteUser(id);
+      if (deleteErr) throw deleteErr;
+    }
+
+    const { error: profileDeleteErr } = await adminContext.supabaseAdmin
+      .from("profiles")
+      .delete()
+      .eq("id", id);
+    if (profileDeleteErr) throw profileDeleteErr;
+
+    return NextResponse.json({
+      success: true,
+      deletedAuthUser: authUserExists,
+      deletedProfile: Boolean(profileBeforeDelete)
+    });
   } catch (error: any) {
     console.error("Delete admin user error:", error);
     return NextResponse.json({ error: error.message || "유저 삭제 실패" }, { status: 500 });

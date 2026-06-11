@@ -30,6 +30,7 @@ export type UserMetricsSummary = {
     authUsers: number;
     authUsersNotDeleted: number;
     profiles: number;
+    authLinkedProfiles: number;
     adminProfiles: number;
     nonAdminProfiles: number;
     missingProfiles: number;
@@ -66,9 +67,12 @@ export async function buildUserMetricsSummary(supabase: any, windowHours = 24): 
     ]);
 
     const profilesById = new Map(profiles.map((profile) => [profile.id, profile]));
-    const authIds = new Set(authUsers.map((user) => user.id));
-    const adminProfileIds = new Set(profiles.filter((profile) => profile.role === "admin").map((profile) => profile.id));
-    const nonAdminProfiles = profiles.filter((profile) => profile.role !== "admin");
+    const authUsersNotDeleted = authUsers.filter((user) => !user.deleted_at);
+    const activeAuthIds = new Set(authUsersNotDeleted.map((user) => user.id));
+    const authLinkedProfiles = profiles.filter((profile) => activeAuthIds.has(profile.id));
+    const adminProfiles = authLinkedProfiles.filter((profile) => profile.role === "admin");
+    const adminProfileIds = new Set(adminProfiles.map((profile) => profile.id));
+    const nonAdminProfiles = authLinkedProfiles.filter((profile) => profile.role !== "admin");
     const activeProfileIds = new Set(
       nonAdminProfiles
         .filter((profile) => isSince(profile.last_active_at, since))
@@ -107,9 +111,8 @@ export async function buildUserMetricsSummary(supabase: any, windowHours = 24): 
       .sort((a, b) => latestTime(b) - latestTime(a))
       .slice(0, 5);
 
-    const authUsersNotDeleted = authUsers.filter((user) => !user.deleted_at);
     const missingProfiles = authUsersNotDeleted.filter((user) => !profilesById.has(user.id)).length;
-    const orphanProfiles = profiles.filter((profile) => !authIds.has(profile.id)).length;
+    const orphanProfiles = profiles.filter((profile) => !activeAuthIds.has(profile.id)).length;
     const memberSessions = Array.from(sessionHasUser.values()).filter(Boolean).length;
     const guestSessions = Array.from(sessionHasUser.values()).filter((hasUser) => !hasUser).length;
     const notes = buildUserMetricNotes({
@@ -128,7 +131,8 @@ export async function buildUserMetricsSummary(supabase: any, windowHours = 24): 
         authUsers: authUsers.length,
         authUsersNotDeleted: authUsersNotDeleted.length,
         profiles: profiles.length,
-        adminProfiles: profiles.filter((profile) => profile.role === "admin").length,
+        authLinkedProfiles: authLinkedProfiles.length,
+        adminProfiles: adminProfiles.length,
         nonAdminProfiles: nonAdminProfiles.length,
         missingProfiles,
         orphanProfiles
@@ -154,6 +158,7 @@ export async function buildUserMetricsSummary(supabase: any, windowHours = 24): 
         authUsers: 0,
         authUsersNotDeleted: 0,
         profiles: 0,
+        authLinkedProfiles: 0,
         adminProfiles: 0,
         nonAdminProfiles: 0,
         missingProfiles: 0,
@@ -186,10 +191,10 @@ export function renderUserMetricsSummaryText(summary: UserMetricsSummary) {
     .join(", ") || "최근 활동 회원 없음";
 
   return [
-    `가입자 기준: Supabase Auth 유저 ${summary.accounts.authUsersNotDeleted}명, profiles ${summary.accounts.profiles}개입니다.`,
-    `관리자 제외 프로필은 ${summary.accounts.nonAdminProfiles}개이고, 관리자 프로필은 ${summary.accounts.adminProfiles}개입니다.`,
+    `가입자 기준: Supabase Auth 유저 ${summary.accounts.authUsersNotDeleted}명, Auth와 연결된 profiles ${summary.accounts.authLinkedProfiles}개입니다.`,
+    `관리자 제외 실제 회원 프로필은 ${summary.accounts.nonAdminProfiles}개이고, 관리자 프로필은 ${summary.accounts.adminProfiles}개입니다. profiles 원본 행은 ${summary.accounts.profiles}개입니다.`,
     `최근 ${summary.windowHours}시간 활동 기준: 로그인 기록 ${summary.activity.authSignedInUsers}명, profile last_active ${summary.activity.profileActiveUsers}명, 수집 세션 ${summary.activity.analyticsSessions}개입니다.`,
-    `analytics 기준 세션은 회원 ${summary.activity.analyticsMemberSessions}개, 비회원 ${summary.activity.analyticsGuestSessions}개이며, 로그인 user_id가 붙은 회원은 ${summary.activity.analyticsLoggedInUsers}명입니다.`,
+    `현재 수집된 analytics 이벤트 기준 세션은 회원 ${summary.activity.analyticsMemberSessions}개, 비회원 ${summary.activity.analyticsGuestSessions}개이며, user_id가 붙은 로그인 회원 이벤트는 ${summary.activity.analyticsLoggedInUsers}명 기준입니다.`,
     `최근 활동 회원: ${topUsers}`,
     summary.notes.length > 0 ? `주의: ${summary.notes.join(" / ")}` : null
   ].filter(Boolean).join("\n");
@@ -243,7 +248,7 @@ function buildUserMetricNotes(input: {
   if (input.missingProfiles > 0) notes.push(`Auth 유저 중 profiles 누락 ${input.missingProfiles}명`);
   if (input.orphanProfiles > 0) notes.push(`Auth에 없는 profiles ${input.orphanProfiles}개`);
   if (input.analyticsEvents > 0 && input.analyticsLoggedInUsers === 0) {
-    notes.push("analytics_events에 로그인 user_id가 아직 없어 회원별 활동 분석이 제한됩니다. 새 배포 후 로그인 사용자 이벤트를 다시 확인하세요.");
+    notes.push("현재까지 수집된 analytics_events에는 로그인 user_id가 없습니다. 토큰 기반 식별은 새 이벤트부터 반영되므로 배포 후 로그인 사용자 활동을 다시 확인하세요.");
   }
   if (input.profileActiveUsers === 0) notes.push("최근 profile last_active_at 갱신 유저가 없습니다.");
   return notes;
