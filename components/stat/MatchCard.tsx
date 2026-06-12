@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import { 
   ChevronDown, 
@@ -26,7 +26,7 @@ import { MatchTimeline } from "./MatchTimeline";
 import dynamic from "next/dynamic";
 import type { MatchData } from "../../types/stat";
 import { getTranslatedWeaponName } from "@/lib/pubg-analysis/constants";
-import { estimateUserTier } from "@/lib/pubg-analysis/benchmarkScore";
+import { estimateUserTier, getNextTierInfo } from "@/lib/pubg-analysis/benchmarkScore";
 import { useAIStatus, aiManager } from "@/lib/ai-management";
 import { useAuth } from "@/components/AuthProvider";
 import { toast } from "sonner";
@@ -37,13 +37,13 @@ const TimelineMiniMap = dynamic(
   { ssr: false, loading: () => <div className="w-full h-full bg-white/5 animate-pulse rounded-[2.5rem]" /> }
 );
 
-const ScoreBar = ({ label, score, max, color }: { label: string, score: number, max: number, color: string }) => (
-  <div className="flex flex-col gap-1.5">
-    <div className="flex justify-between items-center text-[11px]">
+const ScoreBar = ({ label, score, max, color, compact = false }: { label: string, score: number, max: number, color: string, compact?: boolean }) => (
+  <div className={`flex flex-col ${compact ? "gap-1" : "gap-1.5"}`}>
+    <div className={`flex justify-between items-center ${compact ? "text-[10px]" : "text-[11px]"}`}>
       <span className="text-gray-400 font-bold tracking-tight">{label}</span>
       <span className="text-white font-black">{score} <span className="text-white/20 font-medium">/ {max}</span></span>
     </div>
-    <div className="w-full h-2 bg-white/5 rounded-full overflow-hidden border border-white/10 relative">
+    <div className={`w-full ${compact ? "h-1.5" : "h-2"} bg-white/5 rounded-full overflow-hidden border border-white/10 relative`}>
       <div 
         className={`h-full ${color} transition-all duration-1000 ease-out shadow-[0_0_12px_rgba(255,255,255,0.15)] relative z-10`}
         style={{ width: `${Math.min(100, (score / max) * 100)}%` }}
@@ -54,6 +54,276 @@ const ScoreBar = ({ label, score, max, color }: { label: string, score: number, 
         <div className="w-px h-full bg-white" />
         <div className="w-px h-full bg-white" />
       </div>
+    </div>
+  </div>
+);
+
+interface TierEvidenceItem {
+  label: string;
+  value: string;
+  note?: string;
+}
+
+interface TierEvidenceSummaryItem {
+  label: string;
+  value: string;
+  accent: string;
+}
+
+interface TierEvidenceSection {
+  title: string;
+  accent: string;
+  items: TierEvidenceItem[];
+}
+
+interface TierTooltipLayout {
+  placement: "top" | "bottom";
+  maxHeight: number;
+}
+
+const isFiniteNumber = (value: unknown): value is number => typeof value === "number" && Number.isFinite(value);
+
+const formatPercent = (value: number, digits = 0) => `${Number(value.toFixed(digits))}%`;
+
+const formatSeconds = (ms?: number) => {
+  if (!isFiniteNumber(ms) || ms <= 0) return "측정 불가";
+  return `${(ms / 1000).toFixed(2)}초`;
+};
+
+const isDisplayValueAvailable = (value: string) => value !== "응답 필드 없음" && value !== "측정 불가";
+
+const joinEvidenceSummary = (parts: Array<string | false | undefined>, fallback = "측정 불가") => {
+  const cleanParts = parts.filter((part): part is string => Boolean(part));
+  return cleanParts.length > 0 ? cleanParts.join(", ") : fallback;
+};
+
+const getOpportunityRate = (success?: number, total?: number) => {
+  if (!isFiniteNumber(total)) {
+    return { value: "응답 필드 없음", note: "아군 기절 샘플 필드 없음", isOpportunityMissing: false, isFieldMissing: true };
+  }
+  if (total <= 0) {
+    return { value: "기회 없음 보정", note: "아군 기절 샘플 없음", isOpportunityMissing: true, isFieldMissing: false };
+  }
+  const safeSuccess = isFiniteNumber(success) ? success : 0;
+  return {
+    value: formatPercent((safeSuccess / total) * 100),
+    note: `${safeSuccess} / ${total}회`,
+    isOpportunityMissing: false,
+    isFieldMissing: false
+  };
+};
+
+const buildTierEvidence = (matchData: MatchData) => {
+  const stats = matchData.stats;
+  const tradeStats = matchData.tradeStats;
+  const totalTeammateKnocks = tradeStats?.teammateKnocks;
+  const nextTier = getNextTierInfo(matchData.benchmark?.score || 0);
+  const damageRankPct = matchData.matchInfo?.rankPct;
+  const survivalBase = matchData.totalTeams || matchData.totalPlayers;
+  const survivalRankPct = survivalBase && survivalBase > 0 ? stats.winPlace / survivalBase : null;
+  const isEarlyDeath = (stats.timeSurvived || 0) < 600 || (matchData.deathPhase ?? 99) <= 3;
+  const isHardEarlyDeath = (stats.timeSurvived || 0) < 300;
+  const smokeRate = getOpportunityRate(tradeStats?.smokeRescues, totalTeammateKnocks);
+  const reviveRate = getOpportunityRate(tradeStats?.revCount, totalTeammateKnocks);
+  const tradeRate = getOpportunityRate(tradeStats?.tradeKills, totalTeammateKnocks);
+  const initiativeSamples = matchData.initiativeSampleCount;
+  const initiativeValue = isFiniteNumber(initiativeSamples) && initiativeSamples <= 0
+    ? "측정 불가"
+    : isFiniteNumber(matchData.initiative_rate)
+      ? formatPercent(matchData.initiative_rate)
+      : "응답 필드 없음";
+  const damageValue = isFiniteNumber(damageRankPct)
+    ? `상위 ${formatPercent(Math.min(1, Math.max(0, damageRankPct)) * 100)}`
+    : matchData.myRank?.damageRank
+      ? `#${matchData.myRank.damageRank}`
+      : "응답 필드 없음";
+  const reactionSpeedValue = formatSeconds(tradeStats?.reactionLatencyMs);
+  const pressureValue = isFiniteNumber(matchData.combatPressure?.pressureIndex)
+    ? matchData.combatPressure.pressureIndex.toFixed(2)
+    : "응답 필드 없음";
+  const survivalRankValue = survivalBase ? `#${stats.winPlace} / ${survivalBase}` : `#${stats.winPlace}`;
+  const survivalRankNote = survivalRankPct !== null
+    ? `순위 비율 ${formatPercent(Math.min(1, Math.max(0, survivalRankPct)) * 100)}`
+    : undefined;
+  const allTeamOpportunityMissing = smokeRate.isOpportunityMissing && reviveRate.isOpportunityMissing && tradeRate.isOpportunityMissing;
+  const allTeamOpportunityFieldMissing = smokeRate.isFieldMissing && reviveRate.isFieldMissing && tradeRate.isFieldMissing;
+  const tacticalOpportunityItems: TierEvidenceItem[] = allTeamOpportunityFieldMissing
+    ? [
+        {
+          label: "팀 구출 지표",
+          value: "응답 필드 없음",
+          note: "아군 기절/구출/트레이드 입력값 없음"
+        }
+      ]
+    : allTeamOpportunityMissing
+    ? [
+        {
+          label: "팀 구출 기회",
+          value: "기회 없음 보정",
+          note: "연막/소생/트레이드 샘플 없음"
+        }
+      ]
+    : [
+        {
+          label: "연막 구출률",
+          value: smokeRate.value,
+          note: smokeRate.note
+        },
+        {
+          label: "소생률",
+          value: reviveRate.value,
+          note: reviveRate.note
+        },
+        {
+          label: "트레이드 성공률",
+          value: tradeRate.value,
+          note: tradeRate.note
+        }
+      ];
+  const tacticalOpportunitySummary = allTeamOpportunityMissing
+    ? "팀 구출 기회 없음 보정"
+    : allTeamOpportunityFieldMissing
+      ? undefined
+      : joinEvidenceSummary([
+        !smokeRate.isOpportunityMissing && `구출 ${smokeRate.value}`,
+        !reviveRate.isOpportunityMissing && `소생 ${reviveRate.value}`,
+        !tradeRate.isOpportunityMissing && `트레이드 ${tradeRate.value}`
+      ]);
+  const summaryItems: TierEvidenceSummaryItem[] = [
+    {
+      label: "전투",
+      accent: "bg-red-500",
+      value: joinEvidenceSummary([
+        isDisplayValueAvailable(damageValue) && `딜량 ${damageValue}`,
+        isDisplayValueAvailable(initiativeValue)
+          ? `선공 ${initiativeValue}`
+          : isDisplayValueAvailable(reactionSpeedValue) && `반응 ${reactionSpeedValue}`
+      ], "전투 샘플 측정 불가")
+    },
+    {
+      label: "전술",
+      accent: "bg-indigo-500",
+      value: joinEvidenceSummary([
+        isDisplayValueAvailable(pressureValue) && `압박 ${pressureValue}`,
+        tacticalOpportunitySummary
+      ], "전술 샘플 측정 불가")
+    },
+    {
+      label: "생존",
+      accent: "bg-emerald-500",
+      value: joinEvidenceSummary([
+        `순위 ${survivalRankValue}`,
+        isHardEarlyDeath ? "5분 미만 0점 룰" : isEarlyDeath ? "조기 탈락 보정" : "보정 없음"
+      ], "생존 샘플 측정 불가")
+    }
+  ];
+
+  const sections: TierEvidenceSection[] = [
+    {
+      title: "전투 근거",
+      accent: "bg-red-500",
+      items: [
+        {
+          label: "딜량 순위",
+          value: damageValue
+        },
+        {
+          label: "선제공격률",
+          value: initiativeValue,
+          note: isFiniteNumber(initiativeSamples) ? `샘플 ${initiativeSamples}회` : undefined
+        },
+        {
+          label: "대응 사격 속도",
+          value: reactionSpeedValue,
+          note: !tradeStats?.reactionLatencyMs ? "피격 후 반격 샘플 없음" : undefined
+        }
+      ]
+    },
+    {
+      title: "전술 근거",
+      accent: "bg-indigo-500",
+      items: [
+        {
+          label: "압박 지수",
+          value: pressureValue
+        },
+        ...tacticalOpportunityItems,
+        {
+          label: "고립 페널티",
+          value: (matchData.isolationData?.isolationIndex ?? 0) >= 3.5 ? "적용 가능" : "미적용",
+          note: isFiniteNumber(matchData.isolationData?.isolationIndex)
+            ? `고립 지수 ${matchData.isolationData.isolationIndex.toFixed(1)}`
+            : "응답 필드 없음"
+        }
+      ]
+    },
+    {
+      title: "생존 근거",
+      accent: "bg-emerald-500",
+      items: [
+        {
+          label: "생존 순위",
+          value: survivalRankValue,
+          note: survivalRankNote
+        },
+        {
+          label: "기절 후 생존 관리력",
+          value: "응답 필드 없음",
+          note: "현재 매치 응답에 피기절 횟수 미포함"
+        },
+        {
+          label: "조기 탈락 보정",
+          value: isEarlyDeath ? "적용" : "미적용",
+          note: isEarlyDeath ? "10분 미만 또는 3페이즈 이하 사망" : "정상 생존 구간"
+        },
+        {
+          label: "5분 미만 0점 룰",
+          value: isHardEarlyDeath ? "적용" : "미적용",
+          note: `${Math.floor((stats.timeSurvived || 0) / 60)}분 생존`
+        }
+      ]
+    }
+  ];
+
+  return {
+    summaryItems,
+    sections,
+    nextTierText: nextTier ? `다음 ${nextTier.tier} 티어까지 ${nextTier.needed}점` : "최고 티어",
+    nextTierNote: nextTier ? "현재 산식 기준" : "S+ 구간 도달"
+  };
+};
+
+const TierEvidenceSummary = ({ items }: { items: TierEvidenceSummaryItem[] }) => (
+  <div className="mt-3 border-t border-white/10 pt-3 md:mt-4 md:pt-4">
+    <div className="mb-1.5 text-[10px] font-black text-white/70 md:mb-2">핵심 근거</div>
+    <div className="space-y-1 md:space-y-1.5">
+      {items.map((item) => (
+        <div key={item.label} className="flex items-start gap-2 text-[10px] leading-snug">
+          <span className={`mt-1 h-2 w-2 shrink-0 rounded-full ${item.accent}`} />
+          <span className="w-8 shrink-0 font-black text-white/80">{item.label}</span>
+          <span className="min-w-0 flex-1 text-right font-bold text-white">{item.value}</span>
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
+const TierEvidenceList = ({ section }: { section: TierEvidenceSection }) => (
+  <div className="space-y-2">
+    <div className="flex items-center gap-2">
+      <span className={`h-3 w-1 rounded-full ${section.accent}`} />
+      <span className="text-[10px] font-black text-white/80">{section.title}</span>
+    </div>
+    <div className="space-y-1.5">
+      {section.items.map((item) => (
+        <div key={`${section.title}-${item.label}`} className="flex items-start justify-between gap-3 text-[10px] leading-snug">
+          <span className="text-gray-500 font-bold shrink-0">{item.label}</span>
+          <span className="text-right">
+            <span className="block text-white font-black">{item.value}</span>
+            {item.note && <span className="block text-[9px] text-gray-500 font-medium mt-0.5">{item.note}</span>}
+          </span>
+        </div>
+      ))}
     </div>
   </div>
 );
@@ -159,6 +429,8 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<any | null>(null);
   const [showTierTooltip, setShowTierTooltip] = useState(false);
+  const [showTierDetails, setShowTierDetails] = useState(false);
+  const [tierTooltipLayout, setTierTooltipLayout] = useState<TierTooltipLayout>({ placement: "top", maxHeight: 504 });
   const tierRef = useRef<HTMLDivElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -176,6 +448,24 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
   const vehicleCombatTotal = leadKills + leadKnocks + ridingKills + ridingKnocks + roadKills + roadKnocks;
   const hasVehicleCombat = vehicleCombatTotal > 0;
 
+  const updateTierTooltipLayout = useCallback(() => {
+    if (isMobile || !tierRef.current) return;
+
+    const rect = tierRef.current.getBoundingClientRect();
+    const gap = 12;
+    const viewportPadding = 16;
+    const preferredMaxHeight = Math.min(504, Math.max(240, window.innerHeight - viewportPadding * 2));
+    const spaceAbove = Math.max(0, rect.top - gap - viewportPadding);
+    const spaceBelow = Math.max(0, window.innerHeight - rect.bottom - gap - viewportPadding);
+    const placement = spaceAbove >= preferredMaxHeight || spaceAbove >= spaceBelow ? "top" : "bottom";
+    const availableSpace = placement === "top" ? spaceAbove : spaceBelow;
+
+    setTierTooltipLayout({
+      placement,
+      maxHeight: Math.max(220, Math.min(preferredMaxHeight, availableSpace))
+    });
+  }, [isMobile]);
+
   // [V46.8] 언마운트 시 진행 중인 분석 강제 중단
   useEffect(() => {
     return () => {
@@ -188,44 +478,69 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
     };
   }, [matchId]);
 
-  // 리플레이 분석 모달 오픈 시 body 스크롤 방지
+  // 리플레이 모달과 모바일 티어 tooltip 오픈 시 배경 스크롤 방지
   useEffect(() => {
-    if (showReplayModal) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
-    }
+    const shouldLockScroll = showReplayModal || (showTierTooltip && isMobile);
+    if (!shouldLockScroll) return;
+
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    const previousBodyOverscroll = document.body.style.overscrollBehavior;
+    const previousHtmlOverscroll = document.documentElement.style.overscrollBehavior;
+
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    document.body.style.overscrollBehavior = 'none';
+    document.documentElement.style.overscrollBehavior = 'none';
+
     return () => {
-      document.body.style.overflow = '';
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+      document.body.style.overscrollBehavior = previousBodyOverscroll;
+      document.documentElement.style.overscrollBehavior = previousHtmlOverscroll;
     };
-  }, [showReplayModal]);
+  }, [showReplayModal, showTierTooltip, isMobile]);
+
+  useEffect(() => {
+    if (!showTierTooltip) {
+      setShowTierDetails(false);
+    }
+  }, [showTierTooltip]);
+
+  useEffect(() => {
+    if (!showTierTooltip || isMobile) return;
+
+    updateTierTooltipLayout();
+    window.addEventListener("resize", updateTierTooltipLayout);
+    window.addEventListener("scroll", updateTierTooltipLayout, true);
+
+    return () => {
+      window.removeEventListener("resize", updateTierTooltipLayout);
+      window.removeEventListener("scroll", updateTierTooltipLayout, true);
+    };
+  }, [showTierTooltip, isMobile, updateTierTooltipLayout]);
 
   useEffect(() => {
     if (!showTierTooltip || !isMobile) return;
 
-    const initialScrollY = window.scrollY;
-
-    const handleScroll = () => {
-      const currentScrollY = window.scrollY;
-      if (Math.abs(currentScrollY - initialScrollY) > 50) {
-        setShowTierTooltip(false);
-      }
-    };
-
-    const handleClickOutside = (event: MouseEvent) => {
+    const handleClickOutside = (event: PointerEvent) => {
       if (tierRef.current && !tierRef.current.contains(event.target as Node)) {
         setShowTierTooltip(false);
       }
     };
 
-    document.addEventListener("mousedown", handleClickOutside);
-    window.addEventListener("scroll", handleScroll, { passive: true });
+    document.addEventListener("pointerdown", handleClickOutside);
 
     return () => {
-      document.removeEventListener("mousedown", handleClickOutside);
-      window.removeEventListener("scroll", handleScroll);
+      document.removeEventListener("pointerdown", handleClickOutside);
     };
   }, [showTierTooltip, isMobile]);
+
+  const openTierTooltip = () => {
+    if (isMobile) return;
+    updateTierTooltipLayout();
+    setShowTierTooltip(true);
+  };
 
   const renderTierBadge = () => {
     const score = matchData?.benchmark?.score || 0;
@@ -244,12 +559,12 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
 
     return (
       <button 
-        onMouseEnter={() => !isMobile && setShowTierTooltip(true)}
-        onMouseLeave={() => !isMobile && setShowTierTooltip(false)}
+        onMouseEnter={openTierTooltip}
         onClick={(e) => {
           e.stopPropagation();
           if (isMobile) setShowTierTooltip(!showTierTooltip);
         }}
+        aria-expanded={showTierTooltip}
         className={`px-2.5 py-1 md:px-4 md:py-1.5 rounded-xl border flex items-center gap-1.5 md:gap-2 transition-all cursor-help hover:scale-105 active:scale-95 ${getTierStyle(tier)}`}
       >
         <span className="text-xs md:text-sm font-black italic tracking-tighter">{tier} Tier</span>
@@ -480,8 +795,13 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                      (matchData.gameMode || "").includes("squad") && 
                      !(matchData.gameMode || "").includes("ai-match")
                    );
+  const isSoloScoring = (matchData.gameMode || "").includes("solo");
+  const scoreMax = isSoloScoring
+    ? { combat: 50, tactical: 15, survival: 35 }
+    : { combat: 40, tactical: 35, survival: 25 };
   const isWin = matchData.stats.winPlace === 1;
   const isTop10 = matchData.stats.winPlace <= 10;
+  const tierEvidence = buildTierEvidence(matchData);
   
   const totalScale = matchData.totalTeams || 0;
   
@@ -558,70 +878,98 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
           {/* 티어 배지 + 펼치기 */}
           <div className="flex items-center gap-2 shrink-0">
             {matchData.benchmark && (
-              <div className="relative" ref={tierRef}>
+              <div
+                className="relative"
+                ref={tierRef}
+                onMouseEnter={openTierTooltip}
+                onMouseLeave={() => !isMobile && setShowTierTooltip(false)}
+              >
                 {renderTierBadge()}
                 {showTierTooltip && (
-                  <div
-                    ref={tooltipRef}
-                    onClick={(e) => e.stopPropagation()}
-                    className={`${isMobile
-                      ? 'fixed inset-x-4 bottom-20 animate-in slide-in-from-bottom-5'
-                      : 'absolute bottom-full right-0 mb-3 w-64 animate-in fade-in zoom-in-95'
-                    } bg-[#0a0a0a] border border-white/20 p-5 rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.9)] z-[1001]`}
-                  >
-                    <div className="flex justify-between items-center border-b border-white/10 pb-2 mb-4">
+                  <>
+                    {!isMobile && (
+                      <div
+                        aria-hidden="true"
+                        className={`absolute right-0 h-3 w-[24rem] ${
+                          tierTooltipLayout.placement === "top" ? "bottom-full" : "top-full"
+                        }`}
+                      />
+                    )}
+                    <div
+                      ref={tooltipRef}
+                      onClick={(e) => e.stopPropagation()}
+                      data-testid="match-tier-tooltip"
+                      style={!isMobile ? { maxHeight: `${tierTooltipLayout.maxHeight}px` } : undefined}
+                      className={`${isMobile
+                        ? 'fixed inset-x-4 bottom-20 max-h-[58vh] overflow-y-auto overscroll-contain animate-in slide-in-from-bottom-5'
+                        : `absolute right-0 w-[24rem] overflow-y-auto overscroll-contain animate-in fade-in zoom-in-95 ${
+                          tierTooltipLayout.placement === "top" ? "bottom-full mb-3" : "top-full mt-3"
+                        }`
+                      } bg-[#0a0a0a] border border-white/20 p-3.5 md:p-5 rounded-[1.35rem] md:rounded-[2rem] shadow-[0_20px_50px_rgba(0,0,0,0.9)] z-[1001]`}
+                    >
+                    <div className="flex justify-between items-center border-b border-white/10 pb-2 mb-3 md:mb-4">
                       <div className="text-[12px] font-black text-indigo-400 uppercase tracking-widest">매치 상세 분석</div>
                       <div className="flex items-center gap-2">
                         <span className="text-white bg-indigo-500 px-2 py-0.5 rounded-full text-[10px] tabular-nums">
                           {matchData.benchmark.score} / 100
                         </span>
                         {isMobile && (
-                          <button onClick={() => setShowTierTooltip(false)} className="text-white/40"><X size={16} /></button>
+                          <button
+                            type="button"
+                            aria-label="티어 상세 닫기"
+                            onClick={() => setShowTierTooltip(false)}
+                            className="-mr-1 rounded-lg p-1.5 text-white/50 active:bg-white/10"
+                          >
+                            <X size={16} />
+                          </button>
                         )}
                       </div>
                     </div>
-                    <div className="space-y-4">
-                      <ScoreBar label="전투" score={matchData.benchmark.breakdown.combat} max={isRanked ? 40 : 50} color="bg-gradient-to-r from-red-600 to-red-400" />
-                      <ScoreBar label="전술" score={matchData.benchmark.breakdown.tactical} max={isRanked ? 35 : 15} color="bg-gradient-to-r from-indigo-600 to-indigo-400" />
-                      <ScoreBar label="생존" score={matchData.benchmark.breakdown.survival} max={isRanked ? 25 : 35} color="bg-gradient-to-r from-emerald-600 to-emerald-400" />
+                    <div className={isMobile ? "space-y-2.5" : "space-y-4"}>
+                      <ScoreBar compact={isMobile} label="전투" score={matchData.benchmark.breakdown.combat} max={scoreMax.combat} color="bg-gradient-to-r from-red-600 to-red-400" />
+                      <ScoreBar compact={isMobile} label="전술" score={matchData.benchmark.breakdown.tactical} max={scoreMax.tactical} color="bg-gradient-to-r from-indigo-600 to-indigo-400" />
+                      <ScoreBar compact={isMobile} label="생존" score={matchData.benchmark.breakdown.survival} max={scoreMax.survival} color="bg-gradient-to-r from-emerald-600 to-emerald-400" />
                     </div>
-                    <div className="mt-5 grid grid-cols-2 gap-2 border-t border-white/10 pt-4">
-                      <div className="flex items-center gap-2 bg-white/5 p-2 rounded-xl border border-white/5">
-                        <Crosshair size={12} className="text-red-400" />
-                        <div className="flex flex-col">
-                          <span className="text-[8px] text-gray-500 font-bold">전투 영향력</span>
-                          <span className="text-[10px] text-white font-black">{Math.floor(matchData.stats.damageDealt)} dmg</span>
-                        </div>
+                    <TierEvidenceSummary items={tierEvidence.summaryItems} />
+                    <div className="mt-3 md:mt-4 flex items-center justify-between gap-3 rounded-xl border border-amber-500/20 bg-amber-500/10 p-2.5 md:p-3">
+                      <div className="flex flex-col">
+                        <span className="text-[9px] font-black text-amber-300/70">다음 티어</span>
+                        <span className="text-[11px] font-black text-amber-200">{tierEvidence.nextTierText}</span>
                       </div>
-                      <div className="flex items-center gap-2 bg-white/5 p-2 rounded-xl border border-white/5">
-                        <Zap size={12} className="text-amber-400" />
-                        <div className="flex flex-col">
-                          <span className="text-[8px] text-gray-500 font-bold">반응 속도</span>
-                          <span className="text-[10px] text-white font-black">
-                            {matchData.tradeStats?.reactionLatencyMs && matchData.tradeStats.reactionLatencyMs > 0
-                              ? `${Math.floor(matchData.tradeStats.reactionLatencyMs)}ms` : '측정 불가'}
-                          </span>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 bg-white/5 p-2 rounded-xl border border-white/5">
-                        <Shield size={12} className="text-indigo-400" />
-                        <div className="flex flex-col">
-                          <span className="text-[8px] text-gray-500 font-bold">전술 기여</span>
-                          <span className="text-[10px] text-white font-black">팀전멸 {matchData.tradeStats?.enemyTeamWipes || 0}회</span>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 bg-white/5 p-2 rounded-xl border border-white/5">
-                        <Clock size={12} className="text-emerald-400" />
-                        <div className="flex flex-col">
-                          <span className="text-[8px] text-gray-500 font-bold">생존력</span>
-                          <span className="text-[10px] text-white font-black">{Math.floor(matchData.stats.timeSurvived / 60)}분 생존</span>
-                        </div>
-                      </div>
+                      <span className="text-right text-[9px] font-bold text-amber-200/50">{tierEvidence.nextTierNote}</span>
                     </div>
-                    <div className="mt-4 text-[9px] text-gray-400 leading-relaxed font-medium bg-white/5 p-2 rounded-lg border border-white/5 italic">
-                      * 딜량, 선제공격, 반응속도, 팀기여, 생존시간 등을 종합 분석한 실력 점수입니다.
+                    {isMobile ? (
+                      <div className="mt-4 border-t border-white/10 pt-3">
+                        <button
+                          type="button"
+                          data-testid="match-tier-detail-toggle"
+                          aria-expanded={showTierDetails}
+                          onClick={() => setShowTierDetails((current) => !current)}
+                          className="flex w-full items-center justify-between rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[10px] font-black text-white/75 active:scale-[0.99]"
+                        >
+                          <span>{showTierDetails ? "상세 근거 접기" : "상세 근거 보기"}</span>
+                          <ChevronDown size={14} className={`transition-transform ${showTierDetails ? "rotate-180" : ""}`} />
+                        </button>
+                        {showTierDetails && (
+                          <div className="mt-4 space-y-4">
+                            {tierEvidence.sections.map((section) => (
+                              <TierEvidenceList key={section.title} section={section} />
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="mt-5 space-y-4 border-t border-white/10 pt-4">
+                        {tierEvidence.sections.map((section) => (
+                          <TierEvidenceList key={section.title} section={section} />
+                        ))}
+                      </div>
+                    )}
+                    <div className="mt-4 hidden text-[9px] text-gray-400 leading-relaxed font-medium bg-white/5 p-2 rounded-lg border border-white/5 italic md:block">
+                      * 기존 점수 산식은 그대로 유지하며, 현재 매치 응답에 포함된 필드만 근거로 표시합니다.
                     </div>
                   </div>
+                  </>
                 )}
               </div>
             )}
