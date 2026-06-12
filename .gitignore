@@ -60,6 +60,7 @@ generate-tiles.js
 mcp_config.json
 skills-lock.json
 scratch/
+.codex-drafts/
 
 # AI Guide
 .pubg-telemetry-guide.md
@@ -70,3 +71,4 @@ admin_agent_completion_audit.md
 admin_agent_final_upgrade_plan.md
 admin_agent_implementation_report.md
 admin_agent_operator_manual.md
+AGENTS.md

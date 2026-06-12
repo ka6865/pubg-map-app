@@ -1,6 +1,8 @@
 # [사실기반] BGMS 텔레메트리 데이터 실구현 명세서 (V60.0)
 *공식 PUBG API 텔레메트리 이벤트 + 오브젝트 전수 대조 및 V60.0 고정밀 정합성 패치 완료 (3D 바닥 격자 차폐 정합 및 지형 불투명화 추가)*
 
+2026-06-12 UI 표시 기록: 단일 매치 카드의 티어 hover/tap tooltip이 `benchmark`, `stats`, `tradeStats`, `combatPressure`, `isolationData`, `initiative_rate`, `matchInfo` 기반 점수 근거와 다음 티어 정보를 compact 방식으로 표시합니다. 모바일은 핵심 근거 3줄을 기본 노출하고 상세 근거는 접힘으로 제공하며, 열림 중 `body/html` 배경 스크롤을 잠그고 tooltip 내부 스크롤만 허용합니다. 데스크톱은 hover 이동 중 tooltip이 사라지지 않도록 버튼과 tooltip 사이 간격을 보강하고, 남은 화면 공간에 맞춰 위/아래 배치와 최대 높이를 조정합니다. 반복되는 연막/소생/트레이드 `기회 없음 보정`은 `팀 구출 기회 없음 보정`으로 묶어 표시합니다. 신규 텔레메트리 이벤트 수집, CORE/AI/UI 수집 채널 분류, 원본 필드 의미, 파생 지표 계산식, 캐시 버전은 변경하지 않았습니다. 현재 응답에 없는 기절 후 생존 관리력 세부 입력값은 새로 유추하지 않고 `응답 필드 없음`으로 표시합니다.
+
 2026-06-11 변경 기록: AI 전적분석 캐시 안정화 작업은 `match_ai_coaching_cache`, `player_ai_summary_cache`, `squad_ai_coaching_cache`의 키/버전/저장 정책만 변경했습니다. 이후 디렉터리 안정화 작업으로 상자/맵 설정 공유 타입과 스쿼드 분석 공용 서비스 위치가 정리되었지만, 텔레메트리 이벤트 수집 범위, 필드 분류, 파생 지표 해석은 변경하지 않았습니다. 같은 날짜에 추가된 `lib/pubg-analysis/squadCauseScenes.ts`와 `scripts/experiment_squad_cause_scenes.ts`는 기존 `timeline`, `tradeStats`, `isolationData`를 읽어 AI 피드백 실험용 원인 장면 후보를 만드는 레이어이며, 신규 텔레메트리 필드 수집이나 기존 필드 의미 변경은 없습니다. 해당 실험 프롬프트는 `riskFlags`, `unsupportedClaims`를 통해 소생 시도 여부, 수비적 플레이, 심리/의도, 팀 응집력, 복구 능력, 전투력, 전투/교전 진입 각, 즉각적 공격/복구/백업 처방, 안전성, 엄폐물/시야, 교전 회피 필요성, 교전 진입 회피 단정, 전력 손실 인과, 전력 복구 실패, `totalTeamWipes` 주체 모호성 같은 미측정 또는 오해 가능 주장을 제한합니다. 2026-06-11 추가 테스트는 연막 없는 소생 성공, 리콜/복귀 성공, 다수 다운 이후 복구, 팀 전원 치명 이벤트 예외를 기존 `TEAM_REVIVE`, `RECALL`, `TEAM_RECALL`, `REDEPLOY` 타임라인 타입으로만 검증하며, 블루칩 회수자/회수 시점 확정은 원본 이벤트 추가 파싱 전까지 지원하지 않습니다. 후속 보정은 AI 입력 장면 선택 다양성, 타임라인 이벤트 타입별 facts 표현, 소생 성공 동반 고립 지표 장면 보정, 프롬프트 금지 표현, Gemini 재시도/대체 모델 호출, 문맥형 AI 응답 후처리 검증만 조정했으며, 신규 이벤트 수집이나 필드 의미 변경은 없습니다.
 
 2026-06-11 UI 연결 기록: `squad-analyze` 상세 응답의 `causeScenes`와 `components/stat/SquadCauseScenes.tsx`가 원인 장면을 모바일 대응 카드로 노출합니다. 모바일 기본 접힘 상태와 데스크톱 기본 펼침 상태는 표시 정책만 바꾸며, 사용자 노출 카드와 AI 응답 본문은 내부 장면 타입명 대신 한글 장면명만 사용하도록 제한합니다. 전력 복구 장면의 적 전원 처치 여부는 별도 적 스쿼드 전멸 기여 장면에서만 표현합니다. 고립 위험 장면은 `고립지수` 단독 문구 대신 팀 간격 거리, 위험 기준 거리, 팀 간격 위험도 순서로 설명합니다. 이 작업은 기존 `processed_match_telemetry.data.fullResult.timeline`, `tradeStats`, `isolationData` 기반 파생 표시입니다. CORE/AI/UI 수집 채널 분류나 원본 필드 의미는 바꾸지 않았습니다.
@@ -14,6 +16,8 @@
 2026-06-11 Admin Agent 데이터 품질 감시 기록: `processed_match_telemetry` identity mismatch는 `lib/admin-agent/data-quality.ts` 공용 helper로 dry-run 감사합니다. GitHub Actions는 삭제 없는 `scripts/audit_processed_telemetry_identity.ts --recent-days 2 --max-rows 1000` 검사를 수행하고, Admin Agent monitor는 mismatch가 있을 때 `repair_processed_telemetry_identity` 승인 요청을 생성합니다. 실제 삭제는 승인 패널에서 impact 확인 후 targets 재검증을 통과한 row에만 제한됩니다. 이 작업은 운영 감시/승인 흐름 추가이며 CORE/AI/UI 수집 채널 분류나 원본 필드 의미를 바꾸지 않습니다.
 
 2026-06-11 Analytics/Admin 안정화 기록: `analytics_events`에 `client_environment`, `source_host`, `is_internal` 원천 메타데이터를 추가하고, 로컬/개발 host의 Supabase analytics mirror 저장을 기본 차단했습니다. Admin Agent 유저 활동 요약은 전적 검색 대상 닉네임과 로그인 활동 회원을 분리해 해석합니다. `lib/admin-agent/storage-health.ts`는 Supabase DB 용량과 R2 캐시 용량을 운영 관제용으로 계산합니다. 이 변경은 사이트 운영 analytics 및 관리자 관제 메타데이터이며, PUBG 텔레메트리 원본 이벤트 수집 범위와 CORE/AI/UI 필드 분류를 바꾸지 않습니다.
+
+2026-06-11 Codex 하네스 기록: `package.json`에 `verify:core`, `verify:analysis`, `verify:admin` 검증 스크립트를 추가했습니다. 이 변경은 개발/AI 작업 검증 루틴 추가이며, CORE/AI/UI 수집 채널 분류, PUBG 텔레메트리 원본 이벤트 수집 범위, 필드 의미, `RESULT_VERSION`, `TELEMETRY_VERSION`은 변경하지 않습니다.
 
 ---
 

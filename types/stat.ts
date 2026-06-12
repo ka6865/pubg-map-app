@@ -100,6 +100,14 @@ export interface MatchData {
     maxHitDistance: number;
     utilityDamage: number;
     utilityHits: number;
+    pressureIndex?: number;
+    utilityStats?: {
+      throwCount?: number;
+      hitCount?: number;
+      totalDamage?: number;
+      killCount?: number;
+      accuracy?: number;
+    };
   };
   /** [V3.0] 전술 지표 (견제, 세이브, 복수 등) */
   tradeStats?: {
@@ -107,7 +115,9 @@ export interface MatchData {
     dangerousKnocks?: number;
     smokeOpps?: number;
     suppCount: number;
+    tradeKills?: number;
     smokeCount: number;
+    smokeRescues?: number;
     teamSmokeCovered?: number;
     revCount: number;
     baitCount: number;
@@ -115,8 +125,10 @@ export interface MatchData {
     counterLatencyMs: number;
     reactionLatencyMs: number;
     coverRate: number;
+    coverRateSampleCount?: number;
     enemyTeamWipes?: number;
     tradeRate?: number;
+    suppRate?: number;
   };
   /** [V8.1] 공간 지능 지표 (고립 지수, 아군 거리 등) */
   isolationData?: {
@@ -168,6 +180,7 @@ export interface MatchData {
   };
   /** [V8.1] 선제 타격 성공률 (직접 필드) */
   initiative_rate?: number;
+  initiativeSampleCount?: number;
   /** [V11.1] 사망 시 자기장 페이즈 */
   deathPhase?: number;
   edgePlay?: number;
@@ -183,11 +196,37 @@ export interface MatchData {
       survival: number;
     };
   };
+  isValidBenchmark?: boolean;
+  matchInfo?: {
+    map?: string;
+    mapId?: string;
+    date?: string;
+    mode?: string;
+    duration?: number;
+    rankPct?: number;
+    tier?: string;
+  };
+  itemUseSummary?: {
+    smokes?: number;
+    frags?: number;
+    molotovs?: number;
+    others?: number;
+  };
+  itemUseStats?: {
+    heals?: number;
+    boosts?: number;
+    throwCount?: number;
+    lethalThrowCount?: number;
+    focusFireCount?: number;
+    crossfireExposureCount?: number;
+  };
   /** [V12.5] 1:1 교전 통계 */
   duelStats?: {
     totalDuels: number;
     wins: number;
     losses: number;
+    reversals?: number;
+    reversalAttempts?: number;
     reversalRate: number;
     duelWinRate: number;
   };
