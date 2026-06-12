@@ -9,13 +9,11 @@ import {
   hasSquadRecoveryTimelineSignals
 } from "@/lib/pubg-analysis/squadRecoveryStats";
 import { getValidFullResult, normalizePlatform } from "@/lib/pubg-analysis/cacheIdentity";
-
-function normalizeSquadName(name: string): string {
-  return name.replace(/[^a-zA-Z0-9_]/g, "").toLowerCase();
-}
+import { normalizeName } from "@/lib/pubg-analysis/utils";
 
 export async function getSquadAnalysisData(nickname: string, platform: string = "steam", groupKey?: string | null) {
-  const lowerNickname = normalizeSquadName(nickname);
+  // normalizeName: 소문자 + trim만 수행, 특수문자(-. 등) 제거 없음 → DB player_id와 정합성 보장
+  const lowerNickname = normalizeName(nickname);
   const cachePlatform = normalizePlatform(platform);
   const supabase = await createClient();
 
@@ -67,7 +65,7 @@ export async function getSquadAnalysisData(nickname: string, platform: string = 
     const team = fullResult.team || [];
     const teammates = team
       .map((t: any) => t.name)
-      .filter((name: string) => name && normalizeSquadName(name) !== lowerNickname)
+      .filter((name: string) => name && normalizeName(name) !== lowerNickname)
       .sort((a: string, b: string) => a.localeCompare(b));
 
     if (teammates.length === 0) return;
@@ -114,7 +112,7 @@ export async function getSquadAnalysisData(nickname: string, platform: string = 
   let accumTeammateKnocks = 0;
 
   const allMembers = [
-    selectedGroup.members.find(m => normalizeSquadName(m) === lowerNickname) || nickname,
+    selectedGroup.members.find(m => normalizeName(m) === lowerNickname) || nickname,
     ...selectedGroup.members
   ];
   const squadMembers = Array.from(new Set(allMembers)).filter(Boolean);
@@ -156,7 +154,7 @@ export async function getSquadAnalysisData(nickname: string, platform: string = 
 
     const team = fullResult.team || [];
     team.forEach((t: any) => {
-      const matchingMember = squadMembers.find(mName => normalizeSquadName(mName) === normalizeSquadName(t.name));
+      const matchingMember = squadMembers.find(mName => normalizeName(mName) === normalizeName(t.name));
       if (matchingMember) {
         playerAccumStats[matchingMember].damage += t.damageDealt || 0;
         playerAccumStats[matchingMember].kills += t.kills || 0;
