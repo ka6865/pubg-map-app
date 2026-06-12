@@ -27,6 +27,7 @@ const groggyIcon = L.divIcon({
   iconAnchor: [14, 14],
 });
 
+
 const COLORS = ["#34A853", "#a855f7", "#ff9f0a", "#3b82f6"];
 
 // PUBG API Map name to tile directory mapping
@@ -99,6 +100,68 @@ const interpolatePosition = (
   return toLeafletCoords(posEvs[posEvs.length - 1].x, posEvs[posEvs.length - 1].y, mapName);
 };
 
+// 시간 기반 raw coordinate 선형 보간 함수
+const interpolateRawPosition = (
+  posEvs: { relativeTimeMs: number; x: number; y: number }[],
+  timeMs: number
+): { x: number; y: number } | null => {
+  if (!posEvs || posEvs.length === 0) return null;
+  
+  if (timeMs <= posEvs[0].relativeTimeMs) {
+    return { x: posEvs[0].x, y: posEvs[0].y };
+  }
+  
+  if (timeMs >= posEvs[posEvs.length - 1].relativeTimeMs) {
+    return { x: posEvs[posEvs.length - 1].x, y: posEvs[posEvs.length - 1].y };
+  }
+  
+  for (let i = 0; i < posEvs.length - 1; i++) {
+    const ev1 = posEvs[i];
+    const ev2 = posEvs[i + 1];
+    
+    if (timeMs >= ev1.relativeTimeMs && timeMs <= ev2.relativeTimeMs) {
+      const duration = ev2.relativeTimeMs - ev1.relativeTimeMs;
+      if (duration === 0) return { x: ev1.x, y: ev1.y };
+      
+      const ratio = (timeMs - ev1.relativeTimeMs) / duration;
+      const x = ev1.x + (ev2.x - ev1.x) * ratio;
+      const y = ev1.y + (ev2.y - ev1.y) * ratio;
+      return { x, y };
+    }
+  }
+  
+  return { x: posEvs[posEvs.length - 1].x, y: posEvs[posEvs.length - 1].y };
+};
+
+// 특정 시점의 플레이어 상태를 반환하는 함수
+const getPlayerStatusAtTime = (
+  events: any[],
+  playerName: string,
+  timeMs: number
+): "normal" | "groggy" | "dead" => {
+  const normPlayerName = normalizeName(playerName);
+  
+  // 플레이어가 대상인 기절, 사망, 소생 이벤트를 필터링
+  const playerEvents = events.filter(
+    (ev: any) =>
+      (ev.type === "groggy" || ev.type === "kill" || ev.type === "revive") &&
+      normalizeName(ev.victim) === normPlayerName &&
+      ev.relativeTimeMs <= timeMs
+  );
+  
+  if (playerEvents.length === 0) return "normal";
+  
+  // 시간 순서대로 정렬하여 가장 최근 이벤트를 획득
+  const sorted = [...playerEvents].sort((a, b) => b.relativeTimeMs - a.relativeTimeMs);
+  const lastEvent = sorted[0];
+  
+  if (lastEvent.type === "groggy") return "groggy";
+  if (lastEvent.type === "kill") return "dead";
+  if (lastEvent.type === "revive") return "normal";
+  
+  return "normal";
+};
+
 // 특정 시간(playbackTimeMs)과 가장 가까운 위치 이벤트에서 vehicleId 조회
 const getVehicleIdAtTime = (posEvs: any[], timeMs: number): string | null => {
   if (!posEvs || posEvs.length === 0) return null;
@@ -114,6 +177,22 @@ const getVehicleIdAtTime = (posEvs: any[], timeMs: number): string | null => {
   }
   
   return minDiff < 3000 ? (closestEv.vehicleId || null) : null;
+};
+
+// 공격자 이름을 정제하여 환경 요인이나 시스템 킬일 경우 적합한 한글 명칭으로 변환합니다.
+const getCleanAttackerName = (attacker: string): string => {
+  if (!attacker) return "환경요인";
+  const normalized = attacker.trim();
+  if (
+    normalized === "없음" ||
+    normalized === "Unknown" ||
+    normalized === "알 수 없음" ||
+    normalized === "자연사" ||
+    normalized === "환경/자연사"
+  ) {
+    return "환경요인";
+  }
+  return attacker;
 };
 
 // 맵 중심이 변경될 때 지도의 중심을 맞춰주는 도우미 컴포넌트
@@ -136,9 +215,10 @@ interface Squad2DMapProps {
   nickname: string;
   platform: string;
   mapName: string;
+  focusTimeMs?: number | null;
 }
 
-export default function Squad2DMap({ matchId, nickname, platform, mapName }: Squad2DMapProps) {
+export default function Squad2DMap({ matchId, nickname, platform, mapName, focusTimeMs }: Squad2DMapProps) {
   const [telemetry, setTelemetry] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -150,6 +230,8 @@ export default function Squad2DMap({ matchId, nickname, platform, mapName }: Squ
   const [playbackTimeMs, setPlaybackTimeMs] = useState<number>(0);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1); // 1, 2, 4
   const [showPaths, setShowPaths] = useState<boolean>(false); // 기본적으로 동선 선은 숨김
+  const [showNames, setShowNames] = useState<boolean>(true); // 기본적으로 이름 툴팁 활성화
+  const [hoveredChar, setHoveredChar] = useState<string | null>(null);
 
   // Check if mobile device
   useEffect(() => {
@@ -195,6 +277,81 @@ export default function Squad2DMap({ matchId, nickname, platform, mapName }: Squ
     };
   }, [matchId, nickname, platform]);
 
+  // Sync selectedKnockIdx with focusTimeMs when telemetry or focusTimeMs changes
+  useEffect(() => {
+    if (!telemetry || !telemetry.events) return;
+    
+    const events = telemetry.events;
+    const teammateKnocks = events.filter(
+      (ev: any) => ev.type === "groggy" && ev.isTeamVictim
+    );
+    let knocks = teammateKnocks.sort(
+      (a: any, b: any) => a.relativeTimeMs - b.relativeTimeMs
+    );
+
+    if (knocks.length === 0) {
+      const teammateKills = events.filter(
+        (ev: any) => ev.type === "kill" && ev.isTeamVictim
+      );
+      knocks = teammateKills.sort(
+        (a: any, b: any) => a.relativeTimeMs - b.relativeTimeMs
+      );
+    }
+
+    if (knocks.length === 0) {
+      const attackerKnocks = events.filter(
+        (ev: any) => ev.type === "groggy" && ev.isTeamAttacker
+      );
+      knocks = attackerKnocks.sort(
+        (a: any, b: any) => a.relativeTimeMs - b.relativeTimeMs
+      );
+    }
+
+    if (typeof focusTimeMs === "number" && focusTimeMs > 0) {
+      const isClose = knocks.some(
+        (k: any) => Math.abs(k.relativeTimeMs - focusTimeMs) <= 10000
+      );
+      
+      if (!isClose) {
+        const myPosEvs = events.filter(
+          (ev: any) =>
+            ev.type === "position" &&
+            normalizeName(ev.name) === normalizeName(nickname)
+        );
+        const myRawPos = interpolateRawPosition(myPosEvs, focusTimeMs);
+        
+        const virtualKnock = {
+          type: "focus_time",
+          relativeTimeMs: focusTimeMs,
+          victim: nickname,
+          attacker: "원인 장면",
+          weapon: "None",
+          isTeamVictim: true,
+          victimX: myRawPos?.x ?? 4096,
+          victimY: myRawPos?.y ?? 4096,
+          x: myRawPos?.x ?? 4096,
+          y: myRawPos?.y ?? 4096,
+        };
+        knocks.push(virtualKnock);
+        knocks.sort((a: any, b: any) => a.relativeTimeMs - b.relativeTimeMs);
+      }
+      
+      let closestIdx = 0;
+      let minDiff = Math.abs(knocks[0].relativeTimeMs - focusTimeMs);
+      
+      for (let i = 1; i < knocks.length; i++) {
+        const diff = Math.abs(knocks[i].relativeTimeMs - focusTimeMs);
+        if (diff < minDiff) {
+          minDiff = diff;
+          closestIdx = i;
+        }
+      }
+      setSelectedKnockIdx(closestIdx);
+    } else {
+      setSelectedKnockIdx(0);
+    }
+  }, [telemetry, focusTimeMs, nickname]);
+
   // Compute 4-player paths & Groggy coordinates
   const mapData = useMemo(() => {
     if (!telemetry || !telemetry.events || telemetry.events.length === 0) return null;
@@ -230,6 +387,37 @@ export default function Squad2DMap({ matchId, nickname, platform, mapName }: Squ
       );
     }
 
+    // Add virtual knock if focusTimeMs is not close to any existing knocks
+    if (typeof focusTimeMs === "number" && focusTimeMs > 0) {
+      const isClose = knocks.some(
+        (k: any) => Math.abs(k.relativeTimeMs - focusTimeMs) <= 10000
+      );
+      
+      if (!isClose) {
+        const myPosEvs = events.filter(
+          (ev: any) =>
+            ev.type === "position" &&
+            normalizeName(ev.name) === normalizeName(nickname)
+        );
+        const myRawPos = interpolateRawPosition(myPosEvs, focusTimeMs);
+        
+        const virtualKnock = {
+          type: "focus_time",
+          relativeTimeMs: focusTimeMs,
+          victim: nickname,
+          attacker: "원인 장면",
+          weapon: "None",
+          isTeamVictim: true,
+          victimX: myRawPos?.x ?? 4096,
+          victimY: myRawPos?.y ?? 4096,
+          x: myRawPos?.x ?? 4096,
+          y: myRawPos?.y ?? 4096,
+        };
+        knocks.push(virtualKnock);
+        knocks.sort((a: any, b: any) => a.relativeTimeMs - b.relativeTimeMs);
+      }
+    }
+
     // Fallback 3: If absolutely nothing, create a dummy 300000ms knock event to prevent crash
     if (knocks.length === 0) {
       knocks = [{
@@ -250,6 +438,72 @@ export default function Squad2DMap({ matchId, nickname, platform, mapName }: Squ
     const startMs = Math.max(0, T - 15000);
     const endMs = T + 15000;
 
+    // 기절 또는 포커스 이벤트 기준 상대 적의 닉네임을 식별합니다.
+    const targetEnemyName = activeKnock
+      ? (activeKnock.isTeamVictim ? activeKnock.attacker : activeKnock.victim)
+      : null;
+
+    // 해당 적의 teamId를 events에서 탐색하여 식별합니다.
+    let targetEnemyTeamId: number | null = null;
+    if (targetEnemyName) {
+      const normTargetName = normalizeName(targetEnemyName);
+      const enemyPosEv = events.find(
+        (ev: any) =>
+          ev.type === "position" &&
+          normalizeName(ev.name) === normTargetName
+      );
+      if (enemyPosEv) {
+        targetEnemyTeamId = enemyPosEv.teamId;
+      }
+    }
+
+    // 30초 교전 구간 동안 아군과 직간접 교전을 주고받은 적군 명단 및 이들의 teamId 목록 수집
+    const engagedEnemyNames = new Set<string>();
+    const engagedEnemyTeamIds = new Set<number>();
+    const teamNamesLower = new Set(teamNames.map((t: string) => normalizeName(t)));
+
+    events.forEach((ev: any) => {
+      if (ev.relativeTimeMs >= startMs && ev.relativeTimeMs <= endMs) {
+        if (ev.type === "damage") {
+          const attackerLower = normalizeName(ev.attackerName || "");
+          const victimLower = normalizeName(ev.victimName || "");
+          const isAttackerTeam = teamNamesLower.has(attackerLower);
+          const isVictimTeam = teamNamesLower.has(victimLower);
+
+          if (isAttackerTeam && !isVictimTeam && ev.victimName) {
+            engagedEnemyNames.add(normalizeName(ev.victimName));
+          } else if (!isAttackerTeam && isVictimTeam && ev.attackerName) {
+            engagedEnemyNames.add(normalizeName(ev.attackerName));
+          }
+        } else if (ev.type === "groggy" || ev.type === "kill") {
+          const attackerLower = normalizeName(ev.attacker || "");
+          const victimLower = normalizeName(ev.victim || "");
+          const isAttackerTeam = teamNamesLower.has(attackerLower);
+          const isVictimTeam = teamNamesLower.has(victimLower);
+
+          if (isAttackerTeam && !isVictimTeam && ev.victim) {
+            engagedEnemyNames.add(normalizeName(ev.victim));
+          } else if (!isAttackerTeam && isVictimTeam && ev.attacker) {
+            engagedEnemyNames.add(normalizeName(ev.attacker));
+          }
+        }
+      }
+    });
+
+    // 교전 참여한 적들의 teamId 탐색하여 수집 목록에 주입
+    events.forEach((ev: any) => {
+      if (ev.type === "position" && ev.name) {
+        const normName = normalizeName(ev.name);
+        if (engagedEnemyNames.has(normName) && ev.teamId !== undefined) {
+          engagedEnemyTeamIds.add(ev.teamId);
+        }
+      }
+    });
+
+    if (targetEnemyTeamId !== null) {
+      engagedEnemyTeamIds.add(targetEnemyTeamId);
+    }
+
     const playerPaths = teamNames.map((name: string, idx: number) => {
       const posEvs = events.filter(
         (ev: any) =>
@@ -269,11 +523,12 @@ export default function Squad2DMap({ matchId, nickname, platform, mapName }: Squ
       };
     });
 
-    // 3. Extract nearby enemies around T-15s to T+15s
+    // 3. Extract nearby enemies around T-15s to T+15s (Filter out teamNames to avoid duplication or wrong mapping)
     const enemyPosEvents = events.filter(
       (ev: any) =>
         ev.type === "position" &&
         ev.isTeam === false &&
+        !teamNames.some((tName: string) => normalizeName(tName) === normalizeName(ev.name)) &&
         ev.relativeTimeMs >= startMs &&
         ev.relativeTimeMs <= endMs
     );
@@ -291,11 +546,19 @@ export default function Squad2DMap({ matchId, nickname, platform, mapName }: Squ
       .map(([name, evs]) => {
         const sortedEvs = evs.sort((a, b) => a.relativeTimeMs - b.relativeTimeMs);
         const lastEv = sortedEvs[sortedEvs.length - 1];
+        
+        // 교전 상대 적 스쿼드의 teamId와 일치하는지 판정하여 같은 스쿼드 여부를 세팅합니다.
+        const enemyTeamId = lastEv.teamId;
+        const normName = normalizeName(name);
+        const isSameSquad = (targetEnemyTeamId !== null && enemyTeamId === targetEnemyTeamId) ||
+                            (enemyTeamId !== undefined && engagedEnemyTeamIds.has(enemyTeamId)) ||
+                            engagedEnemyNames.has(normName);
+
         return {
           name,
           posEvs: sortedEvs,
           health: lastEv.health || 100,
-          isSameSquad: activeKnock && lastEv.teamId === activeKnock.teamId,
+          isSameSquad,
         };
       });
 
@@ -355,6 +618,13 @@ export default function Squad2DMap({ matchId, nickname, platform, mapName }: Squ
       ];
     }
 
+    const combatEvents = events.filter(
+      (ev: any) =>
+        (ev.type === "groggy" || ev.type === "kill") &&
+        ev.relativeTimeMs >= startMs &&
+        ev.relativeTimeMs <= endMs
+    );
+
     return {
       paths: playerPaths,
       firstKnock: activeKnock,
@@ -362,8 +632,9 @@ export default function Squad2DMap({ matchId, nickname, platform, mapName }: Squ
       enemies,
       attackerPosEvs,
       knocks,
+      combatEvents,
     };
-  }, [telemetry, nickname, selectedKnockIdx]);
+  }, [telemetry, nickname, selectedKnockIdx, focusTimeMs, mapName]);
 
   // Extract variables for easier access
   const T = mapData?.firstKnock?.relativeTimeMs ?? 0;
@@ -446,6 +717,134 @@ export default function Squad2DMap({ matchId, nickname, platform, mapName }: Squ
     };
   }, [isPlaying, playbackSpeed, endMs, mapData]);
 
+  // 실시간 0.4초 동안 유지되며 페이드아웃되는 사격선(탄도선) 계산
+  const activeShotLines = useMemo(() => {
+    if (!telemetry || !telemetry.events) return [];
+    const events = telemetry.events;
+
+    return events
+      .filter((ev: any) => {
+        if (ev.type !== "damage") return false;
+        const diff = playbackTimeMs - ev.relativeTimeMs;
+        return diff >= 0 && diff < 400; // 0.4초 동안 선 유지
+      })
+      .map((ev: any, idx: number) => {
+        if (!ev.attackerX || !ev.attackerY || !ev.x || !ev.y) return null;
+
+        const start = toLeafletCoords(ev.attackerX, ev.attackerY, mapName);
+        const end = toLeafletCoords(ev.x, ev.y, mapName);
+        const diff = playbackTimeMs - ev.relativeTimeMs;
+        const opacity = Math.max(0.1, 1 - diff / 400);
+
+        const attackerLower = normalizeName(ev.attackerName || "");
+        const teamNamesLower = new Set(
+          (telemetry.teamNames || []).map((t: string) => normalizeName(t))
+        );
+        const isOurTeamAttack = teamNamesLower.size > 0 
+          ? teamNamesLower.has(attackerLower)
+          : normalizeName(nickname) === attackerLower;
+
+        // 아군이 공격할 때는 녹색 사격선, 적군이 공격할 때는 적색 사격선
+        const color = isOurTeamAttack ? "#22c55e" : "#ef4444";
+
+        return (
+          <Polyline
+            key={`shotline-${ev.relativeTimeMs}-${idx}-${playbackTimeMs}`}
+            positions={[start, end]}
+            color={color}
+            weight={3.5}
+            opacity={opacity}
+            interactive={false}
+            pane="tooltipPane"
+          />
+        );
+      })
+      .filter(Boolean);
+  }, [telemetry, playbackTimeMs, mapName, nickname]);
+
+  // 4. Calculate active combat markers to overlay (within 3 seconds of occurrence)
+  const activeCombatMarkers = useMemo(() => {
+    if (!mapData || !mapData.combatEvents) return [];
+    
+    return mapData.combatEvents
+      .map((ev: any, idx: number) => {
+        const diff = playbackTimeMs - ev.relativeTimeMs;
+        if (diff < 0 || diff >= 3000) return null; // 발생 후 3초간 표시
+        if (!ev.victimX || !ev.victimY) return null;
+        
+        const pos = toLeafletCoords(ev.victimX, ev.victimY, mapName);
+        const isKill = ev.type === "kill";
+        const isOurTeamAttack = ev.isTeamAttacker === true;
+        const isOurTeamVictim = ev.isTeamVictim === true;
+        
+        let iconHtml = "";
+        let tooltipClass = "";
+        let text = "";
+        
+        if (isKill) {
+          if (isOurTeamAttack) {
+            // 아군이 적을 처치함 (킬)
+            iconHtml = `
+              <div class="relative flex items-center justify-center z-[2000]">
+                <div class="absolute w-8 h-8 bg-green-500 rounded-full opacity-40 animate-ping"></div>
+                <div class="relative w-6.5 h-6.5 bg-green-600 border border-white rounded-full flex items-center justify-center font-bold text-white shadow-lg text-[10px]">🎯</div>
+              </div>
+            `;
+            tooltipClass = "!bg-green-950/95 !border-green-800 !text-green-300";
+            text = `[아군 킬] ${ev.attacker} ➔ ${ev.victim} 사망 (${getTranslatedWeaponName(ev.weapon)})`;
+          } else {
+            // 적이 다른 적을 처치하거나, 아군이 사망함
+            iconHtml = `
+              <div class="relative flex items-center justify-center z-[2000]">
+                <div class="absolute w-7 h-7 bg-zinc-500 rounded-full opacity-35 animate-pulse"></div>
+                <div class="relative w-5.5 h-5.5 bg-zinc-700 border border-zinc-500 rounded-full flex items-center justify-center font-bold text-zinc-300 shadow-md text-[9px]">💀</div>
+              </div>
+            `;
+            tooltipClass = "!bg-zinc-950/95 !border-zinc-800 !text-zinc-400";
+            text = `[사망] ${ev.victim} (${getCleanAttackerName(ev.attacker)})`;
+          }
+        } else { // groggy (기절)
+          if (isOurTeamVictim) {
+            // 아군이 기절함
+            iconHtml = `
+              <div class="relative flex items-center justify-center z-[2000]">
+                <div class="absolute w-8 h-8 bg-red-500 rounded-full opacity-40 animate-ping"></div>
+                <div class="relative w-6 h-6 bg-red-600 border border-white rounded-full flex items-center justify-center font-bold text-white shadow-lg text-[10px]">⚠️</div>
+              </div>
+            `;
+            tooltipClass = "!bg-red-950/95 !border-red-800 !text-red-300";
+            text = `[아군 기절] ${ev.victim} 다운! (공격: ${getCleanAttackerName(ev.attacker)})`;
+          } else {
+            // 적이 기절함
+            iconHtml = `
+              <div class="relative flex items-center justify-center z-[2000]">
+                <div class="absolute w-7 h-7 bg-amber-500 rounded-full opacity-30 animate-pulse"></div>
+                <div class="relative w-5.5 h-5.5 bg-amber-600 border border-white rounded-full flex items-center justify-center font-bold text-white shadow-md text-[9px]">💥</div>
+              </div>
+            `;
+            tooltipClass = "!bg-amber-950/95 !border-amber-800 !text-amber-300";
+            text = `[적 기절] ${ev.victim} 다운! (공격: ${getCleanAttackerName(ev.attacker)})`;
+          }
+        }
+        
+        const combatIcon = L.divIcon({
+          html: iconHtml,
+          className: "custom-combat-event-marker",
+          iconSize: [24, 24],
+          iconAnchor: [12, 12],
+        });
+        
+        return (
+          <Marker key={`combat-${ev.type}-${ev.victim}-${idx}`} position={pos} icon={combatIcon}>
+            <Tooltip permanent direction="top" offset={[0, -10]} className={`custom-map-tooltip !text-[8.5px] !px-2 !py-0.8 !rounded shadow-xl font-bold ${tooltipClass}`}>
+              {text}
+            </Tooltip>
+          </Marker>
+        );
+      })
+      .filter(Boolean);
+  }, [mapData, playbackTimeMs, mapName]);
+
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center rounded-xl border border-zinc-800 bg-zinc-950/20">
@@ -469,63 +868,148 @@ export default function Squad2DMap({ matchId, nickname, platform, mapName }: Squ
 
   const { paths, firstKnock, enemies, knocks, attackerPosEvs } = mapData;
 
-  // 1. Calculate teammates position at current playbackTimeMs
+  // 1. 재생 시점 기준 아군들의 실시간 위치 및 상태 계산
   const computedPlayers = paths.map((p: any) => {
     const pos = interpolatePosition(p.posEvs, playbackTimeMs, mapName);
-    const isVictim = firstKnock && normalizeName(firstKnock.victim) === normalizeName(p.name);
-    const shouldShowAsGroggy = isVictim && playbackTimeMs >= T;
+    const status = getPlayerStatusAtTime(telemetry.events, p.name, playbackTimeMs);
     const vehicleId = getVehicleIdAtTime(p.posEvs, playbackTimeMs);
     return {
       ...p,
       currentPos: pos,
-      shouldShowAsGroggy,
+      status,
       vehicleId,
     };
   });
 
+  // 2. 재생 시점 기준 공격자의 실시간 위치 계산
+  const attackerCurrentPos = firstKnock && firstKnock.attacker
+    ? interpolatePosition(attackerPosEvs, playbackTimeMs, mapName)
+    : null;
+
+  // 3. 재생 시점 기준 주변 적들의 실시간 위치 및 상태 계산
+  const computedEnemies = enemies.map((e: any) => {
+    const pos = interpolatePosition(e.posEvs, playbackTimeMs, mapName);
+    const status = getPlayerStatusAtTime(telemetry.events, e.name, playbackTimeMs);
+    const vehicleId = getVehicleIdAtTime(e.posEvs, playbackTimeMs);
+    return {
+      ...e,
+      currentPos: pos,
+      status,
+      vehicleId,
+    };
+  });
+
+  // 4. 초근접 교전 시 이름 툴팁 가려짐 방지를 위한 캐릭터 간 거리 계산 (35미터 이내 시 permanent=false로 마우스 호버 노출 전환)
+  const activeCharacters: { name: string; pos: [number, number] }[] = [];
+
+  computedPlayers.forEach((p: any) => {
+    if (p.currentPos && p.status !== "dead") {
+      activeCharacters.push({ name: p.name, pos: p.currentPos });
+    }
+  });
+
+  computedEnemies.forEach((e: any) => {
+    if (e.currentPos && e.status !== "dead" && e.isSameSquad) {
+      activeCharacters.push({ name: e.name, pos: e.currentPos });
+    }
+  });
+
+  if (
+    firstKnock &&
+    firstKnock.attacker &&
+    attackerCurrentPos &&
+    playbackTimeMs >= T &&
+    firstKnock.type !== "focus_time"
+  ) {
+    if (!activeCharacters.some((c) => normalizeName(c.name) === normalizeName(firstKnock.attacker))) {
+      activeCharacters.push({ name: firstKnock.attacker, pos: attackerCurrentPos });
+    }
+  }
+
+  const proximityMap = new Map<string, boolean>();
+  for (let i = 0; i < activeCharacters.length; i++) {
+    const charA = activeCharacters[i];
+    let isTooClose = false;
+    for (let j = 0; j < activeCharacters.length; j++) {
+      if (i === j) continue;
+      const charB = activeCharacters[j];
+      const dist = Math.sqrt(
+        Math.pow(charA.pos[0] - charB.pos[0], 2) + Math.pow(charA.pos[1] - charB.pos[1], 2)
+      );
+      if (dist <= 60) {
+        isTooClose = true;
+        break;
+      }
+    }
+    proximityMap.set(normalizeName(charA.name), isTooClose);
+  }
+
+  // 5. 아군 마커 목록 생성
   const playerMarkers = computedPlayers
     .map((p: any) => {
-      if (!p.currentPos || p.shouldShowAsGroggy) return null;
+      if (!p.currentPos || p.status === "dead") return null;
 
       const isInVehicle = !!p.vehicleId;
       const badgeHtml = isInVehicle 
         ? `<div class="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-zinc-950 border border-zinc-800 rounded-full flex items-center justify-center text-[8px] shadow-md z-[1001]">🚗</div>` 
         : "";
 
+      const isGroggy = p.status === "groggy";
       const playerIcon = L.divIcon({
-        html: `
-          <div class="relative flex items-center justify-center">
-            <div class="w-4.5 h-4.5 rounded-full border border-white shadow-md flex items-center justify-center font-bold text-[9px] text-white" style="background-color: ${p.color};">
-              ${p.name.slice(0, 1).toUpperCase()}
+        html: isGroggy
+          ? `
+            <div class="relative flex items-center justify-center">
+              <div class="absolute w-6 h-6 bg-red-600 rounded-full opacity-40 animate-ping"></div>
+              <div class="w-4.5 h-4.5 rounded-full border border-red-500 shadow-md flex items-center justify-center font-bold text-[9px] bg-red-950 text-red-200">
+                💀
+              </div>
+              ${badgeHtml}
             </div>
-            ${badgeHtml}
-          </div>
-        `,
+          `
+          : `
+            <div class="relative flex items-center justify-center">
+              <div class="w-4.5 h-4.5 rounded-full border border-white shadow-md flex items-center justify-center font-bold text-[9px] text-white" style="background-color: ${p.color};">
+                ${p.name.slice(0, 1).toUpperCase()}
+              </div>
+              ${badgeHtml}
+            </div>
+          `,
         className: "custom-player-marker",
         iconSize: [18, 18],
         iconAnchor: [9, 9],
       });
 
+      const isTooClose = proximityMap.get(normalizeName(p.name)) || false;
+      const isHovered = hoveredChar && normalizeName(hoveredChar) === normalizeName(p.name);
+      const shouldShowTooltip = showNames && (!isTooClose || isHovered);
+
       return (
-        <Marker key={p.name} position={p.currentPos} icon={playerIcon}>
-          <Tooltip permanent direction="top" offset={[0, -9]} className="custom-map-tooltip !bg-zinc-950 !border-zinc-800 !text-zinc-200 !text-[8px] !px-1.5 !py-0.5 !rounded shadow-lg">
-            {p.name}
-          </Tooltip>
+        <Marker 
+          key={p.name} 
+          position={p.currentPos} 
+          icon={playerIcon}
+          eventHandlers={{
+            mouseover: () => setHoveredChar(p.name),
+            mouseout: () => setHoveredChar(null)
+          }}
+        >
+          {shouldShowTooltip && (
+            <Tooltip permanent direction="top" offset={[0, -9]} className={`custom-map-tooltip !border-zinc-800 !text-[8px] !px-1.5 !py-0.5 !rounded shadow-lg ${
+              isGroggy ? "!bg-red-950 !text-red-300 !border-red-900" : "!bg-zinc-950 !text-zinc-200"
+            }`}>
+              {isGroggy ? `[기절] ${p.name}` : p.name}
+            </Tooltip>
+          )}
         </Marker>
       );
     })
     .filter(Boolean);
 
-  // 2. Calculate attacker position at current playbackTimeMs
-  const attackerCurrentPos = firstKnock && firstKnock.attacker
-    ? interpolatePosition(attackerPosEvs, playbackTimeMs, mapName)
-    : null;
-
-  // Render knock/attacker links if present
+  // 6. 기절 유발선 및 해당 공격자 마커 생성
   let attackLine = null;
   let enemyMarker = null;
 
-  if (firstKnock && firstKnock.victimY && firstKnock.victimX) {
+  if (firstKnock && firstKnock.victimY && firstKnock.victimX && firstKnock.type !== "focus_time") {
     const isVictimInPlayers = computedPlayers.find(
       (p: any) => normalizeName(p.name) === normalizeName(firstKnock.victim)
     );
@@ -551,7 +1035,6 @@ export default function Squad2DMap({ matchId, nickname, platform, mapName }: Squ
         />
       );
 
-      // Render attacker with special alert icon if T has passed
       const attackerIcon = L.divIcon({
         html: `
           <div class="relative flex items-center justify-center">
@@ -565,15 +1048,27 @@ export default function Squad2DMap({ matchId, nickname, platform, mapName }: Squ
         iconAnchor: [12, 12],
       });
 
+      const isTooClose = proximityMap.get(normalizeName(firstKnock.attacker)) || false;
+      const isHovered = hoveredChar && normalizeName(hoveredChar) === normalizeName(firstKnock.attacker);
+      const shouldShowTooltip = showNames && (!isTooClose || isHovered);
+
       enemyMarker = (
-        <Marker position={attackerPos} icon={attackerIcon}>
-          <Tooltip permanent direction="top" offset={[0, -10]} className="custom-map-tooltip !bg-zinc-950 !border-red-800 !text-red-300 !text-[8px] !px-1.5 !py-0.5 shadow-lg">
-            적: {firstKnock.attacker} ({getTranslatedWeaponName(firstKnock.weapon)})
-          </Tooltip>
+        <Marker 
+          position={attackerPos} 
+          icon={attackerIcon}
+          eventHandlers={{
+            mouseover: () => setHoveredChar(firstKnock.attacker),
+            mouseout: () => setHoveredChar(null)
+          }}
+        >
+          {shouldShowTooltip && (
+            <Tooltip permanent direction="top" offset={[0, -10]} className="custom-map-tooltip !bg-zinc-950 !border-red-800 !text-red-300 !text-[8px] !px-1.5 !py-0.5 shadow-lg">
+              적: {firstKnock.attacker} ({getTranslatedWeaponName(firstKnock.weapon)})
+            </Tooltip>
+          )}
         </Marker>
       );
     } else if (firstKnock.attacker) {
-      // Before T, render attacker as standard enemy
       const standardAttackerIcon = L.divIcon({
         html: `
           <div class="relative flex items-center justify-center">
@@ -587,82 +1082,112 @@ export default function Squad2DMap({ matchId, nickname, platform, mapName }: Squ
         iconAnchor: [11, 11],
       });
 
+      const isTooClose = proximityMap.get(normalizeName(firstKnock.attacker)) || false;
+      const isHovered = hoveredChar && normalizeName(hoveredChar) === normalizeName(firstKnock.attacker);
+      const shouldShowTooltip = showNames && (!isTooClose || isHovered);
+
       enemyMarker = (
-        <Marker position={attackerPos} icon={standardAttackerIcon}>
-          <Tooltip direction="top" offset={[0, -8]} className="custom-map-tooltip !bg-zinc-950 !border-zinc-800 !text-zinc-200 !text-[8px] !px-1.5 !py-0.5 shadow-md">
-            적: {firstKnock.attacker}
-          </Tooltip>
+        <Marker 
+          position={attackerPos} 
+          icon={standardAttackerIcon}
+          eventHandlers={{
+            mouseover: () => setHoveredChar(firstKnock.attacker),
+            mouseout: () => setHoveredChar(null)
+          }}
+        >
+          {shouldShowTooltip && (
+            <Tooltip permanent direction="top" offset={[0, -8]} className="custom-map-tooltip !bg-zinc-950 !border-zinc-800 !text-zinc-200 !text-[8px] !px-1.5 !py-0.5 shadow-md">
+              적: {firstKnock.attacker}
+            </Tooltip>
+          )}
         </Marker>
       );
     }
   }
 
-  // 3. Render groggy icon conditionally when T is reached
+  // 7. 실제 기절 고정 핀 마커 생성
   let groggyMarker = null;
-  if (firstKnock && firstKnock.victimY && firstKnock.victimX && playbackTimeMs >= T) {
+  if (firstKnock && firstKnock.victimY && firstKnock.victimX && playbackTimeMs >= T && firstKnock.type !== "focus_time") {
     const isVictimInPlayers = computedPlayers.find(
       (p: any) => normalizeName(p.name) === normalizeName(firstKnock.victim)
     );
     const victimPos = isVictimInPlayers?.currentPos || toLeafletCoords(firstKnock.victimX, firstKnock.victimY, mapName);
 
+    const isTooClose = proximityMap.get(normalizeName(firstKnock.victim)) || false;
+    const isHovered = hoveredChar && normalizeName(hoveredChar) === normalizeName(firstKnock.victim);
+    const shouldShowTooltip = showNames && (!isTooClose || isHovered);
+
     groggyMarker = (
-      <Marker position={victimPos} icon={groggyIcon}>
-        <Tooltip permanent direction="bottom" offset={[0, 12]} className="custom-map-tooltip !bg-red-950/90 !border-red-800 !text-red-200 !text-[8px] !px-1.5 !py-0.5 shadow-lg">
-          {firstKnock.victim} 기절 (공격: {firstKnock.attacker || "환경요인"} - {getTranslatedWeaponName(firstKnock.weapon)})
-        </Tooltip>
+      <Marker 
+        position={victimPos} 
+        icon={groggyIcon}
+        eventHandlers={{
+          mouseover: () => setHoveredChar(firstKnock.victim),
+          mouseout: () => setHoveredChar(null)
+        }}
+      >
+        {shouldShowTooltip && (
+          <Tooltip permanent direction="bottom" offset={[0, 12]} className="custom-map-tooltip !bg-red-950/90 !border-red-800 !text-red-200 !text-[8px] !px-1.5 !py-0.5 shadow-lg">
+            {firstKnock.victim} 기절 (공격: {getCleanAttackerName(firstKnock.attacker)} - {getTranslatedWeaponName(firstKnock.weapon)})
+          </Tooltip>
+        )}
       </Marker>
     );
   }
 
-  // 4. Calculate nearby enemies position
-  const computedEnemies = enemies.map((e: any) => {
-    const pos = interpolatePosition(e.posEvs, playbackTimeMs, mapName);
-    const vehicleId = getVehicleIdAtTime(e.posEvs, playbackTimeMs);
-    return {
-      ...e,
-      currentPos: pos,
-      vehicleId,
-    };
-  });
-
+  // 8. 교전 상대 적군 마커 목록 생성
   const enemyMarkers = computedEnemies
     .map((e: any) => {
-      if (!e.currentPos) return null;
+      if (!e.currentPos || e.status === "dead") return null;
+
+      if (!e.isSameSquad) return null;
+
       const isInVehicle = !!e.vehicleId;
       const badgeHtml = isInVehicle 
         ? `<div class="absolute -bottom-1 -right-1 w-3.5 h-3.5 bg-zinc-950 border border-zinc-800 rounded-full flex items-center justify-center text-[8px] shadow-md z-[1001]">🚗</div>` 
         : "";
 
+      const isGroggy = e.status === "groggy";
       const customIcon = L.divIcon({
-        html: e.isSameSquad 
+        html: isGroggy
           ? `
             <div class="relative flex items-center justify-center">
               <div class="absolute w-6 h-6 bg-red-500 rounded-full opacity-40 animate-ping"></div>
-              <div class="relative w-5.5 h-5.5 bg-red-950 border-2 border-red-500 rounded-full flex items-center justify-center font-extrabold text-red-200 text-[9px] shadow-[0_0_8px_rgba(239,68,68,0.8)]">적</div>
+              <div class="relative w-5.5 h-5.5 bg-red-950 border-2 border-red-500 rounded-full flex items-center justify-center font-extrabold text-red-200 text-[9px] shadow-[0_0_8px_rgba(239,68,68,0.8)]">💀</div>
               ${badgeHtml}
             </div>
           `
           : `
-            <div class="relative flex items-center justify-center">
-              <div class="absolute w-5 h-5 bg-amber-500 rounded-full opacity-35 animate-pulse"></div>
-              <div class="relative w-4.5 h-4.5 bg-amber-950 border border-amber-500 rounded-full flex items-center justify-center font-bold text-amber-200 text-[8px] shadow-[0_0_6px_rgba(245,158,11,0.7)]">경계</div>
-              ${badgeHtml}
-            </div>
-          `,
-        className: e.isSameSquad ? "custom-enemy-marker" : "custom-other-enemy-marker",
-        iconSize: e.isSameSquad ? [22, 22] : [18, 18],
-        iconAnchor: e.isSameSquad ? [11, 11] : [9, 9],
+              <div class="relative flex items-center justify-center">
+                <div class="absolute w-6 h-6 bg-red-500 rounded-full opacity-40 animate-ping"></div>
+                <div class="relative w-5.5 h-5.5 bg-red-950 border-2 border-red-500 rounded-full flex items-center justify-center font-extrabold text-red-200 text-[9px] shadow-[0_0_8px_rgba(239,68,68,0.8)]">적</div>
+                ${badgeHtml}
+              </div>
+            `,
+        className: "custom-enemy-marker",
+        iconSize: [22, 22],
+        iconAnchor: [11, 11],
       });
 
+      const isTooClose = proximityMap.get(normalizeName(e.name)) || false;
+      const isHovered = hoveredChar && normalizeName(hoveredChar) === normalizeName(e.name);
+      const shouldShowTooltip = showNames && (!isTooClose || isHovered);
+
       return (
-        <Marker key={`enemy-${e.name}`} position={e.currentPos} icon={customIcon}>
-          <Tooltip permanent direction="top" offset={[0, -7]} className={`custom-map-tooltip !text-[8px] !px-1.5 !py-0.5 !rounded shadow-md ${
-            e.isSameSquad
-              ? "!bg-red-950/90 !border-red-800 !text-red-200"
-              : "!bg-amber-950/90 !border-amber-800 !text-amber-200"
-          }`}>
-            {e.isSameSquad ? "적" : "다른 팀"}: {e.name} (HP {Math.round(e.health)})
-          </Tooltip>
+        <Marker 
+          key={`enemy-${e.name}`} 
+          position={e.currentPos} 
+          icon={customIcon}
+          eventHandlers={{
+            mouseover: () => setHoveredChar(e.name),
+            mouseout: () => setHoveredChar(null)
+          }}
+        >
+          {shouldShowTooltip && (
+            <Tooltip permanent direction="top" offset={[0, -7]} className="custom-map-tooltip !text-[8px] !px-1.5 !py-0.5 !rounded shadow-md !bg-red-950/90 !border-red-800 !text-red-200">
+              적: {e.name} (HP {Math.round(e.health)})
+            </Tooltip>
+          )}
         </Marker>
       );
     })
@@ -706,8 +1231,14 @@ export default function Squad2DMap({ matchId, nickname, platform, mapName }: Squ
                   }`}
                 >
                   <span className="text-[9px] font-black opacity-75">{timeStr}</span>
-                  <span className="font-extrabold">{k.victim} 기절</span>
-                  <span className="text-[9px] opacity-75">(공격: {k.attacker || "환경요인"} - {weaponName})</span>
+                  {k.type === "focus_time" ? (
+                    <span className="font-extrabold text-purple-400">⚡ 원인 장면 분석 시점</span>
+                  ) : (
+                    <>
+                      <span className="font-extrabold">{k.victim} 기절</span>
+                      <span className="text-[9px] opacity-75">(공격: {getCleanAttackerName(k.attacker)} - {weaponName})</span>
+                    </>
+                  )}
                 </button>
               );
             })}
@@ -764,10 +1295,16 @@ export default function Squad2DMap({ matchId, nickname, platform, mapName }: Squ
             />
           ))}
 
+          {/* Render active shot lines */}
+          {activeShotLines}
+
           {/* Groggy / Attack Line */}
           {groggyMarker}
           {attackLine}
           {enemyMarker}
+
+          {/* Render active combat event markers */}
+          {activeCombatMarkers}
 
           {/* Render nearby enemies */}
           {enemyMarkers}
@@ -869,6 +1406,28 @@ export default function Squad2DMap({ matchId, nickname, platform, mapName }: Squ
                 <>
                   <EyeOff className="h-3 w-3" />
                   동선 끔
+                </>
+              )}
+            </button>
+
+            {/* Show Names Switch */}
+            <button
+              onClick={() => setShowNames(!showNames)}
+              className={`inline-flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[9px] font-bold border transition-all cursor-pointer ${
+                showNames
+                  ? "bg-purple-950/40 border-purple-500/50 text-purple-300"
+                  : "bg-zinc-950 border-zinc-800 text-zinc-500 hover:text-zinc-400"
+              }`}
+            >
+              {showNames ? (
+                <>
+                  <Eye className="h-3 w-3" />
+                  이름 켬
+                </>
+              ) : (
+                <>
+                  <EyeOff className="h-3 w-3" />
+                  이름 끔
                 </>
               )}
             </button>
