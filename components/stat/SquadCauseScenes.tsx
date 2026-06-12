@@ -54,7 +54,8 @@ type SceneFilter = "all" | "danger" | "good";
 interface SquadCauseScenesProps {
   scenes: SquadCauseSceneCardData[];
   selectedMatchId?: string;
-  onSelectMatch?: (matchId: string) => void;
+  onSelectMatch?: (matchId: string, anchorMs: number) => void;
+  teamNames?: string[];
 }
 
 const severityMeta = {
@@ -134,7 +135,7 @@ function getCounts(scenes: SquadCauseSceneCardData[]) {
   };
 }
 
-export default function SquadCauseScenes({ scenes, selectedMatchId, onSelectMatch }: SquadCauseScenesProps) {
+export default function SquadCauseScenes({ scenes, selectedMatchId, onSelectMatch, teamNames }: SquadCauseScenesProps) {
   const [filter, setFilter] = useState<SceneFilter>("all");
   const [mobileExpanded, setMobileExpanded] = useState(false);
 
@@ -254,14 +255,24 @@ export default function SquadCauseScenes({ scenes, selectedMatchId, onSelectMatc
               {scene.actors.length > 0 && (
                 <div className="mt-3 flex min-w-0 flex-wrap items-center gap-1.5">
                   <Users className="h-3.5 w-3.5 shrink-0 text-zinc-500" />
-                  {scene.actors.slice(0, 4).map(actor => (
-                    <span
-                      key={`${scene.id}:${actor}`}
-                      className="max-w-full truncate rounded-md border border-zinc-800 bg-zinc-950/60 px-2 py-0.5 text-[10px] font-bold text-zinc-300"
-                    >
-                      {actor}
-                    </span>
-                  ))}
+                  {scene.actors.slice(0, 4).map(actor => {
+                    const normActor = actor.toLowerCase().replace(/[\s\-_]/g, "");
+                    const isTeammate = teamNames
+                      ? teamNames.some(tName => tName.toLowerCase().replace(/[\s\-_]/g, "") === normActor)
+                      : true;
+                    return (
+                      <span
+                        key={`${scene.id}:${actor}`}
+                        className={`max-w-full truncate rounded-md border px-2 py-0.5 text-[10px] font-bold ${
+                          isTeammate
+                            ? "border-purple-500/20 bg-purple-500/5 text-purple-300"
+                            : "border-red-500/20 bg-red-500/5 text-red-300"
+                        }`}
+                      >
+                        {isTeammate ? actor : `적: ${actor}`}
+                      </span>
+                    );
+                  })}
                 </div>
               )}
 
@@ -295,7 +306,7 @@ export default function SquadCauseScenes({ scenes, selectedMatchId, onSelectMatc
                   <button
                     type="button"
                     data-testid="squad-cause-scene-map-button"
-                    onClick={() => onSelectMatch(scene.matchId)}
+                    onClick={() => onSelectMatch(scene.matchId, scene.timestampMs)}
                     className={`inline-flex min-h-9 items-center justify-center gap-1.5 rounded-lg border px-3 text-xs font-bold transition-colors ${
                       isSelected
                         ? "border-purple-500/30 bg-purple-500/15 text-purple-200"

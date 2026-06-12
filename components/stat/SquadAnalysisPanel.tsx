@@ -122,6 +122,8 @@ export default function SquadAnalysisPanel({ nickname, platform }: SquadAnalysis
 
   // 2D Map Selected Match State
   const [selectedMapMatchId, setSelectedMapMatchId] = useState<string>("");
+  // 2D Map focus time (원인 장면 카드 클릭 시 설정, null이면 기절 이벤트 기준)
+  const [selectedFocusTimeMs, setSelectedFocusTimeMs] = useState<number | null>(null);
   // 2D Map Collapse State
   const [showMap, setShowMap] = useState<boolean>(false);
 
@@ -402,8 +404,9 @@ export default function SquadAnalysisPanel({ nickname, platform }: SquadAnalysis
     }
   };
 
-  const handleSelectCauseSceneMatch = (matchId: string) => {
+  const handleSelectCauseSceneMatch = (matchId: string, anchorMs: number) => {
     setSelectedMapMatchId(matchId);
+    setSelectedFocusTimeMs(anchorMs);
     setShowMap(true);
     trackEvent({
       name: "replay_2d_opened",
@@ -731,6 +734,7 @@ export default function SquadAnalysisPanel({ nickname, platform }: SquadAnalysis
           scenes={analysisData.causeScenes}
           selectedMatchId={selectedMapMatchId}
           onSelectMatch={handleSelectCauseSceneMatch}
+          teamNames={analysisData?.roleProfiles?.map((p) => p.name) || [nickname]}
         />
       )}
  
@@ -978,11 +982,12 @@ export default function SquadAnalysisPanel({ nickname, platform }: SquadAnalysis
               {/* 2D Map Component */}
               {selectedMapMatchId && (
                 <Squad2DMap
-                  key={selectedMapMatchId}
+                  key={`${selectedMapMatchId}-${selectedFocusTimeMs ?? "default"}`}
                   matchId={selectedMapMatchId}
                   nickname={nickname}
                   platform={platform}
                   mapName={analysisData.matchesSummary.find((m) => m.matchId === selectedMapMatchId)?.mapName || "Baltic_Main"}
+                  focusTimeMs={selectedFocusTimeMs}
                 />
               )}
             </div>
