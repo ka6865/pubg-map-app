@@ -13,7 +13,7 @@ import { STORAGE_KEY_RECENT, STORAGE_KEY_FAVORITES } from "@/lib/pubg-analysis/c
 
 import type { UserProfile } from "@/types/map";
 import { useAuth } from "@/components/AuthProvider";
-import { useRouter, useParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 interface StatSearchProps {
@@ -24,7 +24,7 @@ interface StatSearchProps {
 /** 전적 검색 메인 컴포넌트 */
 export default function StatSearch({ initialPlatform, initialNickname }: StatSearchProps) {
   const router = useRouter();
-  const params = useParams();
+
   const { user } = useAuth();
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const mounted = React.useSyncExternalStore(
@@ -43,8 +43,34 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
   const [loading, setLoading] = useState(false);
   const [cooldown, setCooldown] = useState(false);
   const [result, setResult] = useState<any>(null);
-  const [error, setError] = useState("");
+  const [isCoolingDown, setIsCoolingDown] = useState(false);
+
+  // [V62.0] 이중 호출 방지를 위해 selectedSeason을 ref로도 관리하여 handleSearch가 불필요하게 재생성되지 않도록 함
   const [selectedSeason, setSelectedSeason] = useState("");
+  const selectedSeasonRef = useRef("");
+
+  // initialNickname 변경 감지용 ref - result를 의존성에 넣지 않아도 되도록 처리
+  const prevInitialNicknameRef = useRef<string | undefined>(initialNickname);
+  const prevInitialPlatformRef = useRef<string | undefined>(initialPlatform);
+
+  // 검색 진행 중 여부 ref - 이중 호출 방지 가드
+  const isSearchingRef = useRef(false);
+
+  // [V61.0] 1초마다 최근 업데이트 경과 시간을 실시간으로 갱신하고 쿨다운 상태를 판별하는 타이머
+  useEffect(() => {
+    if (!result?.updatedAt) {
+      setIsCoolingDown(false);
+      return;
+    }
+    const checkCooldown = () => {
+      const diffMs = Date.now() - new Date(result.updatedAt).getTime();
+      setIsCoolingDown(diffMs < 60 * 1000);
+    };
+    checkCooldown();
+    const interval = setInterval(checkCooldown, 1000);
+    return () => clearInterval(interval);
+  }, [result?.updatedAt]);
+  const [error, setError] = useState("");
   const [hasPrefilled, setHasPrefilled] = useState(false);
   const [suggestedUsers, setSuggestedUsers] = useState<{ nickname: string; platform: string }[]>([]);
   const [activeTab, setActiveTab] = useState<"overview" | "squad">("overview");
@@ -103,26 +129,41 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
     }
   }, [user]);
 
-  // 유저 프로필에 연동된 배그 닉네임이 있다면 초기 마운트 시 자동 검색
+  // [V62.0] selectedSeason ref 동기화 - handleSearch가 클로저로 최신 시즌 값을 참조하도록 함
+  useEffect(() => {
+    selectedSeasonRef.current = selectedSeason;
+  }, [selectedSeason]);
+
+  // [V62.0] handleSearch: useCallback deps에서 selectedSeason 제거하고 ref 참조로 대체
+  // cooldown/nickname/platform은 실제 값이 필요하므로 유지, selectedSeason은 ref 경유
   const handleSearch = useCallback(async (
-    targetSeason = selectedSeason,
+    targetSeason?: string,
     overrideNickname?: string,
-    overridePlatform?: string
+    overridePlatform?: string,
+    forceApiRefresh = false
   ) => {
+    const resolvedSeason = targetSeason ?? selectedSeasonRef.current;
     const searchName = overrideNickname || nickname;
     const searchPlatform = overridePlatform || platform;
     if (!searchName.trim() || cooldown) return;
 
+    // 이중 호출 방지 가드
+    if (isSearchingRef.current) return;
+    isSearchingRef.current = true;
+
     setLoading(true);
-    setResult(null); // 새로운 검색 시작 시 기존 결과 초기화 (버그 수정 및 cascading render 방지)
+    if (!forceApiRefresh) {
+      setResult(null);
+    }
     setError("");
     setSuggestedUsers([]);
     setCooldown(true);
     setShowDropdown(false);
 
     try {
+      const refreshQuery = forceApiRefresh ? "&refresh=true" : "";
       const res = await fetch(
-        `/api/pubg/player?nickname=${searchName}&platform=${searchPlatform}&season=${targetSeason}&_t=${Date.now()}`,
+        `/api/pubg/player?nickname=${searchName}&platform=${searchPlatform}&season=${resolvedSeason}${refreshQuery}&_t=${Date.now()}`,
         { cache: 'no-store' }
       );
       
@@ -139,12 +180,10 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
           setSuggestedUsers(data.suggestions);
         }
         setError(data?.error || `서버 에러가 발생했습니다. (HTTP ${res.status})`);
-        
-        // [Analytics] 검색 실패 (닉네임 없음 등)
         trackEvent({
           name: "stats_searched",
           params: {
-            nickname: nickname,
+            nickname: searchName,
             platform: searchPlatform,
             has_data: false,
           },
@@ -154,12 +193,12 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
 
       setResult(data);
       setSelectedSeason(data.seasonId);
+      selectedSeasonRef.current = data.seasonId;
       setActiveTab("overview");
 
       const actualName = data.nickname;
-      setNickname(actualName);
+      setNickname("");
 
-      // [Analytics] 전적 검색 성공
       trackEvent({
         name: "stats_searched",
         params: {
@@ -178,9 +217,13 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
         localStorage.setItem(STORAGE_KEY_RECENT, JSON.stringify(updated));
         return updated;
       });
-      // URL 업데이트 (동적 라우팅)
-      if (params.nickname !== actualName || params.platform !== searchPlatform) {
-        router.push(`/stats/${searchPlatform}/${actualName}`);
+
+      // URL 동기화: history.pushState를 사용하여 App Router의 서버 재렌더/remount 없이 URL만 업데이트
+      // router.push를 사용하면 page.tsx 재실행 → StatSearch remount → 자동검색 이중 호출 루프 발생
+      const currentPath = window.location.pathname;
+      const targetPath = `/stats/${searchPlatform}/${actualName}`;
+      if (currentPath !== targetPath) {
+        window.history.pushState(null, '', targetPath);
       }
     } catch (err: any) {
       const isRateLimit = err.message?.includes("429") || err.message?.toLowerCase().includes("too many requests");
@@ -188,44 +231,66 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
         ? "PUBG API 호출 한도가 일시적으로 초과되었습니다. 약 1분 후 다시 시도해 주세요."
         : err.message
       );
-      // [Analytics] 검색 실패 (닉네임 없음 등)
       trackEvent({
         name: "stats_searched",
         params: {
-          nickname: nickname,
+          nickname: searchName,
           platform: searchPlatform,
           has_data: false,
         },
       });
     } finally {
       setLoading(false);
+      isSearchingRef.current = false;
       setTimeout(() => setCooldown(false), 3000);
     }
-  }, [selectedSeason, nickname, platform, cooldown, params.nickname, params.platform, router]);
+  }, [nickname, platform, cooldown]);
 
+  // [V62.0] initialNickname/Platform props 변경 감지 - result를 의존성에서 제거하여 루프 차단
+  // ref로 이전 값을 추적하고, 실제로 다른 닉네임으로 변경됐을 때만 결과를 초기화
   useEffect(() => {
-    // URL 파라미터가 변경되면 이전 에러와 결과를 초기화하여 새로운 검색을 허용
-    setError("");
-    setResult(null);
+    const prevNick = prevInitialNicknameRef.current;
+    const prevPlat = prevInitialPlatformRef.current;
+
+    const nicknameChanged = initialNickname?.toLowerCase() !== prevNick?.toLowerCase();
+    const platformChanged = initialPlatform !== prevPlat;
+
+    prevInitialNicknameRef.current = initialNickname;
+    prevInitialPlatformRef.current = initialPlatform;
+
+    // 실제로 다른 닉네임/플랫폼으로 바뀐 경우에만 결과 초기화
+    if (nicknameChanged || platformChanged) {
+      setError("");
+      setResult(null);
+    }
   }, [initialNickname, initialPlatform]);
 
+  // [V62.0] 자동 검색 effect - result/handleSearch를 의존성에서 제거하여 재실행 루프 차단
+  // initialNickname이 있으면 마운트 시 1회만 실행, 이후 URL 변경은 위의 effect가 처리
+  const hasAutoSearchedRef = useRef(false);
   useEffect(() => {
-    if (result || loading || error) return;
+    // 이미 자동 검색을 수행했거나 로딩/에러/결과 있으면 건너뜀
+    if (hasAutoSearchedRef.current || loading || error) return;
 
-    // 1. URL 파라미터가 있는 경우 자동 검색 유지 (공유 링크 진입 등)
     if (initialNickname) {
-      handleSearch(selectedSeason, initialNickname, initialPlatform);
+      hasAutoSearchedRef.current = true;
+      handleSearch(undefined, initialNickname, initialPlatform);
       return;
     }
 
-    // 2. [Option B] 로그인 유저 — 자동 검색 제거, 닉네임 프리필만 1회 수행
     if (userProfile?.pubg_nickname && !hasPrefilled) {
       const userPlatform = userProfile.pubg_platform || "steam";
       setNickname(userProfile.pubg_nickname);
       setPlatform(userPlatform);
       setHasPrefilled(true);
     }
-  }, [userProfile, result, loading, error, selectedSeason, handleSearch, initialNickname, initialPlatform, hasPrefilled]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userProfile, hasPrefilled]);
+
+  // [V62.0] initialNickname이 변경되면 자동 검색 플래그를 리셋하고 재검색
+  useEffect(() => {
+    hasAutoSearchedRef.current = false;
+  }, [initialNickname, initialPlatform]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_FAVORITES, JSON.stringify(favorites));
@@ -481,22 +546,59 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
 
       {result && (
         <div style={{ display: "flex", flexDirection: "column", gap: "30px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "2px solid #333", paddingBottom: "15px", flexWrap: "wrap", gap: "15px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "15px", flexWrap: "wrap" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", borderBottom: "2px solid #333", paddingBottom: "15px", flexWrap: "wrap", gap: "15px" }}>
+            <div className="flex flex-col gap-3">
+              {/* 1행: 플랫폼/닉네임 + 클랜 배지 + 제재 확인 배지 */}
+              <div className="flex items-center gap-3 flex-wrap">
                 <div style={{ fontSize: "28px", fontWeight: "bold" }}>
                   <span style={{ color: "#888", fontSize: "16px", marginRight: "10px", verticalAlign: "middle" }}>
                     {result.platform === "steam" ? "Steam" : "Kakao"}
                   </span>
                   {result.nickname}
                 </div>
-                {/* 클랜 배지 */}
                 {result.clan && (
                   <ClanBadge clan={result.clan} isMobile={isMobile} />
                 )}
-                {/* 제재 상태 확인 버튼 */}
                 <BanStatusButton banType={result.banType} isMobile={isMobile} />
-                {/* 무기 마스터리 개별 페이지 이동 버튼 */}
+              </div>
+
+              {/* 2행: 전적 갱신 영역 (버튼, 즐겨찾기, 업데이트 시간 수평 정렬) */}
+              {(() => {
+                const isFav = favorites.includes(result.nickname);
+                return (
+                  <div className="flex items-center gap-3 text-xs text-gray-400 flex-wrap">
+                    {isCoolingDown ? (
+                      <button
+                        disabled
+                        className="px-3 py-1.5 bg-blue-600 text-white text-[11px] font-black rounded-lg border-none opacity-90 select-none cursor-not-allowed"
+                      >
+                        최신 전적
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleSearch(selectedSeason, result.nickname, result.platform, true)}
+                        disabled={loading}
+                        className="px-3 py-1.5 bg-[#2dd4bf] hover:bg-[#14b8a6] text-white text-[11px] font-black rounded-lg border-none cursor-pointer transition-all active:scale-95 shadow-md shadow-teal-950/20"
+                      >
+                        {loading ? "갱신 중..." : "전적 갱신"}
+                      </button>
+                    )}
+                    
+                    <button
+                      onClick={(e) => toggleFavorite(result.nickname, e)}
+                      className={`p-1.5 rounded-lg border-none transition-all cursor-pointer ${isFav ? "text-yellow-400 bg-yellow-400/10 hover:bg-yellow-400/20" : "text-gray-500 bg-white/5 hover:text-yellow-400 hover:bg-yellow-400/10"}`}
+                    >
+                      <Star size={13} fill={isFav ? "currentColor" : "none"} />
+                    </button>
+                    <span className="font-bold text-[11px] text-gray-500">
+                      최근 업데이트: {timeAgo(result.updatedAt)}
+                    </span>
+                  </div>
+                );
+              })()}
+
+              {/* 3행: 액션 버튼들 */}
+              <div className="flex items-center gap-2 flex-wrap">
                 <button
                   onClick={() => router.push(`/stats/${result.platform}/${result.nickname}/weapons`)}
                   className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 rounded-full text-[11px] font-black transition-all cursor-pointer"
@@ -504,14 +606,14 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
                   <Crosshair size={12} />
                   <span>🎯 무기 마스터리 분석</span>
                 </button>
+                <button
+                  onClick={() => router.push(`/stats/battle?nick1=${encodeURIComponent(result.nickname)}`)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600/20 hover:bg-purple-600/30 text-purple-400 border border-purple-500/30 rounded-full text-[11px] font-black transition-all group"
+                >
+                  <Swords size={12} className="group-hover:rotate-12 transition-transform" />
+                  <span>이 플레이어와 비교하기</span>
+                </button>
               </div>
-              <button
-                onClick={() => router.push(`/stats/battle?nick1=${encodeURIComponent(result.nickname)}`)}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-purple-600/20 hover:bg-purple-600/30 text-purple-400 border border-purple-500/30 rounded-full text-[11px] font-black transition-all group"
-              >
-                <Swords size={12} className="group-hover:rotate-12 transition-transform" />
-                <span>이 플레이어와 비교하기</span>
-              </button>
             </div>
             <select
               id={seasonId}
@@ -1018,4 +1120,25 @@ function HeroEmptyState({
       )}
     </div>
   );
+}
+
+// [V61.0] 최근 업데이트 경과 시간을 한글 텍스트로 변환해주는 헬퍼 함수
+function timeAgo(dateString?: string) {
+  if (!dateString) return "정보 없음";
+  const now = new Date();
+  const past = new Date(dateString);
+  const diffMs = now.getTime() - past.getTime();
+  const diffSec = Math.floor(diffMs / 1000);
+  
+  if (diffSec < 10) return "방금";
+  if (diffSec < 60) return `${diffSec}초 전`;
+  
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin}분 전`;
+  
+  const diffHour = Math.floor(diffMin / 60);
+  if (diffHour < 24) return `${diffHour}시간 전`;
+  
+  const diffDay = Math.floor(diffHour / 24);
+  return `${diffDay}일 전`;
 }
