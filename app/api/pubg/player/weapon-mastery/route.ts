@@ -94,8 +94,7 @@ export async function POST(request: Request) {
       .from("pubg_player_cache")
       .update({
         weapon_mastery_data: weaponMastery,
-        mastery_updated_at: masteryUpdatedAt,
-        updated_at: masteryUpdatedAt
+        mastery_updated_at: masteryUpdatedAt
       })
       .eq("id", cacheData.id)
       .eq("platform", platform);
