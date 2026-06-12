@@ -196,6 +196,7 @@ export default function AdminAgentChat({
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
       let fullText = "";
+      let buffer = "";
 
       if (reader) {
         while (true) {
@@ -216,8 +217,9 @@ export default function AdminAgentChat({
           );
           if (done) break;
 
-          const chunk = decoder.decode(value);
-          const lines = chunk.split("\n");
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() || "";
 
           for (const line of lines) {
             if (!line.trim()) continue;

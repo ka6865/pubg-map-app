@@ -51,6 +51,8 @@ export type BgmsEvent =
       params: {
         nick1: string;
         nick2: string;
+        platform1?: string;
+        platform2?: string;
         match_type: string;
       };
     }
@@ -59,6 +61,8 @@ export type BgmsEvent =
       params: {
         nick1: string;
         nick2: string;
+        platform1?: string;
+        platform2?: string;
         match_type: string;
         winner: string;             // nick1 | nick2 | draw
         score1: number;

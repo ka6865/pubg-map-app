@@ -20,6 +20,8 @@ interface Comparison {
 interface BattleResult {
   nick1: string;
   nick2: string;
+  platform1: string;
+  platform2: string;
   tier1: string;
   tier2: string;
   matchCount1: number;
@@ -31,6 +33,13 @@ interface BattleResult {
   score: { nick1: number; nick2: number; draw: number };
   overallWinner: string;
 }
+
+type PlayerSuggestion = { nickname: string; platform: string };
+
+const normalizeBattlePlatform = (platform?: string | null) => {
+  const value = String(platform || "").trim().toLowerCase();
+  return value === "steam" || value === "kakao" ? value : "";
+};
 
 const getTierStyle = (t: string) => {
   const tier = t.toUpperCase();
@@ -51,6 +60,8 @@ function BattleContent() {
   // URL 파라미터로 초기 상태 설정 (린트 에러 방지: useEffect 내 동기 setState 제거)
   const [nick1, setNick1] = useState(() => searchParams.get("nick1") || "");
   const [nick2, setNick2] = useState(() => searchParams.get("nick2") || "");
+  const [platform1, setPlatform1] = useState(() => normalizeBattlePlatform(searchParams.get("platform1")));
+  const [platform2, setPlatform2] = useState(() => normalizeBattlePlatform(searchParams.get("platform2")));
   const [matchType, setMatchType] = useState<"all" | "official" | "competitive">(() => (searchParams.get("matchType") as any) || "all");
   
   const [result, setResult] = useState<BattleResult | null>(null);
@@ -66,8 +77,8 @@ function BattleContent() {
   const [showDropdown2, setShowDropdown2] = useState(false);
 
   // [V54.7] 자동완성 상태 추가
-  const [suggestions1, setSuggestions1] = useState<{ nickname: string; platform: string }[]>([]);
-  const [suggestions2, setSuggestions2] = useState<{ nickname: string; platform: string }[]>([]);
+  const [suggestions1, setSuggestions1] = useState<PlayerSuggestion[]>([]);
+  const [suggestions2, setSuggestions2] = useState<PlayerSuggestion[]>([]);
   const [isSuggesting1, setIsSuggesting1] = useState(false);
   const [isSuggesting2, setIsSuggesting2] = useState(false);
 
@@ -123,6 +134,8 @@ function BattleContent() {
     player1: string,
     player2: string,
     mode: string,
+    playerPlatform1?: string,
+    playerPlatform2?: string,
     score?: { nick1: number; nick2: number },
     winner?: string
   ) => {
@@ -131,6 +144,8 @@ function BattleContent() {
     url.searchParams.set("nick1", player1);
     url.searchParams.set("nick2", player2);
     url.searchParams.set("matchType", mode);
+    if (playerPlatform1) url.searchParams.set("platform1", playerPlatform1);
+    if (playerPlatform2) url.searchParams.set("platform2", playerPlatform2);
     if (score !== undefined) {
       url.searchParams.set("score1", String(score.nick1));
       url.searchParams.set("score2", String(score.nick2));
@@ -149,12 +164,34 @@ function BattleContent() {
     window.setTimeout(() => setShareMessage(null), 2500);
   };
 
-  const buildBattlePath = (player1: string, player2: string, mode: string) =>
-    `/stats/battle?nick1=${encodeURIComponent(player1)}&nick2=${encodeURIComponent(player2)}&matchType=${mode}`;
+  const buildBattlePath = (
+    player1: string,
+    player2: string,
+    mode: string,
+    playerPlatform1?: string,
+    playerPlatform2?: string
+  ) => {
+    const params = new URLSearchParams({
+      nick1: player1,
+      nick2: player2,
+      matchType: mode
+    });
+    if (playerPlatform1) params.set("platform1", playerPlatform1);
+    if (playerPlatform2) params.set("platform2", playerPlatform2);
+    return `/stats/battle?${params.toString()}`;
+  };
 
-  const runBattle = useCallback(async (player1: string, player2: string, mode: string) => {
+  const runBattle = useCallback(async (
+    player1: string,
+    player2: string,
+    mode: string,
+    playerPlatform1?: string,
+    playerPlatform2?: string
+  ) => {
     const n1 = player1.trim();
     const n2 = player2.trim();
+    const p1 = normalizeBattlePlatform(playerPlatform1);
+    const p2 = normalizeBattlePlatform(playerPlatform2);
     if (!n1 || !n2) return;
     
     setLoading(true);
@@ -168,15 +205,27 @@ function BattleContent() {
       params: {
         nick1: n1,
         nick2: n2,
+        platform1: p1 || "unresolved",
+        platform2: p2 || "unresolved",
         match_type: mode
       }
     });
 
     try {
-      const res = await fetch(`/api/pubg/battle?nick1=${encodeURIComponent(n1)}&nick2=${encodeURIComponent(n2)}&matchType=${mode}`);
+      const params = new URLSearchParams({
+        nick1: n1,
+        nick2: n2,
+        matchType: mode
+      });
+      if (p1) params.set("platform1", p1);
+      if (p2) params.set("platform2", p2);
+
+      const res = await fetch(`/api/pubg/battle?${params.toString()}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "알 수 없는 오류");
       setResult(data);
+      const resolvedPlatform1 = normalizeBattlePlatform(data.platform1);
+      const resolvedPlatform2 = normalizeBattlePlatform(data.platform2);
 
       // [Analytics] 대결 완료
       trackEvent({
@@ -184,6 +233,8 @@ function BattleContent() {
         params: {
           nick1: data.nick1,
           nick2: data.nick2,
+          platform1: resolvedPlatform1,
+          platform2: resolvedPlatform2,
           match_type: mode,
           winner: data.overallWinner === "draw" ? "draw" : data.overallWinner,
           score1: data.score.nick1,
@@ -194,14 +245,18 @@ function BattleContent() {
       // [V54.7] 정확한 대소문자 닉네임으로 UI 동기화
       if (data.nick1 && data.nick1 !== n1) setNick1(data.nick1);
       if (data.nick2 && data.nick2 !== n2) setNick2(data.nick2);
+      if (resolvedPlatform1) setPlatform1(resolvedPlatform1);
+      if (resolvedPlatform2) setPlatform2(resolvedPlatform2);
 
       updateRecentSearches(data.nick1 || n1);
       updateRecentSearches(data.nick2 || n2);
 
-      lastAutoBattleKeyRef.current = `${n1}::${n2}::${mode}`;
+      const finalNick1 = data.nick1 || n1;
+      const finalNick2 = data.nick2 || n2;
+      lastAutoBattleKeyRef.current = `${finalNick1}::${finalNick2}::${resolvedPlatform1 || p1}::${resolvedPlatform2 || p2}::${mode}`;
 
       // [V54.7] URL 업데이트 (새로고침/공유 대응)
-      const newPath = buildBattlePath(data.nick1 || n1, data.nick2 || n2, mode);
+      const newPath = buildBattlePath(finalNick1, finalNick2, mode, resolvedPlatform1 || p1, resolvedPlatform2 || p2);
       router.replace(newPath, { scroll: false });
     } catch (e: any) {
       setError(e.message);
@@ -211,28 +266,32 @@ function BattleContent() {
   }, [updateRecentSearches, router]);
 
   const handleBattle = useCallback(() => {
-    void runBattle(nick1, nick2, matchType);
-  }, [nick1, nick2, matchType, runBattle]);
+    void runBattle(nick1, nick2, matchType, platform1, platform2);
+  }, [nick1, nick2, platform1, platform2, matchType, runBattle]);
 
   // 자동 검색 로직 (초기 로드 및 뒤로가기 대응)
   useEffect(() => {
     const n1 = searchParams.get("nick1");
     const n2 = searchParams.get("nick2");
+    const p1 = normalizeBattlePlatform(searchParams.get("platform1"));
+    const p2 = normalizeBattlePlatform(searchParams.get("platform2"));
     const m = searchParams.get("matchType") || "all";
     
     if (n1 && n2) {
       // 현재 상태와 URL이 다를 때만 상태 업데이트
       if (n1 !== nick1) setNick1(n1);
       if (n2 !== nick2) setNick2(n2);
+      if (p1 !== platform1) setPlatform1(p1);
+      if (p2 !== platform2) setPlatform2(p2);
       if (m !== matchType) setMatchType(m as any);
 
-      const battleKey = `${n1}::${n2}::${m}`;
+      const battleKey = `${n1}::${n2}::${p1}::${p2}::${m}`;
       if (lastAutoBattleKeyRef.current === battleKey) return;
       
       lastAutoBattleKeyRef.current = battleKey;
-      void runBattle(n1, n2, m);
+      void runBattle(n1, n2, m, p1, p2);
     }
-  }, [searchParams, runBattle]);
+  }, [searchParams, runBattle, nick1, nick2, platform1, platform2, matchType]);
 
   // 필터(matchType) 변경 시 즉시 대결 트리거
   const handleFilterChange = (newMode: string) => {
@@ -245,11 +304,11 @@ function BattleContent() {
     
     if (n1 && n2) {
       // URL 업데이트
-      const newPath = buildBattlePath(n1, n2, newMode);
+      const newPath = buildBattlePath(n1, n2, newMode, platform1, platform2);
       router.replace(newPath, { scroll: false });
       
       // API 호출 (상태 업데이트 기다리지 않고 새 모드 주입)
-      void runBattle(n1, n2, newMode);
+      void runBattle(n1, n2, newMode, platform1, platform2);
     }
   };
 
@@ -278,7 +337,7 @@ function BattleContent() {
     try {
       setShareBusy("copy");
       await navigator.clipboard.writeText(
-        buildShareUrl(result.nick1, result.nick2, matchType, result.score, result.overallWinner)
+        buildShareUrl(result.nick1, result.nick2, matchType, result.platform1, result.platform2, result.score, result.overallWinner)
       );
       // [Analytics]
       trackEvent({ name: "share_clicked", params: { method: "link_copy", page: "battle" } });
@@ -297,6 +356,8 @@ function BattleContent() {
       result.nick1,
       result.nick2,
       matchType,
+      result.platform1,
+      result.platform2,
       result.score,
       result.overallWinner
     );
@@ -384,9 +445,15 @@ function BattleContent() {
     }
   };
 
-  const setNicknameValue = (idx: 1 | 2, val: string) => {
-    if (idx === 1) setNick1(val);
-    else setNick2(val);
+  const setNicknameValue = (idx: 1 | 2, val: string, selectedPlatform?: string) => {
+    const nextPlatform = normalizeBattlePlatform(selectedPlatform);
+    if (idx === 1) {
+      setNick1(val);
+      setPlatform1(nextPlatform);
+    } else {
+      setNick2(val);
+      setPlatform2(nextPlatform);
+    }
   };
 
   const getDropdownItems = () => {
@@ -488,7 +555,7 @@ function BattleContent() {
                   recentSearches={recentSearches}
                   favorites={favorites}
                   items={getDropdownItems()} 
-                  onSelect={(val) => { setNick1(val); setShowDropdown1(false); }} 
+                  onSelect={(val, selectedPlatform) => { setNicknameValue(1, val, selectedPlatform); setShowDropdown1(false); }} 
                   onToggleFavorite={toggleFavorite}
                   onRemoveRecent={removeRecentSearch}
                   onClose={() => setShowDropdown1(false)}
@@ -516,12 +583,21 @@ function BattleContent() {
                   recentSearches={recentSearches}
                   favorites={favorites}
                   items={getDropdownItems()} 
-                  onSelect={(val) => { setNick2(val); setShowDropdown2(false); }} 
+                  onSelect={(val, selectedPlatform) => { setNicknameValue(2, val, selectedPlatform); setShowDropdown2(false); }} 
                   onToggleFavorite={toggleFavorite}
                   onRemoveRecent={removeRecentSearch}
                   onClose={() => setShowDropdown2(false)}
                 />
               )}
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-[1fr_auto_1fr] gap-2 md:gap-4 text-[10px] font-bold uppercase tracking-wide text-gray-500">
+            <div className="text-center md:text-left">
+              플랫폼: {platform1 ? platform1.toUpperCase() : "자동 확인"}
+            </div>
+            <div className="hidden md:block w-6" />
+            <div className="text-center md:text-right">
+              플랫폼: {platform2 ? platform2.toUpperCase() : "자동 확인"}
             </div>
           </div>
           {/* 게임 모드 필터 */}
@@ -580,6 +656,7 @@ function BattleContent() {
                     <div className={`inline-block px-3 py-1 rounded-xl border text-[10px] md:text-xs font-black italic tracking-tighter mb-2 shrink-0 ${getTierStyle(result.tier1)}`}>
                       {result.tier1} Tier
                     </div>
+                    <div className="mb-1 text-[9px] font-black uppercase tracking-wider text-indigo-200/50">{result.platform1}</div>
                     <div className="font-black text-base md:text-xl text-indigo-300 truncate w-full max-w-[80px] xs:max-w-[120px] md:max-w-none px-1" title={result.nick1}>
                       {result.nick1}
                     </div>
@@ -598,6 +675,7 @@ function BattleContent() {
                     <div className={`inline-block px-3 py-1 rounded-xl border text-[10px] md:text-xs font-black italic tracking-tighter mb-2 shrink-0 ${getTierStyle(result.tier2)}`}>
                       {result.tier2} Tier
                     </div>
+                    <div className="mb-1 text-[9px] font-black uppercase tracking-wider text-rose-200/50">{result.platform2}</div>
                     <div className="font-black text-base md:text-xl text-rose-300 truncate w-full max-w-[80px] xs:max-w-[120px] md:max-w-none px-1" title={result.nick2}>
                       {result.nick2}
                     </div>
@@ -740,12 +818,12 @@ function NicknameDropdown({
   onClose 
 }: { 
   nickname: string;
-  suggestions: { nickname: string; platform: string }[];
+  suggestions: PlayerSuggestion[];
   isSuggesting: boolean;
   recentSearches: string[];
   favorites: string[];
   items: { name: string; type: "favorite" | "recent" }[];
-  onSelect: (val: string) => void;
+  onSelect: (val: string, platform?: string) => void;
   onToggleFavorite: (name: string, e: React.MouseEvent) => void;
   onRemoveRecent: (name: string, e: React.MouseEvent) => void;
   onClose: () => void;
@@ -764,7 +842,7 @@ function NicknameDropdown({
                 <div
                   key={`suggest-${s.nickname}-${i}`}
                   onClick={() => {
-                    onSelect(s.nickname);
+                    onSelect(s.nickname, s.platform);
                     onClose();
                   }}
                   className="w-full px-4 py-3 flex items-center gap-3 hover:bg-amber-500/10 transition-colors text-left border-b border-white/5 last:border-0 group cursor-pointer"

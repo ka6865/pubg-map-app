@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { normalizeName } from "@/lib/pubg-analysis/utils";
 import { estimateAverageTierFromRows } from "@/lib/pubg-analysis/tierAveraging";
+import { normalizePlatform } from "@/lib/pubg-analysis/cacheIdentity";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -37,49 +38,105 @@ function calcAvg(data: any[], key: MetricKey): number | null {
 }
 
 const MAX_COMPARE_MATCHES = 20;
+const VALID_BATTLE_PLATFORMS = new Set(["steam", "kakao"]);
+
+type ResolvedBattlePlayer = {
+  nickname: string;
+  playerId: string;
+  platform: string;
+};
+
+async function resolveBattlePlayer(input: string, requestedPlatform?: string | null): Promise<ResolvedBattlePlayer> {
+  const normalizedRequestedPlatform = requestedPlatform ? normalizePlatform(requestedPlatform) : "";
+  const normalizedInput = normalizeName(input);
+
+  if (normalizedRequestedPlatform) {
+    if (!VALID_BATTLE_PLATFORMS.has(normalizedRequestedPlatform)) {
+      throw new Error(`지원하지 않는 플랫폼입니다: ${requestedPlatform}`);
+    }
+
+    const { data } = await supabase
+      .from("pubg_player_cache")
+      .select("nickname, platform")
+      .eq("lower_nickname", input.toLowerCase())
+      .eq("platform", normalizedRequestedPlatform)
+      .order("updated_at", { ascending: false })
+      .limit(1);
+
+    return {
+      nickname: data?.[0]?.nickname || input,
+      playerId: normalizedInput,
+      platform: normalizedRequestedPlatform
+    };
+  }
+
+  const { data } = await supabase
+    .from("pubg_player_cache")
+    .select("nickname, platform")
+    .eq("lower_nickname", input.toLowerCase())
+    .order("updated_at", { ascending: false })
+    .limit(8);
+
+  const validRows = (data || []).filter((row: any) => VALID_BATTLE_PLATFORMS.has(normalizePlatform(row.platform)));
+  const platforms = Array.from(new Set(validRows.map((row: any) => normalizePlatform(row.platform))));
+
+  if (platforms.length === 1) {
+    return {
+      nickname: validRows[0]?.nickname || input,
+      playerId: normalizedInput,
+      platform: platforms[0]
+    };
+  }
+
+  if (platforms.length > 1) {
+    throw new Error(`'${input}' 닉네임은 여러 플랫폼에 존재합니다. 플랫폼을 선택해 주세요.`);
+  }
+
+  throw new Error(`'${input}' 플랫폼을 확인할 수 없습니다. 전적 검색에서 플랫폼을 먼저 선택해 주세요.`);
+}
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const rawNick1 = searchParams.get("nick1")?.trim() || "";
   const rawNick2 = searchParams.get("nick2")?.trim() || "";
   const matchType = searchParams.get("matchType") || "all";
+  const platform1 = searchParams.get("platform1");
+  const platform2 = searchParams.get("platform2");
 
   if (!rawNick1 || !rawNick2) {
     return NextResponse.json({ error: "두 닉네임이 필요합니다." }, { status: 400 });
   }
 
-  // 1. 캐시에서 정확한 닉네임 및 플랫폼 조회 시도
-  const getCorrectNickname = async (input: string) => {
-    const { data } = await supabase
-      .from('pubg_player_cache')
-      .select('nickname')
-      .eq('lower_nickname', input.toLowerCase())
-      .maybeSingle();
-    return data?.nickname || input;
-  };
+  let player1: ResolvedBattlePlayer;
+  let player2: ResolvedBattlePlayer;
 
-  const [actualNick1, actualNick2] = await Promise.all([
-    getCorrectNickname(rawNick1),
-    getCorrectNickname(rawNick2)
-  ]);
+  try {
+    [player1, player2] = await Promise.all([
+      resolveBattlePlayer(rawNick1, platform1),
+      resolveBattlePlayer(rawNick2, platform2)
+    ]);
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 400 });
+  }
 
-  const nick1 = normalizeName(actualNick1);
-  const nick2 = normalizeName(actualNick2);
+  const nick1 = player1.playerId;
+  const nick2 = player2.playerId;
 
-  if (nick1 === nick2) {
+  if (nick1 === nick2 && player1.platform === player2.platform) {
     return NextResponse.json({ error: "서로 다른 닉네임을 입력해 주세요." }, { status: 400 });
   }
 
   const SELECT_COLS = [
     "damage", "kills", "initiative_rate", "reversal_rate", "counter_latency_ms", "revive_rate", "trade_rate",
-    "duel_win_rate", "solo_kill_rate", "death_phase", "tier", "score", "game_mode", "created_at",
+    "duel_win_rate", "solo_kill_rate", "death_phase", "tier", "score", "game_mode", "created_at", "platform",
   ].join(", ");
 
-  const buildQuery = (nickname: string) => {
+  const buildQuery = (player: ResolvedBattlePlayer) => {
     let q = supabase
       .from("global_benchmarks")
       .select(SELECT_COLS)
-      .eq("player_id", nickname)
+      .eq("player_id", player.playerId)
+      .eq("platform", player.platform)
       .not("game_mode", "ilike", "%training%")
       .not("game_mode", "ilike", "%tdm%")
       .order("created_at", { ascending: false })
@@ -94,19 +151,19 @@ export async function GET(request: Request) {
   };
 
   const [r1, r2] = await Promise.all([
-    buildQuery(nick1),
-    buildQuery(nick2),
+    buildQuery(player1),
+    buildQuery(player2),
   ]);
 
   if (!r1.data?.length) {
     return NextResponse.json(
-      { error: `'${rawNick1}' 의 분석 데이터가 없습니다. 전적 분석을 먼저 실행해 주세요.` },
+      { error: `'${rawNick1}' (${player1.platform}) 의 분석 데이터가 없습니다. 전적 분석을 먼저 실행해 주세요.` },
       { status: 404 }
     );
   }
   if (!r2.data?.length) {
     return NextResponse.json(
-      { error: `'${rawNick2}' 의 분석 데이터가 없습니다. 전적 분석을 먼저 실행해 주세요.` },
+      { error: `'${rawNick2}' (${player2.platform}) 의 분석 데이터가 없습니다. 전적 분석을 먼저 실행해 주세요.` },
       { status: 404 }
     );
   }
@@ -155,12 +212,14 @@ export async function GET(request: Request) {
   };
 
   const overallWinner =
-    score.nick1 > score.nick2 ? actualNick1 :
-    score.nick2 > score.nick1 ? actualNick2 : "draw";
+    score.nick1 > score.nick2 ? player1.nickname :
+    score.nick2 > score.nick1 ? player2.nickname : "draw";
 
   return NextResponse.json({
-    nick1: actualNick1,
-    nick2: actualNick2,
+    nick1: player1.nickname,
+    nick2: player2.nickname,
+    platform1: player1.platform,
+    platform2: player2.platform,
     tier1, tier2,
     matchCount1: rows1.length,
     matchCount2: rows2.length,
