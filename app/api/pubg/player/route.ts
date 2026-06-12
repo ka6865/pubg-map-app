@@ -72,7 +72,8 @@ export async function GET(request: Request) {
   const nickname = searchParams.get("nickname");
   const platform = searchParams.get("platform") || "steam";
   const reqSeason = searchParams.get("season");
-  const forceRefresh = searchParams.has("_t") || searchParams.get("refresh") === "true";
+  // _t 타임스탬프 파라미터는 강제 갱신 조건에서 제외하여 단순 검색/로딩 시 캐시를 사용하도록 개편
+  const forceRefresh = searchParams.get("refresh") === "true";
 
   if (!nickname)
     return NextResponse.json(
@@ -109,6 +110,55 @@ export async function GET(request: Request) {
   if (cacheData) {
     targetNickname = cacheData.nickname;
     console.log(`[CACHE HIT] ${nickname} -> ${targetNickname}`);
+
+    // [DB 캐시 우선 조회] 강제 갱신이 아니라면 외부 PUBG API 호출을 원천 차단하고 DB 캐시 즉시 반환
+    if (!forceRefresh) {
+      const availableSeasons = cacheData.seasons_list || [];
+      const currentSeason = availableSeasons.find(
+        (s: any) => s.attributes?.isCurrentSeason || s.isCurrentSeason
+      ) || availableSeasons[0];
+      
+      // 요청 시즌이 없거나 빈 문자열("")이면 마지막 저장 시즌 적용
+      const targetSeasonId = (reqSeason && reqSeason !== "")
+        ? reqSeason
+        : (cacheData.last_season_id || (currentSeason ? currentSeason.id : null));
+      
+      let statsForSeason = cacheData.season_stats_data ? cacheData.season_stats_data[targetSeasonId] : null;
+      
+      // 요청 시즌 통계가 없을 경우 DB 캐시에 있는 다른 시즌 데이터로 Fallback 대체
+      if (!statsForSeason && cacheData.season_stats_data) {
+        const fallbackSeasonId = cacheData.last_season_id || Object.keys(cacheData.season_stats_data)[0];
+        if (fallbackSeasonId) {
+          statsForSeason = cacheData.season_stats_data[fallbackSeasonId];
+          console.log(`[DB CACHE SEASON FALLBACK] Stats for ${targetSeasonId} not found, fallback to ${fallbackSeasonId}`);
+        }
+      }
+
+      console.log(`[DB CACHE FULL HIT] Returning stored stats for ${targetNickname} (Season: ${targetSeasonId})`);
+      const responseBody = {
+        nickname: targetNickname,
+        platform: cacheData.platform,
+        seasonId: targetSeasonId,
+        seasons: availableSeasons.map((s: any) => ({
+          id: s.id,
+          name: s.name || `Season ${s.id.split("-").pop()}`,
+        })),
+        stats: statsForSeason || { ranked: null, normal: null },
+        recentMatches: cacheData.recent_match_ids || [],
+        clan: cacheData.clan_data,
+        weaponMastery: cacheData.weapon_mastery_data || [],
+        banType: cacheData.ban_type || "None",
+        updatedAt: cacheData.updated_at
+      };
+
+      // 인메모리 캐시 업데이트
+      playerResponseCache.set(cacheKey, {
+        timestamp: Date.now(),
+        data: responseBody
+      });
+
+      return NextResponse.json(responseBody);
+    }
   }
 
   try {
@@ -324,20 +374,34 @@ export async function GET(request: Request) {
 
     // 4. 캐시 업데이트 (클랜/무기 정보 통합 upsert 및 검색 횟수 누적)
     const currentSearchCount = cacheData?.search_count ?? 0;
+    const nowIso = new Date().toISOString();
+
+    // 기존 season_stats_data에 현재 시즌 통계를 병합하여 저장
+    const existingSeasonStats = cacheData?.season_stats_data || {};
+    const updatedSeasonStats = {
+      ...existingSeasonStats,
+      [targetSeasonId]: { ranked: rankedStats, normal: normalStats },
+    };
+
     const cacheUpdateData: any = {
       id: accountId,
       platform,
       nickname: actualNickname,
       lower_nickname: actualNickname.toLowerCase(),
       search_count: currentSearchCount + 1,
-      updated_at: new Date().toISOString(),
-      ban_type: banType
+      updated_at: nowIso,
+      ban_type: banType,
+      // 시즌/매치 데이터를 항상 갱신하여 DB와 응답이 동기화되도록 보장
+      season_stats_data: updatedSeasonStats,
+      last_season_id: targetSeasonId,
+      recent_match_ids: recentMatches,
+      seasons_list: availableSeasons,
     };
     
     const isNewUser = !cacheData;
     if (clanResult.updated || isNewUser) {
       cacheUpdateData.clan_data = clanResult.data;
-      cacheUpdateData.clan_updated_at = new Date().toISOString();
+      cacheUpdateData.clan_updated_at = nowIso;
     }
 
     supabase.from('pubg_player_cache')
@@ -359,6 +423,8 @@ export async function GET(request: Request) {
       clan,
       weaponMastery,
       banType,
+      // PUBG API 직접 호출 경로에서도 updatedAt을 포함하여 클라이언트가 올바른 시각을 표시하도록 보장
+      updatedAt: nowIso,
     };
 
     // 인메모리 캐시 업데이트
