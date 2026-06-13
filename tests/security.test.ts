@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { POST as postsWritePOST } from "../app/api/posts/write/route";
+import { POST as postsPromotePOST } from "../app/api/posts/promote/route";
 import { withAuthGuard } from "../utils/supabase/guard";
 import { NextResponse } from "next/server";
 
@@ -24,11 +25,47 @@ describe("🔒 BGMS API Route Security Guard Tests", () => {
     };
 
     postChain = {
-      insert: vi.fn().mockReturnThis(),
-      update: vi.fn().mockReturnThis(),
-      select: vi.fn().mockResolvedValue({ data: [{ id: "new-post-id", title: "My Post" }], error: null }),
-      eq: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: { user_id: "user-A", content: "" }, error: null }),
+      _history: [],
+      _singleValue: { data: { user_id: "user-A", content: "", status: "draft" }, error: null },
+      _singleValues: [],
+      _arrayValue: { data: [{ id: "new-post-id", title: "My Post" }], error: null },
+
+      insert: vi.fn().mockImplementation(function(this: any) {
+        this._history.push("insert");
+        return this;
+      }),
+      update: vi.fn().mockImplementation(function(this: any) {
+        this._history.push("update");
+        return this;
+      }),
+      delete: vi.fn().mockImplementation(function(this: any) {
+        this._history.push("delete");
+        return this;
+      }),
+      select: vi.fn().mockImplementation(function(this: any) {
+        this._history.push("select");
+        return this;
+      }),
+      eq: vi.fn().mockImplementation(function(this: any) {
+        this._history.push("eq");
+        return this;
+      }),
+      single: vi.fn().mockImplementation(function(this: any) {
+        this._history.push("single");
+        return this;
+      }),
+
+      then: vi.fn().mockImplementation(function(this: any, onfulfilled: any) {
+        const hasSingle = this._history.includes("single");
+        let value;
+        if (hasSingle) {
+          value = this._singleValues.shift() || this._singleValue;
+        } else {
+          value = this._arrayValue;
+        }
+        this._history = [];
+        return Promise.resolve(value).then(onfulfilled);
+      })
     };
 
     // supabaseAdmin DB 쿼리 mock 설정
@@ -179,6 +216,235 @@ describe("🔒 BGMS API Route Security Guard Tests", () => {
 
       const json = await response.json();
       expect(json.success).toBe(true);
+    });
+  });
+
+  describe("📝 게시글 승격 API (/api/posts/promote)", () => {
+    it("1. 비로그인 유저가 접근할 경우 401 Unauthorized 에러를 반환해야 함", async () => {
+      (withAuthGuard as any).mockResolvedValue({
+        error: NextResponse.json(
+          { error: "로그인이 필요합니다. 로그인 후 다시 시도해주세요." },
+          { status: 401 }
+        ),
+      });
+
+      const mockRequest = new Request("http://localhost:3000/api/posts/promote", {
+        method: "POST",
+        body: JSON.stringify({ postId: "draft-id" }),
+      });
+
+      const response = await postsPromotePOST(mockRequest);
+      expect(response.status).toBe(401);
+
+      const json = await response.json();
+      expect(json.error).toContain("로그인이 필요합니다");
+    });
+
+    it("2. 로그인 상태에서 어드민이 아닌 일반 사용자가 접근할 경우 403 Forbidden을 반환해야 함", async () => {
+      (withAuthGuard as any).mockResolvedValue({
+        user: { id: "user-A", email: "userA@test.com" },
+        supabaseAdmin: mockSupabaseAdmin,
+      });
+
+      profileChain.single.mockResolvedValueOnce({
+        data: { role: "user" },
+        error: null,
+      });
+
+      const mockRequest = new Request("http://localhost:3000/api/posts/promote", {
+        method: "POST",
+        body: JSON.stringify({ postId: "draft-id" }),
+      });
+
+      const response = await postsPromotePOST(mockRequest);
+      expect(response.status).toBe(403);
+
+      const json = await response.json();
+      expect(json.error).toContain("어드민 권한이 필요합니다");
+    });
+
+    it("3. 필수 파라미터(postId)가 누락될 경우 400 Bad Request를 반환해야 함", async () => {
+      (withAuthGuard as any).mockResolvedValue({
+        user: { id: "admin-user", email: "admin@test.com" },
+        supabaseAdmin: mockSupabaseAdmin,
+      });
+
+      profileChain.single.mockResolvedValueOnce({
+        data: { role: "admin" },
+        error: null,
+      });
+
+      const mockRequest = new Request("http://localhost:3000/api/posts/promote", {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+
+      const response = await postsPromotePOST(mockRequest);
+      expect(response.status).toBe(400);
+
+      const json = await response.json();
+      expect(json.error).toContain("필수 입력 데이터(postId)가 누락되었습니다");
+    });
+
+    it("4. 존재하지 않는 초안이거나 조회 오류 시 404 Not Found를 반환해야 함", async () => {
+      (withAuthGuard as any).mockResolvedValue({
+        user: { id: "admin-user", email: "admin@test.com" },
+        supabaseAdmin: mockSupabaseAdmin,
+      });
+
+      profileChain.single.mockResolvedValueOnce({
+        data: { role: "admin" },
+        error: null,
+      });
+
+      postChain._singleValue = {
+        data: null,
+        error: new Error("Not Found"),
+      };
+
+      const mockRequest = new Request("http://localhost:3000/api/posts/promote", {
+        method: "POST",
+        body: JSON.stringify({ postId: "non-existent-id" }),
+      });
+
+      const response = await postsPromotePOST(mockRequest);
+      expect(response.status).toBe(404);
+
+      const json = await response.json();
+      expect(json.error).toContain("승격할 초안 게시글을 찾을 수 없습니다");
+    });
+
+    it("5. 초안이 아닌 이미 승격(published)된 글에 대해 요청할 경우 400 Bad Request를 반환해야 함", async () => {
+      (withAuthGuard as any).mockResolvedValue({
+        user: { id: "admin-user", email: "admin@test.com" },
+        supabaseAdmin: mockSupabaseAdmin,
+      });
+
+      profileChain.single.mockResolvedValueOnce({
+        data: { role: "admin" },
+        error: null,
+      });
+
+      postChain._singleValue = {
+        data: { id: "pub-id", status: "published" },
+        error: null,
+      };
+
+      const mockRequest = new Request("http://localhost:3000/api/posts/promote", {
+        method: "POST",
+        body: JSON.stringify({ postId: "pub-id" }),
+      });
+
+      const response = await postsPromotePOST(mockRequest);
+      expect(response.status).toBe(400);
+
+      const json = await response.json();
+      expect(json.error).toContain("이미 승격(발행)된 게시글입니다");
+    });
+
+    it("6. parent_id가 없는 신규 초안 승격 시 정상적으로 200 OK와 함께 status를 published로 업데이트해야 함", async () => {
+      (withAuthGuard as any).mockResolvedValue({
+        user: { id: "admin-user", email: "admin@test.com" },
+        supabaseAdmin: mockSupabaseAdmin,
+      });
+
+      profileChain.single.mockResolvedValueOnce({
+        data: { role: "admin" },
+        error: null,
+      });
+
+      postChain._singleValue = {
+        data: { id: "new-draft-id", status: "draft", parent_id: null },
+        error: null,
+      };
+
+      postChain._arrayValue = {
+        data: [{ id: "new-draft-id", status: "published" }],
+        error: null,
+      };
+
+      const mockRequest = new Request("http://localhost:3000/api/posts/promote", {
+        method: "POST",
+        body: JSON.stringify({ postId: "new-draft-id" }),
+      });
+
+      const response = await postsPromotePOST(mockRequest);
+      expect(response.status).toBe(200);
+
+      const json = await response.json();
+      expect(json.success).toBe(true);
+      expect(json.message).toContain("새 게시글이 성공적으로 발행되었습니다");
+    });
+
+    it("7. parent_id가 있는 Shadow Draft 승격 시 원본 글에 병합(Merge)하고, 기존 미사용 이미지를 스토리지에서 삭제한 후 초안을 제거해야 함", async () => {
+      (withAuthGuard as any).mockResolvedValue({
+        user: { id: "admin-user", email: "admin@test.com" },
+        supabaseAdmin: mockSupabaseAdmin,
+      });
+
+      profileChain.single.mockResolvedValueOnce({
+        data: { role: "admin" },
+        error: null,
+      });
+
+      // 순차적으로 resolve할 single 값들을 셋팅
+      // 1. 초안 게시글 조회 시 반환할 데이터
+      // 2. 기존 원본 글의 content 획득 시 반환할 데이터
+      postChain._singleValues = [
+        {
+          data: {
+            id: "shadow-draft-id",
+            status: "draft",
+            parent_id: "original-id",
+            title: "New Title",
+            content: 'New content with <img src="/storage/v1/object/public/images/new.png">',
+          },
+          error: null,
+        },
+        {
+          data: {
+            content: 'Old content with <img src="/storage/v1/object/public/images/old.png">',
+          },
+          error: null,
+        }
+      ];
+
+      // delete 및 update mock 체인
+      postChain.update.mockReturnThis();
+      const mockDelete = vi.fn().mockReturnThis();
+      const mockDeleteEq = vi.fn().mockResolvedValue({ error: null });
+      mockSupabaseAdmin.from.mockImplementation((table: string) => {
+        if (table === "profiles") return profileChain;
+        if (table === "posts") {
+          return {
+            ...postChain,
+            delete: mockDelete.mockReturnValue({ eq: mockDeleteEq }),
+          };
+        }
+        return {};
+      });
+
+      const mockRemove = vi.fn().mockResolvedValue({ data: [], error: null });
+      mockSupabaseAdmin.storage.from = vi.fn().mockReturnValue({
+        remove: mockRemove,
+      });
+
+      const mockRequest = new Request("http://localhost:3000/api/posts/promote", {
+        method: "POST",
+        body: JSON.stringify({ postId: "shadow-draft-id" }),
+      });
+
+      const response = await postsPromotePOST(mockRequest);
+      expect(response.status).toBe(200);
+
+      const json = await response.json();
+      expect(json.success).toBe(true);
+      expect(json.message).toContain("수정 사항이 원본 게시글에 성공적으로 반영되었습니다");
+
+      // storage에서 old.png가 올바르게 삭제 요청되었는지 검증
+      expect(mockRemove).toHaveBeenCalledWith(["old.png"]);
+      // 초안 삭제가 이루어졌는지 검증
+      expect(mockDeleteEq).toHaveBeenCalledWith("id", "shadow-draft-id");
     });
   });
 });
