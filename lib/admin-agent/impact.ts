@@ -45,6 +45,7 @@ export type ApprovalExecutionGate = {
 
 const SUPPORTED_APPROVAL_ACTIONS = new Set([
   "create_board_post",
+  "update_board_post",
   "flush_old_cache",
   "flush_player_cache",
   "flush_match_cache",
@@ -76,6 +77,21 @@ export function buildApprovalExecutionGate(
     if (!String(payload.content || "").trim()) {
       reasons.push("게시글 본문이 비어 있습니다.");
       requiredBeforeApproval.push("본문이 포함된 발행 요청을 다시 생성하세요.");
+    }
+  }
+
+  if (actionType === "update_board_post") {
+    if (!payload.postId) {
+      reasons.push("수정 대상 게시글 ID(postId)가 없습니다.");
+      requiredBeforeApproval.push("postId가 포함된 수정 요청을 다시 생성하세요.");
+    }
+    if (!String(payload.title || "").trim()) {
+      reasons.push("수정할 제목이 비어 있습니다.");
+      requiredBeforeApproval.push("제목이 포함된 수정 요청을 다시 생성하세요.");
+    }
+    if (!String(payload.content || "").trim()) {
+      reasons.push("수정할 본문이 비어 있습니다.");
+      requiredBeforeApproval.push("본문이 포함된 수정 요청을 다시 생성하세요.");
     }
   }
 
@@ -216,6 +232,77 @@ export async function calculateApprovalImpact(
           label: "공개 노출",
           status: "review",
           message: `${payload.category || "자유"} 게시판에 즉시 공개됩니다.`
+        }
+      ]
+    };
+  }
+
+  if (actionType === "update_board_post") {
+    const content = String(payload.content || "");
+    const hasImage = /<img[^>]+src\s*=/i.test(content);
+    const beforeTitle = payload.beforeTitle ? String(payload.beforeTitle) : undefined;
+    const beforeContent = payload.beforeContent ? String(payload.beforeContent) : undefined;
+    const beforeHasImage = beforeContent ? /<img[^>]+src\s*=/i.test(beforeContent) : undefined;
+    const diff = beforeTitle !== undefined || beforeContent !== undefined
+      ? {
+        titleChanged: Boolean(beforeTitle && beforeTitle !== String(payload.title || "")),
+        contentChanged: Boolean(beforeContent && normalizeText(beforeContent) !== normalizeText(content)),
+        imageChanged: Boolean(beforeContent !== undefined && beforeHasImage !== hasImage),
+        lengthDelta: beforeContent !== undefined ? content.length - beforeContent.length : 0,
+        beforeTitle,
+        afterTitle: String(payload.title || ""),
+        beforePreview: beforeContent ? htmlToPlainText(beforeContent) : undefined,
+        afterPreview: htmlToPlainText(content)
+      }
+      : undefined;
+    return {
+      risk: "medium",
+      summary: `게시글 #${payload.postId} "${payload.title || "제목 없음"}" 수정 대기`,
+      details: {
+        postId: payload.postId,
+        title: payload.title || null,
+        contentLength: content.length,
+        hasImage,
+        beforeTitle: beforeTitle || null,
+        beforeContentLength: beforeContent?.length || null
+      },
+      preview: {
+        headline: "게시글 수정 미리보기",
+        items: [
+          { label: "게시글 ID", value: String(payload.postId) },
+          { label: "수정 제목", value: String(payload.title || "제목 없음") },
+          { label: "본문 길이", value: `${content.length.toLocaleString("ko-KR")}자` },
+          { label: "이미지", value: hasImage ? "포함" : "없음" },
+          ...(beforeTitle ? [{ label: "기존 제목", value: beforeTitle }] : [])
+        ],
+        bodyPreview: htmlToPlainText(content),
+        diff,
+        warnings: [
+          "승인 즉시 기존 게시글이 덮어씁니다.",
+          ...(diff?.titleChanged ? ["제목이 변경됩니다. 변경 전후를 확인하세요."] : []),
+          ...(diff?.imageChanged ? ["이미지 포함 여부가 변경됩니다. 기존 이미지는 Storage에서 자동 정리됩니다."] : [])
+        ]
+      },
+      checklist: [
+        {
+          label: "대상 게시글",
+          status: payload.postId ? "pass" : "warning",
+          message: payload.postId ? `게시글 #${payload.postId}` : "postId가 비어 있습니다."
+        },
+        {
+          label: "제목 확인",
+          status: payload.title ? "pass" : "warning",
+          message: payload.title ? `수정 제목: ${payload.title}` : "제목이 비어 있습니다."
+        },
+        {
+          label: "본문 길이",
+          status: content.length >= 80 ? "pass" : "review",
+          message: `${content.length.toLocaleString("ko-KR")}자. 너무 짧으면 게시글 품질을 다시 확인하세요.`
+        },
+        {
+          label: "덮어쓰기",
+          status: "review",
+          message: `게시글 #${payload.postId}의 기존 내용이 수정된 내용으로 대체됩니다.`
         }
       ]
     };

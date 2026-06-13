@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useId, useState, useEffect } from "react";
+import React, { useId, useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Post } from "@/types/board";
@@ -9,6 +9,8 @@ import { trackEvent } from "@/lib/analytics";
 import PostItem from "./PostItem";
 import BoardSearch from "./BoardSearch";
 import BoardPagination from "./BoardPagination";
+import { useAuth } from "@/components/AuthProvider";
+import { supabase } from "@/lib/supabase";
 
 const BOARD_CATEGORIES = ["패치노트", "자유", "듀오/스쿼드 모집", "클랜홍보", "제보/문의"];
 const POSTS_PER_PAGE = 10;
@@ -33,9 +35,31 @@ export default function BoardListClient({
   currentSearchQuery = "",
 }: BoardListClientProps) {
   const router = useRouter();
+  const { user } = useAuth();
+  const [isAdmin, setIsAdmin] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   const [searchInput, setSearchInput] = useState(currentSearchQuery);
   const [searchOption, setSearchOption] = useState(currentSearchOption);
+
+  useEffect(() => {
+    if (!user) {
+      setIsAdmin(false);
+      return;
+    }
+    supabase.from("profiles").select("role").eq("id", user.id).single().then(({ data }) => {
+      if (data) {
+        setIsAdmin(data.role === "admin");
+      }
+    });
+  }, [user]);
+
+  const filterCategories = useMemo(() => {
+    const list = ["전체", "추천", ...BOARD_CATEGORIES];
+    if (isAdmin) {
+      list.push("어드민 검증");
+    }
+    return list;
+  }, [isAdmin]);
 
   useEffect(() => {
     trackEvent({
@@ -98,9 +122,9 @@ export default function BoardListClient({
         {/* 상단 필터 및 글쓰기 버튼 */}
         <div className="flex justify-between items-center mb-6 gap-4">
           <div className="flex gap-2 overflow-x-auto no-scrollbar flex-1 py-1 px-1">
-            {["전체", "추천", ...BOARD_CATEGORIES].map((f) => {
-              const isActive = currentFilter === f;
-              const href = f === "전체" ? "/board" : `/board?f=${f}`;
+          {filterCategories.map((f) => {
+            const isActive = currentFilter === f;
+            const href = f === "전체" ? "/board" : `/board?f=${f}`;
               return (
                 <Link key={f} href={href} className="shrink-0">
                   <button

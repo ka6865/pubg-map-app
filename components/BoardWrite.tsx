@@ -15,8 +15,8 @@ const ReactQuill = dynamic(() => import("react-quill-new"), {
 const BOARD_CATEGORIES = ["패치노트", "자유", "듀오/스쿼드 모집", "클랜홍보", "제보/문의"];
 const IMAGE_CONFIG = {
   MAX_FILE_SIZE_MB: 20,
-  COMPRESSION_MAX_SIZE_MB: 1,
-  COMPRESSION_MAX_WIDTH_OR_HEIGHT: 1920,
+  COMPRESSION_MAX_SIZE_MB: 3,
+  COMPRESSION_MAX_WIDTH_OR_HEIGHT: 2560,
 } as const;
 
 const QuillGlobalStyles = (

@@ -460,6 +460,20 @@ const createBoardPostDecl: FunctionDeclaration = {
   }
 };
 
+const updateBoardPostDecl: FunctionDeclaration = {
+  name: "update_board_post",
+  description: "이미 등록된 게시글의 제목과 본문을 수정합니다. 위험 작업이므로 승인 대기 요청만 생성합니다. [주의] 기존 본문에 있던 이미지 태그(<img>)를 누락하고 content를 작성하면 승인 시 스토리지에서 실제 이미지 파일이 자동 삭제되므로, 이미지를 명시적으로 삭제하려는 목적이 아니라면 원본 본문의 <img> 태그들을 반드시 누락 없이 복사하여 새 content에 유지시켜야 합니다.",
+  parameters: {
+    type: SchemaType.OBJECT,
+    properties: {
+      postId: { type: SchemaType.NUMBER, description: "수정할 게시글의 고유 ID" },
+      title: { type: SchemaType.STRING, description: "수정할 제목" },
+      content: { type: SchemaType.STRING, description: "HTML 형식의 수정할 본문" }
+    },
+    required: ["postId", "title", "content"]
+  }
+};
+
 const requestCacheCleanupDecl: FunctionDeclaration = {
   name: "request_cache_cleanup",
   description: "캐시 삭제 작업을 승인 대기 요청으로 등록합니다. 실제 삭제는 관리자 승인 후 별도 실행됩니다. 단순 R2 파일 수/용량만 보고 flush_old_cache를 제안하지 말고, 명확한 장애 원인이나 사용자의 직접 요청이 있을 때만 사용합니다.",
@@ -2716,13 +2730,18 @@ export async function executeBoardPost(payload: any, supabase: any, userId: stri
       user_id: userId,
       author: "BGMS_AI_BOT",
       category: payload.category || "자유",
-      image_url: imageUrl
+      image_url: imageUrl,
+      status: "draft"
     })
     .select("id")
     .single();
 
   if (error) throw error;
-  return JSON.stringify({ success: true, message: "자유게시판에 글이 발행되었습니다.", postId: data?.id });
+  return JSON.stringify({ 
+    success: true, 
+    message: "자유게시판의 '어드민 검증' 탭에 초안 글이 임시 등록되었습니다. 게시판 내 '어드민 검증' 탭에서 확인해 주십시오.", 
+    postId: data?.id 
+  });
 }
 
 async function requestBoardPostApproval(args: any, context: AdminAgentContext): Promise<AgentToolResult> {
@@ -2744,6 +2763,174 @@ async function requestBoardPostApproval(args: any, context: AdminAgentContext): 
       preview: { title: args.title, content: args.content }
     })
   };
+}
+
+async function requestUpdateBoardPostApproval(args: any, context: AdminAgentContext): Promise<AgentToolResult> {
+  // 기존 게시글 원본을 조회하여 비교용 데이터를 payload에 포함
+  let beforeTitle: string | null = null;
+  let beforeContent: string | null = null;
+  const { data: existingPost } = await context.supabase
+    .from("posts")
+    .select("title, content")
+    .eq("id", args.postId)
+    .single();
+  if (existingPost) {
+    beforeTitle = existingPost.title || null;
+    beforeContent = existingPost.content || null;
+  }
+
+  const approvalId = await createApprovalRequest(context.supabase, {
+    runId: context.runId,
+    stepId: context.stepId,
+    requestedBy: context.userId,
+    toolName: "update_board_post",
+    actionType: "update_board_post",
+    payload: {
+      postId: args.postId,
+      title: args.title,
+      content: args.content,
+      beforeTitle,
+      beforeContent
+    }
+  });
+  return {
+    status: "approval_required",
+    approvalId: approvalId || undefined,
+    result: JSON.stringify({
+      approvalRequired: true,
+      approvalId,
+      message: "게시글 수정 승인 대기 요청을 성공적으로 올렸습니다.",
+      preview: {
+        postId: args.postId,
+        title: args.title,
+        beforeTitle
+      }
+    })
+  };
+}
+
+export async function executeBoardPostUpdate(payload: any, supabase: any): Promise<string> {
+  const postId = payload.postId;
+  if (!postId) throw new Error("수정 대상 postId가 필요합니다.");
+
+  // 기존 게시글 원본 조회
+  const { data: existingPost, error: fetchError } = await supabase
+    .from("posts")
+    .select("content, user_id, author, category, is_notice, parent_id")
+    .eq("id", postId)
+    .single();
+  if (fetchError) throw new Error(`게시글 조회 실패: ${fetchError.message}`);
+
+  // 1. 최상위 원본 게시글(status = 'published'이거나 parent_id가 없는 최종 원본)의 이미지 URL 목록만 수집
+  const imgRegex = /<img[^>]+src\s*=\s*["']?([^"'\s>]+)["']?/gi;
+  const originalImages: string[] = [];
+
+  let currentParentId = existingPost.parent_id || postId;
+  let rootPost = null;
+
+  while (currentParentId) {
+    const { data: parentPost } = await supabase
+      .from("posts")
+      .select("id, content, parent_id, status")
+      .eq("id", currentParentId)
+      .single();
+    if (!parentPost) break;
+    
+    rootPost = parentPost;
+    // status가 published이거나 parent_id가 없다면 최종 원본이므로 루프를 중단합니다.
+    if (parentPost.status === "published" || !parentPost.parent_id) {
+      break;
+    }
+    currentParentId = parentPost.parent_id;
+  }
+
+  // 최상위 원본 글의 본문에서 이미지를 안전하게 추출합니다.
+  if (rootPost && rootPost.content) {
+    const matches = [...rootPost.content.matchAll(imgRegex)];
+    matches.forEach(m => { if (m[1]) originalImages.push(m[1]); });
+  }
+
+  // 2. 수정 후 본문의 이미지 유실 방지 Fail-Safe 처리 (지능형 이미지 주소 대치 및 복원)
+  let newContent = String(payload.content || "");
+  const uniqueOriginalImages = [...new Set(originalImages)];
+
+  if (uniqueOriginalImages.length > 0) {
+    const hasImgTags = /<img[^>]+src\s*=\s*["']?([^"'\s>]+)["']?/i.test(newContent);
+
+    if (hasImgTags) {
+      // 본문 중간에 <img> 태그가 이미 존재한다면, AI가 가상으로 지조해 낸 엑박 이미지 주소들을 진짜 원본 스토리지 주소로 자동 대치(Swap)합니다.
+      let imgIndex = 0;
+      newContent = newContent.replace(/<img([^>]+)src\s*=\s*(["']?)([^"'\s>]+)(["']?)([^>]*)\/?>/gi, (match, p1, quote1, src, quote2, p2) => {
+        // 이미 유효한 원본 이미지 주소라면 대치 없이 인덱스만 소비합니다.
+        if (uniqueOriginalImages.includes(src)) {
+          imgIndex++;
+          return match;
+        }
+        // 가짜 주소(예: bgms.kr/assets/... 또는 example.com 등)인 경우 진짜 원본 주소로 대치합니다.
+        if (imgIndex < uniqueOriginalImages.length) {
+          const originalSrc = uniqueOriginalImages[imgIndex++];
+          console.log(`🔄 [Fail-Safe Image Swap]: Replacing fake src '${src}' with original '${originalSrc}'`);
+          return `<img${p1}src=${quote1}${originalSrc}${quote2}${p2}/>`;
+        }
+        return match;
+      });
+    } else {
+      // 본문에 <img> 태그가 완전히 누락된 경우에만 본문 맨 위에 원래 이미지를 강제로 복원해 줍니다.
+      console.log("🛠️ [Fail-Safe Image Restoration]: No images found. Restoring to top:", uniqueOriginalImages);
+      const restoredImgTags = uniqueOriginalImages
+        .map(src => `<img src='${src}' alt='자동 복원된 이미지' style='max-width:100%; border-radius: 8px; margin: 15px auto; display: block;'/>`)
+        .join("\n");
+      newContent = restoredImgTags + "\n" + newContent;
+    }
+  }
+
+  // 수정 후 본문에서 대표 이미지 URL 추출
+  let imageUrl = null;
+  const singleImgRegex = /<img[^>]+src\s*=\s*["']?([^"'\s>]+)["']?/i;
+  const imgMatch = newContent.match(singleImgRegex);
+  if (imgMatch?.[1]) imageUrl = imgMatch[1];
+
+  // 진짜 최상위 원본 ID 추적 (existingPost가 이미 draft일 수 있으므로 최상위 published 글의 ID를 parent_id로 지정)
+  let rootPostId = Number(postId);
+  let rootParentId = existingPost.parent_id;
+  while (rootParentId) {
+    const { data: parentPost } = await supabase
+      .from("posts")
+      .select("id, parent_id, status")
+      .eq("id", rootParentId)
+      .single();
+    if (!parentPost) break;
+    rootPostId = parentPost.id;
+    if (parentPost.status === "published" || !parentPost.parent_id) {
+      break;
+    }
+    rootParentId = parentPost.parent_id;
+  }
+
+  // 수정 초안(Shadow Draft) 생성 (1차 승인 시에는 원본을 덮어쓰지 않고 카테고리를 '어드민 검증' 탭 등에서 확인할 수 있도록 status=draft로 삽입)
+  const { data: draftPost, error: insertError } = await supabase
+    .from("posts")
+    .insert({
+      title: payload.title,
+      content: newContent,
+      image_url: imageUrl,
+      user_id: existingPost.user_id,
+      author: existingPost.author,
+      category: existingPost.category,
+      is_notice: existingPost.is_notice,
+      status: "draft",
+      parent_id: rootPostId
+    })
+    .select("id")
+    .single();
+  if (insertError) throw new Error(`수정 초안 생성 실패: ${insertError.message}`);
+
+  return JSON.stringify({
+    success: true,
+    message: `수정 초안(#${draftPost?.id})이 성공적으로 생성되어 '어드민 검증' 탭에 등록되었습니다.`,
+    postId: draftPost?.id,
+    removedImages: 0
+  });
 }
 
 async function requestCacheCleanup(args: any, context: AdminAgentContext): Promise<AgentToolResult> {
@@ -3434,6 +3621,11 @@ export const adminAgentTools: Record<string, AdminAgentTool> = {
     declaration: createBoardPostDecl,
     safetyLevel: "dangerous",
     run: requestBoardPostApproval
+  },
+  update_board_post: {
+    declaration: updateBoardPostDecl,
+    safetyLevel: "dangerous",
+    run: requestUpdateBoardPostApproval
   },
   request_cache_cleanup: {
     declaration: requestCacheCleanupDecl,

@@ -37,6 +37,7 @@ interface AdminAgentChatProps {
   mode?: AdminAgentChatMode;
   prefillPrompt?: string;
   prefillVersion?: number | string;
+  autoSend?: boolean;
   onBack?: () => void;
   onClose?: () => void;
   onOpenDashboard?: () => void;
@@ -49,6 +50,7 @@ export default function AdminAgentChat({
   mode = "page",
   prefillPrompt,
   prefillVersion,
+  autoSend = false,
   onBack,
   onClose,
   onOpenDashboard,
@@ -93,17 +95,7 @@ export default function AdminAgentChat({
     loadPendingApprovals();
   }, [loadPendingApprovals]);
 
-  useEffect(() => {
-    if (!prefillPrompt) return;
-    setInputValue(prefillPrompt);
-    setPrefillThinking(true);
-    const frameId = requestAnimationFrame(() => inputRef.current?.focus());
-    const timeoutId = window.setTimeout(() => setPrefillThinking(false), 1800);
-    return () => {
-      cancelAnimationFrame(frameId);
-      window.clearTimeout(timeoutId);
-    };
-  }, [prefillPrompt, prefillVersion]);
+
 
   useEffect(() => {
     const scrollArea = messageScrollRef.current;
@@ -297,6 +289,26 @@ export default function AdminAgentChat({
     event.preventDefault();
     await sendAgentMessage(inputValue);
   };
+
+  useEffect(() => {
+    if (!prefillPrompt) return;
+    
+    if (autoSend) {
+      const timer = setTimeout(() => {
+        sendAgentMessage(prefillPrompt);
+      }, 100);
+      return () => clearTimeout(timer);
+    } else {
+      setInputValue(prefillPrompt);
+      setPrefillThinking(true);
+      const frameId = requestAnimationFrame(() => inputRef.current?.focus());
+      const timeoutId = window.setTimeout(() => setPrefillThinking(false), 1800);
+      return () => {
+        cancelAnimationFrame(frameId);
+        window.clearTimeout(timeoutId);
+      };
+    }
+  }, [prefillPrompt, prefillVersion, autoSend]);
 
   const headerMascotState: AdminAgentMascotState = latestApprovalId ? "approval" : isLoading || prefillThinking ? "thinking" : "idle";
   const sheetHeaderHelperText = latestApprovalId

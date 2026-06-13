@@ -35,4 +35,6 @@ export interface Post {
   comment_count?: number;
   comments?: { count: number }[];
   clan_info?: ClanInfo | null; // 🌟 클랜 정보 첨부 필드 추가
+  status?: "published" | "draft"; // 🌟 게시글 상태 ('published' 또는 'draft')
+  parent_id?: number | null; // 🌟 Shadow Draft 구조에서 참조할 원본 게시글 ID
 }

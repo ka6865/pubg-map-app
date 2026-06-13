@@ -267,6 +267,7 @@ describe("🧠 Admin Agent Memory/Briefing APIs", () => {
     expect(body.catalog.counts.dangerous).toBeGreaterThan(0);
     expect(body.catalog.tools).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: "create_board_post", safetyLevel: "dangerous", approvalRequired: true }),
+      expect.objectContaining({ name: "update_board_post", safetyLevel: "dangerous", approvalRequired: true }),
       expect.objectContaining({ name: "inspect_operations", safetyLevel: "read", approvalRequired: false }),
       expect.objectContaining({ name: "inspect_agent_readiness", safetyLevel: "read", approvalRequired: false }),
       expect.objectContaining({ name: "inspect_approval_queue", safetyLevel: "read", approvalRequired: false }),
@@ -2295,6 +2296,70 @@ describe("🧠 Admin Agent Memory/Briefing APIs", () => {
       label: "승인 차단",
       reasons: expect.arrayContaining([
         expect.stringContaining("matchId")
+      ])
+    }));
+  });
+
+  it("GET /approvals는 게시글 수정 승인에 수정 전후 diff preview를 포함한다", async () => {
+    tables.agent_approvals = chain({
+      data: [{
+        id: "approval-update-post",
+        tool_name: "update_board_post",
+        action_type: "update_board_post",
+        status: "pending",
+        payload: {
+          postId: 25,
+          title: "수정된 제목",
+          content: "<p>수정된 본문입니다.</p>",
+          beforeTitle: "기존 제목",
+          beforeContent: "<p>기존 본문입니다.</p>"
+        },
+        created_at: new Date().toISOString()
+      }],
+      error: null
+    });
+    mockAdminAuth();
+
+    const response = await approvalsGET();
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.approvals[0].impact.risk).toBe("medium");
+    expect(body.approvals[0].impact.preview.headline).toBe("게시글 수정 미리보기");
+    expect(body.approvals[0].impact.preview.diff).toEqual(expect.objectContaining({
+      titleChanged: true,
+      contentChanged: true,
+      afterTitle: "수정된 제목"
+    }));
+    expect(body.approvals[0].impact.executionGate.status).toBe("pass");
+  });
+
+  it("GET /approvals는 postId가 빠진 update_board_post에 execution gate block을 표시한다", async () => {
+    tables.agent_approvals = chain({
+      data: [{
+        id: "approval-update-missing-id",
+        tool_name: "update_board_post",
+        action_type: "update_board_post",
+        status: "pending",
+        payload: {
+          title: "제목",
+          content: "<p>본문</p>"
+        },
+        created_at: new Date().toISOString()
+      }],
+      error: null
+    });
+    mockAdminAuth();
+
+    const response = await approvalsGET();
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(body.approvals[0].impact.executionGate).toEqual(expect.objectContaining({
+      status: "block",
+      label: "승인 차단",
+      reasons: expect.arrayContaining([
+        expect.stringContaining("postId")
       ])
     }));
   });

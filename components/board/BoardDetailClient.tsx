@@ -44,6 +44,58 @@ export default function BoardDetailClient({
   const [isMobile, setIsMobile] = useState(false);
   const [mounted, setMounted] = useState(false);
 
+  // 🌟 초안 승격 및 AI 피드백 모달용 상태 추가
+  const [isPromoting, setIsPromoting] = useState(false);
+  const [feedbackText, setFeedbackText] = useState("");
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+
+  // 초안 승격(실제 게시판 발행) 처리 함수
+  const handlePromotePost = async () => {
+    if (!isAdmin) return;
+    setIsPromoting(true);
+    try {
+      const response = await fetch("/api/posts/promote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ postId: post.id }),
+      });
+      const result = await response.json();
+      if (!response.ok || result.error) {
+        throw new Error(result.error || "승격 실패");
+      }
+      toast.success(result.message || "성공적으로 승격되었습니다.");
+      
+      trackEvent({
+        name: "post_action",
+        params: {
+          action: "promote_post",
+          status: "success",
+          post_id: String(post.id)
+        }
+      });
+
+      router.push(`/board/${result.data?.id || ""}`);
+    } catch (e: any) {
+      toast.error(e.message || "승격 중 오류가 발생했습니다.");
+    } finally {
+      setIsPromoting(false);
+    }
+  };
+
+  // AI 재수정 피드백 전달 모사 함수
+  const handleSendFeedbackToAI = () => {
+    if (!feedbackText.trim()) return toast.warning("피드백 내용을 입력해주세요.");
+    
+    toast.success("AI 비서에게 수정 피드백이 전달되었습니다!");
+    setShowFeedbackModal(false);
+    setFeedbackText("");
+    
+    // 어드민 봇 페이지로 자연스럽게 전환
+    setTimeout(() => {
+      router.push(`/admin/bot?action=feedback&postId=${post.id}&text=${encodeURIComponent(feedbackText)}`);
+    }, 1200);
+  };
+
   useEffect(() => {
     trackEvent({
       name: "post_viewed",
@@ -230,6 +282,46 @@ export default function BoardDetailClient({
   return (
     <div className="w-full flex justify-center pb-20">
       <div className="w-full max-w-[900px]">
+        {/* 🌟 어드민 승인 대기 초안 프리뷰 배너 렌더링 */}
+        {post.status === 'draft' && isAdmin && (
+          <div className="w-full bg-[#1e1e1e] border border-[#F2A900]/30 rounded-xl p-5 mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-[0_0_20px_rgba(242,169,0,0.1)]">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="px-2 py-0.5 bg-[#F2A900] text-black text-[11px] font-extrabold rounded">
+                  DRAFT
+                </span>
+                <h4 className="text-white text-base font-bold">어드민 승인 대기 초안</h4>
+              </div>
+              <p className="text-white/70 text-xs leading-relaxed">
+                {post.parent_id 
+                  ? "이미 발행된 게시글의 수정본(Shadow Draft)입니다. 승격 시 본문이 원본 글에 적용됩니다." 
+                  : "신규 게시글 초안입니다. 승격 시 전체 게시판에 노출됩니다."}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2.5 w-full md:w-auto justify-end">
+              <button
+                onClick={() => setShowFeedbackModal(true)}
+                className="px-4 py-2.5 bg-[#252525] border border-white/20 text-white/90 text-xs font-bold rounded-lg hover:bg-[#333] hover:border-white/30 transition-all active:scale-95 shrink-0"
+              >
+                AI 재수정 요청
+              </button>
+              <button
+                onClick={() => router.push(`/board/write?edit=${post.id}`)}
+                className="px-4 py-2.5 bg-[#252525] border border-[#34A853]/40 text-[#34A853] text-xs font-bold rounded-lg hover:bg-[#34A853]/10 transition-all active:scale-95 shrink-0"
+              >
+                직접 수정
+              </button>
+              <button
+                disabled={isPromoting}
+                onClick={handlePromotePost}
+                className="px-5 py-2.5 bg-[#F2A900] text-black text-xs font-black rounded-lg hover:bg-[#d49400] transition-all active:scale-95 disabled:opacity-50 shrink-0"
+              >
+                {isPromoting ? "승격 중..." : "실제 게시판에 승격"}
+              </button>
+            </div>
+          </div>
+        )}
+
         <article className={`bg-[#1a1a1a] rounded-[8px] border border-[#333] w-full box-border ${isMobile ? "p-[15px]" : "p-[30px]"}`}>
           <div className="mb-[20px]">
             <span className="text-[#F2A900] text-[13px] font-bold">[{post.category}]</span>
@@ -386,6 +478,43 @@ export default function BoardDetailClient({
           </div>
         </article>
       </div>
+
+      {/* 🌟 AI 피드백 전달 모달 창 */}
+      {showFeedbackModal && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="bg-[#1a1a1a] border border-[#333] rounded-2xl max-w-lg w-full p-6 shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200">
+            <div>
+              <h3 className="text-lg font-black text-white">AI 재수정 피드백</h3>
+              <p className="text-white/60 text-xs mt-1">
+                AI 비서가 피드백을 기반으로 글을 다시 수정할 수 있도록 구체적으로 입력해 주세요.
+              </p>
+            </div>
+            <textarea
+              value={feedbackText}
+              onChange={(e) => setFeedbackText(e.target.value)}
+              placeholder="예: '무기 순위 분석에서 AR 카테고리의 1위 무기 장점을 표로 다시 작성해줘. 어투는 공식적인 톤으로 변경해줘.'"
+              className="w-full h-32 bg-[#121212] border border-[#333] rounded-lg p-3 text-white text-sm focus:border-[#F2A900] focus:outline-none resize-none placeholder-white/20"
+            />
+            <div className="flex justify-end gap-2 text-xs">
+              <button
+                onClick={() => {
+                  setShowFeedbackModal(false);
+                  setFeedbackText("");
+                }}
+                className="px-4 py-2.5 bg-[#252525] text-white/75 font-bold rounded-lg hover:bg-[#333] transition-colors"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleSendFeedbackToAI}
+                className="px-4 py-2.5 bg-[#F2A900] text-black font-black rounded-lg hover:bg-[#d49400] transition-all active:scale-95"
+              >
+                피드백 전송
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
