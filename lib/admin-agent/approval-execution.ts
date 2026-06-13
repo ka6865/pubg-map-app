@@ -39,6 +39,7 @@ function getActionTitle(actionType: string) {
   if (actionType === "flush_match_cache") return "매치 캐시 삭제";
   if (actionType === "reset_benchmarks") return "벤치마크 초기화";
   if (actionType === "repair_processed_telemetry_identity") return "전적 분석 identity mismatch 정리";
+  if (actionType === "update_board_post") return "게시글 수정";
   if (actionType === "save_agent_report") return "운영 리포트 저장";
   if (actionType === "save_agent_memory") return "운영 기억 저장";
   return actionType;
@@ -52,6 +53,10 @@ function buildMetrics(actionType: string, payload: Record<string, any>, executio
   if (actionType === "create_board_post") {
     metrics.push({ label: "Category", value: String(payload.category || "자유") });
     if (execution?.postId) metrics.push({ label: "Post ID", value: String(execution.postId) });
+  }
+  if (actionType === "update_board_post") {
+    if (payload.postId) metrics.push({ label: "Post ID", value: String(payload.postId) });
+    if (execution?.removedImages) metrics.push({ label: "Removed images", value: String(execution.removedImages) });
   }
   if (actionType === "flush_old_cache") {
     metrics.push({ label: "Older than", value: `${Number(payload.olderThanDays || 14)}일` });
@@ -82,6 +87,12 @@ function buildFollowUp(actionType: string, payload: Record<string, any>, executi
     return [
       "게시판에서 제목/본문/이미지 렌더링을 확인하세요.",
       "콘텐츠 성과 패널에서 조회수와 반응을 다음 운영 요약에 반영하세요."
+    ];
+  }
+  if (actionType === "update_board_post") {
+    return [
+      "게시판에서 수정된 제목/본문/이미지가 정상 반영되었는지 확인하세요.",
+      "기존 첨부 이미지가 정리되었다면 Storage 용량 변화를 확인하세요."
     ];
   }
   if (actionType === "flush_old_cache" || actionType === "flush_player_cache" || actionType === "flush_match_cache") {
@@ -118,6 +129,7 @@ function buildFollowUp(actionType: string, payload: Record<string, any>, executi
 
 function getRelatedResource(actionType: string, payload: Record<string, any>, execution: any) {
   if (actionType === "create_board_post" && execution?.postId) return `/board/${execution.postId}`;
+  if (actionType === "update_board_post" && (execution?.postId || payload.postId)) return `/board/${execution?.postId || payload.postId}`;
   if (actionType === "flush_match_cache" && payload.matchId) return `match:${payload.matchId}`;
   if (actionType === "repair_processed_telemetry_identity") return "processed_match_telemetry";
   if (actionType === "flush_player_cache" && payload.nickname) return `player:${payload.nickname}`;

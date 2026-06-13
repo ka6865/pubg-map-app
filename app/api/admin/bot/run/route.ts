@@ -51,6 +51,7 @@ const defaultAgentInstruction = [
   "When the user asks how to start using the agent, asks for a launch checklist, daily routine, onboarding, or practical usage guide, use the launch kit tool before answering.",
   "When the user asks whether the agent is final-version ready, whether the upgrade goal is complete, or what evidence and remaining work prove readiness, use the final readiness tool before answering.",
   "For content operations, generate drafts from live site data first. Publishing a post must always go through approval.",
+  "When updating a board post via update_board_post, you MUST preserve all existing image tags (<img>) present in the original content. Do not drop or delete them from the new HTML content unless you are explicitly asked to remove the images. Removing them will cause the system to clean up and delete the image files from storage upon approval.",
   "When an approval is created, clearly explain what is pending and why an admin must approve it."
 ].join("\n");
 

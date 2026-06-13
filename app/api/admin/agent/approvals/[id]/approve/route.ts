@@ -3,7 +3,7 @@ import { buildApprovalPostExecution } from "@/lib/admin-agent/approval-execution
 import { deleteProcessedTelemetryIdentityTargets } from "@/lib/admin-agent/data-quality";
 import { buildApprovalExecutionGate, calculateApprovalImpact } from "@/lib/admin-agent/impact";
 import { redactForAgentLog } from "@/lib/admin-agent/redaction";
-import { executeBoardPost } from "@/lib/admin-agent/tools";
+import { executeBoardPost, executeBoardPostUpdate } from "@/lib/admin-agent/tools";
 import { verifyAdminRole } from "@/lib/admin-agent/logging";
 import { withAuthGuard } from "@/utils/supabase/guard";
 
@@ -123,6 +123,10 @@ function safeJsonParse(value: string) {
 async function executeApprovedAction(actionType: string, payload: any, supabase: any, userId: string) {
   if (actionType === "create_board_post") {
     return executeBoardPost(payload, supabase, userId);
+  }
+
+  if (actionType === "update_board_post") {
+    return executeBoardPostUpdate(payload, supabase);
   }
 
   if (actionType === "flush_old_cache") {

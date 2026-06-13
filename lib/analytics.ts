@@ -151,8 +151,9 @@ export type BgmsEvent =
   | {
       name: "post_action";
       params: {
-        action: "create_post" | "create_comment";
+        action: "create_post" | "create_comment" | "promote_post";
         status: "success" | "fail";
+        post_id?: string;
         error_type?: string;
       };
     };
