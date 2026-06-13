@@ -1,5 +1,5 @@
 import { Metadata } from 'next';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/utils/supabase/server';
 import { getTabSeo } from '@/lib/seo-config';
 import BoardListClient from '@/components/board/BoardListClient';
 
@@ -23,18 +23,29 @@ export default async function BoardPage({
   const from = (page - 1) * POSTS_PER_PAGE;
   const to = from + POSTS_PER_PAGE - 1;
 
+  // 🌟 검증된 서버용 클라이언트를 사용하여 RLS 통과 보장
+  const supabase = await createClient();
+
   let query = supabase
     .from("posts")
     .select(
-      "id, title, author, user_id, category, image_url, discord_url, discord_channel_id, is_notice, created_at, views, likes, comments(count)",
+      "id, title, author, user_id, category, image_url, discord_url, discord_channel_id, is_notice, created_at, views, likes, status, parent_id, comments(count)",
       { count: "exact" }
     );
 
-  if (filter !== "전체" && filter !== "추천") {
-    query = query.eq("category", filter);
-  }
-  if (filter === "추천") {
-    query = query.gte("likes", 5);
+  if (filter === "어드민 검증") {
+    // [어드민 검증] 탭: status = 'draft' 인 초안만 쿼리 (RLS에 의해 어드민만 실제 조회 성공)
+    query = query.eq("status", "draft");
+  } else {
+    // 일반 탭: status = 'published' 인 발행 완료된 글만 쿼리 (어드민이 조회할 때도 초안이 전체 탭에 섞이지 않도록 방지)
+    query = query.eq("status", "published");
+
+    if (filter !== "전체" && filter !== "추천") {
+      query = query.eq("category", filter);
+    }
+    if (filter === "추천") {
+      query = query.gte("likes", 5);
+    }
   }
 
   if (q) {
