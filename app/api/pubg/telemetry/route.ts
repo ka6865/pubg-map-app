@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { TELEMETRY_VERSION } from "@/lib/pubg-analysis/constants";
 import { normalizeName } from "@/lib/pubg-analysis/utils";
-import { uploadToR2, downloadFromR2 } from "@/lib/pubg-analysis/r2Service";
+import { uploadToR2, downloadFromR2, getPresignedUrlFromR2 } from "@/lib/pubg-analysis/r2Service";
 import { reportPubgApiError } from "@/lib/pubg/apiHelper";
 
 const supabase = createClient(
@@ -61,12 +61,9 @@ export async function GET(request: Request) {
     const fileText = await downloadFromR2(mapCachePath);
 
     if (fileText) {
-      const cachedData = JSON.parse(fileText);
-      // 구버전 캐시 복원: mapName 필드가 누락된 경우 쿼리 파라미터 또는 기본값으로 보완
-      if (!cachedData.mapName) {
-        cachedData.mapName = mapName || "Erangel";
-      }
-      return NextResponse.json(cachedData, {
+      // R2에 데이터가 캐싱되어 있다면, Vercel 서버 트래픽을 아끼기 위해 30분 임시 다운로드 링크만 생성해서 반환
+      const downloadUrl = await getPresignedUrlFromR2(mapCachePath, 1800);
+      return NextResponse.json({ downloadUrl }, {
         headers: { "Cache-Control": "no-store" }
       });
     }
@@ -94,7 +91,9 @@ export async function GET(request: Request) {
     // [V58.3] 파싱된 최종 결과물을 Cloudflare R2 스토리지에 업로드
     await uploadToR2(mapCachePath, JSON.stringify(finalData), 'application/json');
 
-    return NextResponse.json(finalData, {
+    // 업로드 완료 후 동일하게 R2에서 바로 다운로드할 수 있는 임시 링크 생성해서 반환
+    const downloadUrl = await getPresignedUrlFromR2(mapCachePath, 1800);
+    return NextResponse.json({ downloadUrl }, {
       headers: { "Cache-Control": "no-store" }
     });
 
