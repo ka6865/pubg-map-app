@@ -60,7 +60,7 @@ generate-tiles.js
 mcp_config.json
 skills-lock.json
 scratch/
-.codex-drafts/
+.agents-drafts/
 
 # AI Guide
 .pubg-telemetry-guide.md
