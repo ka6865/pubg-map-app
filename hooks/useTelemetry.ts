@@ -76,9 +76,21 @@ export function useTelemetry(matchId: string | null, nickname: string | null, ma
       const modeParam = full ? "&mode=full" : "&mode=lite";
       const apiUrl = getApiUrl(`/api/pubg/telemetry?matchId=${matchId}&nickname=${nickname}&mapName=${mapName}${modeParam}`);
       const res = await fetch(apiUrl);
-      const data = await res.json();
+      let data = await res.json();
       
       if (!res.ok) throw new Error(data.error || "Failed to fetch telemetry");
+
+      // [V26.0] R2 Presigned URL 직배송 다운로드 대응
+      if (data.downloadUrl) {
+        const directRes = await fetch(data.downloadUrl);
+        if (!directRes.ok) throw new Error("R2에서 직접 텔레메트리 데이터를 로드하는데 실패했습니다.");
+        data = await directRes.json();
+      }
+
+      // 구버전 캐시 복원: mapName 필드가 누락된 경우 쿼리 파라미터 또는 기본값으로 보완
+      if (data && !data.mapName) {
+        data.mapName = mapName || "Erangel";
+      }
 
       const evs = data.events || [];
       setEvents(evs);
