@@ -62,13 +62,5 @@ skills-lock.json
 scratch/
 .agents-drafts/
 
-# AI Guide
-.pubg-telemetry-guide.md
-.pubg-telemetry-guide2.md
-.project_context.md
-tier_score_rules.md
-admin_agent_completion_audit.md
-admin_agent_final_upgrade_plan.md
-admin_agent_implementation_report.md
-admin_agent_operator_manual.md
-AGENTS.md
+# AI Guide (Private)
+/docs-private/

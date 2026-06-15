@@ -156,6 +156,8 @@ async function smartCleanup() {
 
   const tiers = ['S', 'A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D+', 'D', 'D-'];
   const MAX_SAMPLES_PER_TIER = 500;
+  const tierCounts: Record<string, number> = {};
+  let totalBenchmarksDeleted = 0;
 
   for (const tier of tiers) {
     const { data: samples } = await supabase
@@ -164,12 +166,22 @@ async function smartCleanup() {
       .eq('tier', tier)
       .order('created_at', { ascending: false });
 
-    if (samples && samples.length > MAX_SAMPLES_PER_TIER) {
-      const toDelete = samples.slice(MAX_SAMPLES_PER_TIER).map(s => s.id);
-      await supabase.from('global_benchmarks').delete().in('id', toDelete);
+    let finalCount = 0;
+    if (samples) {
+      if (samples.length > MAX_SAMPLES_PER_TIER) {
+        const toDelete = samples.slice(MAX_SAMPLES_PER_TIER).map(s => s.id);
+        await supabase.from('global_benchmarks').delete().in('id', toDelete);
+        finalCount = MAX_SAMPLES_PER_TIER;
+        totalBenchmarksDeleted += toDelete.length;
+      } else {
+        finalCount = samples.length;
+      }
     }
+    tierCounts[tier] = finalCount;
   }
-  console.log(`✅ 벤치마크 최신화 및 캡핑 완료 (티어별 최대 ${MAX_SAMPLES_PER_TIER}개)`);
+  const tierLogs = tiers.map(t => `${t}: ${tierCounts[t] || 0}개`).join(', ');
+  console.log(`✅ 벤치마크 최신화 및 캡핑 완료 (티어별 최대 ${MAX_SAMPLES_PER_TIER}개, 총 ${totalBenchmarksDeleted}개 정리됨)`);
+  console.log(`   - 분포: ${tierLogs}`);
 
   const bucketFiles = await listR2Files(1000);
   if (bucketFiles && bucketFiles.length > 0) {

@@ -14,7 +14,7 @@ const METRICS = [
   { key: "damage",          label: "평균 딜량",       icon: "💥", unit: "",   higherIsBetter: true },
   { key: "kills",           label: "평균 킬",         icon: "🎯", unit: "킬", higherIsBetter: true },
   { key: "duel_win_rate",   label: "1:1 교전 승률",   icon: "⚔️", unit: "%",  higherIsBetter: true },
-  { key: "initiative_rate", label: "선제 타격률",     icon: "🚀", unit: "%",  higherIsBetter: true },
+  { key: "initiative_rate", label: "선제 타격 성공률",   icon: "🚀", unit: "%",  higherIsBetter: true },
   { key: "reversal_rate",   label: "역전 성공률",     icon: "🔄", unit: "%",  higherIsBetter: true },
   { key: "counter_latency_ms", label: "반응 속도",    icon: "⚡", unit: "s",  higherIsBetter: false },
   { key: "revive_rate",     label: "부활 성공률",     icon: "💚", unit: "%",  higherIsBetter: true },
