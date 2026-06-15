@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 import { toast } from "sonner";
 import { ItemCategory, GameItem, Vehicle, Weapon } from "@/types/game-data";
+import ConfirmModal from "@/components/common/ConfirmModal";
 
 export default function GameDataEditor() {
   const router = useRouter();
@@ -17,6 +18,22 @@ export default function GameDataEditor() {
   const [searchTerm, setSearchTerm] = useState("");
   const [flushNickname, setFlushNickname] = useState("");
   const [flushMatchId, setFlushMatchId] = useState("");
+
+  // 3단계 모달화 상태
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+
+  const [isSyncConfirmOpen, setIsSyncConfirmOpen] = useState(false);
+  const [syncTargetUrl, setSyncTargetUrl] = useState<string | null>(null);
+
+  const [isFlushCacheConfirmOpen, setIsFlushCacheConfirmOpen] = useState(false);
+  const [isResetBenchmarkConfirmOpen, setIsResetBenchmarkConfirmOpen] = useState(false);
+
+  const [isFlushUserConfirmOpen, setIsFlushUserConfirmOpen] = useState(false);
+  const [flushUserTarget, setFlushUserTarget] = useState("");
+
+  const [isFlushMatchConfirmOpen, setIsFlushMatchConfirmOpen] = useState(false);
+  const [flushMatchTarget, setFlushMatchTarget] = useState("");
 
   const [dashboardData, setDashboardData] = useState<any>(null);
   const [isLoadingDashboard, setIsLoadingDashboard] = useState(false);
@@ -447,14 +464,15 @@ export default function GameDataEditor() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    const confirmMsg = activeCategory === "users"
-      ? (selectedItem as any)?.is_orphan_profile
-        ? "Auth 계정 없이 남아 있는 유령 프로필을 정리하시겠습니까? 프로필 행이 영구 삭제됩니다."
-        : "해당 유저를 강제 탈퇴(삭제) 처리하시겠습니까? Auth 계정과 프로필 정보가 영구히 소멸됩니다."
-      : "정말 삭제하시겠습니까? 관련 시뮬레이션에 영향이 있을 수 있습니다.";
-      
-    if (!confirm(confirmMsg)) return;
+  const handleDelete = (id: string) => {
+    setDeleteTargetId(id);
+    setIsDeleteConfirmOpen(true);
+  };
+
+  const executeDelete = async () => {
+    if (!deleteTargetId) return;
+    const id = deleteTargetId;
+    setIsDeleteConfirmOpen(false);
 
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -506,6 +524,121 @@ export default function GameDataEditor() {
       fetchItems();
     } catch (err: any) {
       toast.error("삭제 중 오류 발생: " + err.message);
+    } finally {
+      setDeleteTargetId(null);
+    }
+  };
+
+  const executeSync = async () => {
+    setIsSyncConfirmOpen(false);
+    setIsSaving(true);
+    const manualUrl = syncTargetUrl || "";
+    const urlInput = document.getElementById("manual-sync-url") as HTMLInputElement;
+
+    try {
+      const apiUrl = `/api/admin/patch-notes/sync`;
+      const res = await fetch(apiUrl, { 
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: manualUrl })
+      });
+      const result = await res.json();
+      
+      if (result.success) {
+        toast.success("✅ 동기화 완료! (" + (result.details?.join(", ") || "내역 없음") + ")");
+        if (urlInput) urlInput.value = ""; // 성공 시 비우기
+        router.push("/board");
+      } else {
+        toast.error("❌ 동기화 실패: " + (result.error || result.message || "알 수 없는 오류"));
+      }
+    } catch (err) {
+      console.error("Sync error:", err);
+      toast.error("연동 통신 중 오류가 발생했습니다.");
+    } finally {
+      setIsSaving(false);
+      setSyncTargetUrl(null);
+    }
+  };
+
+  const executeFlushCache = async () => {
+    setIsFlushCacheConfirmOpen(false);
+    setIsSaving(true);
+    try {
+      const res = await fetch("/api/admin/system", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "flush_old_cache" })
+      });
+      const data = await res.json();
+      if (data.success) toast.success(data.message);
+      else throw new Error(data.error);
+    } catch (err: any) {
+      toast.error("처리 중 오류: " + err.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const executeResetBenchmark = async () => {
+    setIsResetBenchmarkConfirmOpen(false);
+    setIsSaving(true);
+    try {
+      const res = await fetch("/api/admin/system", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reset_benchmarks" })
+      });
+      const data = await res.json();
+      if (data.success) toast.success(data.message);
+      else throw new Error(data.error);
+    } catch (err: any) {
+      toast.error("처리 중 오류: " + err.message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const executeFlushUser = async () => {
+    setIsFlushUserConfirmOpen(false);
+    setIsSaving(true);
+    try {
+      const res = await fetch("/api/admin/system", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "flush_player_cache", nickname: flushUserTarget })
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success(data.message);
+        setFlushNickname("");
+      } else throw new Error(data.error);
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setIsSaving(false);
+      setFlushUserTarget("");
+    }
+  };
+
+  const executeFlushMatch = async () => {
+    setIsFlushMatchConfirmOpen(false);
+    setIsSaving(true);
+    try {
+      const res = await fetch("/api/admin/system", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "flush_match_cache", matchId: flushMatchTarget })
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success(data.message);
+        setFlushMatchId("");
+      } else throw new Error(data.error);
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setIsSaving(false);
+      setFlushMatchTarget("");
     }
   };
 
@@ -1435,39 +1568,11 @@ export default function GameDataEditor() {
                     />
                     <button
                       id="sync-btn"
-                      onClick={async () => {
+                      onClick={() => {
                         const urlInput = document.getElementById("manual-sync-url") as HTMLInputElement;
-                        const manualUrl = urlInput?.value.trim();
-                        
-                        const confirmMsg = manualUrl 
-                          ? `입력하신 URL(${manualUrl})로 강제 동기화를 진행할까요?`
-                          : "모든 공식 뉴스를 훑어보고 최신 패치노트 전 내용을 동기화할까요?";
-                          
-                        if (!confirm(confirmMsg)) return;
-                        
-                        setIsSaving(true);
-                        try {
-                          const apiUrl = `/api/admin/patch-notes/sync`;
-                          const res = await fetch(apiUrl, { 
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ url: manualUrl })
-                          });
-                          const result = await res.json();
-                          
-                          if (result.success) {
-                            toast.success("✅ 동기화 완료! (" + (result.details?.join(", ") || "내역 없음") + ")");
-                            if (urlInput) urlInput.value = ""; // 성공 시 비우기
-                            router.push("/board");
-                          } else {
-                            toast.error("❌ 동기화 실패: " + (result.error || result.message || "알 수 없는 오류"));
-                          }
-                        } catch (err) {
-                          console.error("Sync error:", err);
-                          toast.error("연동 통신 중 오류가 발생했습니다.");
-                        } finally {
-                          setIsSaving(false);
-                        }
+                        const manualUrl = urlInput?.value.trim() || "";
+                        setSyncTargetUrl(manualUrl);
+                        setIsSyncConfirmOpen(true);
                       }}
                       disabled={isSaving}
                       className={`px-6 py-2.5 rounded-lg text-sm font-bold border transition-all whitespace-nowrap cursor-pointer ${
@@ -1487,23 +1592,8 @@ export default function GameDataEditor() {
                     원본 데이터는 보존되며, 사용자가 전적을 조회할 때 최신 엔진으로 다시 계산됩니다.
                   </p>
                   <button
-                    onClick={async () => {
-                      if (!confirm("정말 모든 분석 캐시를 삭제하시겠습니까? (복구 불가능)")) return;
-                      setIsSaving(true);
-                      try {
-                        const res = await fetch("/api/admin/system", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ action: "flush_old_cache" })
-                        });
-                        const data = await res.json();
-                        if (data.success) toast.success(data.message);
-                        else throw new Error(data.error);
-                      } catch (err: any) {
-                        toast.error("처리 중 오류: " + err.message);
-                      } finally {
-                        setIsSaving(false);
-                      }
+                    onClick={() => {
+                      setIsFlushCacheConfirmOpen(true);
                     }}
                     disabled={isSaving}
                     className="px-6 py-3 bg-red-600/20 text-red-500 border border-red-600/30 rounded-lg font-bold hover:bg-red-600/30 transition-all"
@@ -1519,23 +1609,8 @@ export default function GameDataEditor() {
                     수행 후 &apos;벤치마커 스크립트&apos;를 다시 돌려야 최신 데이터로 채워집니다.
                   </p>
                   <button
-                    onClick={async () => {
-                      if (!confirm("벤치마크 데이터를 초기화하시겠습니까? (복구 불가능)")) return;
-                      setIsSaving(true);
-                      try {
-                        const res = await fetch("/api/admin/system", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ action: "reset_benchmarks" })
-                        });
-                        const data = await res.json();
-                        if (data.success) toast.success(data.message);
-                        else throw new Error(data.error);
-                      } catch (err: any) {
-                        toast.error("처리 중 오류: " + err.message);
-                      } finally {
-                        setIsSaving(false);
-                      }
+                    onClick={() => {
+                      setIsResetBenchmarkConfirmOpen(true);
                     }}
                     disabled={isSaving}
                     className="px-6 py-3 bg-orange-600/20 text-orange-500 border border-orange-600/30 rounded-lg font-bold hover:bg-orange-600/30 transition-all"
@@ -1560,26 +1635,10 @@ export default function GameDataEditor() {
                         onChange={(e) => setFlushNickname(e.target.value)}
                       />
                       <button
-                        onClick={async () => {
+                        onClick={() => {
                           if (!flushNickname) return toast.error("닉네임을 입력하세요.");
-                          if (!confirm(flushNickname + "님의 모든 분석 데이터를 삭제하시겠습니까?")) return;
-                          setIsSaving(true);
-                          try {
-                            const res = await fetch("/api/admin/system", {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({ action: "flush_player_cache", nickname: flushNickname })
-                            });
-                            const data = await res.json();
-                            if (data.success) {
-                              toast.success(data.message);
-                              setFlushNickname("");
-                            } else throw new Error(data.error);
-                          } catch (err: any) {
-                            toast.error(err.message);
-                          } finally {
-                            setIsSaving(false);
-                          }
+                          setFlushUserTarget(flushNickname);
+                          setIsFlushUserConfirmOpen(true);
                         }}
                         disabled={isSaving}
                         className="px-4 py-2 bg-blue-600/20 text-blue-400 border border-blue-600/30 rounded font-bold hover:bg-blue-600/30 transition-all text-sm"
@@ -1597,26 +1656,10 @@ export default function GameDataEditor() {
                         onChange={(e) => setFlushMatchId(e.target.value)}
                       />
                       <button
-                        onClick={async () => {
+                        onClick={() => {
                           if (!flushMatchId) return toast.error("매치 ID를 입력하세요.");
-                          if (!confirm("해당 매치(" + flushMatchId + ")의 모든 분석 데이터를 삭제하시겠습니까?")) return;
-                          setIsSaving(true);
-                          try {
-                            const res = await fetch("/api/admin/system", {
-                              method: "POST",
-                              headers: { "Content-Type": "application/json" },
-                              body: JSON.stringify({ action: "flush_match_cache", matchId: flushMatchId })
-                            });
-                            const data = await res.json();
-                            if (data.success) {
-                              toast.success(data.message);
-                              setFlushMatchId("");
-                            } else throw new Error(data.error);
-                          } catch (err: any) {
-                            toast.error(err.message);
-                          } finally {
-                            setIsSaving(false);
-                          }
+                          setFlushMatchTarget(flushMatchId);
+                          setIsFlushMatchConfirmOpen(true);
                         }}
                         disabled={isSaving}
                         className="px-4 py-2 bg-purple-600/20 text-purple-400 border border-purple-600/30 rounded font-bold hover:bg-purple-600/30 transition-all text-sm"
@@ -2375,6 +2418,83 @@ export default function GameDataEditor() {
           )}
         </main>
       </div>
+
+      {/* 3단계 모달 현대화 모달 마운트 */}
+      <ConfirmModal
+        isOpen={isDeleteConfirmOpen}
+        onCancel={() => {
+          setIsDeleteConfirmOpen(false);
+          setDeleteTargetId(null);
+        }}
+        onConfirm={executeDelete}
+        title="항목 삭제 확인"
+        type="danger"
+        description={
+          activeCategory === "users"
+            ? (selectedItem as any)?.is_orphan_profile
+              ? "Auth 계정 없이 남아 있는 유령 프로필을 정리하시겠습니까? 프로필 행이 영구 삭제됩니다."
+              : "해당 유저를 강제 탈퇴(삭제) 처리하시겠습니까? Auth 계정과 프로필 정보가 영구히 소멸됩니다."
+            : "정말 삭제하시겠습니까? 관련 시뮬레이션에 영향이 있을 수 있습니다."
+        }
+      />
+
+      <ConfirmModal
+        isOpen={isSyncConfirmOpen}
+        onCancel={() => {
+          setIsSyncConfirmOpen(false);
+          setSyncTargetUrl(null);
+        }}
+        onConfirm={executeSync}
+        title="패치노트 동기화"
+        type="info"
+        description={
+          syncTargetUrl
+            ? `입력하신 URL(${syncTargetUrl})로 강제 동기화를 진행할까요?`
+            : "모든 공식 뉴스를 훑어보고 최신 패치노트 전 내용을 동기화할까요?"
+        }
+      />
+
+      <ConfirmModal
+        isOpen={isFlushCacheConfirmOpen}
+        onCancel={() => setIsFlushCacheConfirmOpen(false)}
+        onConfirm={executeFlushCache}
+        title="전체 분석 캐시 초기화"
+        type="danger"
+        description="정말 모든 분석 캐시를 삭제하시겠습니까? (복구 불가능)"
+      />
+
+      <ConfirmModal
+        isOpen={isResetBenchmarkConfirmOpen}
+        onCancel={() => setIsResetBenchmarkConfirmOpen(false)}
+        onConfirm={executeResetBenchmark}
+        title="글로벌 벤치마크 초기화"
+        type="danger"
+        description="벤치마크 데이터를 초기화하시겠습니까? (복구 불가능)"
+      />
+
+      <ConfirmModal
+        isOpen={isFlushUserConfirmOpen}
+        onCancel={() => {
+          setIsFlushUserConfirmOpen(false);
+          setFlushUserTarget("");
+        }}
+        onConfirm={executeFlushUser}
+        title="플레이어 분석 데이터 삭제"
+        type="danger"
+        description={`${flushUserTarget}님의 모든 분석 데이터를 삭제하시겠습니까?`}
+      />
+
+      <ConfirmModal
+        isOpen={isFlushMatchConfirmOpen}
+        onCancel={() => {
+          setIsFlushMatchConfirmOpen(false);
+          setFlushMatchTarget("");
+        }}
+        onConfirm={executeFlushMatch}
+        title="매치 분석 데이터 삭제"
+        type="danger"
+        description={`해당 매치(${flushMatchTarget})의 모든 분석 데이터를 삭제하시겠습니까?`}
+      />
     </div>
   );
 }
