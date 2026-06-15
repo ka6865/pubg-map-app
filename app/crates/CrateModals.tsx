@@ -217,6 +217,7 @@ interface RefillModalProps {
   refillAmount: number;
   setRefillAmount: React.Dispatch<React.SetStateAction<number>>;
   onRefill: () => void;
+  onRefillInfinite?: () => void;
 }
 
 export function RefillModal({
@@ -226,7 +227,8 @@ export function RefillModal({
   setRefillType,
   refillAmount,
   setRefillAmount,
-  onRefill
+  onRefill,
+  onRefillInfinite
 }: RefillModalProps) {
   if (!isOpen) return null;
 
@@ -317,12 +319,23 @@ export function RefillModal({
         </div>
 
         {/* 보충 확정 버튼 */}
-        <button
-          onClick={onRefill}
-          className="w-full py-3.5 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-black rounded-xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer text-sm"
-        >
-          보충 완료
-        </button>
+        <div className="flex flex-col gap-2.5">
+          <button
+            onClick={onRefill}
+            className="w-full py-3.5 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-black rounded-xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer text-sm"
+          >
+            보충 완료
+          </button>
+          
+          {onRefillInfinite && (
+            <button
+              onClick={onRefillInfinite}
+              className="w-full py-3.5 bg-gradient-to-r from-amber-500 via-yellow-500 to-amber-600 hover:from-amber-600 hover:via-yellow-600 hover:to-amber-700 text-slate-950 font-black rounded-xl shadow-lg shadow-amber-500/10 transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer text-sm"
+            >
+              ⚡ 모든 재화 무제한 충전 (999M)
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

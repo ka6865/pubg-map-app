@@ -8,6 +8,7 @@ import {
   calcTotalWeight,
 } from "../../lib/backpackUtils";
 import { trackEvent } from "../../lib/analytics";
+import { toast } from "sonner";
 
 interface InventoryItem {
   id: string;
@@ -217,11 +218,11 @@ export default function BackpackSimulator() {
       
       if (target === 'backpack') {
         if (item.can_be_in_backpack === false) {
-          alert("이 아이템은 배낭에 넣을 수 없습니다.");
+          toast.warning("이 아이템은 배낭에 넣을 수 없습니다.");
           return;
         }
         if (backpackWeight + (item.weight * item.quantity) > maxBackpackCapacity) {
-          alert("배낭 용량이 부족합니다!");
+          toast.error("배낭 용량이 부족합니다!");
           return;
         }
         removeFromInventory(item.id, source);
@@ -232,7 +233,7 @@ export default function BackpackSimulator() {
         });
       } else {
         if (trunkWeight + (item.weight * item.quantity) > maxTrunkCapacity) {
-          alert("트렁크 용량이 부족합니다!");
+          toast.error("트렁크 용량이 부족합니다!");
           return;
         }
         removeFromInventory(item.id, source);
@@ -258,7 +259,7 @@ export default function BackpackSimulator() {
         if (!item) return prev;
         const weightDiff = (newQty - item.quantity) * item.weight;
         if (backpackWeight + weightDiff > maxBackpackCapacity) {
-          alert("배낭 용량이 부족합니다!");
+          toast.error("배낭 용량이 부족합니다!");
           return prev;
         }
         return prev.map(i => i.id === id ? { ...i, quantity: newQty } : i);
@@ -269,7 +270,7 @@ export default function BackpackSimulator() {
         if (!item) return prev;
         const weightDiff = (newQty - item.quantity) * item.weight;
         if (trunkWeight + weightDiff > maxTrunkCapacity) {
-          alert("트렁크 용량이 부족합니다!");
+          toast.error("트렁크 용량이 부족합니다!");
           return prev;
         }
         return prev.map(i => i.id === id ? { ...i, quantity: newQty } : i);
@@ -306,11 +307,11 @@ export default function BackpackSimulator() {
 
     if (target === 'backpack') {
       if (item.can_be_in_backpack === false) {
-        alert("이 아이템은 배낭에 넣을 수 없습니다.");
+        toast.warning("이 아이템은 배낭에 넣을 수 없습니다.");
         return;
       }
       if (backpackWeight + (item.weight * item.quantity) > maxBackpackCapacity) {
-        alert("배낭 용량이 부족합니다!");
+        toast.error("배낭 용량이 부족합니다!");
         return;
       }
       removeFromInventory(item.id, source);
@@ -321,7 +322,7 @@ export default function BackpackSimulator() {
       });
     } else {
       if (trunkWeight + (item.weight * item.quantity) > maxTrunkCapacity) {
-        alert("트렁크 용량이 부족합니다!");
+        toast.error("트렁크 용량이 부족합니다!");
         return;
       }
       removeFromInventory(item.id, source);
@@ -336,11 +337,11 @@ export default function BackpackSimulator() {
   const addToInventory = (item: any, category: string, target: 'backpack' | 'trunk', qty: number = 1) => {
     if (target === 'backpack') {
       if (item.can_be_in_backpack === false) {
-        alert(`'${item.name}'은 배낭에 수납할 수 없습니다. 트렁크를 이용하세요!`);
+        toast.warning(`'${item.name}'은 배낭에 수납할 수 없습니다. 트렁크를 이용하세요!`);
         return;
       }
       if (backpackWeight + (item.weight * qty) > maxBackpackCapacity) {
-        alert("배낭 용량이 부족합니다!");
+        toast.error("배낭 용량이 부족합니다!");
         return;
       }
       setBackpack(prev => {
@@ -350,7 +351,7 @@ export default function BackpackSimulator() {
       });
     } else {
       if (trunkWeight + (item.weight * qty) > maxTrunkCapacity) {
-        alert("트렁크 용량이 부족합니다!");
+        toast.error("트렁크 용량이 부족합니다!");
         return;
       }
       setTrunk(prev => {
