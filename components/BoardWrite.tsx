@@ -7,6 +7,7 @@ import "react-quill-new/dist/quill.snow.css";
 import imageCompression from "browser-image-compression";
 import { toast } from "sonner";
 import { ClanInfo } from "@/types/board"; // 🌟 추가
+import ConfirmModal from "@/components/common/ConfirmModal";
 
 const ReactQuill = dynamic(() => import("react-quill-new"), {
   ssr: false,
@@ -101,6 +102,11 @@ export default function BoardWrite({
   const [searchPlatform, setSearchPlatform] = useState("steam"); // 🌟 플랫폼
   const [isSearchingClan, setIsSearchingClan] = useState(false); // 🌟 로딩 상태
 
+  // 3단계 알럿 모달화 상태
+  const [isDiscordModalOpen, setIsDiscordModalOpen] = useState(false);
+  const [discordRoomType, setDiscordRoomType] = useState<"duo" | "squad" | null>(null);
+  const [isResetStyleModalOpen, setIsResetStyleModalOpen] = useState(false);
+
   // 🌟 클랜 검색 API 연동 함수
   const handleSearchClan = async () => {
     if (!searchNickname.trim()) {
@@ -137,19 +143,24 @@ export default function BoardWrite({
     }
   };
 
-  // 🌟 디스코드 음성 채널 자동 생성 함수
-  const createDiscordRoom = async (type: "duo" | "squad") => {
-    if (isCreatingRoom) return;
+  // 🌟 디스코드 음성 채널 자동 생성 함수 - 확인 모달 노출
+  const createDiscordRoom = (type: "duo" | "squad") => {
+    setDiscordRoomType(type);
+    setIsDiscordModalOpen(true);
+  };
+
+  // 실제 디스코드 방 생성 로직 실행
+  const executeCreateDiscordRoom = async () => {
+    if (!discordRoomType || isCreatingRoom) return;
+    setIsDiscordModalOpen(false);
+    const type = discordRoomType;
+
+    setIsCreatingRoom(true);
+    const toastId = toast.loading(`${type.toUpperCase()} 채널 생성 중...`);
 
     // 닉네임 정보 (author) - 닉네임 표시되는 태그에서 추출 시도
     const authorElement = document.querySelector(".nickname-display");
     const author = authorElement?.textContent?.trim() || "익명";
-
-    const confirmMsg = `${type === "duo" ? "2인 듀오" : "4인 스쿼드"} 전용 보이스 채널을 생성하시겠습니까?\n\n* 사람이 모두 나가면 봇이 자동으로 삭제합니다.`;
-    if (!confirm(confirmMsg)) return;
-
-    setIsCreatingRoom(true);
-    const toastId = toast.loading(`${type.toUpperCase()} 채널 생성 중...`);
 
     try {
       const res = await fetch("/api/discord/room/create", {
@@ -171,6 +182,7 @@ export default function BoardWrite({
       toast.error(err.message || "채널 생성 중 오류가 발생했습니다.", { id: toastId });
     } finally {
       setIsCreatingRoom(false);
+      setDiscordRoomType(null);
     }
   };
 
@@ -364,7 +376,7 @@ export default function BoardWrite({
     }
   };
 
-  // 🌟 [추가] 텍스트 스타일 전체 초기화 함수
+  // 🌟 [추가] 텍스트 스타일 전체 초기화 함수 - 모달 트리거
   const handleClearFormatting = () => {
     if (!quillRef.current) return;
     const editor = quillRef.current.getEditor();
@@ -372,21 +384,29 @@ export default function BoardWrite({
     
     if (length <= 1) return; // 내용이 없을 때
 
-    if (confirm("글의 모든 스타일(배경색, 글자색 등)을 초기화하시겠습니까? (이미지는 유지됩니다)")) {
-      const range = { index: 0, length: length };
-      // 1. Quill의 기본 서식 제거
-      editor.removeFormat(range.index, range.length);
-      
-      // 2. 인라인 스타일(배경색 등)이 남아있을 수 있으므로 강제 세척 처리
-      const cleanContent = newContent.replace(/style="[^"]*"/g, (match) => {
-        // 이미지 태그의 인라인 스타일은 유지 (크기 등 때문)
-        if (match.includes("max-width") || match.includes("display:block")) return match;
-        return "";
-      });
-      setNewContent(cleanContent);
-      
-      toast.success("스타일이 초기화되었습니다.");
-    }
+    setIsResetStyleModalOpen(true);
+  };
+
+  // 실제 스타일 초기화 로직 실행
+  const executeClearFormatting = () => {
+    setIsResetStyleModalOpen(false);
+    if (!quillRef.current) return;
+    const editor = quillRef.current.getEditor();
+    const length = editor.getLength();
+    
+    const range = { index: 0, length: length };
+    // 1. Quill의 기본 서식 제거
+    editor.removeFormat(range.index, range.length);
+    
+    // 2. 인라인 스타일(배경색 등)이 남아있을 수 있으므로 강제 세척 처리
+    const cleanContent = newContent.replace(/style="[^"]*"/g, (match) => {
+      // 이미지 태그의 인라인 스타일은 유지 (크기 등 때문)
+      if (match.includes("max-width") || match.includes("display:block")) return match;
+      return "";
+    });
+    setNewContent(cleanContent);
+    
+    toast.success("스타일이 초기화되었습니다.");
   };
 
   const modules = useMemo(() => ({
@@ -745,6 +765,34 @@ export default function BoardWrite({
           {isLoading ? "처리 중..." : isEditing ? "수정하기" : "등록하기"}
         </button>
       </div>
+
+      {/* 디스코드 방 생성 확인 모달 */}
+      <ConfirmModal
+        isOpen={isDiscordModalOpen}
+        title="디스코드 보이스 채널 생성"
+        description={`${discordRoomType === "duo" ? "2인 듀오" : "4인 스쿼드"} 전용 보이스 채널을 생성하시겠습니까?\n\n* 사람이 모두 나가면 봇이 자동으로 삭제합니다.`}
+        confirmText="생성"
+        cancelText="취소"
+        type="info"
+        onConfirm={executeCreateDiscordRoom}
+        onCancel={() => {
+          setIsDiscordModalOpen(false);
+          setDiscordRoomType(null);
+        }}
+      />
+
+      {/* 스타일 초기화 확인 모달 */}
+      <ConfirmModal
+        isOpen={isResetStyleModalOpen}
+        title="스타일 초기화"
+        description="글의 모든 스타일(배경색, 글자색 등)을 초기화하시겠습니까? (이미지는 유지됩니다)"
+        confirmText="초기화"
+        cancelText="취소"
+        type="warning"
+        onConfirm={executeClearFormatting}
+        onCancel={() => setIsResetStyleModalOpen(false)}
+      />
+
     </div>
   );
 }
