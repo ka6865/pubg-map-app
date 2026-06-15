@@ -5,6 +5,7 @@ import getApiUrl from "../../../lib/api-config";
 import { useRouter, useSearchParams } from "next/navigation";
 import { supabase } from "../../../lib/supabase";
 import { PendingVehicle } from "../../../types/map";
+import { toast } from "sonner";
 
 // 쿼리스트링 파싱에 필요한 클라이언트 로직
 function AdminReviewInner() {
@@ -19,7 +20,7 @@ function AdminReviewInner() {
   useEffect(() => {
     async function checkAuthAndFetch() {
       if (!id) {
-        alert("잘못된 접근입니다. (ID 누락)");
+        toast.error("잘못된 접근입니다. (ID 누락)");
         router.push("/");
         return;
       }
@@ -27,7 +28,7 @@ function AdminReviewInner() {
       // 1. 유저 세션 확인
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
-        alert("관리자 로그인이 필요합니다.");
+        toast.error("관리자 로그인이 필요합니다.");
         router.push("/");
         return;
       }
@@ -40,7 +41,7 @@ function AdminReviewInner() {
         .single();
 
       if (profile?.role !== "admin") {
-        alert("관리자 권한이 없습니다.");
+        toast.error("관리자 권한이 없습니다.");
         router.push("/");
         return;
       }
@@ -55,7 +56,7 @@ function AdminReviewInner() {
         .single();
         
       if (!pending) {
-        alert("존재하지 않거나 이미 승인/파기 처리된 제보입니다.");
+        toast.error("존재하지 않거나 이미 승인/파기 처리된 제보입니다.");
         router.push("/");
         return;
       }
@@ -87,13 +88,13 @@ function AdminReviewInner() {
 
       const result = await res.json();
       if (res.ok) {
-        alert(`성공적으로 ${action === "approve" ? "승인(지도 반영)" : "파기(삭제)"} 되었습니다!`);
+        toast.success(`성공적으로 ${action === "approve" ? "승인(지도 반영)" : "파기(삭제)"} 되었습니다!`);
         router.push("/");
       } else {
-        alert(`오류 발생: ${result.error}`);
+        toast.error(`오류 발생: ${result.error}`);
       }
     } catch {
-      alert("서버 통신에 실패했습니다.");
+      toast.error("서버 통신에 실패했습니다.");
     }
   };
 

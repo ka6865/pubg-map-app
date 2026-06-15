@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import AdminAgentChat from "@/components/admin/AdminAgentChat";
 import { supabase } from "@/lib/supabase";
+import { toast } from "sonner";
 
 export default function AdminBotPage() {
   const router = useRouter();
@@ -31,7 +32,7 @@ export default function AdminBotPage() {
         setIsAdmin(true);
       } else {
         setIsAdmin(false);
-        alert("관리자 권한이 없습니다.");
+        toast.error("관리자 권한이 없습니다.");
         router.push("/");
       }
     }
