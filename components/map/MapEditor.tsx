@@ -30,6 +30,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import { useMapSettings } from "@/hooks/useMapSettings";
+import ConfirmModal from "@/components/common/ConfirmModal";
 
 // SVG 경로와 색상을 조합해 커스텀 지도 마커 아이콘 객체 생성
 const createPinIcon = (colorCode: string, pathData: string) => {
@@ -166,6 +167,10 @@ const MapEditorComponent = () => {
   const [vehicles, setVehicles] = useState<any[]>([]);
   const [pendingVehicles, setPendingVehicles] = useState<any[]>([]);
 
+  // 3단계 알럿 모달화 상태
+  const [isClearAllModalOpen, setIsClearAllModalOpen] = useState(false);
+  const [isSaveConfirmModalOpen, setIsSaveConfirmModalOpen] = useState(false);
+
   const { activeCategories: allowedCategories, categoryInfoMap } = useMapSettings(activeMapId, true);
 
   const icons = useMemo(() => {
@@ -272,24 +277,21 @@ const MapEditorComponent = () => {
     setVehicles((prev) => prev.filter((v) => v.id !== id));
 
   const clearAllVehicles = () => {
-    const currentMapCount = vehicles.filter(
-      (v) => v.mapId === activeMapId || (!v.mapId && activeMapId === "Erangel")
-    ).length;
-    if (
-      window.confirm(
-        `현재 '${currentMap?.label}' 맵의 마커 ${currentMapCount}개를 모두 삭제하시겠습니까? (다른 맵의 마커는 유지됩니다)`
+    setIsClearAllModalOpen(true);
+  };
+
+  const executeClearAllVehicles = () => {
+    setIsClearAllModalOpen(false);
+    setVehicles((prev) =>
+      prev.filter(
+        (v) =>
+          !(
+            v.mapId === activeMapId ||
+            (!v.mapId && activeMapId === "Erangel")
+          )
       )
-    ) {
-      setVehicles((prev) =>
-        prev.filter(
-          (v) =>
-            !(
-              v.mapId === activeMapId ||
-              (!v.mapId && activeMapId === "Erangel")
-            )
-        )
-      );
-    }
+    );
+    toast.success("현재 맵의 모든 마커가 삭제되었습니다.");
   };
 
   const updateVehiclePos = (id: number, newY: number, newX: number) => {
@@ -312,13 +314,12 @@ const MapEditorComponent = () => {
     (v) => v.mapId === activeMapId || (!v.mapId && activeMapId === "Erangel")
   ).length;
 
-  const handleSaveToDB = async () => {
-    if (
-      !confirm(
-        `'${currentMap?.label}' 맵의 변경사항을 서버에 저장하시겠습니까?`
-      )
-    )
-      return;
+  const handleSaveToDB = () => {
+    setIsSaveConfirmModalOpen(true);
+  };
+
+  const executeSaveToDB = async () => {
+    setIsSaveConfirmModalOpen(false);
     setIsSaving(true);
 
     try {
@@ -812,6 +813,30 @@ const MapEditorComponent = () => {
           border-top-color: #1a1a1a !important;
         }
       `}</style>
+      {/* 맵 마커 전체 삭제 확인 모달 */}
+      <ConfirmModal
+        isOpen={isClearAllModalOpen}
+        title="전체 마커 삭제"
+        description={`현재 '${currentMap?.label}' 맵의 마커 ${vehicles.filter(v => v.mapId === activeMapId || (!v.mapId && activeMapId === "Erangel")).length}개를 모두 삭제하시겠습니까? (다른 맵의 마커는 유지됩니다)`}
+        confirmText="전체 삭제"
+        cancelText="취소"
+        type="danger"
+        onConfirm={executeClearAllVehicles}
+        onCancel={() => setIsClearAllModalOpen(false)}
+      />
+
+      {/* 맵 변경사항 저장 확인 모달 */}
+      <ConfirmModal
+        isOpen={isSaveConfirmModalOpen}
+        title="변경사항 저장"
+        description={`'${currentMap?.label}' 맵의 변경사항을 서버에 저장하시겠습니까?`}
+        confirmText="저장"
+        cancelText="취소"
+        type="warning"
+        onConfirm={executeSaveToDB}
+        onCancel={() => setIsSaveConfirmModalOpen(false)}
+      />
+
     </div>
   );
 };

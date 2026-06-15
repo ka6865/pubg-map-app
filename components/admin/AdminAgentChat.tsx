@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import {
   Activity,
   AlertCircle,
@@ -22,6 +23,7 @@ import {
   XCircle
 } from "lucide-react";
 import AdminAgentMascot, { type AdminAgentMascotState } from "@/components/admin/AdminAgentMascot";
+import ConfirmModal from "@/components/common/ConfirmModal";
 import type { BotSettings, ChatMessage, ToolExecution } from "@/types/admin-bot";
 
 const AGENT_CLIENT_TIMEOUT_MS = 45_000;
@@ -78,6 +80,7 @@ export default function AdminAgentChat({
   const [activeBotMessageId, setActiveBotMessageId] = useState<string | undefined>();
   const [latestBotMessageId, setLatestBotMessageId] = useState<string | undefined>();
   const [settings, setSettings] = useState<BotSettings>(DEFAULT_ADMIN_BOT_SETTINGS);
+  const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
 
   const chatEndRef = useRef<HTMLDivElement>(null);
   const messageScrollRef = useRef<HTMLElement>(null);
@@ -106,7 +109,11 @@ export default function AdminAgentChat({
   }, [messages, isLoading]);
 
   const handleReset = () => {
-    if (!confirm("대화 기록을 초기화하시겠습니까?")) return;
+    setIsResetConfirmOpen(true);
+  };
+
+  const executeReset = () => {
+    setIsResetConfirmOpen(false);
     setMessages([
       {
         id: "welcome",
@@ -119,6 +126,7 @@ export default function AdminAgentChat({
     setActiveBotMessageId(undefined);
     setLatestBotMessageId(undefined);
     setPrefillThinking(false);
+    toast.success("대화 기록이 초기화되었습니다.");
   };
 
   const notifyApprovalCreated = (approvalId?: string) => {
@@ -526,6 +534,18 @@ export default function AdminAgentChat({
           </button>
         </form>
       </footer>
+
+      {/* 대화 기록 초기화 확인 모달 */}
+      <ConfirmModal
+        isOpen={isResetConfirmOpen}
+        title="대화 기록 초기화"
+        description="대화 기록을 초기화하시겠습니까?"
+        confirmText="초기화"
+        cancelText="취소"
+        type="warning"
+        onConfirm={executeReset}
+        onCancel={() => setIsResetConfirmOpen(false)}
+      />
     </div>
   );
 }

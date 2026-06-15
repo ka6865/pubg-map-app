@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { toast } from "sonner";
 import MiniStatWidget from "@/components/stat/MiniStatWidget";
+import ConfirmModal from "@/components/common/ConfirmModal";
 import { 
-  User as UserIcon, Save, LogOut, Trash2, 
+  User as UserIcon, Save, LogOut, Trash2, AlertCircle,
   Gamepad2, Settings, ShieldCheck, ExternalLink,
   Mail, ChevronRight, Activity, MessageSquare, FileText, Heart
 } from "lucide-react";
@@ -136,6 +137,36 @@ export default function MyPage({ initialCurrentUser, initialUserProfile, initial
     window.location.reload();
   };
 
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDeleteAccount = () => {
+    setIsDeleteModalOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    setIsDeleting(true);
+    try {
+      const res = await fetch("/api/auth/delete-account", {
+        method: "POST",
+      });
+      const result = await res.json();
+
+      if (!res.ok) {
+        throw new Error(result.error || "회원탈퇴 처리 중 오류가 발생했습니다.");
+      }
+
+      toast.success("회원탈퇴가 정상 처리되었습니다. 이용해 주셔서 감사합니다.");
+      await supabase.auth.signOut();
+      router.push("/");
+      window.location.reload();
+    } catch (error: any) {
+      toast.error(error.message);
+      setIsDeleting(false);
+      setIsDeleteModalOpen(false);
+    }
+  };
+
   if (!currentUser) {
     return (
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '80dvh' }}>
@@ -223,10 +254,22 @@ export default function MyPage({ initialCurrentUser, initialUserProfile, initial
               <ChevronRight size={14} />
             </button>
             <button 
+              onClick={handleDeleteAccount}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.backgroundColor = 'rgba(255,75,75,0.06)';
+                e.currentTarget.style.borderColor = 'rgba(255,75,75,0.35)';
+                e.currentTarget.style.color = 'rgba(255,75,75,1)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.backgroundColor = 'transparent';
+                e.currentTarget.style.borderColor = 'rgba(255,75,75,0.15)';
+                e.currentTarget.style.color = 'rgba(255,75,75,0.75)';
+              }}
               style={{ 
                 width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', 
-                padding: '14px 20px', backgroundColor: 'transparent', border: '1px solid rgba(255,75,75,0.1)',
-                borderRadius: '16px', color: 'rgba(255,75,75,0.4)', cursor: 'pointer', fontSize: '13px'
+                padding: '16px 20px', backgroundColor: 'transparent', border: '1px solid rgba(255,75,75,0.15)',
+                borderRadius: '16px', color: 'rgba(255,75,75,0.75)', cursor: 'pointer', fontSize: '14px',
+                fontWeight: 600, transition: 'all 0.25s ease'
               }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}><Trash2 size={16} /> 계정 삭제 (회원탈퇴)</div>
@@ -371,6 +414,17 @@ export default function MyPage({ initialCurrentUser, initialUserProfile, initial
           </DashboardCard>
         </div>
       </div>
+      <ConfirmModal
+        isOpen={isDeleteModalOpen}
+        title="정말로 탈퇴하시겠습니까?"
+        description="탈퇴 시 프로필 정보는 즉시 파기되지만, 작성하신 게시글과 댓글은 '탈퇴한 사용자' 상태로 안전하게 보존됩니다. 이 작업은 취소할 수 없습니다."
+        confirmText="탈퇴하기"
+        cancelText="취소"
+        type="danger"
+        isPending={isDeleting}
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setIsDeleteModalOpen(false)}
+      />
     </div>
   );
 }

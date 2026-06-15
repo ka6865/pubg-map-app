@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
+import ConfirmModal from "@/components/common/ConfirmModal";
 import { ICON_LIBRARY } from "@/lib/map_config";
 import {
   getAllCategories,
@@ -32,6 +33,9 @@ export default function CategoryMasterEditor({ onRefresh }: CategoryMasterEditor
   const [formColor, setFormColor] = useState("#F2A900");
   const [formIconId, setFormIconId] = useState("car");
   const [formSortOrder, setFormSortOrder] = useState(0);
+
+  const [isDeactivateConfirmOpen, setIsDeactivateConfirmOpen] = useState(false);
+  const [deactivateTargetCategory, setDeactivateTargetCategory] = useState<CategoryRow | null>(null);
 
   const loadCategories = useCallback(async () => {
     const data = await getAllCategories();
@@ -102,8 +106,15 @@ export default function CategoryMasterEditor({ onRefresh }: CategoryMasterEditor
     }
   };
 
-  const handleDeactivate = async (cat: CategoryRow) => {
-    if (!confirm(`'${cat.label}' 카테고리를 숨김 처리하시겠습니까?\n기존 마커는 DB에 유지됩니다.`)) return;
+  const handleDeactivate = (cat: CategoryRow) => {
+    setDeactivateTargetCategory(cat);
+    setIsDeactivateConfirmOpen(true);
+  };
+
+  const executeDeactivate = async () => {
+    if (!deactivateTargetCategory) return;
+    const cat = deactivateTargetCategory;
+    setIsDeactivateConfirmOpen(false);
     try {
       await deactivateCategory(cat.id);
       toast.success(`'${cat.label}' 카테고리가 숨겨졌습니다.`);
@@ -111,6 +122,8 @@ export default function CategoryMasterEditor({ onRefresh }: CategoryMasterEditor
       onRefresh?.();
     } catch (err: any) {
       toast.error("처리 실패: " + err.message);
+    } finally {
+      setDeactivateTargetCategory(null);
     }
   };
 
@@ -358,6 +371,20 @@ export default function CategoryMasterEditor({ onRefresh }: CategoryMasterEditor
           </div>
         </div>
       )}
+      {/* 카테고리 숨김 확인 모달 */}
+      <ConfirmModal
+        isOpen={isDeactivateConfirmOpen}
+        title="카테고리 숨김"
+        description={deactivateTargetCategory ? `'${deactivateTargetCategory.label}' 카테고리를 숨김 처리하시겠습니까?\n기존 마커는 DB에 유지됩니다.` : ""}
+        confirmText="숨김"
+        cancelText="취소"
+        type="warning"
+        onConfirm={executeDeactivate}
+        onCancel={() => {
+          setIsDeactivateConfirmOpen(false);
+          setDeactivateTargetCategory(null);
+        }}
+      />
     </div>
   );
 }

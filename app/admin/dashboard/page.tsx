@@ -23,6 +23,9 @@ import { Drawer } from "vaul";
 import AdminAgentChat from "@/components/admin/AdminAgentChat";
 import AdminAgentMascot, { type AdminAgentMascotState } from "@/components/admin/AdminAgentMascot";
 import { supabase } from "@/lib/supabase";
+import { toast } from "sonner";
+import ConfirmModal from "@/components/common/ConfirmModal";
+import PromptModal from "@/components/common/PromptModal";
 import type {
   AgentApproval,
   AgentApprovalSummary,
@@ -110,6 +113,17 @@ export default function AdminDashboardPage() {
   const [agentSheetPrefillVersion, setAgentSheetPrefillVersion] = useState(0);
   const [mascotMenuOpen, setMascotMenuOpen] = useState(false);
 
+  // 3단계 알럿 모달화 상태
+  const [isHighRiskConfirmOpen, setIsHighRiskConfirmOpen] = useState(false);
+  const [highRiskApproval, setHighRiskApproval] = useState<AgentApproval | null>(null);
+  const [highRiskAction, setHighRiskAction] = useState<"approve" | "reject" | null>(null);
+
+  const [isHideMemoryConfirmOpen, setIsHideMemoryConfirmOpen] = useState(false);
+  const [hideMemoryId, setHideMemoryId] = useState<string | null>(null);
+
+  const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
+  const [rejectApproval, setRejectApproval] = useState<AgentApproval | null>(null);
+
   useEffect(() => {
     async function checkAdmin() {
       const { data: { session } } = await supabase.auth.getSession();
@@ -128,7 +142,7 @@ export default function AdminDashboardPage() {
         setIsAdmin(true);
       } else {
         setIsAdmin(false);
-        alert("관리자 권한이 없습니다.");
+        toast.error("관리자 권한이 없습니다.");
         router.push("/");
       }
     }
@@ -270,9 +284,74 @@ export default function AdminDashboardPage() {
       setActiveSection("status");
       updateSectionUrl("status");
     } catch (error: any) {
-      alert(error.message || "수동 운영 점검에 실패했습니다.");
+      toast.error(error.message || "수동 운영 점검에 실패했습니다.");
     } finally {
       setMonitorLoading(false);
+    }
+  };
+
+  const executeHighRiskApproval = async () => {
+    if (!highRiskApproval) return;
+    const approval = highRiskApproval;
+    setIsHighRiskConfirmOpen(false);
+    setApprovalLoadingId(approval.id);
+
+    const fetchOptions: RequestInit = {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        confirmedImpact: true,
+        approvalNote: "운영 대시보드에서 위험 작업 재확인 후 승인"
+      })
+    };
+
+    try {
+      const response = await fetch(`/api/admin/agent/approvals/${approval.id}/approve`, fetchOptions);
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error || "승인 요청 처리에 실패했습니다.");
+      }
+      const body = await response.json().catch(() => ({}));
+      await Promise.all([loadApprovals(), loadCommandCenter(), loadMemories()]);
+      setShowProcessedApprovals(true);
+      setSelectedApprovalId(approval.id);
+      setApprovalNotice(body.result?.execution?.message || "수락한 작업이 실행되었습니다.");
+    } catch (error: any) {
+      toast.error(error.message || "승인 요청 처리에 실패했습니다.");
+    } finally {
+      setApprovalLoadingId(null);
+      setHighRiskApproval(null);
+    }
+  };
+
+  const executeRejectApproval = async (reason: string) => {
+    if (!rejectApproval) return;
+    const approval = rejectApproval;
+    setIsRejectModalOpen(false);
+    setApprovalLoadingId(approval.id);
+
+    const fetchOptions: RequestInit = {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ reason: reason.trim() || "관리자 거절" })
+    };
+
+    try {
+      const response = await fetch(`/api/admin/agent/approvals/${approval.id}/reject`, fetchOptions);
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw new Error(body.error || "거절 처리에 실패했습니다.");
+      }
+      const body = await response.json().catch(() => ({}));
+      await Promise.all([loadApprovals(), loadCommandCenter(), loadMemories()]);
+      setShowProcessedApprovals(true);
+      setSelectedApprovalId(approval.id);
+      setApprovalNotice(body.result?.reason ? `거절됨: ${body.result.reason}` : "승인 요청을 거절했습니다.");
+    } catch (error: any) {
+      toast.error(error.message || "거절 처리에 실패했습니다.");
+    } finally {
+      setApprovalLoadingId(null);
+      setRejectApproval(null);
     }
   };
 
@@ -280,20 +359,16 @@ export default function AdminDashboardPage() {
     const fetchOptions: RequestInit = { method: "POST" };
 
     if (action === "reject") {
-      const reason = window.prompt("거절 사유를 짧게 적어주세요.", "");
-      if (reason === null) return;
-      fetchOptions.headers = { "Content-Type": "application/json" };
-      fetchOptions.body = JSON.stringify({ reason: reason.trim() || "관리자 거절" });
+      setRejectApproval(approval);
+      setIsRejectModalOpen(true);
+      return;
     } else {
       const highRisk = isHighRiskApproval(approval);
       if (highRisk) {
-        const ok = window.confirm(`위험 작업입니다.\n${getApprovalOutcomeText(approval)}\n정말 실행할까요?`);
-        if (!ok) return;
-        fetchOptions.headers = { "Content-Type": "application/json" };
-        fetchOptions.body = JSON.stringify({
-          confirmedImpact: true,
-          approvalNote: "운영 대시보드에서 위험 작업 재확인 후 승인"
-        });
+        setHighRiskApproval(approval);
+        setHighRiskAction("approve");
+        setIsHighRiskConfirmOpen(true);
+        return;
       }
     }
 
@@ -312,14 +387,16 @@ export default function AdminDashboardPage() {
         ? body.result?.execution?.message || "수락한 작업이 실행되었습니다."
         : body.result?.reason ? `거절됨: ${body.result.reason}` : "승인 요청을 거절했습니다.");
     } catch (error: any) {
-      alert(error.message || "승인 요청 처리에 실패했습니다.");
+      toast.error(error.message || "승인 요청 처리에 실패했습니다.");
     } finally {
       setApprovalLoadingId(null);
     }
   };
 
-  const handleDeactivateMemory = async (id: string) => {
-    if (!confirm("이 내부 기록을 숨길까요? 삭제가 아니라 기본 목록에서만 숨깁니다.")) return;
+  const executeDeactivateMemory = async () => {
+    if (!hideMemoryId) return;
+    const id = hideMemoryId;
+    setIsHideMemoryConfirmOpen(false);
     setMemoryLoadingId(id);
     try {
       const response = await fetch(`/api/admin/agent/memories/${id}/deactivate`, { method: "POST" });
@@ -328,11 +405,18 @@ export default function AdminDashboardPage() {
         throw new Error(body.error || "내부 기록 숨기기에 실패했습니다.");
       }
       await Promise.all([loadMemories(), loadCommandCenter()]);
+      toast.success("내부 기록이 기본 목록에서 숨겨졌습니다.");
     } catch (error: any) {
-      alert(error.message || "내부 기록 숨기기에 실패했습니다.");
+      toast.error(error.message || "내부 기록 숨기기에 실패했습니다.");
     } finally {
       setMemoryLoadingId(null);
+      setHideMemoryId(null);
     }
+  };
+
+  const handleDeactivateMemory = (id: string) => {
+    setHideMemoryId(id);
+    setIsHideMemoryConfirmOpen(true);
   };
 
   const selectSection = (section: DashboardSection) => {
@@ -944,6 +1028,52 @@ export default function AdminDashboardPage() {
           </Drawer.Content>
         </Drawer.Portal>
       </Drawer.Root>
+
+      {/* 위험 작업 승인 확인 모달 */}
+      <ConfirmModal
+        isOpen={isHighRiskConfirmOpen}
+        title="위험 작업 승인"
+        description={highRiskApproval ? `위험 작업입니다.\n${getApprovalOutcomeText(highRiskApproval)}\n정말 실행할까요?` : ""}
+        confirmText="승인"
+        cancelText="취소"
+        type="danger"
+        onConfirm={executeHighRiskApproval}
+        onCancel={() => {
+          setIsHighRiskConfirmOpen(false);
+          setHighRiskApproval(null);
+        }}
+      />
+
+      {/* 내부 기록 숨기기 확인 모달 */}
+      <ConfirmModal
+        isOpen={isHideMemoryConfirmOpen}
+        title="기록 숨기기"
+        description="이 내부 기록을 숨길까요? 삭제가 아니라 기본 목록에서만 숨깁니다."
+        confirmText="숨기기"
+        cancelText="취소"
+        type="warning"
+        onConfirm={executeDeactivateMemory}
+        onCancel={() => {
+          setIsHideMemoryConfirmOpen(false);
+          setHideMemoryId(null);
+        }}
+      />
+
+      {/* 거절 사유 입력 모달 */}
+      <PromptModal
+        isOpen={isRejectModalOpen}
+        title="승인 요청 거절"
+        description="거절 사유를 짧게 적어주세요."
+        placeholder="거절 사유 입력"
+        confirmText="거절"
+        cancelText="취소"
+        type="danger"
+        onConfirm={executeRejectApproval}
+        onCancel={() => {
+          setIsRejectModalOpen(false);
+          setRejectApproval(null);
+        }}
+      />
     </div>
   );
 }

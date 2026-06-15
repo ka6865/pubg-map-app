@@ -3,6 +3,7 @@ import type { CrateTemplate } from "@/types/crates";
 import { drawSingleItem, drawSinglePrimeItem, tryDrawBonusItem } from "../../lib/crateUtils";
 import { DrawnCard, HistoryItem } from "./types";
 import { trackEvent } from "../../lib/analytics";
+import { toast } from "sonner";
 
 interface UseCratesStateProps {
   initialCrates: CrateTemplate[];
@@ -180,6 +181,9 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
   const [isRefillModalOpen, setIsRefillModalOpen] = useState<boolean>(false);
   const [refillType, setRefillType] = useState<"gcoin" | "bp" | "coupon" | "crate">("gcoin");
   const [refillAmount, setRefillAmount] = useState<number>(10000);
+
+  // 시뮬레이터 초기화 모달 상태
+  const [isResetModalOpen, setIsResetModalOpen] = useState<boolean>(false);
 
   // 가챠 연출 상태
   const [isDrawing, setIsDrawing] = useState<boolean>(false);
@@ -451,11 +455,11 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
     // 결제 유효성 검사
     if (paymentMethod === "bp") {
       if (bp < price) {
-        alert("보유 가상 BP가 부족합니다. 미션 수행 등으로 추가 BP를 확보하세요.");
+        toast.error("보유 가상 BP가 부족합니다. 미션 수행 등으로 추가 BP를 확보하세요.");
         return;
       }
       if (bpBuyCount + quantity > 50) {
-        alert(`BP를 통한 X1 팩 구매 평생 한도(50회)를 초과할 수 없습니다. (현재 구매 횟수: ${bpBuyCount}/50회)`);
+        toast.warning(`BP를 통한 X1 팩 구매 평생 한도(50회)를 초과할 수 없습니다. (현재 구매 횟수: ${bpBuyCount}/50회)`);
         return;
       }
       setBp((prev) => prev - price);
@@ -463,7 +467,7 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
       setBpBuyCount((prev) => prev + quantity);
     } else {
       if (gcoin < price) {
-        alert("보유 가상 G-Coin이 부족합니다. 상단의 충전 버튼을 이용해주세요.");
+        toast.error("보유 가상 G-Coin이 부족합니다. 상단의 충전 버튼을 이용해주세요.");
         return;
       }
       setGcoin((prev) => prev - price);
@@ -483,8 +487,8 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
       setPrimeParcels((prev) => prev + parcelReward);
       setTokens((prev) => prev + tokenReward);
 
-      alert(
-        `구매가 완료되었습니다!\n${activeCrate.name} ${crateReward}개, 최고급 꾸러미 ${parcelReward}개, 토큰 ${tokenReward}개가 내 보관함에 추가되었습니다.`
+      toast.success(
+        `구매가 완료되었습니다! ${activeCrate.name} ${crateReward}개, 최고급 꾸러미 ${parcelReward}개, 토큰 ${tokenReward}개가 내 보관함에 추가되었습니다.`
       );
 
       // 개봉 화면(Inventory)으로 즉시 강제 전환하여 직관적 피드백 제공 (가챠는 미실행)
@@ -498,8 +502,8 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
         setCoupons((prev) => prev + couponReward);
         setTokens((prev) => prev + tokenReward);
 
-        alert(
-          `구매가 완료되었습니다!\n밀수품 쿠폰 ${couponReward}장, 토큰 ${tokenReward}개가 내 보관함에 추가되었습니다.`
+        toast.success(
+          `구매가 완료되었습니다! 밀수품 쿠폰 ${couponReward}장, 토큰 ${tokenReward}개가 내 보관함에 추가되었습니다.`
         );
 
         setDrawSubTab("inventory");
@@ -509,8 +513,8 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
         setTokens((prev) => prev + tokenReward);
         drawContrabandCratesDirect(crateReward);
 
-        alert(
-          `구매가 완료되었습니다!\n즉시 ${crateReward}회 개봉 연출이 진행됩니다. (토큰 ${tokenReward}개 획득)`
+        toast.success(
+          `구매가 완료되었습니다! 즉시 ${crateReward}회 개봉 연출이 진행됩니다. (토큰 ${tokenReward}개 획득)`
         );
       }
     }
@@ -534,12 +538,12 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
     }
 
     if (countToOpen <= 0) {
-      alert("개봉할 상자가 없습니다. 상점에서 패키지를 먼저 구매해주세요.");
+      toast.warning("개봉할 상자가 없습니다. 상점에서 패키지를 먼저 구매해주세요.");
       return;
     }
 
     if (currentCrateCount < countToOpen) {
-      alert(`보유한 상자가 부족합니다. (현재 보유: ${currentCrateCount}개)`);
+      toast.error(`보유한 상자가 부족합니다. (현재 보유: ${currentCrateCount}개)`);
       return;
     }
 
@@ -855,7 +859,7 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
     }
 
     if (gcoin < price) {
-      alert("보유 가상 G-Coin이 부족합니다. 상단의 충전 버튼을 이용해주세요.");
+      toast.error("보유 가상 G-Coin이 부족합니다. 상단의 충전 버튼을 이용해주세요.");
       return;
     }
 
@@ -877,7 +881,7 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
     if (!activeCrate) return;
     
     if (activeCrate.type !== "contraband") {
-      alert("밀수품 쿠폰은 밀수품 상자(Contraband Crate) 개봉에만 사용할 수 있습니다. 상점 라인업에서 밀수품 상자를 선택해 주세요.");
+      toast.warning("밀수품 쿠폰은 밀수품 상자(Contraband Crate) 개봉에만 사용할 수 있습니다. 상점 라인업에서 밀수품 상자를 선택해 주세요.");
       return;
     }
     
@@ -896,12 +900,12 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
     }
 
     if (countToOpen <= 0) {
-      alert("개봉할 수 있는 밀수품 쿠폰이 부족합니다. (최소 10장 필요)");
+      toast.warning("개봉할 수 있는 밀수품 쿠폰이 부족합니다. (최소 10장 필요)");
       return;
     }
 
     if (coupons < couponsNeeded) {
-      alert(`밀수품 쿠폰이 부족합니다. (최소 ${couponsNeeded}장 필요, 현재 보유: ${coupons}장)`);
+      toast.error(`밀수품 쿠폰이 부족합니다. (최소 ${couponsNeeded}장 필요, 현재 보유: ${coupons}장)`);
       return;
     }
 
@@ -986,11 +990,11 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
   const handleBuyCoupons = (count: number) => {
     const price = 800 * count;
     if (bp < price) {
-      alert("보유 가상 BP가 부족합니다. 미션 수행 등으로 추가 BP를 확보하세요.");
+      toast.error("보유 가상 BP가 부족합니다. 미션 수행 등으로 추가 BP를 확보하세요.");
       return;
     }
     if (couponWeeklyBuyCount + count > 50) {
-      alert(`주간 밀수품 쿠폰 구매 한도(50장)를 초과할 수 없습니다. (현재 이번 주 구매 수량: ${couponWeeklyBuyCount}/50장)`);
+      toast.warning(`주간 밀수품 쿠폰 구매 한도(50장)를 초과할 수 없습니다. (현재 이번 주 구매 수량: ${couponWeeklyBuyCount}/50장)`);
       return;
     }
     setBp((prev) => prev - price);
@@ -999,13 +1003,13 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
     setCouponWeeklyBuyCount((prev) => prev + count);
 
     // 구매 완료 알림 제공
-    alert(`밀수품 쿠폰 ${count}장 구매가 완료되었습니다. (보유: ${coupons + count}장)`);
+    toast.success(`밀수품 쿠폰 ${count}장 구매가 완료되었습니다. (보유: ${coupons + count}장)`);
   };
 
   // 재화 무한 충전 실행기 핸들러
   const handleRefillAsset = () => {
     if (refillAmount <= 0) {
-      alert("보충할 요율 수량은 1 이상이어야 합니다.");
+      toast.warning("보충할 요율 수량은 1 이상이어야 합니다.");
       return;
     }
     if (refillType === "gcoin") {
@@ -1024,88 +1028,110 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
     setIsRefillModalOpen(false);
   };
 
-  // 시뮬레이터 완전 초기화
-  const handleResetSimulator = () => {
-    if (confirm("시뮬레이터 진행 데이터를 초기화하시겠습니까? (소모 금액 및 히스토리 포함)")) {
-      // 대기 중인 모든 타이머 취소
-      activeTimersRef.current.forEach((t) => clearTimeout(t.timer));
-      activeTimersRef.current = [];
-
-      setBp(1000000);
-      setGcoin(0);
-      setCoupons(0);
-      setCouponWeeklyBuyCount(0);
-      setContrabandTenDrawCompleted({});
-      setInventoryCrates(() => {
-        const initial: Record<string, number> = {};
-        initialCrates.forEach((c) => {
-          initial[c.id] = 0;
-        });
-        return initial;
-      });
-      setPrimeParcels(0);
-      setTokens(0);
-      setSpentUsd(0);
-      setSpentGcoin(0);
-      setSpentBp(0);
-      setChargeCount(0);
-      setBpBuyCount(0);
-      setDrawnCards([]);
-      setRevealedCards([]);
-      setHistory([]);
-      setObtainedSkins({
-        '"CVO™ Road Glide® ST (리미티드)" 모터사이클 도안': 0,
-        '"CVO™ Road Glide® ST" 모터사이클 도안': 0,
-        "CVO™ ROAD GLIDE® ST (리미티드) 풀 세트 (골든 네이비 & 샴페인 골드) 도안": 0,
-        "CVO™ ROAD GLIDE® ST (리미티드) 세트 (미드나잇 블레이즈 & 폴리시드 크롬) 도안": 0,
-        "CVO™ ROAD GLIDE® ST (리미티드) 세트 (브론즈 플레임 & 액센티드 브론즈) 도안": 0,
-        "CVO™ ROAD GLIDE® ST (리미티드) SET (볼드 아이보리 & 액센티드 글로스 BLACK) 도안": 0,
-        "CVO™ ROAD GLIDE® ST 세트 (매트 나이트셰이드 & 알루미늄) 도안": 0,
-        "CVO™ Road Glide® ST (리미티드) 페인트 (샴페인 골드) 도안": 0,
-        "CVO™ Road Glide® ST 페인트 (팬텀 포레스트) 도안": 0,
-        "CVO™ Road Glide® ST 페인트 (터콰이즈 타이드) 도안": 0,
-        "CVO™ Road Glide® ST 페인트 (골든 화이트 펄) 도안": 0,
-        "CVO™ Road Glide® ST 페인트 (일렉트릭 코스트) 도안": 0,
-        "할리데이비슨® 블랙탑 바이커 세트 도안": 0,
-        "할리데이비슨® 스트리트 스마트 세트 도안": 0,
-        "할리데이비슨® 낙하산 도안": 0,
-        "할리데이비슨® - 클로즈 업 도안": 0,
-        "할리데이비슨™ - 달리기 위해 살고, 살기 위해 달린다 도안": 0,
-        "할리데이비슨® 엔진 배지 도안": 0,
-        "라이드 오어 다이 - M249": 0,
-        "라이드 오어 다이 - M249 (블랙 틸)": 0,
-        "도면 (Schematic)": 0,
-        "폴리머 (Polymer) x100": 0,
-        "러프 라이드 - S12K": 0,
-        "다이너스티 - Kar98k": 0,
-        "러프 라이드 - 베릴 M762 & 토미 건": 0,
-        "일반 클래식 스킨군": 0,
-        "코스믹 칼리버 - Kar98k": 0,
-        "코스믹 칼리버 - Kar98k (화이트 옐로우)": 0,
-        "행성 경비대 - SCAR-L": 0,
-        "스팀 게이지 - Kar98k": 0,
-        "행성 경비대 - M249 & 뮤턴트": 0,
-        "노란색 연막탄": 0,
-        "분홍색 연막탄": 0,
-        "골드 리프 - M416": 0,
-        "골든 서킷 - 미니14": 0,
-        "골든 서킷 - 마이크로 UZI": 0,
-      });
-      setStats({
-        totalOpens: 0,
-        primeParcelOpens: 0,
-        ultimateCount: 0,
-        legendaryCount: 0,
-        epicCount: 0,
-        rareCount: 0,
-      });
+  // 모든 재화 무제한 충전 핸들러
+  const handleRefillInfinite = () => {
+    setBp(999999999);
+    setGcoin(999999999);
+    setCoupons(999999999);
+    setTokens(999999999);
+    setPrimeParcels(999999999);
+    if (activeCrate) {
+      setInventoryCrates((prev) => ({
+        ...prev,
+        [activeCrate.id]: 999999999,
+      }));
     }
+    setIsRefillModalOpen(false);
+    toast.success("모든 가상 재화가 무제한(999,999,999)으로 보충되었습니다!");
+  };
+
+  // 시뮬레이터 완전 초기화 모달 트리거
+  const handleResetSimulator = () => {
+    setIsResetModalOpen(true);
+  };
+
+  // 실제 시뮬레이터 초기화 동작
+  const executeResetSimulator = () => {
+    // 대기 중인 모든 타이머 취소
+    activeTimersRef.current.forEach((t) => clearTimeout(t.timer));
+    activeTimersRef.current = [];
+
+    setBp(1000000);
+    setGcoin(0);
+    setCoupons(0);
+    setCouponWeeklyBuyCount(0);
+    setContrabandTenDrawCompleted({});
+    setInventoryCrates(() => {
+      const initial: Record<string, number> = {};
+      initialCrates.forEach((c) => {
+        initial[c.id] = 0;
+      });
+      return initial;
+    });
+    setPrimeParcels(0);
+    setTokens(0);
+    setSpentUsd(0);
+    setSpentGcoin(0);
+    setSpentBp(0);
+    setChargeCount(0);
+    setBpBuyCount(0);
+    setDrawnCards([]);
+    setRevealedCards([]);
+    setHistory([]);
+    setObtainedSkins({
+      '"CVO™ Road Glide® ST (리미티드)" 모터사이클 도안': 0,
+      '"CVO™ Road Glide® ST" 모터사이클 도안': 0,
+      "CVO™ ROAD GLIDE® ST (리미티드) 풀 세트 (골든 네이비 & 샴페인 골드) 도안": 0,
+      "CVO™ ROAD GLIDE® ST (리미티드) 세트 (미드나잇 블레이즈 & 폴리시드 크롬) 도안": 0,
+      "CVO™ ROAD GLIDE® ST (리미티드) 세트 (브론즈 플레임 & 액센티드 브론즈) 도안": 0,
+      "CVO™ ROAD GLIDE® ST (리미티드) SET (볼드 아이보리 & 액센티드 글로스 BLACK) 도안": 0,
+      "CVO™ ROAD GLIDE® ST 세트 (매트 나이트셰이드 & 알루미늄) 도안": 0,
+      "CVO™ Road Glide® ST (리미티드) 페인트 (샴페인 골드) 도안": 0,
+      "CVO™ Road Glide® ST 페인트 (팬텀 포레스트) 도안": 0,
+      "CVO™ Road Glide® ST 페인트 (터콰이즈 타이드) 도안": 0,
+      "CVO™ Road Glide® ST 페인트 (골든 화이트 펄) 도안": 0,
+      "CVO™ Road Glide® ST 페인트 (일렉트릭 코스트) 도안": 0,
+      "할리데이비슨® 블랙탑 바이커 세트 도안": 0,
+      "할리데이비슨® 스트리트 스마트 세트 도안": 0,
+      "할리데이비슨® 낙하산 도안": 0,
+      "할리데이비슨® - 클로즈 업 도안": 0,
+      "할리데이비슨™ - 달리기 위해 살고, 살기 위해 달린다 도안": 0,
+      "할리데이비슨® 엔진 배지 도안": 0,
+      "라이드 오어 다이 - M249": 0,
+      "라이드 오어 다이 - M249 (블랙 틸)": 0,
+      "도면 (Schematic)": 0,
+      "폴리머 (Polymer) x100": 0,
+      "러프 라이드 - S12K": 0,
+      "다이너스티 - Kar98k": 0,
+      "러프 라이드 - 베릴 M762 & 토미 건": 0,
+      "일반 클래식 스킨군": 0,
+      "코스믹 칼리버 - Kar98k": 0,
+      "코스믹 칼리버 - Kar98k (화이트 옐로우)": 0,
+      "행성 경비대 - SCAR-L": 0,
+      "스팀 게이지 - Kar98k": 0,
+      "행성 경비대 - M249 & 뮤턴트": 0,
+      "노란색 연막탄": 0,
+      "분홍색 연막탄": 0,
+      "골드 리프 - M416": 0,
+      "골든 서킷 - 미니14": 0,
+      "골든 서킷 - 마이크로 UZI": 0,
+    });
+    setStats({
+      totalOpens: 0,
+      primeParcelOpens: 0,
+      ultimateCount: 0,
+      legendaryCount: 0,
+      epicCount: 0,
+      rareCount: 0,
+    });
+    setIsResetModalOpen(false);
+    toast.success("시뮬레이터가 초기화되었습니다.");
   };
 
   // 특수 제작 처리 핸들러
   const handleCraftItem = (itemName: string, tokenCost: number) => {
     if (tokens < tokenCost) {
-      alert(`보유한 이벤트 토큰이 부족합니다. (필요: ${tokenCost}개, 보유: ${tokens}개)`);
+      toast.error(`보유한 이벤트 토큰이 부족합니다. (필요: ${tokenCost}개, 보유: ${tokens}개)`);
       return false;
     }
     setTokens((prev) => prev - tokenCost);
@@ -1130,7 +1156,7 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
     };
 
     setHistory((prev) => [craftHistory, ...prev]);
-    alert(`[${itemName}] 제작에 성공하였습니다!`);
+    toast.success(`[${itemName}] 제작에 성공하였습니다!`);
     return true;
   };
 
@@ -1196,8 +1222,12 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
     handleOpenContrabandWithCoupons,
     handleBuyCoupons,
     handleRefillAsset,
+    handleRefillInfinite,
     handleResetSimulator,
     collectRemainingCards,
-    handleCraftItem
+    handleCraftItem,
+    isResetModalOpen,
+    setIsResetModalOpen,
+    executeResetSimulator
   };
 }

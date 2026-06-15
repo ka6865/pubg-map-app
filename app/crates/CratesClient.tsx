@@ -22,6 +22,8 @@ import {
   DetailModal 
 } from "./CrateModals";
 import { useCratesState } from "./useCratesState";
+import { toast } from "sonner";
+import ConfirmModal from "@/components/common/ConfirmModal";
 
 interface CratesClientProps {
   initialCrates: CrateTemplate[];
@@ -120,8 +122,12 @@ export default function CratesClient({ initialCrates, exchangeRate }: CratesClie
     handleOpenContrabandWithCoupons,
     handleBuyCoupons,
     handleRefillAsset,
+    handleRefillInfinite,
     handleResetSimulator,
-    collectRemainingCards
+    collectRemainingCards,
+    isResetModalOpen,
+    setIsResetModalOpen,
+    executeResetSimulator
   } = useCratesState({ initialCrates, selectedCrateId });
 
   const activeCrate = initialCrates.find((c) => c.id === selectedCrateId);
@@ -170,7 +176,7 @@ export default function CratesClient({ initialCrates, exchangeRate }: CratesClie
   // 특수 제작 확정 처리 래퍼
   const handleCraftItemWrapper = (itemName: string, tokenCost: number) => {
     if (tokens < tokenCost) {
-      alert(`보유한 이벤트 토큰이 부족합니다. (필요: ${tokenCost}개, 보유: ${tokens}개)`);
+      toast.error(`보유한 이벤트 토큰이 부족합니다. (필요: ${tokenCost}개, 보유: ${tokens}개)`);
       return false;
     }
     
@@ -1014,6 +1020,7 @@ export default function CratesClient({ initialCrates, exchangeRate }: CratesClie
         refillAmount={refillAmount}
         setRefillAmount={setRefillAmount}
         onRefill={handleRefillAsset}
+        onRefillInfinite={handleRefillInfinite}
       />
 
       {/* 특수 제작소 (Crafting) 모달 */}
@@ -1034,6 +1041,18 @@ export default function CratesClient({ initialCrates, exchangeRate }: CratesClie
         history={history}
         getRarityBadgeStyle={getRarityBadgeStyle}
         onReset={handleResetSimulator}
+      />
+
+      {/* 시뮬레이터 초기화 확인 모달 */}
+      <ConfirmModal
+        isOpen={isResetModalOpen}
+        title="시뮬레이터 초기화"
+        description="시뮬레이터 진행 데이터를 초기화하시겠습니까? (소모 금액 및 히스토리 포함)"
+        confirmText="초기화"
+        cancelText="취소"
+        type="warning"
+        onConfirm={executeResetSimulator}
+        onCancel={() => setIsResetModalOpen(false)}
       />
 
     </div>
