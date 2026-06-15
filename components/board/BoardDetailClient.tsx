@@ -11,6 +11,7 @@ import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/AuthProvider";
 import { toast } from "sonner";
 import { trackEvent } from "@/lib/analytics";
+import ConfirmModal from "../common/ConfirmModal";
 
 interface BoardDetailClientProps {
   initialPost: Post;
@@ -48,6 +49,19 @@ export default function BoardDetailClient({
   const [isPromoting, setIsPromoting] = useState(false);
   const [feedbackText, setFeedbackText] = useState("");
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean;
+    title: string;
+    description: string;
+    confirmText?: string;
+    onConfirm: () => void;
+    type?: 'warning' | 'danger' | 'info';
+  }>({
+    isOpen: false,
+    title: '',
+    description: '',
+    onConfirm: () => {},
+  });
 
   // 초안 승격(실제 게시판 발행) 처리 함수
   const handlePromotePost = async () => {
@@ -235,34 +249,52 @@ export default function BoardDetailClient({
     }
   };
 
-  const handleDeleteComment = async (commentId: number) => {
-    if (!confirm("댓글을 삭제하시겠습니까?")) return;
-    const { error } = await supabase.from("comments").delete().eq("id", commentId);
-    if (!error) {
-      fetchComments();
-      toast.success("댓글이 삭제되었습니다.");
-    } else {
-      toast.error("댓글 삭제 실패");
-    }
+  const handleDeleteComment = (commentId: number) => {
+    setConfirmModal({
+      isOpen: true,
+      title: "댓글 삭제",
+      description: "정말로 이 댓글을 삭제하시겠습니까? 삭제된 댓글은 복구할 수 없습니다.",
+      confirmText: "삭제",
+      type: "danger",
+      onConfirm: async () => {
+        const { error } = await supabase.from("comments").delete().eq("id", commentId);
+        if (!error) {
+          fetchComments();
+          toast.success("댓글이 삭제되었습니다.");
+        } else {
+          toast.error("댓글 삭제 실패");
+        }
+        setConfirmModal((prev) => ({ ...prev, isOpen: false }));
+      }
+    });
   };
 
-  const handleDeletePost = async () => {
+  const handleDeletePost = () => {
     if (comments.length > 0 && !isAdmin) return toast.warning("댓글이 작성된 게시글은 삭제할 수 없습니다.");
-    if (!confirm("정말 게시물을 삭제하시겠습니까?")) return;
-
-    try {
-      if (isAdmin) {
-        const adminRes = await fetch(`/api/admin/posts/delete?postId=${post.id}`, { method: "DELETE" });
-        if (!adminRes.ok) throw new Error("관리자 삭제 실패");
-      } else {
-        const { error } = await supabase.from("posts").delete().eq("id", post.id);
-        if (error) throw error;
+    
+    setConfirmModal({
+      isOpen: true,
+      title: "게시글 삭제",
+      description: "정말로 이 게시글을 삭제하시겠습니까? 삭제된 게시글과 모든 데이터는 복구할 수 없습니다.",
+      confirmText: "삭제",
+      type: "danger",
+      onConfirm: async () => {
+        try {
+          if (isAdmin) {
+            const adminRes = await fetch(`/api/admin/posts/delete?postId=${post.id}`, { method: "DELETE" });
+            if (!adminRes.ok) throw new Error("관리자 삭제 실패");
+          } else {
+            const { error } = await supabase.from("posts").delete().eq("id", post.id);
+            if (error) throw error;
+          }
+          toast.success("삭제되었습니다.");
+          router.push("/board");
+        } catch (e) {
+          toast.error("삭제 실패");
+        }
+        setConfirmModal((prev) => ({ ...prev, isOpen: false }));
       }
-      toast.success("삭제되었습니다.");
-      router.push("/board");
-    } catch (e) {
-      toast.error("삭제 실패");
-    }
+    });
   };
 
   const processedContent = useMemo(() => {
@@ -515,6 +547,15 @@ export default function BoardDetailClient({
           </div>
         </div>
       )}
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        title={confirmModal.title}
+        description={confirmModal.description}
+        confirmText={confirmModal.confirmText}
+        type={confirmModal.type}
+        onConfirm={confirmModal.onConfirm}
+        onCancel={() => setConfirmModal((prev) => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 }
