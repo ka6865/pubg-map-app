@@ -18,6 +18,26 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 /**
  * 패치노트 상세 페이지 크롤링 및 요약
  */
+// 기사 제목 및 URL 기반 카테고리 식별 헬퍼 함수
+function identifyCategory(title: string, url: string): 'PATCH_NOTE' | 'STORE_INFO' | 'DEV_LETTER' | 'GENERAL' {
+  const normalizedTitle = title.toLowerCase();
+  const normalizedUrl = url.toLowerCase();
+
+  if (normalizedTitle.includes("상점") || normalizedTitle.includes("shop") || normalizedTitle.includes("store") || normalizedTitle.includes("아이템") || normalizedTitle.includes("에디션") || normalizedTitle.includes("세일")) {
+    return 'STORE_INFO';
+  }
+  if (normalizedTitle.includes("개발자") || normalizedTitle.includes("개발일지") || normalizedTitle.includes("개발 일지") || normalizedTitle.includes("dev") || normalizedUrl.includes("dev")) {
+    return 'DEV_LETTER';
+  }
+  if (normalizedTitle.includes("패치노트") || normalizedTitle.includes("패치 노트") || normalizedUrl.includes("patch")) {
+    return 'PATCH_NOTE';
+  }
+  return 'GENERAL';
+}
+
+/**
+ * 패치노트 상세 페이지 크롤링 및 요약
+ */
 async function fetchPatchNoteDetail(url: string, title: string) {
   try {
     const { data: html } = await axios.get(url);
@@ -50,26 +70,62 @@ async function fetchPatchNoteDetail(url: string, title: string) {
       "gemini-2.5-flash",
     ];
 
-    const prompt = `
-당신은 PUBG(배틀그라운드) 전문 전략 분석가입니다. 
-제공된 패치노트 원문(${title})을 읽고, 유저들이 게임 플레이 시 반드시 알아야 할 가장 핵심적인 변화들을 극도로 슬림하고 강렬하게 요약해 주세요.
+    const categoryType = identifyCategory(title, url);
+    let systemContext = "";
+    let structureGuide = "";
+    let hallucinationGuard = "";
 
+    if (categoryType === 'STORE_INFO') {
+      systemContext = "당신은 PUBG(배틀그라운드) 전문 상품/상점 분석가입니다. 상점 업데이트 및 아이템 출시 소식을 요약해 주세요.";
+      structureGuide = `
+[요약 제약 조건 - 절대 엄수]
+1. 섹션(카테고리)은 반드시 **최대 3개에서 4개**까지만 도출하세요. (예: [2026 블랙 마켓], [PNC 2026 헬멧], [더블 G-Coin 프로모션] 등 본문에 등장한 신규 판매 상품 혹은 특별 이벤트 명칭 위주)
+2. 각 섹션 하단에 작성하는 불렛포인트(-) 요약문은 **반드시 섹션당 최대 2개 이하**로 제한하세요.
+3. 각 불렛포인트는 판매 기간(PC/콘솔), 가격 및 혜택, 주요 구성 아이템 위주로 **반드시 15자 내외의 극도로 짧고 직관적인 핵심 1줄 요약**이어야 합니다.
+`;
+      hallucinationGuard = `
+[환각 차단 가이드라인 - 절대 엄수]
+* 본문에 명시되지 않은 '인게임 시스템 최적화', '업데이트 42.1 편의성 개선', '버그 수정' 등 패치노트에나 나올 법한 일반적이고 템플릿화된 문구는 절대 지어내어 쓰지 마십시오.
+* 오직 본문에 언급된 판매용 아이템, G-Coin 혜택, 판매 일정, 콜라보 스킨 팩 등의 팩트만 기재해야 합니다.
+`;
+    } else if (categoryType === 'DEV_LETTER') {
+      systemContext = "당신은 PUBG(배틀그라운드) 게임 기획 및 개발 심층 분석가입니다. 개발진의 기획 의도 및 철학이 담긴 개발일지를 요약해 주세요.";
+      structureGuide = `
+[요약 제약 조건 - 절대 엄수]
+1. 섹션(카테고리)은 반드시 **최대 3개에서 4개**까지만 도출하세요. (예: [개편 기획 의도], [주요 메커니즘 변경], [향후 타겟 및 개선 방향] 등)
+2. 각 섹션 하단에 작성하는 불렛포인트(-) 요약문은 **반드시 섹션당 최대 2개 이하**로 제한하세요.
+3. 각 불렛포인트는 개발팀이 무엇을 왜 바꾸고자 하는지에 대한 핵심 기획 사실 위주로 **반드시 15자 내외의 극도로 짧고 직관적인 핵심 1줄 요약**이어야 합니다.
+`;
+      hallucinationGuard = `
+[환각 차단 가이드라인 - 절대 엄수]
+* 본문에 언급되지 않은 특정 스킨 출시 일정이나 인게임 편의 기능 향상 등을 임의로 지어내어 채워 넣지 마십시오.
+* 오직 개발진이 기획서/일지 본문에서 밝힌 설계 사상, 타겟 수치, 변경 근거 팩트만 서술해 주십시오.
+`;
+    } else {
+      systemContext = "당신은 PUBG(배틀그라운드) 전문 전략 분석가입니다. 패치노트 원문을 요약해 주세요.";
+      structureGuide = `
 [요약 제약 조건 - 절대 엄수]
 1. 섹션(카테고리)은 반드시 **최대 3개에서 4개**까지만 도출하세요. (예: [신규 무기], [맵 업데이트], [시스템 개선] 등)
 2. 각 섹션 하단에 작성하는 불렛포인트(-) 요약문은 **반드시 섹션당 최대 2개 이하**로 제한하세요.
-3. 각 불렛포인트는 **반드시 15자 내외의 극도로 짧고 직관적인 핵심 1줄 요약**이어야 합니다. 상세 설명이나 중언부언은 과감히 생략하십시오.
-4. 반드시 한국어로 작성하고, 가장 핵심적인 키워드만 **강조**해 주십시오.
+3. 각 불렛포인트는 **반드시 15자 내외의 극도로 짧고 직관적인 핵심 1줄 요약**이어야 합니다.
+`;
+      hallucinationGuard = `
+[환각 차단 가이드라인 - 절대 엄수]
+* 본문에 언급되지 않은 총기 출시, 가격 정보, 할인 이벤트, 인게임 수정을 임의로 지어내 쓰지 마십시오.
+`;
+    }
 
-예시 규격:
-[신규 총기: MP9]
-- 풀파츠급 성능의 신규 **SMG 무기** 출시.
-- 기본 소음기 및 레이저 사이트 **자동 장착**.
+    const prompt = `
+${systemContext}
+제공된 원문을 읽고, 유저들이 반드시 알아야 할 가장 핵심적인 변화와 정보를 극도로 슬림하고 강렬하게 요약해 주세요.
 
-[전술 장비 리밸런싱]
-- 스포터 스코프의 탐색 거리 **100m 너프**.
-- 전술 가방의 보관 슬롯 **2칸 축소**.
+${structureGuide}
 
-패치노트 원문:
+${hallucinationGuard}
+
+반드시 한국어로 작성하고, 가장 핵심적인 키워드만 **강조**해 주십시오.
+
+원문:
 ${cleanText}`;
 
     const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
@@ -92,7 +148,7 @@ ${cleanText}`;
       }
     }
 
-    if (!aiSummary) aiSummary = "이번 패치노트의 주요 내용을 분석 중입니다. 상세한 내용은 아래 원문 링크를 통해 확인해 주세요.";
+    if (!aiSummary) aiSummary = "이번 소식의 주요 내용을 분석 중입니다. 상세한 내용은 아래 원문 링크를 통해 확인해 주세요.";
 
     console.log('--- AI SUMMARY START ---');
     console.log(aiSummary);
@@ -103,7 +159,7 @@ ${cleanText}`;
       <div class="patch-note-container space-y-4">
         <div class="bg-[#F2A900]/10 border border-[#F2A900]/30 rounded-lg p-4 mb-1">
           <h3 class="flex items-center gap-1.5 text-[#F2A900] font-black text-base md:text-lg">
-            🤖 BGMS AI 패치노트 핵심 요약
+            🤖 BGMS AI 배그 소식 핵심 요약
           </h3>
         </div>
         
@@ -212,8 +268,8 @@ async function syncPatchNotes() {
     const targetUrl = 'https://pubg.com/ko/news';
     const { data: html } = await axios.get(targetUrl);
 
-    // 썸네일 이미지 URL 추출 로직 개선 (thumbUrl 추출)
-    const nuxtRegex = /postId:(\d+),(?:(?!postId:).)*?title:"([^"]*?패치 노트[^"]*?)".*?thumbUrl:"([^"]+)"/g;
+    // 썸네일 이미지 URL 추출 로직 개선 (배그 소식 전체 매칭)
+    const nuxtRegex = /postId:(\d+),(?:(?!postId:).)*?title:"([^"]+?)".*?thumbUrl:"([^"]+)"/g;
     let match;
     const matches: any[] = [];
     while ((match = nuxtRegex.exec(html)) !== null) {
@@ -259,32 +315,26 @@ async function syncPatchNotes() {
       .eq('title', cleanTitle)
       .maybeSingle();
 
-    // 기존 패치노트 공지사항 상태 일괄 해제 (최신 1건만 공지 유지)
-    console.log('📝 기존 패치노트 공지 플래그를 일괄 해제합니다.');
-    await supabase
-      .from('posts')
-      .update({ is_notice: false })
-      .eq('category', '패치노트')
-      .eq('is_notice', true);
+
 
     let dbResult;
     if (existingPost) {
-      console.log(`📝 기존 패치노트 글(ID: ${existingPost.id})이 발견되어 업데이트합니다.`);
+      console.log(`📝 기존 배그 소식 글(ID: ${existingPost.id})이 발견되어 업데이트합니다.`);
       dbResult = await supabase.from('posts').update({
         content: formattedContent,
         author: 'BGMS 시스템',
-        category: '패치노트',
-        is_notice: true,
+        category: '배그 소식',
         image_url: thumbnailUrl
       }).eq('id', existingPost.id);
     } else {
-      console.log('📝 신규 패치노트 글을 등록합니다.');
+      console.log('📝 신규 배그 소식 글을 등록합니다. (초안 상태)');
       dbResult = await supabase.from('posts').insert({
         title: cleanTitle,
         content: formattedContent,
         author: 'BGMS 시스템',
-        category: '패치노트',
-        is_notice: true,
+        category: '배그 소식',
+        is_notice: false,
+        status: 'draft',
         image_url: thumbnailUrl
       });
     }
@@ -302,7 +352,7 @@ async function syncPatchNotes() {
     if (DISCORD_WEBHOOK_URL) {
       console.log('🔔 Sending Discord Notification...');
       await axios.post(DISCORD_WEBHOOK_URL, {
-        content: `🆕 **새로운 패치노트가 업데이트되었습니다!**\n\n제목: ${cleanTitle}\n링크: ${SITE_URL}/board\n\n*BGMS AI가 요약을 완료하여 게시판에 등록했습니다.*`
+        content: `🆕 **새로운 배그 소식이 수집되었습니다 (승인 대기 중)**\n\n제목: ${cleanTitle}\n링크: ${SITE_URL}/board?f=어드민+검증\n\n*BGMS AI가 요약을 완료하여 초안(draft) 상태로 등록했습니다. 어드민 페이지에서 승인해 주세요.*`
       }).catch(err => console.error('❌ Discord notification failed:', err.message));
     }
   } catch (error) {

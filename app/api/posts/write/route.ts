@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { withAuthGuard } from "@/utils/supabase/guard";
+import { withOptionalAuth } from "@/utils/supabase/guard";
+import { extractClientIp, checkIpBlacklist } from "@/lib/board/ipUtils";
+import { checkProfanity } from "@/lib/board/profanityFilter";
+import bcrypt from "bcryptjs";
 
 /**
  * @fileoverview 게시판 저장을 서버사이드에서 처리하는 API입니다.
@@ -41,8 +44,8 @@ async function validateDiscordUrl(url: string): Promise<boolean> {
 
 export async function POST(request: Request) {
   try {
-    // 🔒 [보안] JWT 인증 가드 — 로그인된 사용자만 글쓰기/수정 허용
-    const auth = await withAuthGuard();
+    // 🔒 [보안] JWT 선택적 인증 가드 — 비회원 글쓰기 허용
+    const auth = await withOptionalAuth();
     if (auth.error) return auth.error;
     const { user, supabaseAdmin } = auth;
 
@@ -55,35 +58,50 @@ export async function POST(request: Request) {
       is_notice,
       author,
       user_id,
+      password, // 🌟 비회원 비밀번호 추가
       editingPostId,
       discord_url, // 🌟 추가
       discord_channel_id, // 🌟 추가
       clan_info, // 🌟 추가
     } = body;
 
-    if (!title || !content || !user_id) {
+    if (!title || !content) {
       return NextResponse.json(
         { error: "필수 입력 데이터가 누락되었습니다." },
         { status: 400 }
       );
     }
 
-    // 🔒 [보안] JWT에서 추출한 실제 사용자 ID와 요청의 user_id 교차 대조
-    // 관리자가 아닌 일반 사용자는 본인의 user_id만 사용 가능
-    const { data: requesterProfile } = await supabaseAdmin
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
+    let isRequesterAdmin = false;
 
-    const isRequesterAdmin = requesterProfile?.role === "admin";
+    if (user) {
+      // 🔒 [보안] JWT에서 추출한 실제 사용자 ID와 요청의 user_id 교차 대조
+      // 관리자가 아닌 일반 사용자는 본인의 user_id만 사용 가능
+      const { data: requesterProfile } = await supabaseAdmin
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single();
 
-    if (user_id !== user.id && !isRequesterAdmin) {
-      console.warn(`⚠️ [Auth Guard] JWT user ${user.id} tried to impersonate ${user_id}`);
-      return NextResponse.json(
-        { error: "인증된 사용자와 요청자가 일치하지 않습니다." },
-        { status: 403 }
-      );
+      isRequesterAdmin = requesterProfile?.role === "admin";
+
+      if (user_id !== user.id && !isRequesterAdmin) {
+        console.warn(`⚠️ [Auth Guard] JWT user ${user.id} tried to impersonate ${user_id}`);
+        return NextResponse.json(
+          { error: "인증된 사용자와 요청자가 일치하지 않습니다." },
+          { status: 403 }
+        );
+      }
+    } else {
+      // 🔒 [보안] 비회원: 신규 작성 시 비밀번호와 닉네임 검증
+      if (!editingPostId) {
+        if (!author || !password) {
+          return NextResponse.json(
+            { error: "닉네임과 비밀번호를 입력해 주세요." },
+            { status: 400 }
+          );
+        }
+      }
     }
 
     // 🌟 [보안] 본문 크기 제한 (DB 안정성 확보용)
@@ -106,6 +124,13 @@ export async function POST(request: Request) {
     }
 
     if (editingPostId) {
+      if (!user) {
+        return NextResponse.json(
+          { error: "비회원 게시글은 수정이 불가합니다. 삭제 후 재작성해 주세요." },
+          { status: 401 }
+        );
+      }
+
       // 1. [보안] 수정 시 실제 소유자 확인 및 이전 데이터 로드 (이미지 정리용)
       const { data: existingPost, error: fetchError } = await supabaseAdmin
         .from("posts")
@@ -166,9 +191,9 @@ export async function POST(request: Request) {
           category,
           image_url,
           is_notice,
-          discord_url, // 🌟 필드 업데이트 추가
-          discord_channel_id, // 🌟 필드 업데이트 추가
-          clan_info, // 🌟 클랜 정보 업데이트 추가
+          discord_url,
+          discord_channel_id,
+          clan_info,
         })
         .eq("id", editingPostId)
         .select();
@@ -180,20 +205,52 @@ export async function POST(request: Request) {
       return NextResponse.json({ success: true, data: data[0] });
     } else {
       // 3. 신규 게시글 등록
+      const finalAuthor = author;
+      const finalUserId = user ? user.id : null;
+      let passwordHash = null;
+      const clientIp = extractClientIp(request);
+
+      if (!user) {
+        // IP 차단 확인
+        const isIpBlocked = await checkIpBlacklist(clientIp, supabaseAdmin);
+        if (isIpBlocked) {
+          return NextResponse.json(
+            { error: "차단된 IP 대역에서는 글 작성이 불가합니다." },
+            { status: 403 }
+          );
+        }
+
+        // 비속어 필터 적용
+        const titleProfanity = checkProfanity(title);
+        const contentProfanity = checkProfanity(content);
+        if (titleProfanity.blocked || contentProfanity.blocked) {
+          return NextResponse.json(
+            { error: "제목 또는 본문에 비속어가 포함되어 있어 작성이 차단되었습니다." },
+            { status: 400 }
+          );
+        }
+
+        // 비밀번호 해싱
+        const salt = await bcrypt.genSalt(10);
+        passwordHash = await bcrypt.hash(password, salt);
+      }
+
       const { data, error: insertError } = await supabaseAdmin
         .from("posts")
         .insert([
           {
             title,
             content,
-            author,
-            user_id,
+            author: finalAuthor,
+            user_id: finalUserId,
             category,
             image_url,
-            discord_url, // 🌟 필드 삽입 추가
-            discord_channel_id, // 🌟 필드 삽입 추가
-            is_notice,
-            clan_info, // 🌟 클랜 정보 삽입 추가
+            discord_url,
+            discord_channel_id,
+            is_notice: user ? is_notice : false,
+            clan_info,
+            password_hash: passwordHash,
+            ip_address: clientIp,
           },
         ])
         .select();
@@ -201,6 +258,7 @@ export async function POST(request: Request) {
       if (insertError) throw insertError;
       return NextResponse.json({ success: true, data: data[0] });
     }
+
   } catch (err: any) {
     console.error("🚨 [Post Write API Error]:", err);
     return NextResponse.json(

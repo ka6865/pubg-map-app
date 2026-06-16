@@ -687,7 +687,7 @@ export default function BoardDetailClient({
               </button>
             )}
 
-            {user?.id === post.user_id && (
+            {(user?.id === post.user_id || isAdmin) && (
               <button
                 onClick={() => router.push(`/board/write?edit=${post.id}`)}
                 className="px-[20px] py-[12px] bg-[#34A853] text-white border-none rounded-[4px] hover:bg-[#2a9040] transition-colors text-[14px]"

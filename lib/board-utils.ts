@@ -8,14 +8,22 @@ export function isContentEmpty(content: string): boolean {
   );
 }
 
-// 제목 길이 한도 검사, 데이터 누락 여부 확인 및 Base64 비정상 이미지 클립보드 삽입 차단
 export function validatePost(
   title: string,
   content: string,
-  currentUser: unknown
+  currentUser: unknown,
+  isGuest?: boolean,
+  guestNickname?: string,
+  guestPassword?: string
 ): string | null {
-  if (!currentUser) {
+  if (!currentUser && !isGuest) {
     return "로그인이 필요한 기능입니다.";
+  }
+
+  if (isGuest) {
+    if (!guestNickname?.trim() || !guestPassword?.trim()) {
+      return "닉네임과 비밀번호를 모두 입력해주세요.";
+    }
   }
 
   const trimmedTitle = title.trim();

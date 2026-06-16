@@ -15,7 +15,7 @@ interface PostItemProps {
 }
 
 export default function PostItem({ post, isMobile, onClickDesktop, formatTimeAgo }: PostItemProps) {
-  const isPatchNote = post.category === "패치노트";
+  const isPubgNews = post.category === "배그 소식";
 
   if (isMobile) {
     return (
@@ -25,7 +25,7 @@ export default function PostItem({ post, isMobile, onClickDesktop, formatTimeAgo
             <span className={`text-[10px] font-bold tracking-wider uppercase px-2.5 py-0.5 rounded-full ${
               post.is_notice 
                 ? 'text-[#F2A900] bg-[#F2A900]/20 border border-[#F2A900]/30' 
-                : isPatchNote 
+                : isPubgNews 
                   ? 'text-white/70 bg-white/10 border border-white/20'
                   : 'text-white/40 bg-white/5 border border-white/10'
             }`}>
@@ -74,7 +74,7 @@ export default function PostItem({ post, isMobile, onClickDesktop, formatTimeAgo
         <span className={`text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-full whitespace-nowrap inline-block ${
           post.is_notice 
             ? 'text-[#F2A900] bg-[#F2A900]/20 border border-[#F2A900]/30' 
-            : isPatchNote 
+            : isPubgNews 
               ? 'text-white/70 bg-white/10 border border-white/20'
               : 'text-white/40 bg-white/5 border border-white/10'
         }`}>
