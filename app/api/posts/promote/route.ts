@@ -1,6 +1,51 @@
 import { NextResponse } from "next/server";
 import { withAuthGuard } from "@/utils/supabase/guard";
 
+async function sendDiscordNotification(postDraft: any, targetPostId: number) {
+  const patchNotesWebhookUrl = process.env.DISCORD_PATCH_NOTES_WEBHOOK_URL || 
+                              process.env.DISCORD_COMMUNITY_WEBHOOK_URL || 
+                              process.env.DISCORD_WEBHOOK_URL;
+                              
+  if (!patchNotesWebhookUrl) return;
+
+  try {
+    let desc = "새로운 배그 소식이 게시판에 등록되었습니다.";
+    const postContent = postDraft.content || "";
+    if (postContent) {
+      const cleanContent = postContent
+        .replace(/<li[^>]*>\s*<span[^>]*>✓<\/span>\s*([\s\S]*?)<\/li>/gi, "- $1\n")
+        .replace(/<strong[^>]*>([\s\S]*?)<\/strong>/gi, "**$1**")
+        .replace(/<[^>]+>/g, ""); // 나머지 태그 제거
+      
+      const summaryStart = cleanContent.indexOf("🤖 BGMS AI");
+      if (summaryStart !== -1) {
+        desc = cleanContent.substring(summaryStart).trim();
+      } else {
+        desc = cleanContent.substring(0, 1000).trim();
+      }
+    }
+
+    const embed = {
+      title: `🆕 [배그 소식] ${postDraft.title}`,
+      description: desc.substring(0, 2000),
+      url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/board/${targetPostId}`,
+      thumbnail: postDraft.image_url ? { url: postDraft.image_url } : undefined,
+      color: 0xf2a900,
+      footer: { text: "BGMS 통합 지도 봇 | 업데이트 알리미" },
+      timestamp: new Date().toISOString(),
+    };
+
+    await fetch(patchNotesWebhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ embeds: [embed] }),
+    });
+  } catch (err: any) {
+    console.error("❌ Discord send error on promote:", err.message || err);
+  }
+}
+
+
 /**
  * @fileoverview 게시판 초안(draft)을 실제 게시판에 승격 및 병합 처리하는 API입니다.
  * [보안] JWT 인증 가드 및 어드민 롤(admin role)을 반드시 검증합니다.
@@ -129,6 +174,9 @@ export async function POST(request: Request) {
         console.error("🚨 [Draft Delete Error]:", deleteError);
       }
 
+      // 🌟 승인 완료 후 디스코드 알림 발송
+      sendDiscordNotification(postDraft, postDraft.parent_id);
+
       return NextResponse.json({
         success: true,
         message: "수정 사항이 원본 게시글에 성공적으로 반영되었습니다.",
@@ -148,6 +196,9 @@ export async function POST(request: Request) {
         console.error("🚨 [Promote Error]:", promoteError);
         throw promoteError;
       }
+
+      // 🌟 승인 완료 후 디스코드 알림 발송
+      sendDiscordNotification(postDraft, postId);
 
       return NextResponse.json({
         success: true,

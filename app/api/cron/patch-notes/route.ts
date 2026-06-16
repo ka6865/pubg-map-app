@@ -3,13 +3,57 @@ import { parse } from "node-html-parser";
 import { createClient } from "@supabase/supabase-js";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
+// 기사 제목 및 URL 기반 카테고리 식별 헬퍼 함수
+function identifyCategory(title: string, url: string): 'PATCH_NOTE' | 'STORE_INFO' | 'DEV_LETTER' | 'GENERAL' {
+  const normalizedTitle = title.toLowerCase();
+  const normalizedUrl = url.toLowerCase();
+
+  if (normalizedTitle.includes("상점") || normalizedTitle.includes("shop") || normalizedTitle.includes("store") || normalizedTitle.includes("아이템") || normalizedTitle.includes("에디션") || normalizedTitle.includes("세일")) {
+    return 'STORE_INFO';
+  }
+  if (normalizedTitle.includes("개발자") || normalizedTitle.includes("개발일지") || normalizedTitle.includes("개발 일지") || normalizedTitle.includes("dev") || normalizedUrl.includes("dev")) {
+    return 'DEV_LETTER';
+  }
+  if (normalizedTitle.includes("패치노트") || normalizedTitle.includes("패치 노트") || normalizedUrl.includes("patch")) {
+    return 'PATCH_NOTE';
+  }
+  return 'GENERAL';
+}
+
 // AI 요약 생성 함수 (Gemini Pro -> Flash -> Groq 순차 시도)
-async function generateAISummary(rawText: string): Promise<string> {
+async function generateAISummary(rawText: string, categoryType: 'PATCH_NOTE' | 'STORE_INFO' | 'DEV_LETTER' | 'GENERAL'): Promise<string> {
   const geminiKey = process.env.GOOGLE_GEMINI_API_KEY;
   const groqKey = process.env.GROQ_API_KEY;
   if (!geminiKey && !groqKey) return "";
 
-  const prompt = `배틀그라운드 패치노트를 3~7개의 불렛포인트로 핵심만 한국어로 요약해줘. 게이머들이 꼭 알아야 할 변경점 위주로 작성해: ${rawText}`;
+  let systemContext = "";
+  let structureGuide = "";
+  let hallucinationGuard = "";
+
+  if (categoryType === 'STORE_INFO') {
+    systemContext = "너는 PUBG(배틀그라운드) 전문 상품/상점 분석가야. 상점 업데이트 및 특별 아이템 판매 소식을 핵심 위주로 요약해.";
+    structureGuide = "배틀그라운드 상점 안내글을 읽고, 판매 아이템 종류(예: 블랙 마켓, PNC 2026, 스트리머 콜라보), 판매 기간(PC/콘솔), 할인 및 G-Coin 프로모션 혜택 중심으로 3~7개의 불렛포인트로 요약해줘.";
+    hallucinationGuard = "[절대 엄수] 본문에 명시되지 않은 '인게임 최적화', '업데이트 42.1 편의 기능 개선', '총기 밸런스 조정' 등 패치노트에나 나올 법한 일반적이고 템플릿화된 문구는 절대 지어내어 쓰지 마. 오직 본문에 언급된 판매 상품, 가격, 일정 등의 팩트만 기재해.";
+  } else if (categoryType === 'DEV_LETTER') {
+    systemContext = "너는 PUBG(배틀그라운드) 게임 기획 및 개발 심층 분석가야. 개발진의 의도와 철학이 담긴 개발일지를 요약해.";
+    structureGuide = "배틀그라운드 개발일지 글을 읽고, 개편 기획 의도 및 배경, 주요 메커니즘 변경 내용, 향후 타겟 및 개선 방향 중심으로 3~7개의 불렛포인트로 요약해줘.";
+    hallucinationGuard = "[절대 엄수] 본문에 언급되지 않은 스킨 출시, G-Coin 혜택, 인게임 편의 기능 향상 등을 임의로 지어내어 채워 넣지 마. 오직 개발진이 밝힌 설계 사상, 변경 근거 팩트만 서술해.";
+  } else {
+    systemContext = "너는 PUBG(배틀그라운드) 전문 전략 분석가야. 패치노트의 핵심을 요약하는 전문가로서 게이머들에게 유용한 정보를 제공해.";
+    structureGuide = "배틀그라운드 패치노트를 3~7개의 불렛포인트로 핵심만 한국어로 요약해줘. 게이머들이 꼭 알아야 할 변경점 위주로 작성해.";
+    hallucinationGuard = "[절대 엄수] 본문에 언급되지 않은 총기 출시, 가격 정보, 할인 이벤트, 인게임 수정을 임의로 지어내 쓰지 마.";
+  }
+
+  const prompt = `${systemContext}
+제공된 원문을 읽고, 유저들이 반드시 알아야 할 가장 핵심적인 변화와 정보를 극도로 슬림하고 강렬하게 요약해줘.
+
+${structureGuide}
+
+${hallucinationGuard}
+
+반드시 한국어로 작성하고, 가장 핵심적인 키워드만 **강조**해줘.
+
+원문: ${rawText}`;
 
   // 1. Gemini 시도 (Pro -> Flash)
   if (geminiKey) {
@@ -43,9 +87,9 @@ async function generateAISummary(rawText: string): Promise<string> {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          model: "llama-3.3-70b-versatile", // 단종된 3.1 대신 최신 3.3 사용
+          model: "llama-3.3-70b-versatile",
           messages: [
-            { role: "system", content: "너는 배틀그라운드 전문 분석가야. 패치노트의 핵심을 요약하는 전문가로서 게이머들에게 유용한 정보를 제공해." },
+            { role: "system", content: systemContext },
             { role: "user", content: prompt }
           ],
           temperature: 0.5
@@ -145,7 +189,7 @@ export async function GET(request: Request) {
         const chunk = html.substring(start, end);
 
         const postIdMatch = chunk.match(/postId:(\d+)/);
-        const titleMatch = chunk.match(/title:"([^"*?]*?패치 노트[^"*?]*?)"/) || chunk.match(/title:"([^"]*?패치 노트[^"]*?)"/);
+        const titleMatch = chunk.match(/title:"([^"]+?)"/);
         const thumbMatch = chunk.match(/thumbUrl\s*:\s*"(https:[^"]+)"/i) || chunk.match(/imageUrl\s*:\s*"(https:[^"]+)"/i);
 
         if (postIdMatch && titleMatch) {
@@ -210,8 +254,26 @@ export async function GET(request: Request) {
           }
         }
 
+        // 🌟 og:image 정규식 추출 보완
+        if (!thumbnail) {
+          let ogImage = "";
+          const ogImageMatch = detailHtml.match(/<meta[^>]*?property=["']og:image["'][^>]*?content=["']([^"']+)["']/i) ||
+                               detailHtml.match(/<meta[^>]*?content=["']([^"']+)["'][^>]*?property=["']og:image["']/i);
+          if (ogImageMatch && ogImageMatch[1]) {
+            ogImage = ogImageMatch[1].replace(/\\u002F/g, '/');
+          } else {
+            const metaOg = detailRoot.querySelector("meta[property='og:image']")?.getAttribute("content");
+            if (metaOg) ogImage = metaOg;
+          }
+          if (ogImage) {
+            thumbnail = ogImage;
+            console.log("🌟 Successfully extracted thumbnail from og:image meta tag:", thumbnail);
+          }
+        }
+
         if (rawText.length > 50) {
-          aiSummary = await generateAISummary(rawText.substring(0, 5000));
+          const categoryType = identifyCategory(title, fullUrl);
+          aiSummary = await generateAISummary(rawText.substring(0, 5000), categoryType);
         }
 
         // [최후의 보루] AI 요약이 완전히 실패했을 경우 (빈 내용이거나 너무 짧을 때)
@@ -269,27 +331,24 @@ export async function GET(request: Request) {
       </div>
     `);
 
-    // 7. 디스코드 발송
-    const patchNotesWebhookUrl = process.env.DISCORD_PATCH_NOTES_WEBHOOK_URL || 
-                                process.env.DISCORD_COMMUNITY_WEBHOOK_URL || 
-                                process.env.DISCORD_WEBHOOK_URL;
-                                
-    if (patchNotesWebhookUrl) {
+    // 7. 디스코드 발송 (어드민 승인 대기 관제용 알림)
+    const adminWebhookUrl = process.env.DISCORD_WEBHOOK_URL;
+    if (adminWebhookUrl) {
       const embed = {
-        title: `🆕 [패치노트] ${title}`,
-        description: `### 🤖 AI 핵심 요약\n${aiSummary}`,
-        url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/board`,
+        title: `🆕 [배그 소식 수집 완료] ${title} (승인 대기 중)`,
+        description: `BGMS AI가 패치노트/소식 요약을 완료하여 초안(draft) 상태로 등록했습니다.\n어드민 검증 페이지에서 확인 후 승인해 주세요.\n\n### 🤖 AI 핵심 요약\n${aiSummary}`,
+        url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/board?f=어드민+검증`,
         thumbnail: thumbnail ? { url: thumbnail } : undefined,
         color: 0xf2a900,
-        footer: { text: "BGMS 통합 지도 봇 | 업데이트 알리미" },
+        footer: { text: "BGMS 통합 지도 관제 봇 | 업데이트 알리미" },
         timestamp: new Date().toISOString(),
       };
 
-      await fetch(patchNotesWebhookUrl, {
+      await fetch(adminWebhookUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ embeds: [embed] }),
-      });
+      }).catch(err => console.error("❌ Discord admin alert failed:", err.message));
     }
 
     // 8. DB 등록 (DB 레벨 중복 방지 및 유니코드 보정)
@@ -304,33 +363,27 @@ export async function GET(request: Request) {
       .eq("title", cleanTitle)
       .maybeSingle();
 
-    // 기존 패치노트 공지사항 상태 일괄 해제 (최신 1건만 공지 유지)
-    console.log("📝 기존 패치노트 공지 플래그를 일괄 해제합니다.");
-    await supabaseAdmin
-      .from("posts")
-      .update({ is_notice: false })
-      .eq("category", "패치노트")
-      .eq("is_notice", true);
+
 
     let dbResult;
     if (existingPost) {
-      console.log(`📝 기존 패치노트 글(ID: ${existingPost.id})이 발견되어 업데이트합니다.`);
+      console.log(`📝 기존 배그 소식 글(ID: ${existingPost.id})이 발견되어 업데이트합니다.`);
       dbResult = await supabaseAdmin.from("posts").update({
         content: formattedContent,
         author: "BGMS 시스템",
-        category: "패치노트",
-        is_notice: true,
+        category: "배그 소식",
         image_url: thumbnail || null,
         user_id: null
       }).eq("id", existingPost.id);
     } else {
-      console.log("📝 신규 패치노트 글을 등록합니다.");
+      console.log("📝 신규 배그 소식 글을 등록합니다. (초안 상태)");
       dbResult = await supabaseAdmin.from("posts").insert({
         title: cleanTitle,
         content: formattedContent,
         author: "BGMS 시스템",
-        category: "패치노트",
-        is_notice: true,
+        category: "배그 소식",
+        is_notice: false,
+        status: "draft",
         image_url: thumbnail || null,
         user_id: null
       });
