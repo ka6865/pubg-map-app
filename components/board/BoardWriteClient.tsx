@@ -82,12 +82,14 @@ export default function BoardWriteClient() {
 
     try {
       const trimmedTitle = sanitizeTitle(newTitle);
+      // 🌟 AI 요약본 HTML 구조 복원 적용
+      const finalContent = restoreAiSummaryHtml(newContent);
       // 🌟 수동 지정 썸네일 우선 적용, 없으면 본문 첫 이미지 자동 추출
-      const finalImageUrl = thumbnailUrl || extractImageUrl(newContent);
+      const finalImageUrl = thumbnailUrl || extractImageUrl(finalContent);
 
       const payload = {
         title: trimmedTitle,
-        content: newContent,
+        content: finalContent,
         category: newCategory,
         image_url: finalImageUrl,
         is_notice: isAdmin ? newIsNotice : false,
@@ -190,3 +192,177 @@ export default function BoardWriteClient() {
     </div>
   );
 }
+
+/**
+ * Quill 에디터가 날려버린 AI 요약본 테일윈드 반응형 HTML 구조를
+ * 저장 직전 DOM 파서를 통해 정밀 역파싱하여 이쁜 그리드 카드로 강제 재조립하는 헬퍼 함수
+ */
+function restoreAiSummaryHtml(content: string): string {
+  // 만약 AI 요약 영역이 아예 없거나 이미 깨끗한 패치노트 구조가 감싸져 있다면 원본 그대로 반환
+  if (!content.includes("BGMS AI") || content.includes("patch-note-container")) {
+    return content;
+  }
+
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(content, 'text/html');
+    
+    // AI 요약 타이틀 헤더 찾기 (h3, h2, h4, p 중 🤖 또는 BGMS AI 포함하는 태그)
+    const allHeaders = Array.from(doc.querySelectorAll('h2, h3, h4, p, div'));
+    const titleEl = allHeaders.find(el => {
+      const text = el.textContent || "";
+      return text.includes("BGMS AI") || text.includes("핵심 요약");
+    });
+
+    if (!titleEl) return content;
+
+    const sections: { title: string; items: string[] }[] = [];
+    let currentTitle = "";
+    let currentItems: string[] = [];
+    
+    // 제거할 엘리먼트들을 담아둘 배열
+    const elementsToRemove: Element[] = [];
+
+    // AI 요약 타이틀 노드 다음의 형제 엘리먼트들을 순회하며 섹션과 불렛포인트 파싱
+    let sibling = titleEl.nextElementSibling;
+    while (sibling) {
+      const text = (sibling.textContent || "").trim();
+      const tagName = sibling.tagName.toLowerCase();
+
+      // 만약 공식 사이트 링크(a)나 하단 종료 멘트가 감지되면 수집을 중단
+      if (text.includes("더 자세한 내용은") || sibling.querySelector('a[href*="pubg.com"]') || text.includes("원문 보러가기")) {
+        break;
+      }
+
+      const isSectionTitle = 
+        (tagName.startsWith('h') && text.includes('[') && text.includes(']')) ||
+        (tagName === 'p' && (
+          /^[🔹⚙️⚖️🛠️🗺️🔫]/.test(text) || 
+          (text.startsWith('[') && text.endsWith(']'))
+        ));
+
+      if (isSectionTitle) {
+        if (currentTitle) {
+          sections.push({ title: currentTitle, items: [...currentItems] });
+        }
+        currentTitle = text;
+        currentItems = [];
+        elementsToRemove.push(sibling);
+      } else if (tagName === 'ul') {
+        const lis = sibling.querySelectorAll('li');
+        lis.forEach(li => {
+          let liHtml = li.innerHTML || "";
+          // 앞부분의 불필요한 마커들(✓, -, *, • 및 공백 문자 등) 제거
+          liHtml = liHtml
+            .replace(/^[✓\-\*•\s&nbsp;]+/g, "")
+            .trim();
+          if (liHtml && !/^[#\s]+$/.test(liHtml)) {
+            currentItems.push(liHtml);
+          }
+        });
+        elementsToRemove.push(sibling);
+      } else if (tagName === 'p' && text.length > 0) {
+        // 간혹 ul이 아니라 일반 p 문단으로 리스트가 들어오는 경우 대응
+        let pText = sibling.innerHTML || "";
+        pText = pText.replace(/^[✓\-\*•\s&nbsp;]+/g, "").trim();
+        if (pText && !/^[#\s]+$/.test(pText)) {
+          currentItems.push(pText);
+        }
+        elementsToRemove.push(sibling);
+      }
+      
+      sibling = sibling.nextElementSibling;
+    }
+
+    if (currentTitle) {
+      sections.push({ title: currentTitle, items: [...currentItems] });
+    }
+
+    // 파싱된 데이터가 하나도 없으면 원본 그대로 반환
+    if (sections.length === 0) return content;
+
+    // 파싱에 사용된 기존 노드들 제거
+    elementsToRemove.forEach(el => el.remove());
+
+    // 2열 그리드로 정렬하여 HTML 조립
+    const cardsHtml = sections.map(sec => {
+      // 괄호 및 이모지 다듬기
+      let rawTitle = sec.title.replace(/[\[\]]/g, "").trim();
+      let emoji = "🔹";
+      const matchedEmoji = rawTitle.match(/^[🔹⚙️⚖️🛠️🗺️🔫]\ufe0f?/u);
+      if (matchedEmoji) {
+        emoji = matchedEmoji[0];
+        rawTitle = rawTitle.replace(/^[🔹⚙️⚖️🛠️🗺️🔫]\ufe0f?\s*/u, "").trim();
+      } else {
+        // 타이틀 키워드 매칭에 따른 이모지 추천
+        if (rawTitle.includes("의도") || rawTitle.includes("배경") || rawTitle.includes("목표")) emoji = "💡";
+        else if (rawTitle.includes("일반전") || rawTitle.includes("경쟁전") || rawTitle.includes("모드")) emoji = "⚙️";
+        else if (rawTitle.includes("피해") || rawTitle.includes("시스템") || rawTitle.includes("데미지")) emoji = "⚡";
+      }
+
+      const itemsHtml = sec.items.map(item => {
+        // 볼드 마커(**텍스트**)가 깨져서 문단에 남아있을 경우 strong 태그로 치환
+        const highlighted = item.replace(/\*\*(.*?)\*\*/g, '<strong class="text-[#F2A900] font-black">$1</strong>');
+        return `
+          <li class="relative pl-4 text-gray-300 text-xs md:text-sm leading-normal mb-1.5 list-none">
+            <span class="absolute left-0 top-0 text-[#F2A900] font-bold">✓</span>
+            ${highlighted}
+          </li>
+        `;
+      }).join("");
+
+      return `
+        <div class="bg-[#1a1a1a] border border-white/5 rounded-lg p-4 shadow-md transition-all hover:border-white/10 hover:shadow-lg">
+          <div class="text-[#F2A900] text-sm md:text-base font-black mb-2 flex items-center gap-1.5 border-b border-white/5 pb-1.5">
+            <span>${emoji}</span> ${rawTitle}
+          </div>
+          <ul class="space-y-1 m-0 p-0">${itemsHtml}</ul>
+        </div>
+      `;
+    }).join("");
+
+    // 원문 링크 주소 찾기
+    const aLink = doc.querySelector('a[href*="pubg.com"]');
+    const originUrl = aLink ? aLink.getAttribute('href') : "";
+
+    // 마무리 문구와 원문 링크 노드들 일괄 제거
+    let linkSibling = titleEl.nextElementSibling;
+    while (linkSibling) {
+      const next = linkSibling.nextElementSibling;
+      linkSibling.remove();
+      linkSibling = next;
+    }
+
+    // 테일윈드 코드로 조립
+    const restoredLayout = `
+      <div class="patch-note-container space-y-4">
+        <div class="bg-[#F2A900]/10 border border-[#F2A900]/30 rounded-lg p-4 mb-1">
+          <h3 class="flex items-center gap-1.5 text-[#F2A900] font-black text-base md:text-lg">
+            🤖 BGMS AI 배그 소식 핵심 요약
+          </h3>
+        </div>
+        
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          ${cardsHtml}
+        </div>
+
+        <div class="flex flex-col items-center justify-center p-6 bg-[#1a1a1a] rounded-lg border border-white/5">
+          <p class="text-gray-400 text-xs mb-3">더 자세한 내용은 공식 원문에서 확인하실 수 있습니다.</p>
+          <a href="${originUrl || 'https://pubg.com/ko/news'}" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 px-6 py-2.5 bg-[#F2A900] text-black font-black text-sm rounded hover:bg-[#cc8b00] transition-all transform active:scale-95 shadow-md shadow-[#F2A900]/20">🔗 원문 보러가기</a>
+        </div>
+      </div>
+    `;
+
+    // titleEl 자리를 복원된 레이아웃으로 치환
+    titleEl.outerHTML = "<!-- RESTORED_AI_SUMMARY -->";
+    
+    let finalHtml = doc.body.innerHTML;
+    finalHtml = finalHtml.replace("<!-- RESTORED_AI_SUMMARY -->", restoredLayout);
+    
+    return finalHtml;
+  } catch (err) {
+    console.error("AI 요약 HTML 복원 중 에러:", err);
+    return content;
+  }
+}
+

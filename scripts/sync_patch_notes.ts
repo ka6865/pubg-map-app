@@ -232,7 +232,7 @@ function formatAiSummaryToHtml(summary: string): string {
     // 본문 줄바꿈 및 리스트 아이템 정밀 파싱
     const items = content.split('\n')
       .map(line => line.trim())
-      .filter(line => line.length > 2)
+      .filter(line => line.length > 2 && !/^[#\s]+$/.test(line))
       .map(line => {
         // 기존의 불렛 마커(-, *, • 등)를 말끔하게 제거하고 텍스트 정규화
         const text = line.replace(/^[-*•\s]+/, "").trim();
