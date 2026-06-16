@@ -43,16 +43,16 @@ export default async function PostDetailPage({ params }: { params: Promise<{ pos
     jsonLd.push(articleJsonLd as JsonLdProps);
   }
 
-  // 데이터 조회
+  // 데이터 조회 (작성자 최신 닉네임을 위해 profiles join)
   const { data: postResult } = await supabase
     .from("posts")
-    .select("*")
+    .select("*, profiles(nickname)")
     .eq("id", numericPostId)
     .single();
 
   const { data: commentResult } = await supabase
     .from("comments")
-    .select("*")
+    .select("*, profiles(nickname)")
     .eq("post_id", numericPostId)
     .order("created_at", { ascending: true });
 
@@ -88,11 +88,22 @@ export default async function PostDetailPage({ params }: { params: Promise<{ pos
     );
   }
 
+  // 실시간 변경된 최신 닉네임 적용
+  const post = {
+    ...postResult,
+    author: (postResult as any).profiles?.nickname || postResult.author || '알 수 없음'
+  };
+
+  const comments = (commentResult || []).map((comment: any) => ({
+    ...comment,
+    author: comment.profiles?.nickname || comment.author || '알 수 없음'
+  }));
+
   return (
     <div className="w-full h-full overflow-y-auto bg-[#121212] flex flex-col pt-6">
       <BoardDetailClient 
-        initialPost={postResult} 
-        initialComments={commentResult || []}
+        initialPost={post} 
+        initialComments={comments}
       />
     </div>
   );

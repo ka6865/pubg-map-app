@@ -252,17 +252,47 @@ async function syncPatchNotes() {
       return;
     }
 
-    const { error: upsertError } = await supabase.from('posts').upsert({
-      title: cleanTitle,
-      content: formattedContent,
-      author: 'BGMS 시스템',
-      category: '패치노트',
-      is_notice: true,
-      image_url: thumbnailUrl // thumbnail_url 대신 image_url 사용
-    }, { onConflict: 'title' });
+    // 기존에 동일한 제목의 글이 있는지 확인
+    const { data: existingPost } = await supabase
+      .from('posts')
+      .select('id')
+      .eq('title', cleanTitle)
+      .maybeSingle();
 
-    if (upsertError) {
-      console.error('❌ Failed to upsert post:', upsertError);
+    // 기존 패치노트 공지사항 상태 일괄 해제 (최신 1건만 공지 유지)
+    console.log('📝 기존 패치노트 공지 플래그를 일괄 해제합니다.');
+    await supabase
+      .from('posts')
+      .update({ is_notice: false })
+      .eq('category', '패치노트')
+      .eq('is_notice', true);
+
+    let dbResult;
+    if (existingPost) {
+      console.log(`📝 기존 패치노트 글(ID: ${existingPost.id})이 발견되어 업데이트합니다.`);
+      dbResult = await supabase.from('posts').update({
+        content: formattedContent,
+        author: 'BGMS 시스템',
+        category: '패치노트',
+        is_notice: true,
+        image_url: thumbnailUrl
+      }).eq('id', existingPost.id);
+    } else {
+      console.log('📝 신규 패치노트 글을 등록합니다.');
+      dbResult = await supabase.from('posts').insert({
+        title: cleanTitle,
+        content: formattedContent,
+        author: 'BGMS 시스템',
+        category: '패치노트',
+        is_notice: true,
+        image_url: thumbnailUrl
+      });
+    }
+
+    const { error: dbError } = dbResult;
+
+    if (dbError) {
+      console.error('❌ Failed to save post to database:', dbError);
       return;
     }
 

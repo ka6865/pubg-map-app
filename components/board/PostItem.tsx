@@ -19,14 +19,14 @@ export default function PostItem({ post, isMobile, onClickDesktop, formatTimeAgo
 
   if (isMobile) {
     return (
-      <li className={`border-b border-white/5 ${post.is_notice ? "bg-[#F2A900]/5" : isPatchNote ? "bg-[#F2A900]/3" : ""}`}>
+      <li className={`border-b border-white/5 ${post.is_notice ? "bg-[#F2A900]/5" : ""}`}>
         <Link href={`/board/${post.id}`} className="flex flex-col gap-2 p-4 px-5 active:bg-white/5 transition-colors">
           <div className="flex justify-between items-center mb-0.5">
             <span className={`text-[10px] font-bold tracking-wider uppercase px-2.5 py-0.5 rounded-full ${
               post.is_notice 
                 ? 'text-[#F2A900] bg-[#F2A900]/20 border border-[#F2A900]/30' 
                 : isPatchNote 
-                  ? 'text-[#F2A900] bg-[#F2A900]/10 border border-[#F2A900]/20'
+                  ? 'text-white/70 bg-white/10 border border-white/20'
                   : 'text-white/40 bg-white/5 border border-white/10'
             }`}>
               {post.is_notice ? "📢 공지" : post.category}
@@ -34,7 +34,7 @@ export default function PostItem({ post, isMobile, onClickDesktop, formatTimeAgo
             <span className="text-[11px] text-white/30 font-medium">{formatTimeAgo(post.created_at)}</span>
           </div>
           <div className="flex items-start gap-1.5">
-            <span className={`text-[15px] leading-snug break-all ${post.is_notice || isPatchNote ? "text-[#F2A900] font-bold" : "text-white/90 font-semibold"}`}>
+            <span className={`text-[15px] leading-snug break-all ${post.is_notice ? "text-[#F2A900] font-bold" : "text-white/90 font-semibold"}`}>
               {post.title}
             </span>
             {post.image_url && <ImageIcon />}
@@ -60,16 +60,16 @@ export default function PostItem({ post, isMobile, onClickDesktop, formatTimeAgo
   return (
     <tr 
       className={`border-b border-white/5 hover:bg-white/[0.03] transition-all cursor-pointer group ${
-        post.is_notice ? "bg-[#F2A900]/5" : isPatchNote ? "bg-[#F2A900]/2" : ""
+        post.is_notice ? "bg-[#F2A900]/5" : ""
       }`} 
       onClick={onClickDesktop}
     >
-      <td className={`p-4 pl-5 border-l-2 ${post.is_notice ? 'border-[#F2A900]' : isPatchNote ? 'border-[#F2A900]/40' : 'border-transparent'}`}>
+      <td className={`p-4 pl-5 border-l-2 ${post.is_notice ? 'border-[#F2A900]' : 'border-transparent'}`}>
         <span className={`text-[10px] font-bold tracking-wider px-2.5 py-1 rounded-full whitespace-nowrap inline-block ${
           post.is_notice 
             ? 'text-[#F2A900] bg-[#F2A900]/20 border border-[#F2A900]/30' 
             : isPatchNote 
-              ? 'text-[#F2A900] bg-[#F2A900]/10 border border-[#F2A900]/20'
+              ? 'text-white/70 bg-white/10 border border-white/20'
               : 'text-white/40 bg-white/5 border border-white/10'
         }`}>
           {post.is_notice ? "공지" : post.category}
@@ -78,7 +78,7 @@ export default function PostItem({ post, isMobile, onClickDesktop, formatTimeAgo
       <td className="p-4 py-5">
         <div className="flex items-center gap-1.5">
           <span className={`text-[14px] transition-colors group-hover:text-white ${
-            post.is_notice || isPatchNote ? "text-[#F2A900] font-bold" : "text-white/90 font-semibold"
+            post.is_notice ? "text-[#F2A900] font-bold" : "text-white/90 font-semibold"
           }`}>
             {post.title}
           </span>

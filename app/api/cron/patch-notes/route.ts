@@ -297,18 +297,46 @@ export async function GET(request: Request) {
     console.log(">>> [DB_SAVE_START] Title:", cleanTitle);
 
     // [중요] DB에 없는 updated_at, created_at 등을 제거하고 검증된 컬럼만 사용
-    const { error: postError } = await supabaseAdmin.from("posts").upsert({
-      title: cleanTitle,
-      content: formattedContent,
-      author: "BGMS 시스템",
-      category: "패치노트",
-      is_notice: true,
-      image_url: thumbnail || null,
-      user_id: null
-    }, {
-      onConflict: 'title',
-      ignoreDuplicates: false
-    });
+    // 기존에 동일한 제목의 글이 있는지 확인
+    const { data: existingPost } = await supabaseAdmin
+      .from("posts")
+      .select("id")
+      .eq("title", cleanTitle)
+      .maybeSingle();
+
+    // 기존 패치노트 공지사항 상태 일괄 해제 (최신 1건만 공지 유지)
+    console.log("📝 기존 패치노트 공지 플래그를 일괄 해제합니다.");
+    await supabaseAdmin
+      .from("posts")
+      .update({ is_notice: false })
+      .eq("category", "패치노트")
+      .eq("is_notice", true);
+
+    let dbResult;
+    if (existingPost) {
+      console.log(`📝 기존 패치노트 글(ID: ${existingPost.id})이 발견되어 업데이트합니다.`);
+      dbResult = await supabaseAdmin.from("posts").update({
+        content: formattedContent,
+        author: "BGMS 시스템",
+        category: "패치노트",
+        is_notice: true,
+        image_url: thumbnail || null,
+        user_id: null
+      }).eq("id", existingPost.id);
+    } else {
+      console.log("📝 신규 패치노트 글을 등록합니다.");
+      dbResult = await supabaseAdmin.from("posts").insert({
+        title: cleanTitle,
+        content: formattedContent,
+        author: "BGMS 시스템",
+        category: "패치노트",
+        is_notice: true,
+        image_url: thumbnail || null,
+        user_id: null
+      });
+    }
+
+    const { error: postError } = dbResult;
 
     if (postError) {
       console.error(">>> [DB_SAVE_ERROR]:", postError.message);

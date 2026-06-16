@@ -1306,6 +1306,20 @@ function ChecklistLine({ ok, text }: { ok: boolean; text: string }) {
   );
 }
 
+function formatAlertValue(value: any): string {
+  if (value === undefined || value === null) return "";
+  if (typeof value === "object") {
+    try {
+      return Object.entries(value)
+        .map(([k, v]) => `${k}: ${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
+        .join(", ");
+    } catch {
+      return JSON.stringify(value);
+    }
+  }
+  return String(value);
+}
+
 function StatusSnapshot({ snapshot, commandCenter }: { snapshot: AgentMonitorSnapshot | null; commandCenter: AgentCommandCenter | null }) {
   const severity = snapshot?.severity || commandCenter?.severity;
   const alerts = snapshot?.alerts || [];
@@ -1316,7 +1330,7 @@ function StatusSnapshot({ snapshot, commandCenter }: { snapshot: AgentMonitorSna
       {alerts.length > 0 ? alerts.slice(0, 4).map((alert, index) => (
         <div key={`${alert.type}-${index}`} className="rounded-md border border-amber-500/20 bg-amber-500/5 p-2 text-amber-100">
           <p className="font-semibold">{translateSignal(alert.message)}</p>
-          {alert.value !== undefined && <p className="mt-1 opacity-75">값: {String(alert.value)}</p>}
+          {alert.value !== undefined && <p className="mt-1 opacity-75">값: {formatAlertValue(alert.value)}</p>}
         </div>
       )) : (
         <p className="rounded-md bg-zinc-950 p-2 text-zinc-500">위험 알림이 없으면 Discord 알림은 보내지 않습니다.</p>

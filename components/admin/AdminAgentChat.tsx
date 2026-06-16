@@ -469,7 +469,7 @@ export default function AdminAgentChat({
                   </div>
                 )}
 
-                <div className={`whitespace-pre-wrap break-words rounded-2xl px-4 py-2.5 text-sm leading-relaxed shadow-sm ${
+                <div className={`whitespace-pre-wrap break-words rounded-2xl px-4 py-2.5 text-sm leading-relaxed shadow-sm select-text ${
                   isUser
                     ? "rounded-tr-none bg-amber-500 font-medium text-zinc-950"
                     : "rounded-tl-none border border-zinc-800 bg-zinc-900 text-zinc-200"

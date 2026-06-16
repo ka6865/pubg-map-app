@@ -211,8 +211,41 @@ export async function POST(request: Request) {
       image_url: r.imageUrl || null
     }));
 
-    const { error: insertError } = await supabaseAdmin.from('posts').upsert(postsToInsert, { onConflict: 'title' });
-    if (insertError) throw new Error(`데이터베이스 저장 중 오류: ${insertError.message}`);
+    // 기존 패치노트 공지사항 상태 일괄 해제 (최신 1건만 공지 유지)
+    await supabaseAdmin
+      .from('posts')
+      .update({ is_notice: false })
+      .eq('category', '패치노트')
+      .eq('is_notice', true);
+
+    for (const post of postsToInsert) {
+      const { data: existingPost } = await supabaseAdmin
+        .from('posts')
+        .select('id')
+        .eq('title', post.title)
+        .maybeSingle();
+
+      if (existingPost) {
+        console.log(`📝 기존 패치노트 글(ID: ${existingPost.id})이 발견되어 업데이트합니다.`);
+        const { error: updateError } = await supabaseAdmin
+          .from('posts')
+          .update({
+            content: post.content,
+            author: post.author,
+            category: post.category,
+            is_notice: post.is_notice,
+            image_url: post.image_url
+          })
+          .eq('id', existingPost.id);
+        if (updateError) throw new Error(`기존 패치노트 업데이트 실패: ${updateError.message}`);
+      } else {
+        console.log('📝 신규 패치노트 글을 등록합니다.');
+        const { error: insertError } = await supabaseAdmin
+          .from('posts')
+          .insert(post);
+        if (insertError) throw new Error(`신규 패치노트 등록 실패: ${insertError.message}`);
+      }
+    }
 
     for (const r of results) {
       await supabaseAdmin.from("sync_history").upsert({ type: r.type, last_url: r.fullUrl, updated_at: new Date().toISOString() }, { onConflict: 'type' });

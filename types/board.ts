@@ -8,6 +8,7 @@ export interface Comment {
   content: string;
   created_at: string;
   parent_id: number | null;
+  profiles?: { nickname: string } | null; // 🌟 닉네임 동기화용 프로필 조인 필드
 }
 
 export interface ClanInfo {
@@ -37,4 +38,5 @@ export interface Post {
   clan_info?: ClanInfo | null; // 🌟 클랜 정보 첨부 필드 추가
   status?: "published" | "draft"; // 🌟 게시글 상태 ('published' 또는 'draft')
   parent_id?: number | null; // 🌟 Shadow Draft 구조에서 참조할 원본 게시글 ID
+  profiles?: { nickname: string } | null; // 🌟 닉네임 동기화용 프로필 조인 필드
 }
