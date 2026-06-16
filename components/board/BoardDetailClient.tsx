@@ -12,6 +12,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { toast } from "sonner";
 import { trackEvent } from "@/lib/analytics";
 import ConfirmModal from "../common/ConfirmModal";
+import TurnstileWidget from "./TurnstileWidget";
 
 interface BoardDetailClientProps {
   initialPost: Post;
@@ -44,6 +45,24 @@ export default function BoardDetailClient({
   const [displayName, setDisplayName] = useState("익명");
   const [isMobile, setIsMobile] = useState(false);
   const [mounted, setMounted] = useState(false);
+
+  // 비회원 댓글/게시글 작성용 상태
+  const [guestNickname, setGuestNickname] = useState("");
+  const [guestPassword, setGuestPassword] = useState("");
+  // 비회원 게시글 삭제용 비밀번호 모달 상태
+  const [guestDeleteModal, setGuestDeleteModal] = useState<{
+    isOpen: boolean;
+    targetType: 'post' | 'comment';
+    targetId: number;
+  } | null>(null);
+  const [guestDeletePassword, setGuestDeletePassword] = useState("");
+
+  // Cloudflare Turnstile 세션 기반 캡차 상태
+  // 탭 내 1회 인증 후 sessionStorage에 플래그 저장하여 재인증 면제
+  const [showCaptcha, setShowCaptcha] = useState(false);
+  const [captchaVerified, setCaptchaVerified] = useState(false);
+  // 캡차 통과 후 실행할 대기 액션 ('comment' | 'post')
+  const [captchaPendingAction, setCaptchaPendingAction] = useState<'comment' | 'post' | null>(null);
 
   // 🌟 초안 승격 및 AI 피드백 모달용 상태 추가
   const [isPromoting, setIsPromoting] = useState(false);
@@ -125,8 +144,45 @@ export default function BoardDetailClient({
     const checkMobile = () => setIsMobile(window.innerWidth < 768);
     checkMobile();
     window.addEventListener("resize", checkMobile);
+
+    // \uc138\uc158\uc2a4\ud1a0\ub9ac\uc9c0\uc5d0 \uc778\uc99d \uc644\ub8cc \ud50c\ub798\uadf8\uac00 \uc788\uc73c\uba74 \ucea1\ucc28 \uba74\uc81c
+    if (sessionStorage.getItem("turnstile_verified") === "1") {
+      setCaptchaVerified(true);
+    }
+
     return () => window.removeEventListener("resize", checkMobile);
   }, []);
+
+  // Turnstile \ud1a0\ud070 \uc11c\ubc84 \uac80\uc99d \ud6c4 \uc138\uc158\uc5d0 \uc800\uc7a5 → \ub300\uae30 \uc561\uc158 \uc2e4\ud589
+  const handleTurnstileVerify = async (token: string) => {
+    try {
+      const res = await fetch("/api/board/turnstile", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token }),
+      });
+      const result = await res.json();
+      if (!result.success) {
+        toast.error(result.error || "\ubcf4\uc548 \uc778\uc99d\uc5d0 \uc2e4\ud328\ud588\uc2b5\ub2c8\ub2e4. \ub2e4\uc2dc \uc2dc\ub3c4\ud574\uc8fc\uc138\uc694.");
+        setShowCaptcha(false);
+        return;
+      }
+      // \uc138\uc158 \ub0b4 \uc7ac\uc778\uc99d \uba74\uc81c\ub97c \uc704\ud574 sessionStorage\uc5d0 \uc800\uc7a5
+      sessionStorage.setItem("turnstile_verified", "1");
+      setCaptchaVerified(true);
+      setShowCaptcha(false);
+
+      // \uce90\uc655 \ud1b5\uacfc \uc804 \uc2dc\ub3c4\ud588\ub358 \uc561\uc158 \uc5f0\uc18d \uc2e4\ud589
+      if (captchaPendingAction === "comment") {
+        setCaptchaPendingAction(null);
+        setTimeout(() => handleSaveComment(), 0);
+      }
+    } catch {
+      toast.error("\ubcf4\uc548 \uc778\uc99d \uc911 \uc624\ub958\uac00 \ubc1c\uc0dd\ud588\uc2b5\ub2c8\ub2e4.");
+      setShowCaptcha(false);
+    }
+  };
+
 
   useEffect(() => {
     if (!user) {
@@ -156,8 +212,22 @@ export default function BoardDetailClient({
   }, [post.id]);
 
   const fetchComments = async () => {
-    const { data } = await supabase.from("comments").select("*").eq("post_id", post.id).order("created_at", { ascending: true });
-    if (data) setComments(data);
+    const { data } = await supabase
+      .from("comments")
+      .select("*, profiles(nickname)")
+      .eq("post_id", post.id)
+      .order("created_at", { ascending: true });
+    if (data) {
+      setComments(
+        data.map((c: any) => ({
+          ...c,
+          author: c.user_id
+            ? (c.profiles?.nickname || c.author || "알 수 없음")
+            : (c.author || "익명"),
+          ip_address: c.ip_address ? c.ip_address.split(".").slice(0, 2).join(".") : null,
+        }))
+      );
+    }
   };
 
   const formatTimeAgo = (dateString: string) => {
@@ -190,66 +260,92 @@ export default function BoardDetailClient({
   };
 
   const handleSaveComment = async () => {
-    if (!user) {
-      toast.error("로그인이 필요합니다");
-      return;
-    }
     if (!newComment.trim()) {
       toast.warning("댓글 내용을 입력해주세요.");
       return;
     }
 
-    const finalComment = replyingTo ? `@${replyingTo.author} ${newComment}` : newComment;
-
-    const { error } = await supabase.from("comments").insert([{
-      post_id: post.id,
-      user_id: user.id,
-      author: displayName,
-      content: finalComment,
-      parent_id: replyingTo ? replyingTo.id : null,
-    }]);
-
-    if (!error) {
-      trackEvent({
-        name: "post_action",
-        params: {
-          action: "create_comment",
-          status: "success"
+    // 회원 댓글: 기존 Supabase 직접 INSERT 방식 유지
+    if (user) {
+      const finalComment = replyingTo ? `@${replyingTo.author} ${newComment}` : newComment;
+      const { error } = await supabase.from("comments").insert([{
+        post_id: post.id,
+        user_id: user.id,
+        author: displayName,
+        content: finalComment,
+        parent_id: replyingTo ? replyingTo.id : null,
+      }]);
+      if (!error) {
+        trackEvent({ name: "post_action", params: { action: "create_comment", status: "success" } });
+        const targetUserId = replyingTo ? replyingTo.user_id : post.user_id;
+        if (targetUserId && targetUserId !== user.id) {
+          const { error: notiError } = await supabase.from("notifications").insert([{
+            user_id: targetUserId,
+            sender_id: user.id,
+            sender_name: displayName,
+            type: replyingTo ? "reply" : "comment",
+            post_id: post.id,
+            preview_text: replyingTo ? replyingTo.content : post.title,
+          }]);
+          if (notiError) {
+            console.error("[notifications INSERT 실패]", notiError.message, notiError.code);
+          }
         }
-      });
-      const targetUserId = replyingTo ? replyingTo.user_id : post.user_id;
-      // 본인 글/댓글에 본인이 달 때는 알림 생략
-      if (targetUserId && targetUserId !== user.id) {
-        const { error: notiError } = await supabase.from("notifications").insert([{
-          user_id: targetUserId,
-          sender_id: user.id,
-          sender_name: displayName,
-          type: replyingTo ? "reply" : "comment",
-          post_id: post.id,
-          preview_text: replyingTo ? replyingTo.content : post.title,
-        }]);
-        // 🔍 알림 INSERT 실패 시 콘솔에 RLS 에러 상세 출력 (디버깅용)
-        if (notiError) {
-          console.error("[notifications INSERT 실패]", notiError.message, notiError.code, notiError.details);
-        }
+        setNewComment("");
+        setReplyingTo(null);
+        fetchComments();
+      } else {
+        trackEvent({ name: "post_action", params: { action: "create_comment", status: "fail", error_type: error.message } });
+        toast.error("댓글 저장 중 오류가 발생했습니다.");
       }
+      return;
+    }
+
+    // 비회원 댓글: Route Handler 경유
+    if (!guestNickname.trim()) return toast.warning("닉네임을 입력해주세요.");
+    if (!guestPassword) return toast.warning("비밀번호를 입력해주세요.");
+
+    // 세션 내 캡차 인증이 안 된 경우 → 캡차 모달 표시 후 대기
+    if (!captchaVerified) {
+      setCaptchaPendingAction("comment");
+      setShowCaptcha(true);
+      return;
+    }
+
+    const res = await fetch("/api/board/comments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        post_id: post.id,
+        author: guestNickname.trim(),
+        password: guestPassword,
+        content: newComment.trim(),
+        parent_id: replyingTo ? replyingTo.id : null,
+      }),
+    });
+    const result = await res.json();
+    if (!res.ok) {
+      toast.error(result.error || "댓글 저장 실패");
+    } else {
+      toast.success("댓글이 등록되었습니다.");
       setNewComment("");
       setReplyingTo(null);
       fetchComments();
-    } else {
-      trackEvent({
-        name: "post_action",
-        params: {
-          action: "create_comment",
-          status: "fail",
-          error_type: error.message
-        }
-      });
-      toast.error("댓글 저장 중 오류가 발생했습니다.");
     }
   };
 
+
   const handleDeleteComment = (commentId: number) => {
+    const targetComment = comments.find((c) => c.id === commentId);
+
+    // 비회원 댓글: 비밀번호 입력 모달로 처리
+    if (targetComment && !targetComment.user_id) {
+      setGuestDeleteModal({ isOpen: true, targetType: 'comment', targetId: commentId });
+      setGuestDeletePassword("");
+      return;
+    }
+
+    // 회원 댓글: 기존 확인 모달 후 직접 삭제
     setConfirmModal({
       isOpen: true,
       title: "댓글 삭제",
@@ -269,7 +365,37 @@ export default function BoardDetailClient({
     });
   };
 
+  const handleReportComment = (commentId: number) => {
+    setConfirmModal({
+      isOpen: true,
+      title: "댓글 신고",
+      description: "이 댓글을 부적절한 내용으로 신고하시겠습니까?",
+      confirmText: "신고하기",
+      type: "warning",
+      onConfirm: async () => {
+        const res = await fetch("/api/board/report", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ target_type: "comment", target_id: commentId, reason: "부적절한 내용" }),
+        });
+        if (res.ok) toast.success("신고가 접수되었습니다.");
+        else {
+          const data = await res.json();
+          toast.error(data.error || "신고 접수 실패");
+        }
+        setConfirmModal((prev) => ({ ...prev, isOpen: false }));
+      }
+    });
+  };
+
   const handleDeletePost = () => {
+    // 비회원 게시글: 비밀번호 입력 모달로 처리
+    if (!post.user_id) {
+      setGuestDeleteModal({ isOpen: true, targetType: 'post', targetId: post.id });
+      setGuestDeletePassword("");
+      return;
+    }
+
     if (comments.length > 0 && !isAdmin) return toast.warning("댓글이 작성된 게시글은 삭제할 수 없습니다.");
     
     setConfirmModal({
@@ -295,6 +421,62 @@ export default function BoardDetailClient({
         setConfirmModal((prev) => ({ ...prev, isOpen: false }));
       }
     });
+  };
+
+  const handleReportPost = () => {
+    setConfirmModal({
+      isOpen: true,
+      title: "게시글 신고",
+      description: "이 게시글을 부적절한 내용으로 신고하시겠습니까?",
+      confirmText: "신고하기",
+      type: "warning",
+      onConfirm: async () => {
+        const res = await fetch("/api/board/report", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ target_type: "post", target_id: post.id, reason: "부적절한 내용" }),
+        });
+        if (res.ok) toast.success("신고가 접수되었습니다.");
+        else {
+          const data = await res.json();
+          toast.error(data.error || "신고 접수 실패");
+        }
+        setConfirmModal((prev) => ({ ...prev, isOpen: false }));
+      }
+    });
+  };
+
+  // 비회원 게시글/댓글 비밀번호 확인 후 삭제
+  const handleGuestDeleteConfirm = async () => {
+    if (!guestDeleteModal || !guestDeletePassword) {
+      toast.warning("비밀번호를 입력해주세요.");
+      return;
+    }
+    const { targetType, targetId } = guestDeleteModal;
+    const endpoint = targetType === 'post'
+      ? "/api/board/posts/delete"
+      : "/api/board/comments/delete";
+    const body = targetType === 'post'
+      ? { postId: targetId, password: guestDeletePassword }
+      : { commentId: targetId, password: guestDeletePassword };
+
+    const res = await fetch(endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const result = await res.json();
+    if (!res.ok) {
+      toast.error(result.error || "삭제 실패");
+    } else {
+      toast.success("삭제되었습니다.");
+      setGuestDeleteModal(null);
+      if (targetType === 'post') {
+        router.push("/board");
+      } else {
+        fetchComments();
+      }
+    }
   };
 
   const processedContent = useMemo(() => {
@@ -479,16 +661,31 @@ export default function BoardDetailClient({
             replyingTo={replyingTo}
             setReplyingTo={setReplyingTo}
             handleDeleteComment={handleDeleteComment}
+            handleReportComment={handleReportComment}
             isAdmin={isAdmin}
             handleSaveComment={handleSaveComment}
             isMobile={isMobile}
             formatTimeAgo={formatTimeAgo}
+            guestNickname={guestNickname}
+            setGuestNickname={setGuestNickname}
+            guestPassword={guestPassword}
+            setGuestPassword={setGuestPassword}
           />
 
           <div className="mt-[40px] flex gap-[10px]">
             <button onClick={() => router.push("/board")} className="flex-1 p-[12px] bg-[#333] text-white border-none rounded-[4px] hover:bg-[#444] transition-colors text-[14px]">
               목록으로
             </button>
+
+            {/* 신고 버튼: 본인 글이 아닌 경우 표시 */}
+            {user?.id !== post.user_id && post.user_id && (
+              <button
+                onClick={handleReportPost}
+                className="px-[20px] py-[12px] bg-[#252525] border border-[#dc3545]/50 text-[#dc3545] border-solid rounded-[4px] hover:bg-[#dc3545]/10 transition-colors text-[14px]"
+              >
+                권함 남용
+              </button>
+            )}
 
             {user?.id === post.user_id && (
               <button
@@ -499,7 +696,8 @@ export default function BoardDetailClient({
               </button>
             )}
 
-            {(user?.id === post.user_id || isAdmin) && (
+            {/* 삭제 버튼: 회원 본인 or 어드민 or 비회원 게시글(비밀번호 확인 모달) */}
+            {(user?.id === post.user_id || isAdmin || !post.user_id) && (
               <button
                 onClick={handleDeletePost}
                 className="px-[20px] py-[12px] bg-[#dc3545] text-white border-none rounded-[4px] hover:bg-[#c82333] transition-colors text-[14px]"
@@ -556,6 +754,71 @@ export default function BoardDetailClient({
         onConfirm={confirmModal.onConfirm}
         onCancel={() => setConfirmModal((prev) => ({ ...prev, isOpen: false }))}
       />
+
+      {/* 비회원 게시글/댓글 삭제 비밀번호 확인 모달 */}
+      {guestDeleteModal?.isOpen && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+          <div className="bg-[#1a1a1a] border border-[#333] rounded-2xl max-w-sm w-full p-6 shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200">
+            <h3 className="text-lg font-black text-white">비밀번호 확인</h3>
+            <p className="text-white/60 text-sm">작성 시 등록한 비밀번호를 입력하세요.</p>
+            <input
+              type="password"
+              value={guestDeletePassword}
+              onChange={(e) => setGuestDeletePassword(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleGuestDeleteConfirm()}
+              placeholder="비밀번호"
+              className="w-full bg-[#121212] border border-[#333] rounded-lg px-4 py-3 text-white text-sm focus:border-[#F2A900] focus:outline-none"
+              autoFocus
+            />
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setGuestDeleteModal(null)}
+                className="px-4 py-2.5 bg-[#252525] text-white/75 font-bold rounded-lg hover:bg-[#333] transition-colors text-sm"
+              >
+                취소
+              </button>
+              <button
+                onClick={handleGuestDeleteConfirm}
+                className="px-4 py-2.5 bg-[#dc3545] text-white font-black rounded-lg hover:bg-[#c82333] transition-all active:scale-95 text-sm"
+              >
+                삭제
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Cloudflare Turnstile 보안 인증 모달 (비회원 첫 작성 시 1회) */}
+      {showCaptcha && (
+        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+          <div className="bg-[#1a1a1a] border border-[#333] rounded-2xl max-w-sm w-full p-6 shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200">
+            <div>
+              <h3 className="text-base font-black text-white">보안 인증</h3>
+              <p className="text-white/50 text-xs mt-1">
+                비회원 작성을 위해 한 번만 인증합니다. 이후 같은 탭에서는 자동으로 통과됩니다.
+              </p>
+            </div>
+            <TurnstileWidget
+              onVerify={handleTurnstileVerify}
+              onError={() => {
+                toast.error("보안 인증 중 오류가 발생했습니다.");
+                setShowCaptcha(false);
+                setCaptchaPendingAction(null);
+              }}
+            />
+            <button
+              onClick={() => {
+                setShowCaptcha(false);
+                setCaptchaPendingAction(null);
+              }}
+              className="text-xs text-white/30 hover:text-white/60 transition-colors text-center"
+            >
+              취소
+            </button>
+          </div>
+        </div>
+      )}
     </div>
+
   );
 }
