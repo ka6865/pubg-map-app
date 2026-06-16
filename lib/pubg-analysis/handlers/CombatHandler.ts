@@ -10,9 +10,11 @@ export class CombatHandler extends BaseHandler {
 
   private isIgnoredWeapon(wId: string, cleanWId: string, damageTypeCategory?: string): boolean {
     if (damageTypeCategory && (
-      damageTypeCategory.includes("Fall") || 
-      damageTypeCategory.includes("BlueZone") || 
-      damageTypeCategory.includes("RedZone") || 
+      damageTypeCategory.includes("Fall") ||
+      // 자기장 자체 피해만 제외. 블루존 수류탄(Damage_BlueZoneGrenade)은 능동적 교전 딜이므로 포함
+      damageTypeCategory === "Damage_BlueZone" ||
+      damageTypeCategory === "Damage_BlueZone_Drown" ||
+      damageTypeCategory.includes("RedZone") ||
       damageTypeCategory.includes("Environment") ||
       damageTypeCategory.includes("Bleeding") ||
       damageTypeCategory.includes("Lava") ||
