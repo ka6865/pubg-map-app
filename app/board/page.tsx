@@ -29,7 +29,7 @@ export default async function BoardPage({
   let query = supabase
     .from("posts")
     .select(
-      "id, title, author, user_id, category, image_url, discord_url, discord_channel_id, is_notice, created_at, views, likes, status, parent_id, comments(count)",
+      "id, title, author, user_id, category, image_url, discord_url, discord_channel_id, is_notice, created_at, views, likes, status, parent_id, comments(count), profiles(nickname)",
       { count: "exact" }
     );
 
@@ -63,6 +63,7 @@ export default async function BoardPage({
   if (!error && data) {
     posts = data.map((post: any) => ({
       ...post,
+      author: post.profiles?.nickname || post.author || '알 수 없음',
       comment_count: post.comments && post.comments[0] ? post.comments[0].count : 0,
     }));
   } else {
