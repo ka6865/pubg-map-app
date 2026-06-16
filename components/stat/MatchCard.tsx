@@ -411,9 +411,10 @@ interface MatchCardProps {
   isMobile: boolean;
   index?: number;
   onNicknameClick?: (nickname: string) => void;
+  onModeDetected?: (matchId: string, gameMode: string) => void;
 }
 
-export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, onNicknameClick }: MatchCardProps) => {
+export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, onNicknameClick, onModeDetected }: MatchCardProps) => {
   const [matchData, setMatchData] = useState<MatchData | null>(null);
   const [loading, setLoading] = useState(true);
   const [isExpanded, setIsExpanded] = useState(false);
@@ -543,6 +544,15 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
   };
 
   const renderTierBadge = () => {
+    if (isTdmMatch) {
+      return (
+        <div className="px-2.5 py-1 md:px-4 md:py-1.5 rounded-xl border border-rose-500/30 bg-rose-500/20 text-rose-400 font-black text-xs md:text-sm tracking-tight flex items-center gap-1">
+          <Zap size={10} className="text-rose-400 shrink-0 animate-pulse" />
+          <span>TDM</span>
+        </div>
+      );
+    }
+
     const score = matchData?.benchmark?.score || 0;
     const tier = estimateUserTier(score);
     
@@ -572,6 +582,27 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
         <span className="text-[10px] md:text-[11px] font-black">{score}pt</span>
       </button>
     );
+  };
+
+  // 맵 이름 한글 번역 매핑
+  const getTranslatedMapName = (name: string) => {
+    const mapping: Record<string, string> = {
+      "Baltic_Main": "에란겔",
+      "Desert_Main": "미라마",
+      "Savage_Main": "사녹",
+      "Summerland_Main": "카라킨",
+      "Chimera_Main": "파라모",
+      "Tiger_Main": "태이고",
+      "Kiki_Main": "데스턴",
+      "Neon_Main": "론도",
+      "DihorOtok_Main": "비켄디",
+      "PillarCompound_Main": "필라 기지 (TDM)",
+      "Italy_TDM_Main": "리틀 이탈리아 (TDM)",
+      "Baltic_TDM_Main": "에란겔 (TDM)",
+      "Range_Main": "훈련장",
+      "SafeHouse": "세이프하우스"
+    };
+    return mapping[name] || name;
   };
 
   // 맵 이름 매핑 (한글/영문 -> 내부 mapId)
@@ -624,20 +655,18 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
         const data = await res.json();
         
         if (!data.error) {
-          // [V45.2] 정규 매치 필터링 (이벤트, 아케이드, 훈련소 등 제외)
+          onModeDetected?.(matchId, data.gameMode || "");
+          // [V45.2] 정규 매치 필터링 완화 (TDM 및 커스텀 포함, 이벤트/ai-match/세이프하우스만 제외)
           const mode = (data.gameMode || "").toLowerCase();
           const map = data.mapName || "";
-          const isStandardMatch = 
-            !mode.includes("event") &&
-            !mode.includes("arcade") &&
-            !mode.includes("custom") &&
-            !mode.includes("training") &&
-            !mode.includes("flare") &&
-            !mode.includes("ai-match") &&
-            !map.includes("SafeHouse") &&
-            !map.includes("Range_Main");
+          const isExcluded = 
+            mode.includes("event") ||
+            mode.includes("flare") ||
+            mode.includes("ai-match") ||
+            map.includes("SafeHouse") ||
+            (map.includes("Range_Main") && !mode.includes("tdm")); // TDM이 아닌 순수 훈련장은 제외
 
-          if (isStandardMatch) {
+          if (!isExcluded) {
             setMatchData(data);
           }
         }
@@ -655,7 +684,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
     }, delay);
     
     return () => clearTimeout(timer);
-  }, [matchId, nickname, platform, index]);
+  }, [matchId, nickname, platform, index, onModeDetected]);
 
   const handleAnalyze = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -784,7 +813,17 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
 
   if (!matchData) return null;
 
-  const isRanked = matchData.matchType === 'competitive' || 
+  // TDM 판정 규칙
+  const isTdmMatch = (matchData.gameMode || "").toLowerCase().includes("tdm") ||
+                     (matchData.mapName || "").toLowerCase().includes("tdm") ||
+                     (matchData.mapName || "") === "PillarCompound_Main" ||
+                     (matchData.mapName || "") === "Italy_TDM_Main";
+
+  // 커스텀 매치 판정 규칙
+  const isCustomMatch = (matchData.matchType || "").toLowerCase().includes("custom");
+
+  const isRanked = !isTdmMatch && (
+                   matchData.matchType === 'competitive' || 
                    (matchData.gameMode || "").includes("competitive") ||
                    (matchData.gameMode || "").includes("ranked") ||
                    // [V11.9] 경쟁전 판정 정밀화: 16위 이내 + 전체 16팀 규격 + 경쟁전 가능 맵인 경우만 인정
@@ -794,14 +833,14 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                      !["사녹", "카라킨", "파라모", "헤이븐"].includes(matchData.mapName || "") &&
                      (matchData.gameMode || "").includes("squad") && 
                      !(matchData.gameMode || "").includes("ai-match")
-                   );
-  const isSoloScoring = (matchData.gameMode || "").includes("solo");
+                   ));
+  const isSoloScoring = !isTdmMatch && (matchData.gameMode || "").includes("solo");
   const scoreMax = isSoloScoring
     ? { combat: 50, tactical: 15, survival: 35 }
     : { combat: 40, tactical: 35, survival: 25 };
   const isWin = matchData.stats.winPlace === 1;
-  const isTop10 = matchData.stats.winPlace <= 10;
-  const tierEvidence = buildTierEvidence(matchData);
+  const isTop10 = isTdmMatch ? false : matchData.stats.winPlace <= 10;
+  const tierEvidence = isTdmMatch ? null : buildTierEvidence(matchData);
   
   const totalScale = matchData.totalTeams || 0;
   
@@ -837,17 +876,21 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
               : 'bg-white/5 text-white/50 border border-white/10'}`}>
             {isWin && <div className="absolute inset-0 bg-gradient-to-b from-white/20 to-transparent" />}
             <span className="text-[8px] md:text-[9px] uppercase tracking-widest opacity-60 relative z-10">
-              {isWin ? '👑' : 'RANK'}
+              {isTdmMatch ? 'RESULT' : isWin ? '👑' : 'RANK'}
             </span>
-            <span className="text-lg md:text-2xl leading-none relative z-10">#{matchData.stats.winPlace}</span>
-            <span className="text-[7px] md:text-[8px] opacity-40 relative z-10">/ {totalScale}</span>
+            <span className={`leading-none relative z-10 ${isTdmMatch ? 'text-xs md:text-sm font-black' : 'text-lg md:text-2xl'}`}>
+              {isTdmMatch ? (isWin ? 'WIN' : 'LOSE') : `#${matchData.stats.winPlace}`}
+            </span>
+            {!isTdmMatch && (
+              <span className="text-[7px] md:text-[8px] opacity-40 relative z-10">/ {totalScale}</span>
+            )}
           </div>
 
           {/* 맵명 + 모드 + 시간 */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-white font-black text-base md:text-lg tracking-tight truncate">
-                {matchData.mapName}
+                {getTranslatedMapName(matchData.mapName)}
               </span>
               <span className="text-[10px] text-white/25 font-bold shrink-0">
                 {getRelativeTime(matchData.createdAt)}
@@ -855,19 +898,24 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
             </div>
             <div className="flex items-center gap-1.5 mt-1 flex-wrap">
               <span className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider flex items-center gap-1
-                ${isRanked ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 'bg-white/8 text-white/40 border border-white/10'}`}>
+                ${isRanked ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30' : 
+                  isTdmMatch ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30' :
+                  isCustomMatch ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30' :
+                  'bg-white/8 text-white/40 border border-white/10'}`}>
                 {isRanked && <Swords size={9} />}
-                {isRanked ? '경쟁전' : '일반전'}
+                {isTdmMatch && <Zap size={9} className="animate-pulse" />}
+                {isRanked ? '경쟁전' : isTdmMatch ? '아케이드' : isCustomMatch ? '커스텀' : '일반전'}
               </span>
               <span className="px-2 py-0.5 bg-white/5 rounded-md text-[10px] text-white/30 font-bold border border-white/8">
                 {(() => {
+                  if (isTdmMatch) return '팀 데스매치';
                   const mode = (matchData.gameMode || '').toLowerCase();
                   const isFpp = mode.includes('fpp');
                   const type = mode.includes('solo') ? '솔로' : mode.includes('duo') ? '듀오' : '스쿼드';
                   return `${isFpp ? '1인칭' : '3인칭'} ${type}`;
                 })()}
               </span>
-              {matchData.myRank && (
+              {!isTdmMatch && matchData.myRank && (
                 <span className="px-2 py-0.5 bg-amber-500/10 border border-amber-500/20 rounded-md text-[10px] text-amber-400 font-black flex items-center gap-1 hidden md:flex">
                   <Trophy size={9} />킬 순위 #{matchData.myRank.killRank || 1}
                 </span>
@@ -930,13 +978,13 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                       <ScoreBar compact={isMobile} label="전술" score={matchData.benchmark.breakdown.tactical} max={scoreMax.tactical} color="bg-gradient-to-r from-indigo-600 to-indigo-400" />
                       <ScoreBar compact={isMobile} label="생존" score={matchData.benchmark.breakdown.survival} max={scoreMax.survival} color="bg-gradient-to-r from-emerald-600 to-emerald-400" />
                     </div>
-                    <TierEvidenceSummary items={tierEvidence.summaryItems} />
+                    <TierEvidenceSummary items={tierEvidence?.summaryItems || []} />
                     <div className="mt-3 md:mt-4 flex items-center justify-between gap-3 rounded-xl border border-amber-500/20 bg-amber-500/10 p-2.5 md:p-3">
                       <div className="flex flex-col">
                         <span className="text-[9px] font-black text-amber-300/70">다음 티어</span>
-                        <span className="text-[11px] font-black text-amber-200">{tierEvidence.nextTierText}</span>
+                        <span className="text-[11px] font-black text-amber-200">{tierEvidence?.nextTierText}</span>
                       </div>
-                      <span className="text-right text-[9px] font-bold text-amber-200/50">{tierEvidence.nextTierNote}</span>
+                      <span className="text-right text-[9px] font-bold text-amber-200/50">{tierEvidence?.nextTierNote}</span>
                     </div>
                     {isMobile ? (
                       <div className="mt-4 border-t border-white/10 pt-3">
@@ -952,7 +1000,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                         </button>
                         {showTierDetails && (
                           <div className="mt-4 space-y-4">
-                            {tierEvidence.sections.map((section) => (
+                            {tierEvidence?.sections.map((section) => (
                               <TierEvidenceList key={section.title} section={section} />
                             ))}
                           </div>
@@ -960,7 +1008,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                       </div>
                     ) : (
                       <div className="mt-5 space-y-4 border-t border-white/10 pt-4">
-                        {tierEvidence.sections.map((section) => (
+                        {tierEvidence?.sections.map((section) => (
                           <TierEvidenceList key={section.title} section={section} />
                         ))}
                       </div>
@@ -1068,18 +1116,20 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
       </div>
 
       {/* Quick Action Bar (Floating) */}
-      <div className="px-3.5 pb-3.5 md:px-5 md:pb-4 flex flex-wrap gap-2 md:gap-3">
-        <button 
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowReplayModal(true);
-          }}
-          className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-[10px] md:text-[11px] font-black uppercase tracking-tighter transition-all hover:scale-105 active:scale-95 bg-[#ff9f0a] hover:bg-[#e08b00] text-[#0d1117] shadow-[0_0_20px_rgba(255,159,10,0.25)] border border-[#ff9f0a]/30 cursor-pointer`}
-        >
-          <PlayCircle size={13} className="md:w-4 md:h-4 shrink-0" />
-          리플레이 분석
-        </button>
-      </div>
+      {!isTdmMatch && (
+        <div className="px-3.5 pb-3.5 md:px-5 md:pb-4 flex flex-wrap gap-2 md:gap-3">
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowReplayModal(true);
+            }}
+            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-[10px] md:text-[11px] font-black uppercase tracking-tighter transition-all hover:scale-105 active:scale-95 bg-[#ff9f0a] hover:bg-[#e08b00] text-[#0d1117] shadow-[0_0_20px_rgba(255,159,10,0.25)] border border-[#ff9f0a]/30 cursor-pointer`}
+          >
+            <PlayCircle size={13} className="md:w-4 md:h-4 shrink-0" />
+            리플레이 분석
+          </button>
+        </div>
+      )}
 
       {/* Expanded Content */}
       {isExpanded && (
@@ -1377,228 +1427,232 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
           )}
 
           {/* [V12.5] New Tactical Dashboard (Radar + Timeline) */}
-          <div className="mt-8 border border-white/5 rounded-[2.5rem] bg-white/[0.01] overflow-hidden">
-            <div 
-              onClick={() => setIsTimelineExpanded(!isTimelineExpanded)}
-              className="flex items-center justify-between p-5 cursor-pointer hover:bg-white/[0.03] active:bg-white/[0.05] transition-all duration-300"
-            >
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 bg-indigo-500/20 rounded-xl flex items-center justify-center shrink-0">
-                  <Target size={18} className="text-indigo-400" />
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-white font-black text-sm flex items-center gap-1.5">
-                    전술 위치 분석 및 타임라인
-                    {isMobile && !isTimelineExpanded && (
-                      <span className="text-[9px] text-indigo-400 font-bold bg-indigo-500/10 px-2 py-0.5 rounded-full animate-pulse">
-                        TAP TO VIEW
-                      </span>
-                    )}
-                  </span>
-                  <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">
-                    {isMobile ? "터치하여 인터랙티브 지도와 교전 기록 확인" : "전술 위치 및 매치 타임라인"}
-                  </span>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                {isMobile && !isTimelineExpanded && (
-                  <span className="text-[10px] text-gray-400 font-black tracking-tighter">
-                    이벤트 {matchData!.timeline?.filter((e: any) => e.type !== 'PHASE_START').length || 0}개
-                  </span>
-                )}
-                <div className="p-1.5 bg-white/5 rounded-lg border border-white/5">
-                  <ChevronDown 
-                    size={14} 
-                    className={`text-gray-400 transition-transform duration-300 ${
-                      (!isMobile || isTimelineExpanded) ? 'rotate-180 text-white' : ''
-                    }`} 
-                  />
-                </div>
-              </div>
-            </div>
-            
-            {(!isMobile || isTimelineExpanded) && (
-              <div className="p-4 md:p-6 pt-0 grid grid-cols-1 lg:grid-cols-12 gap-3 md:gap-6 animate-in slide-in-from-top-2 duration-300">
-                {/* Left: Mini Map */}
-                <div className="lg:col-span-5 xl:col-span-4 bg-white/2 border border-white/5 rounded-[2rem] overflow-hidden min-h-[300px] lg:min-h-0 lg:h-[500px] relative group/map">
-                  <div className="absolute top-4 left-4 z-10 px-3 py-1 bg-black/60 backdrop-blur-md border border-white/10 rounded-full text-[9px] text-gray-400 font-black uppercase tracking-widest opacity-0 group-hover/map:opacity-100 transition-opacity">
-                    인터랙티브 전술 지도
+          {!isTdmMatch && (
+            <div className="mt-8 border border-white/5 rounded-[2.5rem] bg-white/[0.01] overflow-hidden">
+              <div 
+                onClick={() => setIsTimelineExpanded(!isTimelineExpanded)}
+                className="flex items-center justify-between p-5 cursor-pointer hover:bg-white/[0.03] active:bg-white/[0.05] transition-all duration-300"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 bg-indigo-500/20 rounded-xl flex items-center justify-center shrink-0">
+                    <Target size={18} className="text-indigo-400" />
                   </div>
-                  <TimelineMiniMap 
-                    selectedEvent={selectedEvent}
-                    mapId={mapId} 
-                  />
-                  {!selectedEvent && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-[2px] pointer-events-none z-20">
-                      <div className="bg-black/80 backdrop-blur-xl px-5 py-3 rounded-2xl border border-white/10 flex flex-col items-center gap-2 shadow-2xl scale-90 md:scale-100">
-                        <div className="w-10 h-10 bg-blue-500/20 rounded-full flex items-center justify-center mb-1">
-                          <MousePointer2 size={20} className="text-blue-400 animate-bounce" />
-                        </div>
-                        <span className="text-[11px] text-white font-black tracking-tight">이벤트를 클릭하여 위치 확인</span>
-                        <span className="text-[9px] text-gray-500 font-bold">지도에 교전 지점이 표시됩니다</span>
-                      </div>
-                    </div>
+                  <div className="flex flex-col">
+                    <span className="text-white font-black text-sm flex items-center gap-1.5">
+                      전술 위치 분석 및 타임라인
+                      {isMobile && !isTimelineExpanded && (
+                        <span className="text-[9px] text-indigo-400 font-bold bg-indigo-500/10 px-2 py-0.5 rounded-full animate-pulse">
+                          TAP TO VIEW
+                        </span>
+                      )}
+                    </span>
+                    <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">
+                      {isMobile ? "터치하여 인터랙티브 지도와 교전 기록 확인" : "전술 위치 및 매치 타임라인"}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  {isMobile && !isTimelineExpanded && (
+                    <span className="text-[10px] text-gray-400 font-black tracking-tighter">
+                      이벤트 {matchData!.timeline?.filter((e: any) => e.type !== 'PHASE_START').length || 0}개
+                    </span>
                   )}
-                </div>
-
-                {/* Right: Timeline */}
-                <div className="lg:col-span-7 xl:col-span-8 bg-white/2 border border-white/5 rounded-[2rem] p-4 md:p-6 lg:h-[500px] flex flex-col">
-                  <div className="flex items-center justify-between mb-6 shrink-0">
-                    <div className="text-[10px] text-gray-500 font-black uppercase tracking-widest">매치 타임라인</div>
-                    <div className="flex items-center gap-1.5 px-3 py-1 bg-white/5 rounded-full border border-white/10 text-[10px] text-gray-400 font-bold">
-                      <Clock size={10} />
-                      <span>{Math.floor(matchData!.stats.timeSurvived / 60)}분 {matchData!.stats.timeSurvived % 60}초 생존</span>
-                    </div>
-                  </div>
-                  
-                  <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
-                    <MatchTimeline 
-                      events={matchData!.timeline || []} 
-                      nickname={nickname}
-                      onEventClick={(event: any) => {
-                        setSelectedEvent(event);
-                      }}
+                  <div className="p-1.5 bg-white/5 rounded-lg border border-white/5">
+                    <ChevronDown 
+                      size={14} 
+                      className={`text-gray-400 transition-transform duration-300 ${
+                        (!isMobile || isTimelineExpanded) ? 'rotate-180 text-white' : ''
+                      }`} 
                     />
                   </div>
                 </div>
               </div>
-            )}
-          </div>
+              
+              {(!isMobile || isTimelineExpanded) && (
+                <div className="p-4 md:p-6 pt-0 grid grid-cols-1 lg:grid-cols-12 gap-3 md:gap-6 animate-in slide-in-from-top-2 duration-300">
+                  {/* Left: Mini Map */}
+                  <div className="lg:col-span-5 xl:col-span-4 bg-white/2 border border-white/5 rounded-[2rem] overflow-hidden min-h-[300px] lg:min-h-0 lg:h-[500px] relative group/map">
+                    <div className="absolute top-4 left-4 z-10 px-3 py-1 bg-black/60 backdrop-blur-md border border-white/10 rounded-full text-[9px] text-gray-400 font-black uppercase tracking-widest opacity-0 group-hover/map:opacity-100 transition-opacity">
+                      인터랙티브 전술 지도
+                    </div>
+                    <TimelineMiniMap 
+                      selectedEvent={selectedEvent}
+                      mapId={mapId} 
+                    />
+                    {!selectedEvent && (
+                      <div className="absolute inset-0 flex items-center justify-center bg-black/40 backdrop-blur-[2px] pointer-events-none z-20">
+                        <div className="bg-black/80 backdrop-blur-xl px-5 py-3 rounded-2xl border border-white/10 flex flex-col items-center gap-2 shadow-2xl scale-90 md:scale-100">
+                          <div className="w-10 h-10 bg-blue-500/20 rounded-full flex items-center justify-center mb-1">
+                            <MousePointer2 size={20} className="text-blue-400 animate-bounce" />
+                          </div>
+                          <span className="text-[11px] text-white font-black tracking-tight">이벤트를 클릭하여 위치 확인</span>
+                          <span className="text-[9px] text-gray-500 font-bold">지도에 교전 지점이 표시됩니다</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Right: Timeline */}
+                  <div className="lg:col-span-7 xl:col-span-8 bg-white/2 border border-white/5 rounded-[2rem] p-4 md:p-6 lg:h-[500px] flex flex-col">
+                    <div className="flex items-center justify-between mb-6 shrink-0">
+                      <div className="text-[10px] text-gray-500 font-black uppercase tracking-widest">매치 타임라인</div>
+                      <div className="flex items-center gap-1.5 px-3 py-1 bg-white/5 rounded-full border border-white/10 text-[10px] text-gray-400 font-bold">
+                        <Clock size={10} />
+                        <span>{Math.floor(matchData!.stats.timeSurvived / 60)}분 {matchData!.stats.timeSurvived % 60}초 생존</span>
+                      </div>
+                    </div>
+                    
+                    <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+                      <MatchTimeline 
+                        events={matchData!.timeline || []} 
+                        nickname={nickname}
+                        onEventClick={(event: any) => {
+                          setSelectedEvent(event);
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* AI Analysis Section */}
-          <div className="mt-8">
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6">
-              <div className="flex items-center gap-2">
-                <div className={`w-10 h-10 ${isRanked ? 'bg-amber-500/20' : 'bg-indigo-500/20'} rounded-xl flex items-center justify-center`}>
-                  <BarChart2 size={20} className={isRanked ? 'text-amber-500' : 'text-indigo-400'} />
+          {!isTdmMatch && (
+            <div className="mt-8">
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6">
+                <div className="flex items-center gap-2">
+                  <div className={`w-10 h-10 ${isRanked ? 'bg-amber-500/20' : 'bg-indigo-500/20'} rounded-xl flex items-center justify-center`}>
+                    <BarChart2 size={20} className={isRanked ? 'text-amber-500' : 'text-indigo-400'} />
+                  </div>
+                  <div>
+                    <h3 className="text-white font-black text-lg">AI 전술 코칭</h3>
+                    <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Tactical Analysis</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-white font-black text-lg">AI 전술 코칭</h3>
-                  <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Tactical Analysis</p>
+                
+                <div className="flex gap-2 bg-black/40 p-1 rounded-2xl border border-white/10">
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); setCoachingStyle("mild"); setAnalysis(null); }}
+                    className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 ${
+                      coachingStyle === 'mild' 
+                        ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' 
+                        : 'text-gray-500 hover:text-gray-300'
+                    }`}
+                  >
+                    <span>😊</span> 다정한 맛
+                  </button>
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); setCoachingStyle("spicy"); setAnalysis(null); }}
+                    className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 ${
+                      coachingStyle === 'spicy' 
+                        ? 'bg-red-500 text-white shadow-lg shadow-red-500/20' 
+                        : 'text-gray-500 hover:text-gray-300'
+                    }`}
+                  >
+                    <span>🔥</span> 매운맛
+                  </button>
                 </div>
               </div>
-              
-              <div className="flex gap-2 bg-black/40 p-1 rounded-2xl border border-white/10">
-                <button 
-                  onClick={(e) => { e.stopPropagation(); setCoachingStyle("mild"); setAnalysis(null); }}
-                  className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 ${
-                    coachingStyle === 'mild' 
-                      ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20' 
-                      : 'text-gray-500 hover:text-gray-300'
-                  }`}
-                >
-                  <span>😊</span> 다정한 맛
-                </button>
-                <button 
-                  onClick={(e) => { e.stopPropagation(); setCoachingStyle("spicy"); setAnalysis(null); }}
-                  className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 ${
-                    coachingStyle === 'spicy' 
-                      ? 'bg-red-500 text-white shadow-lg shadow-red-500/20' 
-                      : 'text-gray-500 hover:text-gray-300'
-                  }`}
-                >
-                  <span>🔥</span> 매운맛
-                </button>
-              </div>
-            </div>
 
-            {analysis ? (
-              <div className="flex flex-col gap-6 animate-in fade-in zoom-in duration-500">
-                {(() => {
-                  try {
-                    const cleanAnalysis = analysis!.trim();
-                    const isJson = cleanAnalysis.startsWith('{') || cleanAnalysis.startsWith('```json');
-                    if (!isJson) return (
-                      <div className="p-8 bg-black/40 rounded-[2.5rem] border border-white/10 prose prose-invert max-w-none">
-                        {renderMarkdown(analysis!)}
-                      </div>
-                    );
-                    
-                    let data;
+              {analysis ? (
+                <div className="flex flex-col gap-6 animate-in fade-in zoom-in duration-500">
+                  {(() => {
                     try {
-                      const jsonString = cleanAnalysis.replace(/^```json\n?/, '').replace(/\n?```$/, '').trim();
-                      data = JSON.parse(jsonString);
-                    } catch (err) {
-                      if (isAnalyzing) {
-                        return (
-                          <div className="p-10 bg-black/40 rounded-[2.5rem] border border-white/10 flex flex-col items-center justify-center gap-4">
-                            <div className={`w-10 h-10 border-4 border-white/10 border-t-${coachingStyle === 'mild' ? 'emerald' : 'red'}-500 rounded-full animate-spin`} />
-                            <p className="text-gray-400 font-bold animate-pulse tracking-widest text-sm">AI 전술 데이터를 수신하고 있습니다...</p>
-                          </div>
-                        );
-                      }
-                      throw err;
-                    }
-                    const isMildTheme = coachingStyle === "mild";
-                    const accentColor = isMildTheme ? "emerald" : "red";
-                    
-                    return (
-                      <div className="flex flex-col gap-6">
-                        {/* Style Header */}
-                        <div className={`relative p-8 bg-gradient-to-br from-${accentColor}-500/10 to-transparent border border-${accentColor}-500/20 rounded-[2.5rem] overflow-hidden`}>
-                          <div className="absolute top-0 right-0 p-6 opacity-10">
-                            <span className="text-8xl">{isMildTheme ? "😊" : "🔥"}</span>
-                          </div>
-                          <div className="relative z-10">
-                            <div className="flex items-center gap-2 mb-4">
-                              <span className={`px-3 py-1 bg-${accentColor}-500/20 text-${accentColor}-400 rounded-full text-[10px] font-black uppercase tracking-widest`}>
-                                {data.coach || (isMildTheme ? "KIND COACH" : "SPICY BOMBER")}
-                              </span>
-                              <div className={`h-1 w-1 rounded-full bg-${accentColor}-500`} />
-                              <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">전술 매치 보고서</span>
+                      const cleanAnalysis = analysis!.trim();
+                      const isJson = cleanAnalysis.startsWith('{') || cleanAnalysis.startsWith('```json');
+                      if (!isJson) return (
+                        <div className="p-8 bg-black/40 rounded-[2.5rem] border border-white/10 prose prose-invert max-w-none">
+                          {renderMarkdown(analysis!)}
+                        </div>
+                      );
+                      
+                      let data;
+                      try {
+                        const jsonString = cleanAnalysis.replace(/^```json\n?/, '').replace(/\n?```$/, '').trim();
+                        data = JSON.parse(jsonString);
+                      } catch (err) {
+                        if (isAnalyzing) {
+                          return (
+                            <div className="p-10 bg-black/40 rounded-[2.5rem] border border-white/10 flex flex-col items-center justify-center gap-4">
+                              <div className={`w-10 h-10 border-4 border-white/10 border-t-${coachingStyle === 'mild' ? 'emerald' : 'red'}-500 rounded-full animate-spin`} />
+                              <p className="text-gray-400 font-bold animate-pulse tracking-widest text-sm">AI 전술 데이터를 수신하고 있습니다...</p>
                             </div>
-                            <h3 className="text-3xl font-black text-white mb-2 leading-tight">{data.signature}</h3>
-                            <p className="text-gray-400 text-sm font-medium">{data.signatureSub}</p>
-                          </div>
-                        </div>
-
-                        {/* Analysis Content (3 Lines) */}
-                        <div className="flex flex-col gap-4">
-                          <div className="grid grid-cols-1 gap-3">
-                            {data.briefFeedback?.map((point: string, idx: number) => (
-                              <div key={idx} className="flex gap-4 p-4 bg-white/5 border border-white/10 rounded-2xl items-center group/point hover:bg-white/10 transition-colors">
-                                <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                                  idx === 0 ? 'bg-amber-500/20 text-amber-500' : 
-                                  idx === 1 ? 'bg-indigo-500/20 text-indigo-400' : 
-                                  'bg-emerald-500/20 text-emerald-400'
-                                }`}>
-                                  <span className="text-xs font-black">{idx + 1}</span>
-                                </div>
-                                <p className="text-gray-200 text-sm font-medium leading-relaxed">
-                                  {point}
-                                </p>
+                          );
+                        }
+                        throw err;
+                      }
+                      
+                      const isMildTheme = coachingStyle === "mild";
+                      const accentColor = isMildTheme ? "emerald" : "red";
+                      
+                      return (
+                        <div className="flex flex-col gap-6">
+                          {/* Style Header */}
+                          <div className={`relative p-8 bg-gradient-to-br from-${accentColor}-500/10 to-transparent border border-${accentColor}-500/20 rounded-[2.5rem] overflow-hidden`}>
+                            <div className="absolute top-0 right-0 p-6 opacity-10">
+                              <span className="text-8xl">{isMildTheme ? "😊" : "🔥"}</span>
+                            </div>
+                            <div className="relative z-10">
+                              <div className="flex items-center gap-2 mb-4">
+                                <span className={`px-3 py-1 bg-${accentColor}-500/20 text-${accentColor}-400 rounded-full text-[10px] font-black uppercase tracking-widest`}>
+                                  {data.coach || (isMildTheme ? "KIND COACH" : "SPICY BOMBER")}
+                                </span>
+                                <div className={`h-1 w-1 rounded-full bg-${accentColor}-500`} />
+                                <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">전술 매치 보고서</span>
                               </div>
-                            ))}
+                              <h3 className="text-3xl font-black text-white mb-2 leading-tight">{data.signature}</h3>
+                              <p className="text-gray-400 text-sm font-medium">{data.signatureSub}</p>
+                            </div>
+                          </div>
+
+                          {/* Analysis Content (3 Lines) */}
+                          <div className="flex flex-col gap-4">
+                            <div className="grid grid-cols-1 gap-3">
+                              {data.briefFeedback?.map((point: string, idx: number) => (
+                                <div key={idx} className="flex gap-4 p-4 bg-white/5 border border-white/10 rounded-2xl items-center group/point hover:bg-white/10 transition-colors">
+                                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                                    idx === 0 ? 'bg-amber-500/20 text-amber-500' : 
+                                    idx === 1 ? 'bg-indigo-500/20 text-indigo-400' : 
+                                    'bg-emerald-500/20 text-emerald-400'
+                                  }`}>
+                                    <span className="text-xs font-black">{idx + 1}</span>
+                                  </div>
+                                  <p className="text-gray-200 text-sm font-medium leading-relaxed">
+                                    {point}
+                                  </p>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Final Verdict & Action Items */}
+                          <div className={`p-8 bg-black/60 border border-${accentColor}-500/30 rounded-[2.5rem] relative overflow-hidden shadow-2xl`}>
+                             <div className={`absolute inset-0 bg-${accentColor}-500/5 pointer-events-none`} />
+                             <div className="relative z-10">
+                               <div className="flex items-center gap-2 mb-4">
+                                 <span className={`text-[10px] font-black text-${accentColor}-400 uppercase tracking-[0.2em]`}>종합 코칭 진단</span>
+                                 <div className="flex-1 h-px bg-white/5" />
+                               </div>
+                               <p className="text-xl font-black text-white leading-tight mb-8">&quot;{data.finalVerdict}&quot;</p>
+                               
+                               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                 {data.actionItems?.map((item: any, idx: number) => (
+                                   <div key={idx} className="flex items-start gap-4 p-5 bg-white/5 rounded-[1.5rem] border border-white/10 hover:bg-white/10 transition-colors group/item">
+                                     <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center text-2xl group-hover/item:scale-110 transition-transform">
+                                       {item.icon}
+                                     </div>
+                                     <div className="flex flex-col gap-1">
+                                       <span className="text-sm font-black text-white">{item.title}</span>
+                                       <span className="text-xs text-gray-400 leading-normal font-medium">{item.desc}</span>
+                                     </div>
+                                   </div>
+                                 ))}
+                               </div>
+                             </div>
                           </div>
                         </div>
-
-                        {/* Final Verdict & Action Items */}
-                        <div className={`p-8 bg-black/60 border border-${accentColor}-500/30 rounded-[2.5rem] relative overflow-hidden shadow-2xl`}>
-                           <div className={`absolute inset-0 bg-${accentColor}-500/5 pointer-events-none`} />
-                           <div className="relative z-10">
-                             <div className="flex items-center gap-2 mb-4">
-                               <span className={`text-[10px] font-black text-${accentColor}-400 uppercase tracking-[0.2em]`}>종합 코칭 진단</span>
-                               <div className="flex-1 h-px bg-white/5" />
-                             </div>
-                             <p className="text-xl font-black text-white leading-tight mb-8">&quot;{data.finalVerdict}&quot;</p>
-                             
-                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                               {data.actionItems?.map((item: any, idx: number) => (
-                                 <div key={idx} className="flex items-start gap-4 p-5 bg-white/5 rounded-[1.5rem] border border-white/10 hover:bg-white/10 transition-colors group/item">
-                                   <div className="w-12 h-12 rounded-xl bg-white/5 flex items-center justify-center text-2xl group-hover/item:scale-110 transition-transform">
-                                     {item.icon}
-                                   </div>
-                                   <div className="flex flex-col gap-1">
-                                     <span className="text-sm font-black text-white">{item.title}</span>
-                                     <span className="text-xs text-gray-400 leading-normal font-medium">{item.desc}</span>
-                                   </div>
-                                 </div>
-                               ))}
-                             </div>
-                           </div>
-                        </div>
-                      </div>
-                    );
+                      );
                   } catch {
                     return (
                       <div className="p-8 bg-black/40 rounded-[2.5rem] border border-white/10 prose prose-invert max-w-none">
@@ -1639,8 +1693,9 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
               </button>
             )}
           </div>
+          )}
 
-          {/* Team Members List (웅장한 리뉴얼) */}
+          {/* 팀원 리스트 및 개인 교전 성적 */}
           <div className="mt-10 pt-8 border-t border-white/5">
             <div className="flex items-center gap-2 mb-6">
               <span className="text-xs text-gray-500 font-black uppercase tracking-[0.2em]">팀원 교전 성적</span>

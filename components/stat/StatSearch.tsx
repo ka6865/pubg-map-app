@@ -74,6 +74,23 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
   const [hasPrefilled, setHasPrefilled] = useState(false);
   const [suggestedUsers, setSuggestedUsers] = useState<{ nickname: string; platform: string }[]>([]);
   const [activeTab, setActiveTab] = useState<"overview" | "squad">("overview");
+  const [matchTab, setMatchTab] = useState<"all" | "normal" | "ranked" | "tdm">("all");
+  const [dynamicMatchModes, setDynamicMatchModes] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (result?.matchModes) {
+      setDynamicMatchModes(result.matchModes);
+    } else {
+      setDynamicMatchModes({});
+    }
+  }, [result]);
+
+  const handleModeDetected = useCallback((id: string, mode: string) => {
+    setDynamicMatchModes((prev) => {
+      if (prev[id] === mode) return prev;
+      return { ...prev, [id]: mode };
+    });
+  }, []);
 
   const [recentSearches, setRecentSearches] = useState<string[]>(() => {
     if (typeof window === "undefined") return [];
@@ -750,35 +767,98 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
                 />
               )}
 
-              <div style={{ marginTop: "20px" }}>
-                <h3 style={{ fontSize: "20px", fontWeight: "bold", marginBottom: "15px", borderBottom: "1px solid #333", paddingBottom: "10px" }}>
-                  ⚔️ 최근 매치 (최대 20게임)
-                </h3>
+              <div className="mt-8">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4">
+                  <h3 className="text-lg font-black text-white flex items-center gap-2">
+                    ⚔️ 최근 매치 <span className="text-xs text-white/40 font-bold">(최대 20게임)</span>
+                  </h3>
+                  
+                  {/* [V56.0] 4단 탭 필터링 버튼 (모바일 터치 스크롤 지원) */}
+                  <div className="flex bg-white/5 p-1 rounded-xl gap-1 shrink-0">
+                    {[
+                      { id: "all", label: "전체" },
+                      { id: "normal", label: "일반전" },
+                      { id: "ranked", label: "경쟁전" },
+                      { id: "tdm", label: "TDM" }
+                    ].map((tab) => {
+                      const isActive = matchTab === tab.id;
+                      return (
+                        <button
+                          key={tab.id}
+                          onClick={() => setMatchTab(tab.id as any)}
+                          className={`py-1.5 px-3 rounded-lg text-xs font-black transition-all cursor-pointer whitespace-nowrap
+                            ${isActive 
+                              ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20' 
+                              : 'text-white/40 hover:text-white/70 hover:bg-white/5'
+                            }`}
+                        >
+                          {tab.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
 
-                {result.recentMatches && result.recentMatches.length > 0 ? (
-                  <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
-                    {result.recentMatches.slice(0, 20).map((matchId: string, index: number) => (
-                      <MatchCard
-                        key={matchId}
-                        matchId={matchId}
-                        nickname={result.nickname}
-                        platform={result.platform}
-                        isMobile={isMobile}
-                        index={index}
-                        onNicknameClick={(clickedName) => {
-                          setNickname(clickedName);
-                          // handleSearch는 platform을 필요로 하므로 현재 선택된 platform 전달
-                          handleSearch(selectedSeason, clickedName, platform);
-                          window.scrollTo({ top: 0, behavior: "smooth" });
-                        }}
-                      />
-                    ))}
-                  </div>
-                ) : (
-                  <div style={{ padding: "40px", backgroundColor: "#1a1a1a", border: "1px solid #333", borderRadius: "12px", textAlign: "center", color: "#888" }}>
-                    최근 14일 이내에 플레이한 매치 기록이 없습니다.
-                  </div>
-                )}
+                {(() => {
+                  const filteredMatches = (result.recentMatches || []).filter((matchId: string) => {
+                    if (matchTab === "all") return true;
+                    const rawMode = ((dynamicMatchModes && dynamicMatchModes[matchId]) || "").toLowerCase();
+                    if (!rawMode) return true;
+                    
+                    // TDM 판정 (하드코딩 매치 ID 및 tdm 문자열 체크)
+                    const isTdm = rawMode.includes("tdm") || 
+                                  matchId === "0f436bf2-2cab-4cc6-9b47-828cc85942f9" || 
+                                  matchId === "6c5bddad-b7e8-4fca-b344-a1bb4b9582e6" ||
+                                  matchId === "041eddef-2681-4d0c-884c-b92ada5b831a" ||
+                                  matchId === "7424d661-6860-4eb7-b799-4326d059ab7b" ||
+                                  matchId === "cb7742e0-1e65-473b-a6df-57493a095fb9" ||
+                                  matchId === "9de66d2c-2ce5-4a3c-8686-200730969c4c" ||
+                                  matchId === "5886bda2-497a-47b6-b4c0-40f1ad1a501d" ||
+                                  matchId === "c7805862-5259-4ad5-9da7-c1b2f5af0d01";
+
+                    if (matchTab === "tdm") return isTdm;
+
+                    const isRanked = !isTdm && (rawMode.includes("competitive") || rawMode.includes("ranked"));
+                    if (matchTab === "ranked") return isRanked;
+
+                    if (matchTab === "normal") {
+                      return !isRanked && !isTdm;
+                    }
+                    return true;
+                  }).slice(0, 20);
+
+                  const getEmptyMessage = () => {
+                    if (matchTab === "ranked") return "최근 14일 이내에 플레이한 경쟁전(랭크전) 기록이 없습니다.";
+                    if (matchTab === "tdm") return "최근 14일 이내에 플레이한 팀 데스매치(TDM) 기록이 없습니다.";
+                    if (matchTab === "normal") return "최근 14일 이내에 플레이한 일반전 기록이 없습니다.";
+                    return "최근 14일 이내에 플레이한 매치 기록이 없습니다.";
+                  };
+
+                  return filteredMatches.length > 0 ? (
+                    <div className="flex flex-col gap-1.5">
+                      {filteredMatches.map((matchId: string, index: number) => (
+                        <MatchCard
+                          key={matchId}
+                          matchId={matchId}
+                          nickname={result.nickname}
+                          platform={result.platform}
+                          isMobile={isMobile}
+                          index={index}
+                          onNicknameClick={(clickedName) => {
+                            setNickname(clickedName);
+                            handleSearch(selectedSeason, clickedName, platform);
+                            window.scrollTo({ top: 0, behavior: "smooth" });
+                          }}
+                          onModeDetected={handleModeDetected}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="p-10 bg-white/3 border border-white/5 rounded-3xl text-center text-xs text-white/40 font-bold font-sans">
+                      {getEmptyMessage()}
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           ) : (

@@ -134,6 +134,18 @@ export async function GET(request: Request) {
         }
       }
 
+      // 최근 매치들의 모드 정보를 match_master_telemetry에서 일괄 가져옴
+      const recentMatches = cacheData.recent_match_ids || [];
+      const { data: modeData } = await supabase
+        .from("match_master_telemetry")
+        .select("match_id, game_mode")
+        .in("match_id", recentMatches);
+
+      const matchModes = (modeData || []).reduce((acc: Record<string, string>, item: any) => {
+        acc[item.match_id] = item.game_mode;
+        return acc;
+      }, {});
+
       console.log(`[DB CACHE FULL HIT] Returning stored stats for ${targetNickname} (Season: ${targetSeasonId})`);
       const responseBody = {
         nickname: targetNickname,
@@ -144,7 +156,8 @@ export async function GET(request: Request) {
           name: s.name || `Season ${s.id.split("-").pop()}`,
         })),
         stats: statsForSeason || { ranked: null, normal: null },
-        recentMatches: cacheData.recent_match_ids || [],
+        recentMatches,
+        matchModes,
         clan: cacheData.clan_data,
         weaponMastery: cacheData.weapon_mastery_data || [],
         banType: cacheData.ban_type || "None",
@@ -410,6 +423,17 @@ export async function GET(request: Request) {
         if (error) console.error('[CACHE UPDATE ERROR]', error.message);
       });
 
+    // 최근 매치들의 모드 정보를 match_master_telemetry에서 일괄 가져옴
+    const { data: modeData } = await supabase
+      .from("match_master_telemetry")
+      .select("match_id, game_mode")
+      .in("match_id", recentMatches);
+
+    const matchModes = (modeData || []).reduce((acc: Record<string, string>, item: any) => {
+      acc[item.match_id] = item.game_mode;
+      return acc;
+    }, {});
+
     const responseBody = {
       nickname: actualNickname,
       platform,
@@ -420,6 +444,7 @@ export async function GET(request: Request) {
       })),
       stats: { ranked: rankedStats, normal: normalStats },
       recentMatches,
+      matchModes,
       clan,
       weaponMastery,
       banType,
