@@ -13,7 +13,7 @@ const ReactQuill = dynamic(() => import("react-quill-new"), {
   ssr: false,
 }) as any;
 
-const BOARD_CATEGORIES = ["패치노트", "자유", "듀오/스쿼드 모집", "클랜홍보", "제보/문의"];
+const BOARD_CATEGORIES = ["배그 소식", "자유", "듀오/스쿼드 모집", "클랜홍보", "제보/문의"];
 const IMAGE_CONFIG = {
   MAX_FILE_SIZE_MB: 20,
   COMPRESSION_MAX_SIZE_MB: 3,
@@ -64,12 +64,20 @@ interface BoardWriteProps {
   setNewIsNotice: (isNotice: boolean) => void;
   newClanInfo: ClanInfo | null; // 🌟 추가
   setNewClanInfo: (clanInfo: ClanInfo | null) => void; // 🌟 추가
+  thumbnailUrl: string; // 🌟 썸네일 수동 등록 추가
+  setThumbnailUrl: (url: string) => void; // 🌟 썸네일 수동 등록 추가
   handleSavePost: () => Promise<boolean>;
   setIsWriting: (isWriting: boolean) => void;
   isAdmin: boolean;
   isLoading: boolean;
   isMobile: boolean;
   isEditing?: boolean;
+  // 🌟 비회원용 props 추가
+  isGuest: boolean;
+  guestNickname: string;
+  setGuestNickname: (val: string) => void;
+  guestPassword: string;
+  setGuestPassword: (val: string) => void;
 }
 
 export default function BoardWrite({
@@ -87,12 +95,19 @@ export default function BoardWrite({
   setNewIsNotice,
   newClanInfo, // 🌟 추가
   setNewClanInfo, // 🌟 추가
+  thumbnailUrl, // 🌟 썸네일 수동 등록 추가
+  setThumbnailUrl, // 🌟 썸네일 수동 등록 추가
   handleSavePost,
   setIsWriting,
   isAdmin,
   isLoading,
   isMobile,
   isEditing,
+  isGuest,
+  guestNickname,
+  setGuestNickname,
+  guestPassword,
+  setGuestPassword,
 }: BoardWriteProps) {
   const quillRef = useRef<any>(null);
   const uploadedImagesRef = useRef<string[]>([]);
@@ -101,6 +116,42 @@ export default function BoardWrite({
   const [searchNickname, setSearchNickname] = useState(""); // 🌟 클랜 검색용 닉네임
   const [searchPlatform, setSearchPlatform] = useState("steam"); // 🌟 플랫폼
   const [isSearchingClan, setIsSearchingClan] = useState(false); // 🌟 로딩 상태
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // 🌟 실시간 본문 내 첫 번째 이미지 자동 추출
+  const autoExtractedImage = useMemo(() => {
+    if (!newContent.includes("<img")) return "";
+    const imgMatch = newContent.match(/<img[^>]+src=["']([^"']+)["']/i);
+    return imgMatch && imgMatch[1] ? imgMatch[1] : "";
+  }, [newContent]);
+
+  const handleThumbnailUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleThumbnailFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    const file = e.target.files[0];
+    const maxSize = IMAGE_CONFIG.MAX_FILE_SIZE_MB * 1024 * 1024;
+    if (file.size > maxSize) {
+      toast.warning(`대표 이미지 크기는 ${IMAGE_CONFIG.MAX_FILE_SIZE_MB}MB를 초과할 수 없습니다.`);
+      return;
+    }
+    const toastId = toast.loading("대표 이미지를 업로드하고 있습니다...");
+    try {
+      const url = await uploadImage(file);
+      if (url) {
+        setThumbnailUrl(url);
+        toast.success("대표 이미지가 업로드되었습니다.", { id: toastId });
+      } else {
+        toast.error("대표 이미지 업로드 실패", { id: toastId });
+      }
+    } catch (err) {
+      console.error(err);
+      toast.error("대표 이미지 업로드 오류", { id: toastId });
+    }
+  };
 
   // 3단계 알럿 모달화 상태
   const [isDiscordModalOpen, setIsDiscordModalOpen] = useState(false);
@@ -471,6 +522,29 @@ export default function BoardWrite({
         {isEditing ? "게시글 수정" : "새 게시글 작성"}
       </h2>
 
+      {isGuest && !isEditing && (
+        <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
+          <input
+            id="post-guest-nickname"
+            name="guest_nickname"
+            type="text"
+            placeholder="닉네임"
+            value={guestNickname}
+            onChange={(e) => setGuestNickname(e.target.value)}
+            style={{ flex: 1, padding: "8px 10px", backgroundColor: "#252525", color: "white", border: "1px solid #333", borderRadius: "4px", fontSize: "14px", outline: "none" }}
+          />
+          <input
+            id="post-guest-password"
+            name="guest_password"
+            type="password"
+            placeholder="비밀번호"
+            value={guestPassword}
+            onChange={(e) => setGuestPassword(e.target.value)}
+            style={{ flex: 1, padding: "8px 10px", backgroundColor: "#252525", color: "white", border: "1px solid #333", borderRadius: "4px", fontSize: "14px", outline: "none" }}
+          />
+        </div>
+      )}
+
       <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: "10px", marginBottom: "10px" }}>
         <select
           id="post-category"
@@ -502,6 +576,72 @@ export default function BoardWrite({
         >
           스타일 초기화
         </button>
+      </div>
+
+      {/* 🌟 대표 이미지 (썸네일) 설정 영역 */}
+      <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "15px", padding: "12px", backgroundColor: "#252525", border: "1px solid #333", borderRadius: "4px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <span style={{ color: "#F2A900", fontWeight: "bold", fontSize: "14px" }}>🖼️ 대표 이미지 (썸네일) 설정</span>
+        </div>
+        
+        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap", alignItems: "center" }}>
+          {/* 업로드된 파일 입력용 hidden input */}
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleThumbnailFileChange}
+            accept="image/*"
+            style={{ display: "none" }}
+          />
+          <button
+            type="button"
+            onClick={handleThumbnailUploadClick}
+            style={{ padding: "8px 12px", backgroundColor: "#333", color: "#F2A900", border: "1px solid #F2A900", borderRadius: "4px", fontSize: "12px", fontWeight: "bold", cursor: "pointer" }}
+          >
+            이미지 업로드
+          </button>
+          
+          <input
+            type="text"
+            placeholder="직접 이미지 URL 주소를 입력할 수도 있습니다."
+            value={thumbnailUrl}
+            onChange={(e) => setThumbnailUrl(e.target.value)}
+            style={{ flex: 1, minWidth: "200px", padding: "8px 10px", backgroundColor: "#1a1a1a", color: "white", border: "1px solid #333", borderRadius: "4px", fontSize: "12px" }}
+          />
+
+          {thumbnailUrl && (
+            <button
+              type="button"
+              onClick={() => setThumbnailUrl("")}
+              style={{ padding: "8px 12px", backgroundColor: "#551a1a", color: "#ff4444", border: "1px solid #ff4444", borderRadius: "4px", fontSize: "12px", fontWeight: "bold", cursor: "pointer" }}
+            >
+              수동 지정 해제
+            </button>
+          )}
+        </div>
+
+        {/* 썸네일 미리보기 영역 */}
+        {(thumbnailUrl || autoExtractedImage) ? (
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", marginTop: "5px", padding: "8px", backgroundColor: "#1a1a1a", borderRadius: "4px" }}>
+            <img 
+              src={thumbnailUrl || autoExtractedImage} 
+              alt="대표 썸네일 미리보기" 
+              style={{ width: "80px", height: "60px", objectFit: "cover", borderRadius: "4px", border: "1px solid #333" }} 
+            />
+            <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+              <span style={{ fontSize: "12px", fontWeight: "bold", color: thumbnailUrl ? "#43b581" : "#F2A900" }}>
+                {thumbnailUrl ? "✅ 수동 지정된 대표 이미지 사용 중" : "✨ 본문 내 첫 번째 이미지 자동 추출 중"}
+              </span>
+              <span style={{ fontSize: "10px", color: "#888", wordBreak: "break-all" }}>
+                {thumbnailUrl || autoExtractedImage}
+              </span>
+            </div>
+          </div>
+        ) : (
+          <div style={{ fontSize: "12px", color: "#888", padding: "4px" }}>
+            * 대표 이미지가 지정되지 않았습니다. 본문에 이미지를 삽입하면 자동으로 첫 번째 이미지가 대표 썸네일로 사용됩니다.
+          </div>
+        )}
       </div>
 
       {/* 🌟 디스코드 링크 입력 섹션 (듀오/스쿼드 모집 카테고리 전용) */}

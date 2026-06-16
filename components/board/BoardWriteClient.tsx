@@ -25,6 +25,11 @@ export default function BoardWriteClient() {
   const [newClanInfo, setNewClanInfo] = useState<ClanInfo | null>(null); // 🌟 추가
   const [isLoading, setIsLoading] = useState(false);
   
+  // 🌟 비회원용 상태 추가
+  const [guestNickname, setGuestNickname] = useState("");
+  const [guestPassword, setGuestPassword] = useState("");
+  const [thumbnailUrl, setThumbnailUrl] = useState("");
+
   const [isAdmin, setIsAdmin] = useState(false);
   const [displayName, setDisplayName] = useState("익명");
   const [isMobile, setIsMobile] = useState(false);
@@ -59,19 +64,17 @@ export default function BoardWriteClient() {
           setNewDiscordChannelId(data.discord_channel_id || "");
           setNewIsNotice(data.is_notice);
           setNewClanInfo(data.clan_info || null); // 🌟 추가
+          setThumbnailUrl(data.image_url || ""); // 🌟 추가
         }
       });
     }
   }, [editPostId]);
 
   const handleSavePost = async (): Promise<boolean> => {
-    const validationError = validatePost(newTitle, newContent, user);
+    const isGuest = !user;
+    const validationError = validatePost(newTitle, newContent, user, isGuest, guestNickname, guestPassword);
     if (validationError) {
       toast.error(validationError);
-      return false;
-    }
-    if (!user?.id) {
-      toast.error("로그인이 필요합니다.");
       return false;
     }
 
@@ -79,7 +82,8 @@ export default function BoardWriteClient() {
 
     try {
       const trimmedTitle = sanitizeTitle(newTitle);
-      const finalImageUrl = extractImageUrl(newContent);
+      // 🌟 수동 지정 썸네일 우선 적용, 없으면 본문 첫 이미지 자동 추출
+      const finalImageUrl = thumbnailUrl || extractImageUrl(newContent);
 
       const payload = {
         title: trimmedTitle,
@@ -87,8 +91,9 @@ export default function BoardWriteClient() {
         category: newCategory,
         image_url: finalImageUrl,
         is_notice: isAdmin ? newIsNotice : false,
-        author: displayName,
-        user_id: user.id,
+        author: user ? displayName : guestNickname,
+        user_id: user ? user.id : null,
+        password: user ? null : guestPassword, // 🌟 비회원 비밀번호 추가
         editingPostId: editPostId ? Number(editPostId) : null,
         discord_url: newDiscordUrl,
         discord_channel_id: newDiscordChannelId,
@@ -167,12 +172,19 @@ export default function BoardWriteClient() {
           setNewIsNotice={setNewIsNotice}
           newClanInfo={newClanInfo} // 🌟 추가
           setNewClanInfo={setNewClanInfo} // 🌟 추가
+          thumbnailUrl={thumbnailUrl} // 🌟 추가
+          setThumbnailUrl={setThumbnailUrl} // 🌟 추가
           handleSavePost={handleSavePost}
           setIsWriting={handleSetIsWriting}
           isAdmin={isAdmin}
           isLoading={isLoading}
           isMobile={isMobile}
           isEditing={!!editPostId}
+          isGuest={!user}
+          guestNickname={guestNickname}
+          setGuestNickname={setGuestNickname}
+          guestPassword={guestPassword}
+          setGuestPassword={setGuestPassword}
         />
       </div>
     </div>
