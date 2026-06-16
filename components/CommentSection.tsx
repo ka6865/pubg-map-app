@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo } from "react"; // 변수 캐싱 및 성능 최적화 훅 로드
-import { Comment } from "../types/board"; // 댓글 관련 데이터 구조 타입 매핑 로드
+import { useMemo } from "react";
+import { Comment } from "../types/board";
 import type { CurrentUser } from "../types/map";
 
 interface CommentSectionProps {
@@ -13,6 +13,12 @@ interface CommentSectionProps {
   setReplyingTo: (comment: Comment | null) => void;
   handleSaveComment: () => void;
   handleDeleteComment: (commentId: number) => void;
+  handleReportComment: (commentId: number) => void;
+  // 비회원 입력 상태
+  guestNickname: string;
+  setGuestNickname: (v: string) => void;
+  guestPassword: string;
+  setGuestPassword: (v: string) => void;
   isAdmin: boolean;
   isMobile: boolean;
   formatTimeAgo: (dateString: string) => string;
@@ -28,6 +34,11 @@ export default function CommentSection({
   setReplyingTo,
   handleSaveComment,
   handleDeleteComment,
+  handleReportComment,
+  guestNickname,
+  setGuestNickname,
+  guestPassword,
+  setGuestPassword,
   isAdmin,
   isMobile,
   formatTimeAgo,
@@ -43,7 +54,7 @@ export default function CommentSection({
     return map;
   }, [comments]);
 
-  // 대댓글 출력용 재귀 함수. 배열의 하위 노드 존재 시 Depth를 1씩 증가시키며 HTML 반환
+  // 대댓글 출력용 재귀 함수
   const renderComments = (parentId: number | null, depth = 0) => {
     const list = commentsByParent.get(parentId);
     if (!list || list.length === 0) return null;
@@ -74,6 +85,12 @@ export default function CommentSection({
               >
                 {c.author}
               </span>
+              {/* 비회원 IP 배지 */}
+              {!c.user_id && c.ip_address && (
+                <span className="text-[11px] text-white/30 font-mono">
+                  ({c.ip_address})
+                </span>
+              )}
               <span className="text-[11px] text-[#666]">
                 {formatTimeAgo(c.created_at)}
               </span>
@@ -91,12 +108,31 @@ export default function CommentSection({
                   답글
                 </button>
               )}
+              {/* 회원 본인 댓글 또는 어드민 삭제 */}
               {(currentUser?.id === c.user_id || isAdmin) && (
                 <button
                   onClick={() => handleDeleteComment(c.id)}
                   className="bg-transparent border-none text-[#dc3545] text-[12px] cursor-pointer underline hover:text-[#ff4d4d] transition-colors"
                 >
                   삭제
+                </button>
+              )}
+              {/* 비회원 본인 댓글 삭제 (비밀번호 모달로 연동) */}
+              {!c.user_id && !isAdmin && (
+                <button
+                  onClick={() => handleDeleteComment(c.id)}
+                  className="bg-transparent border-none text-[#dc3545] text-[12px] cursor-pointer underline hover:text-[#ff4d4d] transition-colors"
+                >
+                  삭제
+                </button>
+              )}
+              {/* 신고 버튼 (본인 댓글 제외) */}
+              {currentUser?.id !== c.user_id && (
+                <button
+                  onClick={() => handleReportComment(c.id)}
+                  className="bg-transparent border-none text-[#999] text-[12px] cursor-pointer underline hover:text-[#F2A900] transition-colors"
+                >
+                  신고
                 </button>
               )}
             </div>
@@ -111,6 +147,8 @@ export default function CommentSection({
     ));
   };
 
+  const isGuest = !currentUser;
+
   return (
     <div className="mt-[40px]">
       <h3 className="text-[#F2A900] m-0 mb-[20px] font-bold text-[18px]">
@@ -119,57 +157,84 @@ export default function CommentSection({
 
       <div className="flex flex-col gap-[5px]">{renderComments(null, 0)}</div>
 
-      {currentUser && (
-        <div className="mt-[25px] flex flex-col gap-[10px]">
-          {replyingTo && (
-            <div className="text-[13px] text-[#F2A900] flex items-center gap-[10px]">
-              <span>
-                ㄴ <strong>{replyingTo.author}</strong>님에게 답글 중
-              </span>
-              <button
-                onClick={() => {
-                  setReplyingTo(null);
-                  setNewComment("");
-                }}
-                className="bg-transparent border-none text-[#666] cursor-pointer text-[12px] hover:text-white transition-colors"
-              >
-                취소
-              </button>
-            </div>
-          )}
-
+      {/* 댓글 작성 폼 - 회원/비회원 모두 가능 */}
+      <div className="mt-[25px] flex flex-col gap-[10px]">
+        {/* 비회원 전용: 닉네임/비밀번호 입력 필드 */}
+        {isGuest && (
           <div className="flex gap-[8px]">
-            <div className="flex-1 flex bg-[#111] border border-[#333] rounded-[4px] focus-within:border-[#F2A900] transition-colors p-[10px] gap-[8px] items-start">
-              {replyingTo && (
-                <span className="text-[#F2A900] font-bold text-[13px] whitespace-nowrap pt-[2px] select-none">
-                  @{replyingTo.author}
-                </span>
-              )}
+            <input
+              type="text"
+              value={guestNickname}
+              onChange={(e) => setGuestNickname(e.target.value)}
+              placeholder="닉네임 (최대 20자)"
+              maxLength={20}
+              className="flex-1 bg-[#111] border border-[#333] rounded-[4px] px-[10px] py-[8px] text-[13px] text-white outline-none focus:border-[#F2A900] transition-colors"
+            />
+            <input
+              type="password"
+              value={guestPassword}
+              onChange={(e) => setGuestPassword(e.target.value)}
+              placeholder="비밀번호 (4~20자)"
+              maxLength={20}
+              className="w-[140px] bg-[#111] border border-[#333] rounded-[4px] px-[10px] py-[8px] text-[13px] text-white outline-none focus:border-[#F2A900] transition-colors"
+            />
+          </div>
+        )}
 
-              <textarea
-                id="comment-textarea"
-                name="comment_content"
-                value={newComment}
-                onChange={(e) => setNewComment(e.target.value)}
-                placeholder={
-                  replyingTo ? "답글 내용을 입력하세요..." : "댓글 입력..."
-                }
-                className="flex-1 h-[60px] bg-transparent border-none resize-none outline-none text-white p-0 m-0"
-                spellCheck={false}
-                style={{ color: "#ffffff", WebkitTextFillColor: "#ffffff" }}
-              />
-            </div>
-
+        {replyingTo && (
+          <div className="text-[13px] text-[#F2A900] flex items-center gap-[10px]">
+            <span>
+              ㄴ <strong>{replyingTo.author}</strong>님에게 답글 중
+            </span>
             <button
-              onClick={handleSaveComment}
-              className="bg-[#34A853] border-none rounded-[4px] w-[60px] font-bold text-[13px] hover:bg-[#2a9040] transition-colors cursor-pointer shrink-0"
-              style={{ color: "#ffffff", WebkitTextFillColor: "#ffffff" }}
+              onClick={() => {
+                setReplyingTo(null);
+                setNewComment("");
+              }}
+              className="bg-transparent border-none text-[#666] cursor-pointer text-[12px] hover:text-white transition-colors"
             >
-              {replyingTo ? "답글" : "등록"}
+              취소
             </button>
           </div>
+        )}
+
+        <div className="flex gap-[8px]">
+          <div className="flex-1 flex bg-[#111] border border-[#333] rounded-[4px] focus-within:border-[#F2A900] transition-colors p-[10px] gap-[8px] items-start">
+            {replyingTo && (
+              <span className="text-[#F2A900] font-bold text-[13px] whitespace-nowrap pt-[2px] select-none">
+                @{replyingTo.author}
+              </span>
+            )}
+
+            <textarea
+              id="comment-textarea"
+              name="comment_content"
+              value={newComment}
+              onChange={(e) => setNewComment(e.target.value)}
+              placeholder={
+                replyingTo ? "답글 내용을 입력하세요..." : "댓글 입력..."
+              }
+              className="flex-1 h-[60px] bg-transparent border-none resize-none outline-none text-white p-0 m-0"
+              spellCheck={false}
+              style={{ color: "#ffffff", WebkitTextFillColor: "#ffffff" }}
+            />
+          </div>
+
+          <button
+            onClick={handleSaveComment}
+            className="bg-[#34A853] border-none rounded-[4px] w-[60px] font-bold text-[13px] hover:bg-[#2a9040] transition-colors cursor-pointer shrink-0"
+            style={{ color: "#ffffff", WebkitTextFillColor: "#ffffff" }}
+          >
+            {replyingTo ? "답글" : "등록"}
+          </button>
         </div>
-      )}
+
+        {isGuest && (
+          <p className="text-[11px] text-white/30 m-0">
+            비회원으로 작성 시 삭제를 위해 비밀번호가 필요합니다.
+          </p>
+        )}
+      </div>
     </div>
   );
 }

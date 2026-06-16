@@ -3,12 +3,13 @@
 export interface Comment {
   id: number;
   post_id: number;
-  user_id: string;
+  user_id: string | null;
   author: string;
   content: string;
   created_at: string;
   parent_id: number | null;
-  profiles?: { nickname: string } | null; // 🌟 닉네임 동기화용 프로필 조인 필드
+  ip_address?: string | null;
+  profiles?: { nickname: string } | null;
 }
 
 export interface ClanInfo {
@@ -24,7 +25,7 @@ export interface Post {
   title: string;
   content: string;
   author: string;
-  user_id: string;
+  user_id: string | null;
   category: string;
   image_url: string;
   discord_url?: string; // 🌟 디스코드 채널 링크 필드 추가
@@ -36,7 +37,21 @@ export interface Post {
   comment_count?: number;
   comments?: { count: number }[];
   clan_info?: ClanInfo | null; // 🌟 클랜 정보 첨부 필드 추가
-  status?: "published" | "draft"; // 🌟 게시글 상태 ('published' 또는 'draft')
-  parent_id?: number | null; // 🌟 Shadow Draft 구조에서 참조할 원본 게시글 ID
-  profiles?: { nickname: string } | null; // 🌟 닉네임 동기화용 프로필 조인 필드
+  ip_address?: string | null;
+  status?: "published" | "draft" | "hidden";
+  parent_id?: number | null;
+  profiles?: { nickname: string } | null;
+}
+
+export interface Report {
+  id: number;
+  target_type: "post" | "comment";
+  target_id: number;
+  reason: string;
+  detail?: string | null;
+  reporter_ip?: string | null;
+  reporter_id?: string | null;
+  status: "pending" | "resolved" | "dismissed";
+  admin_note?: string | null;
+  created_at: string;
 }

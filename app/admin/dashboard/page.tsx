@@ -35,7 +35,7 @@ import type {
   AgentMonitorSnapshot
 } from "@/types/admin-bot";
 
-type DashboardSection = "today" | "approvals" | "status" | "memories" | "guide";
+type DashboardSection = "today" | "approvals" | "status" | "memories" | "guide" | "reports";
 type MascotQuickActionId = "briefing" | "approval_help" | "ops_check" | "user_activity" | "checkout";
 
 interface MascotQuickAction {
@@ -123,6 +123,21 @@ export default function AdminDashboardPage() {
 
   const [isRejectModalOpen, setIsRejectModalOpen] = useState(false);
   const [rejectApproval, setRejectApproval] = useState<AgentApproval | null>(null);
+
+  // 신고 관리 탭 상태
+  const [reports, setReports] = useState<any[]>([]);
+  const [reportsStatus, setReportsStatus] = useState<"pending" | "resolved" | "dismissed">("pending");
+  const [reportsLoading, setReportsLoading] = useState(false);
+  const [reportActionLoading, setReportActionLoading] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (activeSection !== "reports") return;
+    setReportsLoading(true);
+    fetch(`/api/admin/reports?status=${reportsStatus}`)
+      .then((r) => r.json())
+      .then((data) => setReports(data.data || []))
+      .finally(() => setReportsLoading(false));
+  }, [activeSection]);
 
   useEffect(() => {
     async function checkAdmin() {
@@ -549,12 +564,13 @@ export default function AdminDashboardPage() {
           />
         </section>
 
-        <nav className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+        <nav className="grid grid-cols-3 gap-2 sm:grid-cols-6">
           {([
             ["today", "오늘 할 일", ClipboardCheck],
             ["approvals", "승인 대기", ShieldCheck],
             ["status", "운영 상태", Activity],
             ["memories", "내부 기록", FileText],
+            ["reports", "신고 관리", AlertCircle],
             ["guide", "사용 가이드", Bot]
           ] as Array<[DashboardSection, string, typeof ClipboardCheck]>).map(([section, label, Icon]) => (
             <button
@@ -914,6 +930,164 @@ export default function AdminDashboardPage() {
                 </button>
               </article>
             ))}
+          </section>
+        )}
+
+        {activeSection === "reports" && (
+          <section className="space-y-4">
+            <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-base font-bold text-zinc-100">신고 관리</h2>
+                  <p className="mt-1 text-xs text-zinc-500">누적 3회 이상 신고된 게시글/댓글을 처리합니다.</p>
+                </div>
+                <div className="flex gap-2">
+                  {(["pending", "resolved", "dismissed"] as const).map((s) => (
+                    <button
+                      key={s}
+                      onClick={async () => {
+                        setReportsStatus(s);
+                        setReportsLoading(true);
+                        const res = await fetch(`/api/admin/reports?status=${s}`);
+                        const data = await res.json();
+                        setReports(data.data || []);
+                        setReportsLoading(false);
+                      }}
+                      className={`rounded-md border px-3 py-1.5 text-xs font-semibold transition-colors ${
+                        reportsStatus === s
+                          ? "border-amber-500/50 bg-amber-500/10 text-amber-200"
+                          : "border-zinc-700 bg-zinc-800 text-zinc-400 hover:border-zinc-600"
+                      }`}
+                    >
+                      {s === "pending" ? "대기" : s === "resolved" ? "처리완료" : "기각"}
+                    </button>
+                  ))}
+                  <button
+                    onClick={async () => {
+                      setReportsLoading(true);
+                      const res = await fetch(`/api/admin/reports?status=${reportsStatus}`);
+                      const data = await res.json();
+                      setReports(data.data || []);
+                      setReportsLoading(false);
+                    }}
+                    disabled={reportsLoading}
+                    className="inline-flex items-center gap-1 rounded-md border border-zinc-700 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-400 hover:border-zinc-600 disabled:opacity-50"
+                  >
+                    <RefreshCw className={`h-3.5 w-3.5 ${reportsLoading ? "animate-spin" : ""}`} />
+                    새로고침
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {reportsLoading ? (
+              <div className="flex items-center justify-center py-10">
+                <Loader2 className="h-6 w-6 animate-spin text-zinc-500" />
+              </div>
+            ) : reports.length === 0 ? (
+              <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-8 text-center">
+                <p className="text-sm text-zinc-500">신고 내역이 없습니다.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {reports.map((report: any) => (
+                  <article key={report.id} className="rounded-lg border border-zinc-800 bg-zinc-900 p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className={`rounded px-2 py-0.5 text-[10px] font-bold ${
+                            report.target_type === "post"
+                              ? "bg-blue-500/20 text-blue-300"
+                              : "bg-purple-500/20 text-purple-300"
+                          }`}>
+                            {report.target_type === "post" ? "게시글" : "댓글"} #{report.target_id}
+                          </span>
+                          <span className="text-xs text-zinc-500">
+                            {new Date(report.created_at).toLocaleDateString("ko-KR")}
+                          </span>
+                          {report.reporter_ip && (
+                            <span className="text-[10px] font-mono text-zinc-600">{report.reporter_ip}</span>
+                          )}
+                        </div>
+                        <p className="mt-2 text-sm text-zinc-200">신고 사유: {report.reason}</p>
+                        {report.detail && (
+                          <p className="mt-1 text-xs text-zinc-500">{report.detail}</p>
+                        )}
+                        {report.admin_note && (
+                          <p className="mt-1 text-xs text-amber-400/80">어드민 메모: {report.admin_note}</p>
+                        )}
+                      </div>
+
+                      {reportsStatus === "pending" && (
+                        <div className="flex flex-wrap gap-2 sm:shrink-0">
+                          <button
+                            disabled={reportActionLoading === report.id}
+                            onClick={async () => {
+                              setReportActionLoading(report.id);
+                              const res = await fetch("/api/admin/reports", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ reportId: report.id, action: "blind" }),
+                              });
+                              if (res.ok) {
+                                toast.success("블라인드 처리되었습니다.");
+                                setReports((prev) => prev.filter((r) => r.id !== report.id));
+                              } else toast.error("블라인드 실패");
+                              setReportActionLoading(null);
+                            }}
+                            className="inline-flex items-center gap-1 rounded-md border border-red-500/40 bg-red-500/10 px-3 py-1.5 text-xs font-semibold text-red-300 hover:bg-red-500/20 disabled:opacity-50 transition-colors"
+                          >
+                            {reportActionLoading === report.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                            내용 숨김
+                          </button>
+                          <button
+                            disabled={reportActionLoading === report.id}
+                            onClick={async () => {
+                              setReportActionLoading(report.id);
+                              const res = await fetch("/api/admin/reports", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ reportId: report.id, action: "ban_ip" }),
+                              });
+                              if (res.ok) {
+                                toast.success("IP 차단이 적용되었습니다.");
+                                setReports((prev) => prev.filter((r) => r.id !== report.id));
+                              } else {
+                                const data = await res.json();
+                                toast.error(data.error || "IP 차단 실패");
+                              }
+                              setReportActionLoading(null);
+                            }}
+                            className="inline-flex items-center gap-1 rounded-md border border-orange-500/40 bg-orange-500/10 px-3 py-1.5 text-xs font-semibold text-orange-300 hover:bg-orange-500/20 disabled:opacity-50 transition-colors"
+                          >
+                            IP 차단
+                          </button>
+                          <button
+                            disabled={reportActionLoading === report.id}
+                            onClick={async () => {
+                              setReportActionLoading(report.id);
+                              const res = await fetch("/api/admin/reports", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({ reportId: report.id, action: "dismiss" }),
+                              });
+                              if (res.ok) {
+                                toast.success("신고를 기각했습니다.");
+                                setReports((prev) => prev.filter((r) => r.id !== report.id));
+                              } else toast.error("기각 실패");
+                              setReportActionLoading(null);
+                            }}
+                            className="inline-flex items-center gap-1 rounded-md border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-400 hover:border-zinc-500 disabled:opacity-50 transition-colors"
+                          >
+                            기각
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
           </section>
         )}
       </div>
@@ -1394,7 +1568,7 @@ function TopList({ title, items }: { title: string; items: Array<{ label: string
 }
 
 function normalizeSection(value: string | null): DashboardSection {
-  if (value === "approvals" || value === "status" || value === "memories" || value === "guide" || value === "today") return value;
+  if (value === "approvals" || value === "status" || value === "memories" || value === "guide" || value === "today" || value === "reports") return value;
   return "today";
 }
 

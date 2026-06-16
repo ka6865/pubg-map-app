@@ -90,3 +90,65 @@ export async function withAuthGuard(): Promise<AuthGuardResult> {
     };
   }
 }
+
+// 비회원도 통과 가능한 선택적 인증 가드
+// 로그인 상태면 user 반환, 비로그인이어도 에러 없이 user: null 반환
+type OptionalAuthSuccess = {
+  user: { id: string; email?: string } | null;
+  supabaseAdmin: ReturnType<typeof createAdminClient<any>>;
+  error?: undefined;
+};
+
+type OptionalAuthFailure = {
+  user?: undefined;
+  supabaseAdmin?: undefined;
+  error: NextResponse;
+};
+
+export type OptionalAuthResult = OptionalAuthSuccess | OptionalAuthFailure;
+
+export async function withOptionalAuth(): Promise<OptionalAuthResult> {
+  try {
+    const cookieStore = await cookies();
+
+    const supabase = createServerClient(
+      clean(process.env.NEXT_PUBLIC_SUPABASE_URL),
+      clean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
+      {
+        cookies: {
+          getAll() {
+            return cookieStore.getAll();
+          },
+          setAll(cookiesToSet) {
+            try {
+              cookiesToSet.forEach(({ name, value, options }) =>
+                cookieStore.set({ name, value, ...options })
+              );
+            } catch {
+              // Server Component에서 호출된 경우 무시
+            }
+          },
+        },
+      }
+    );
+
+    // Service Role 클라이언트는 항상 생성 (비회원 INSERT에 사용)
+    const supabaseAdmin = createAdminClient<any>(
+      clean(process.env.NEXT_PUBLIC_SUPABASE_URL),
+      clean(process.env.SUPABASE_SERVICE_ROLE_KEY)
+    );
+
+    // 세션이 없어도 에러 반환하지 않고 user: null로 통과
+    const { data: { user } } = await supabase.auth.getUser();
+
+    return { user: user ?? null, supabaseAdmin };
+  } catch (err) {
+    console.error("[withOptionalAuth] 처리 중 예외:", err);
+    return {
+      error: NextResponse.json(
+        { error: "서버 오류가 발생했습니다." },
+        { status: 500 }
+      ),
+    };
+  }
+}

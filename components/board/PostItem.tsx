@@ -45,7 +45,13 @@ export default function PostItem({ post, isMobile, onClickDesktop, formatTimeAgo
             )}
           </div>
           <div className="flex justify-between items-center text-[11.5px] mt-1">
-            <span className="text-white/50 font-medium">{post.author}</span>
+            <div className="flex items-center gap-1.5">
+              <span className="text-white/50 font-medium">{post.author}</span>
+              {/* 비회원 게시글 IP 배지 */}
+              {!post.user_id && post.ip_address && (
+                <span className="text-[10px] text-white/25 font-mono">({post.ip_address})</span>
+              )}
+            </div>
             <div className="flex items-center gap-2 text-white/30">
               <span>조회 {post.views}</span>
               <span className="w-0.5 h-0.5 rounded-full bg-white/20"></span>
@@ -90,7 +96,15 @@ export default function PostItem({ post, isMobile, onClickDesktop, formatTimeAgo
           )}
         </div>
       </td>
-      <td className="p-4 text-white/50 font-medium whitespace-nowrap text-[13px]">{post.author}</td>
+      <td className="p-4 text-white/50 font-medium whitespace-nowrap text-[13px]">
+        <div className="flex items-center gap-1.5">
+          <span>{post.author}</span>
+          {/* 비회원 게시글 IP 배지 */}
+          {!post.user_id && post.ip_address && (
+            <span className="text-[11px] text-white/25 font-mono">({post.ip_address})</span>
+          )}
+        </div>
+      </td>
       <td className="p-4 text-white/30 whitespace-nowrap text-[12px] font-medium">{formatTimeAgo(post.created_at)}</td>
       <td className="p-4 text-white/30 text-[12px]">{post.views}</td>
       <td className={`p-4 pr-5 ${post.likes >= 5 ? 'font-bold' : ''}`}>

@@ -88,15 +88,23 @@ export default async function PostDetailPage({ params }: { params: Promise<{ pos
     );
   }
 
-  // 실시간 변경된 최신 닉네임 적용
+  // 비회원(user_id가 null)은 profiles join이 없으므로 author를 그대로 유지하고 IP 마스킹
+  const maskIp = (ip: string | null) => ip ? ip.split('.').slice(0, 2).join('.') : null;
+
   const post = {
     ...postResult,
-    author: (postResult as any).profiles?.nickname || postResult.author || '알 수 없음'
+    author: postResult.user_id
+      ? ((postResult as any).profiles?.nickname || postResult.author || '알 수 없음')
+      : (postResult.author || '익명'),
+    ip_address: maskIp(postResult.ip_address),
   };
 
   const comments = (commentResult || []).map((comment: any) => ({
     ...comment,
-    author: comment.profiles?.nickname || comment.author || '알 수 없음'
+    author: comment.user_id
+      ? (comment.profiles?.nickname || comment.author || '알 수 없음')
+      : (comment.author || '익명'),
+    ip_address: maskIp(comment.ip_address),
   }));
 
   return (
