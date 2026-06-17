@@ -49,6 +49,8 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
     let legendary = 0;
     let epic = 0;
     let rare = 0;
+    let special = 0;
+    let common = 0;
 
     // 1. 기본 카드 정산
     if (card.isFromPrimeParcel) {
@@ -73,6 +75,8 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
     else if (card.rarity === "LEGENDARY") legendary += 1;
     else if (card.rarity === "EPIC") epic += 1;
     else if (card.rarity === "RARE") rare += 1;
+    else if (card.rarity === "SPECIAL") special += 1;
+    else if (card.rarity === "COMMON") common += 1;
 
     newHistory.push({
       id: card.id,
@@ -95,6 +99,8 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
       else if (bonus.rarity === "LEGENDARY") legendary += 1;
       else if (bonus.rarity === "EPIC") epic += 1;
       else if (bonus.rarity === "RARE") rare += 1;
+      else if (bonus.rarity === "SPECIAL") special += 1;
+      else if (bonus.rarity === "COMMON") common += 1;
 
       newHistory.push({
         id: bonus.id,
@@ -135,6 +141,8 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
       legendaryCount: prev.legendaryCount + legendary,
       epicCount: prev.epicCount + epic,
       rareCount: prev.rareCount + rare,
+      specialCount: prev.specialCount + special,
+      commonCount: prev.commonCount + common,
     }));
   };
 
@@ -241,6 +249,8 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
     legendaryCount: 0,
     epicCount: 0,
     rareCount: 0,
+    specialCount: 0,
+    commonCount: 0,
   });
 
   // 아직 뒤집히지 않은 이전 카드의 자산, 컬렉션, 히스토리, 통계를 일괄 정산하는 헬퍼 함수 (지연 정산 지원)
@@ -260,6 +270,8 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
     let legendary = 0;
     let epic = 0;
     let rare = 0;
+    let special = 0;
+    let common = 0;
 
     drawnCards.forEach((card, idx) => {
       if (!revealedCards[idx]) {
@@ -286,6 +298,8 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
         else if (card.rarity === "LEGENDARY") legendary += 1;
         else if (card.rarity === "EPIC") epic += 1;
         else if (card.rarity === "RARE") rare += 1;
+        else if (card.rarity === "SPECIAL") special += 1;
+        else if (card.rarity === "COMMON") common += 1;
 
         newHistory.push({
           id: card.id,
@@ -307,6 +321,8 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
           else if (card.bonus.rarity === "LEGENDARY") legendary += 1;
           else if (card.bonus.rarity === "EPIC") epic += 1;
           else if (card.bonus.rarity === "RARE") rare += 1;
+          else if (card.bonus.rarity === "SPECIAL") special += 1;
+          else if (card.bonus.rarity === "COMMON") common += 1;
 
           newHistory.push({
             id: card.bonus.id,
@@ -345,13 +361,15 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
         setHistory((prev) => [...newHistory, ...prev]);
       }
 
-      if (ultimate > 0 || legendary > 0 || epic > 0 || rare > 0) {
+      if (ultimate > 0 || legendary > 0 || epic > 0 || rare > 0 || special > 0 || common > 0) {
         setStats((prev) => ({
           ...prev,
           ultimateCount: prev.ultimateCount + ultimate,
           legendaryCount: prev.legendaryCount + legendary,
           epicCount: prev.epicCount + epic,
           rareCount: prev.rareCount + rare,
+          specialCount: prev.specialCount + special,
+          commonCount: prev.commonCount + common,
         }));
       }
     };
@@ -429,12 +447,12 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
     if (packType === "X55") {
       price = 12500;
       crateReward = 55;
-      parcelReward = 2;
+      parcelReward = 0;
       tokenReward = 800;
     } else if (packType === "X27") {
       price = 6250;
       crateReward = 27;
-      parcelReward = 1;
+      parcelReward = 0;
       tokenReward = 400;
     } else if (packType === "X11") {
       price = 2500;
@@ -488,7 +506,7 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
       setTokens((prev) => prev + tokenReward);
 
       toast.success(
-        `구매가 완료되었습니다! ${activeCrate.name} ${crateReward}개, 최고급 꾸러미 ${parcelReward}개, 토큰 ${tokenReward}개가 내 보관함에 추가되었습니다.`
+        `구매가 완료되었습니다! ${activeCrate.name} ${crateReward}개, 토큰 ${tokenReward}개가 내 보관함에 추가되었습니다.`
       );
 
       // 개봉 화면(Inventory)으로 즉시 강제 전환하여 직관적 피드백 제공 (가챠는 미실행)
@@ -1123,6 +1141,8 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
       legendaryCount: 0,
       epicCount: 0,
       rareCount: 0,
+      specialCount: 0,
+      commonCount: 0,
     });
     setIsResetModalOpen(false);
     toast.success("시뮬레이터가 초기화되었습니다.");

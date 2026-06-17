@@ -1,4 +1,4 @@
-export type CrateRarity = "ULTIMATE" | "LEGENDARY" | "EPIC" | "RARE";
+export type CrateRarity = "ULTIMATE" | "LEGENDARY" | "EPIC" | "RARE" | "SPECIAL" | "COMMON";
 
 export interface CrateItem {
   id: string;
