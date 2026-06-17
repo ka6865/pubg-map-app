@@ -535,6 +535,32 @@ export default function CratesClient({ initialCrates, exchangeRate }: CratesClie
                         </button>
                       )}
 
+                      {/* 화물 상자(loot_crate)로 이어서 열기: 남은 개수가 1개 이상인 경우 노출 */}
+                      {activeCrate?.type === "loot_crate" && (inventoryCrates[activeCrate.id] || 0) >= 1 && (
+                        <button
+                          onClick={() => {
+                            const count = inventoryCrates[activeCrate.id] || 0;
+                            let mode: "one" | "five" | "ten" = "one";
+                            if (count >= 10) mode = "ten";
+                            else if (count >= 5) mode = "five";
+                            
+                            collectRemainingCards();
+                            setDrawnCards([]);
+                            handleOpenInventoryCrates(mode);
+                          }}
+                          disabled={!areAllCardsRevealed}
+                          className="text-[10px] font-black text-pink-300 hover:text-pink-200 border border-pink-850 px-2.5 py-1 rounded bg-pink-950/30 hover:bg-pink-950/60 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center gap-1"
+                        >
+                          <Package className="w-3 h-3 text-pink-400" />
+                          {(() => {
+                            const count = inventoryCrates[activeCrate.id] || 0;
+                            if (count >= 10) return `이어서 10개 열기 (보유: ${count}개)`;
+                            if (count >= 5) return `이어서 5개 열기 (보유: ${count}개)`;
+                            return `이어서 1개 열기 (보유: ${count}개)`;
+                          })()}
+                        </button>
+                      )}
+
                       <button
                         onClick={() => {
                           collectRemainingCards();
