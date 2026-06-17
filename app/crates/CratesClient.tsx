@@ -9,7 +9,9 @@ import {
   ShoppingCart,
   Package,
   Ticket,
-  AlertTriangle
+  AlertTriangle,
+  ChevronDown,
+  ChevronUp
 } from "lucide-react";
 
 import type { CrateTemplate } from "@/types/crates";
@@ -41,6 +43,9 @@ const getRarityBadgeStyle = (rarity: string) => {
       return "bg-gradient-to-r from-purple-600 to-pink-500 text-white shadow-lg shadow-purple-500/30";
     case "EPIC":
       return "bg-gradient-to-r from-blue-600 to-cyan-500 text-white shadow-lg shadow-blue-500/20";
+    case "SPECIAL":
+      return "bg-gradient-to-r from-teal-600 to-emerald-500 text-white shadow-lg shadow-teal-500/20";
+    case "COMMON":
     default:
       return "bg-slate-700 text-slate-200";
   }
@@ -57,8 +62,11 @@ const getCardBorderGlow = (rarity: string, isBonus: boolean) => {
       return "border-pink-500 shadow-[0_0_15px_rgba(236,72,153,0.5)]";
     case "EPIC":
       return "border-cyan-500 shadow-[0_0_15px_rgba(6,182,212,0.4)]";
+    case "SPECIAL":
+      return "border-teal-500 shadow-[0_0_15px_rgba(20,184,166,0.4)]";
+    case "COMMON":
     default:
-      return "border-slate-600 shadow-none";
+      return "border-slate-800 shadow-none";
   }
 };
 
@@ -71,6 +79,7 @@ export default function CratesClient({ initialCrates, exchangeRate }: CratesClie
   // 모달 제어 상태
   const [isDetailModalOpen, setIsDetailModalOpen] = useState(false);
   const [isCraftingModalOpen, setIsCraftingModalOpen] = useState(false);
+  const [isLineupOpen, setIsLineupOpen] = useState(false);
 
   // 비즈니스 로직 및 가챠 정산 훅 호출
   const {
@@ -192,6 +201,8 @@ export default function CratesClient({ initialCrates, exchangeRate }: CratesClie
   };
 
   const isTenDrawCompleted = activeCrate ? (contrabandTenDrawCompleted[activeCrate.id] || false) : false;
+  const areAllCardsRevealed = drawnCards.length > 0 && revealedCards.slice(0, drawnCards.length).every(Boolean);
+  const gcoinCostForTen = isTenDrawCompleted ? 1800 : 1000;
 
   return (
     <div className="min-h-screen bg-[#070b13] text-slate-100 py-8 px-4 sm:px-6 lg:px-8">
@@ -274,10 +285,10 @@ export default function CratesClient({ initialCrates, exchangeRate }: CratesClie
                 내 자산 현황
               </h2>
 
-              <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="grid grid-cols-3 gap-2 text-xs">
                 {/* BP */}
                 <div className="flex items-center gap-2 p-2 bg-slate-950/80 rounded-xl border border-slate-850">
-                  <span className="w-4 h-4 bg-indigo-900/50 text-indigo-400 font-black text-[9px] rounded flex items-center justify-center border border-indigo-850">BP</span>
+                  <span className="w-4 h-4 bg-indigo-900/50 text-indigo-400 font-black text-[9px] rounded flex items-center justify-center border border-indigo-850 shrink-0">BP</span>
                   <div className="min-w-0">
                     <div className="text-[9px] text-slate-500 leading-none">BP</div>
                     <div className="font-extrabold text-indigo-400 truncate">{bp.toLocaleString()}</div>
@@ -286,7 +297,7 @@ export default function CratesClient({ initialCrates, exchangeRate }: CratesClie
 
                 {/* G-Coin */}
                 <div className="flex items-center gap-2 p-2 bg-slate-950/80 rounded-xl border border-slate-850">
-                  <Coins className="w-4 h-4 text-amber-400" />
+                  <Coins className="w-4 h-4 text-amber-400 shrink-0" />
                   <div className="min-w-0">
                     <div className="text-[9px] text-slate-500 leading-none">G코인</div>
                     <div className="font-extrabold text-amber-400 truncate">{gcoin.toLocaleString()}</div>
@@ -295,38 +306,18 @@ export default function CratesClient({ initialCrates, exchangeRate }: CratesClie
 
                 {/* 쿠폰 */}
                 <div className="flex items-center gap-2 p-2 bg-slate-950/80 rounded-xl border border-slate-850">
-                  <Ticket className="w-4 h-4 text-purple-400" />
+                  <Ticket className="w-4 h-4 text-purple-400 shrink-0" />
                   <div className="min-w-0">
                     <div className="text-[9px] text-slate-500 leading-none">밀수품 쿠폰</div>
                     <div className="font-extrabold text-purple-400 truncate">{coupons}장</div>
                   </div>
                 </div>
-
-                {/* 꾸러미 */}
-                <div className="flex items-center gap-2 p-2 bg-slate-950/80 rounded-xl border border-slate-850 relative">
-                  <Sparkles className="w-4 h-4 text-pink-400" />
-                  {primeParcels > 0 && (
-                    <span className="absolute top-1 right-1 flex h-2.5 w-2.5">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-pink-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-pink-500"></span>
-                    </span>
-                  )}
-                  <div className="min-w-0">
-                    <div className="text-[9px] text-slate-500 leading-none">꾸러미</div>
-                    <div className="font-extrabold text-pink-400 truncate">{primeParcels}개</div>
-                  </div>
-                </div>
               </div>
 
-              {/* 이벤트 토큰 및 누적 충전액 */}
-              <div className="flex justify-between items-center bg-slate-950/40 p-2.5 rounded-xl border border-slate-850/60 text-xs">
-                <div className="flex items-center gap-1.5">
-                  <Box className="w-4 h-4 text-pink-500" />
-                  <span className="text-slate-400">이벤트 토큰:</span>
-                  <span className="font-black text-pink-500">{tokens}개</span>
-                </div>
-                <div className="text-right text-[10px] text-slate-500">
-                  누적 충전: <span className="font-extrabold text-emerald-400">{Math.round(spentUsd * exchangeRate).toLocaleString()}원</span>
+              {/* 누적 충전액 */}
+              <div className="flex justify-center items-center bg-slate-950/40 p-2.5 rounded-xl border border-slate-850/60 text-xs">
+                <div className="text-[10px] text-slate-500">
+                  누적 충전액: <span className="font-extrabold text-emerald-400">{Math.round(spentUsd * exchangeRate).toLocaleString()}원</span>
                 </div>
               </div>
 
@@ -360,12 +351,20 @@ export default function CratesClient({ initialCrates, exchangeRate }: CratesClie
 
             {/* 2. 상점 라인업 선택 리스트 */}
             <div className="bg-slate-900 border border-slate-800 p-4 rounded-2xl space-y-3 shadow-xl">
-              <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5">
-                <Layers className="w-4 h-4 text-amber-500" />
-                상점 상자 라인업
-              </h2>
+              <div 
+                className="flex justify-between items-center cursor-pointer md:cursor-default"
+                onClick={() => setIsLineupOpen(!isLineupOpen)}
+              >
+                <h2 className="text-sm font-black text-slate-400 uppercase tracking-widest flex items-center gap-1.5 selection:bg-transparent">
+                  <Layers className="w-4 h-4 text-amber-500" />
+                  상점 상자 라인업
+                </h2>
+                <button className="md:hidden text-slate-400 hover:text-slate-200 focus:outline-none cursor-pointer">
+                  {isLineupOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                </button>
+              </div>
               
-              <div className="space-y-2">
+              <div className={`${isLineupOpen ? "block animate-[fadeIn_0.2s_ease-out]" : "hidden md:block"} space-y-2`}>
                 {initialCrates.map((crate) => {
                   const isSelected = crate.id === selectedCrateId;
                   return (
@@ -375,6 +374,7 @@ export default function CratesClient({ initialCrates, exchangeRate }: CratesClie
                         setSelectedCrateId(crate.id);
                         setDrawnCards([]);
                         setSelectedInventoryItem(crate.type === "loot_crate" ? "loot_crate" : "coupon");
+                        setIsLineupOpen(false); // 모바일에서 선택 완료 시 자동 접기
                       }}
                       className={`w-full text-left p-3.5 rounded-xl border transition-all relative flex flex-col justify-between cursor-pointer ${
                         isSelected
@@ -389,7 +389,7 @@ export default function CratesClient({ initialCrates, exchangeRate }: CratesClie
                               ? "bg-pink-950 text-pink-400 border border-pink-900/30" 
                               : "bg-cyan-950 text-cyan-400 border border-cyan-900/30"
                           }`}>
-                            {crate.type === "loot_crate" ? "이중가챠 전리품" : "성장형 무기 밀수품"}
+                            {crate.type === "loot_crate" ? "블랙 마켓 화물" : "성장형 무기 밀수품"}
                           </span>
                           <h3 className="font-extrabold text-slate-200 mt-1.5 text-sm">{crate.name}</h3>
                         </div>
@@ -402,10 +402,10 @@ export default function CratesClient({ initialCrates, exchangeRate }: CratesClie
 
             {/* 3. 모달 호출 버튼 바 (세부 정보 및 특수 제작소) */}
             <div className="grid grid-cols-1 gap-3">
-              {/* 특수 제작소 (Crafting) 버튼 */}
+              {/* 특수 제작소 (Crafting) 버튼 - 임시 비활성화 */}
               <button
                 onClick={() => setIsCraftingModalOpen(true)}
-                className="w-full py-3.5 bg-gradient-to-r from-pink-500 via-rose-500 to-red-500 hover:from-pink-600 hover:to-red-600 text-white font-black rounded-2xl shadow-xl shadow-pink-500/10 active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer border border-pink-400/20 text-sm"
+                className="hidden w-full py-3.5 bg-gradient-to-r from-pink-500 via-rose-500 to-red-500 hover:from-pink-600 hover:to-red-600 text-white font-black rounded-2xl shadow-xl shadow-pink-500/10 active:scale-98 transition-all flex items-center justify-center gap-2 cursor-pointer border border-pink-400/20 text-sm"
               >
                 <Sparkles className="w-4 h-4 animate-pulse" />
                 🛠️ 특수 제작소 (Crafting)
@@ -459,170 +459,274 @@ export default function CratesClient({ initialCrates, exchangeRate }: CratesClie
               </button>
             </div>
 
-            {/* 1. 은신처 상점 탭 */}
-            {drawSubTab === "shop" && activeCrate && (
+            {/* 1. 개봉 애니메이션 진행 및 카드 결과 노출은 탭에 상관없이 즉시 화면을 덮도록 설정 */}
+            {isDrawing && activeCrate ? (
               <div className="bg-slate-900/30 border border-slate-800/80 rounded-3xl p-6 flex flex-col justify-between items-center relative overflow-hidden min-h-[550px] flex-1">
-                
                 {/* 배경 그라데이션 광 효과 */}
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(30,58,138,0.1)_0%,transparent_80%)] pointer-events-none" />
-
-                {/* 중앙 상단: 상자 타이틀 및 실시간 D-Day 타이머 */}
-                <div className="text-center z-10 space-y-2 mt-2">
-                  {activeCrate.end_date && (
-                    <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-950/80 border border-slate-800 text-[10px] text-amber-500 font-extrabold rounded-full shadow-md">
-                      <span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-ping" />
-                      판매 종료까지: {timeLeft.isExpired ? "판매 종료됨" : `${timeLeft.days}일 ${timeLeft.hours}시간 ${timeLeft.minutes}분 ${timeLeft.seconds}초`}
-                    </div>
-                  )}
-                  <h2 className="text-3xl font-black text-slate-100 tracking-tight">{activeCrate.name}</h2>
-                  <p className="text-xs text-slate-400 max-w-md mx-auto">{activeCrate.description}</p>
-                </div>
-
-                {/* 중앙 메인: 웅장한 쇼케이스 이미지 */}
-                <div className="relative w-full max-w-xs aspect-square flex items-center justify-center my-6 z-10 group">
-                  <div className="absolute inset-0 bg-amber-500/5 rounded-full blur-3xl group-hover:bg-amber-500/10 transition-colors pointer-events-none" />
-                  <img
-                    src={activeCrate.image_url}
-                    alt={activeCrate.name}
-                    className="object-contain max-h-56 drop-shadow-[0_15px_30px_rgba(0,0,0,0.8)] transform group-hover:scale-105 transition-all duration-500 ease-out"
-                    onError={(e) => {
-                      (e.target as any).style.display = "none";
-                    }}
-                  />
-                  {/* 이미지 에러시 대체 카드 */}
-                  <Box className="w-20 h-20 text-slate-800 absolute inset-0 m-auto -z-10 animate-pulse" />
-                </div>
-
-                {/* 하단 제어부: 밀수품 vs 전리품 각각의 상점 구매 버튼 */}
-                <div className="w-full max-w-xl z-10 border-t border-slate-800/80 pt-5 space-y-4">
-                  
-                  {activeCrate.type === "contraband" ? (
-                    /* [사진 1] 밀수품 상자용 버튼 세트 */
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      
-                      {/* 1회 열기 (200 G코인) */}
-                      <button
-                        onClick={() => handleOpenContrabandCrateWithGCoin("one")}
-                        disabled={timeLeft.isExpired}
-                        className="py-3.5 bg-slate-850 hover:bg-slate-800 text-white font-extrabold rounded-xl border border-slate-700 active:scale-95 shadow-lg flex flex-col items-center justify-center gap-1 cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <span className="text-slate-400 text-[10px] font-bold">1회 열기</span>
-                        <div className="flex items-center gap-1 text-xs">
-                          <Coins className="w-4 h-4 text-amber-500" />
-                          <span>200 G코인</span>
-                        </div>
-                      </button>
-
-                      {/* 10회 열기 (할인 노출) */}
-                      <button
-                        onClick={() => handleOpenContrabandCrateWithGCoin("ten")}
-                        disabled={timeLeft.isExpired}
-                        className="py-3.5 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-slate-950 font-black rounded-xl active:scale-95 shadow-xl shadow-orange-500/10 flex flex-col items-center justify-center gap-1 cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed relative overflow-hidden"
-                      >
-                        {/* 10% 또는 50% 할인 동적 뱃지 */}
-                        <div className="absolute top-1 right-1 text-[8px] font-black bg-red-600 text-white px-1 py-0.2 rounded uppercase">
-                          {isTenDrawCompleted ? "10% 할인" : "50% 할인"}
-                        </div>
-                        <span className="text-slate-950 text-[10px] font-black">10회 열기</span>
-                        <div className="flex items-center gap-1 text-xs">
-                          <Coins className="w-4 h-4 text-slate-950" />
-                          <span className="line-through text-slate-950/50 text-[9px]">2,000 G코인</span>
-                          <span className="font-black">{isTenDrawCompleted ? "1,800" : "1,000"} G코인</span>
-                        </div>
-                      </button>
-
-                      {/* 쿠폰으로 열기 */}
-                      <button
-                        onClick={() => handleOpenContrabandWithCoupons("one")}
-                        disabled={timeLeft.isExpired || coupons < 10}
-                        className={`py-3.5 bg-indigo-950/80 hover:bg-indigo-900/90 text-indigo-200 font-extrabold rounded-xl border border-indigo-700/60 active:scale-95 shadow-lg flex flex-col items-center justify-center gap-1 cursor-pointer transition-all disabled:opacity-40 disabled:cursor-not-allowed`}
-                      >
-                        <span className="text-indigo-400 text-[10px] font-bold">쿠폰으로 열기</span>
-                        <div className="flex items-center gap-1 text-xs text-indigo-300">
-                          <Ticket className="w-4 h-4 text-indigo-400" />
-                          <span>10장 보유: {coupons}/10</span>
-                        </div>
-                      </button>
-
-                    </div>
-                  ) : (
-                    /* 전리품 상자용 패키지 구매 버튼바 (구매시 보관함으로 자동 이관) */
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                        {/* X55 */}
-                        <button
-                          onClick={() => handleBuyPackage("X55")}
-                          disabled={timeLeft.isExpired}
-                          className="p-3 bg-slate-950 hover:bg-slate-850 border border-slate-800 hover:border-amber-500/50 rounded-xl text-center active:scale-95 transition-all cursor-pointer flex flex-col items-center justify-between min-h-[90px] disabled:opacity-50"
-                        >
-                          <span className="text-[10px] font-black text-amber-500">전리품 상자 55개</span>
-                          <div className="text-[8px] text-slate-500 mt-1 leading-tight">상자55+꾸러미2+토큰800</div>
-                          <span className="text-xs font-black text-slate-300 mt-2">12,500 G코인</span>
-                        </button>
-
-                        {/* X27 */}
-                        <button
-                          onClick={() => handleBuyPackage("X27")}
-                          disabled={timeLeft.isExpired}
-                          className="p-3 bg-slate-950 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 rounded-xl text-center active:scale-95 transition-all cursor-pointer flex flex-col items-center justify-between min-h-[90px] disabled:opacity-50"
-                        >
-                          <span className="text-[10px] font-black text-slate-200">전리품 상자 27개</span>
-                          <div className="text-[8px] text-slate-500 mt-1 leading-tight">상자27+꾸러미1+토큰400</div>
-                          <span className="text-xs font-black text-slate-350 mt-2">6,250 G코인</span>
-                        </button>
-
-                        {/* X11 */}
-                        <button
-                          onClick={() => handleBuyPackage("X11")}
-                          disabled={timeLeft.isExpired}
-                          className="p-3 bg-slate-950 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 rounded-xl text-center active:scale-95 transition-all cursor-pointer flex flex-col items-center justify-between min-h-[90px] disabled:opacity-50"
-                        >
-                          <span className="text-[10px] font-black text-slate-200">전리품 상자 11개</span>
-                          <div className="text-[8px] text-slate-500 mt-1 leading-tight">상자11+토큰150</div>
-                          <span className="text-xs font-black text-slate-350 mt-2">2,500 G코인</span>
-                        </button>
-
-                        {/* X1 */}
-                        <button
-                          onClick={() => handleBuyPackage("X1", "gcoin")}
-                          disabled={timeLeft.isExpired}
-                          className="p-3 bg-slate-950 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 rounded-xl text-center active:scale-95 transition-all cursor-pointer flex flex-col items-center justify-between min-h-[90px] disabled:opacity-50"
-                        >
-                          <span className="text-[10px] font-black text-slate-200">전리품 상자 1개</span>
-                          <div className="text-[8px] text-slate-500 mt-1 leading-tight">상자1+토큰15</div>
-                          <span className="text-xs font-black text-slate-350 mt-2">250 G코인</span>
-                        </button>
+                <div className="flex-1 flex flex-col items-center justify-center space-y-5 z-10 py-10">
+                  <div className="relative w-36 h-36 flex items-center justify-center">
+                    <div className={`absolute inset-0 rounded-full blur-3xl ${
+                      hasBonusEffect ? "bg-amber-500/40 gold-glow-active" : "bg-amber-500/5 animate-ping"
+                    }`} />
+                    <Box className={`w-24 h-24 text-amber-500 anim-shake rounded-2xl ${
+                      hasBonusEffect ? "border border-amber-400/80 gold-glow-active shadow-2xl" : ""
+                    }`} />
+                  </div>
+                  <div className="text-center">
+                    <h3 className="text-lg font-black text-amber-400 tracking-wide">
+                      {drawMode === "prime" ? "최고급 꾸러미 해제 중..." : "상자 해제 중..."}
+                    </h3>
+                    {hasBonusEffect ? (
+                      <div className="mt-1 text-[10px] text-amber-400 font-black animate-pulse">
+                        ★ 보너스 전리품 당첨! 금색 광 방출 중 ★
                       </div>
-
-                      {/* BP로 X1 전리품 상자 구매 추가 슬롯 */}
-                      <div className="pt-1">
-                        <button
-                          onClick={() => handleBuyPackage("X1", "bp")}
-                          disabled={timeLeft.isExpired || bpBuyCount >= 50}
-                          className="w-full py-2.5 bg-indigo-950/30 hover:bg-indigo-950/60 border border-indigo-900/40 text-indigo-300 font-extrabold rounded-lg flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer disabled:opacity-40 text-xs"
-                        >
-                          상자 1개 구매 (10,000 BP) - ({bpBuyCount}/50회)
-                        </button>
-                      </div>
-                    </div>
-                  )}
-
+                    ) : (
+                      <p className="text-[10px] text-slate-500 mt-1">상자가 흔들리며 구성품이 인벤토리에 지급되고 있습니다.</p>
+                    )}
+                  </div>
                 </div>
               </div>
-            )}
+            ) : drawnCards.length > 0 && activeCrate ? (
+              <div className="bg-slate-900/30 border border-slate-800/80 rounded-3xl p-6 flex flex-col justify-between items-center relative overflow-hidden min-h-[550px] flex-1">
+                {/* 배경 그라데이션 광 효과 */}
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(30,58,138,0.1)_0%,transparent_80%)] pointer-events-none" />
+                {/* 가챠 결과 카드 리스트 노출 */}
+                <div className="flex-1 flex flex-col justify-start space-y-6 my-4 z-10 w-full">
+                  <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+                    <span className="text-[10px] text-slate-400 font-bold">개봉 결과 목록</span>
+                    <div className="flex gap-2 flex-wrap justify-end">
+                      <button
+                        onClick={handleRevealAll}
+                        className="text-[10px] font-black text-amber-400 hover:text-amber-300 border border-amber-950 px-2.5 py-1 rounded bg-amber-950/10 transition-all cursor-pointer"
+                      >
+                        전체 뒤집기
+                      </button>
+                      
+                      {/* 쿠폰으로 이어서 열기: 밀수품 상자이고 쿠폰이 10장 이상인 경우 노출 */}
+                      {activeCrate?.type === "contraband" && coupons >= 10 && (
+                        <button
+                          onClick={() => {
+                            collectRemainingCards();
+                            setDrawnCards([]);
+                            handleOpenContrabandWithCoupons(coupons >= 100 ? "ten" : "one");
+                          }}
+                          disabled={!areAllCardsRevealed}
+                          className="text-[10px] font-black text-indigo-300 hover:text-indigo-200 border border-indigo-800 px-2.5 py-1 rounded bg-indigo-950/30 hover:bg-indigo-950/60 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center gap-1"
+                        >
+                          <Ticket className="w-3 h-3" />
+                          {coupons >= 100 ? `이어서 10개 열기 (100장)` : `이어서 1개 열기 (10장)`}
+                        </button>
+                      )}
 
-            {/* 2. 제작소 보관함 탭 */}
-            {drawSubTab === "inventory" && activeCrate && (
-              <div className="bg-slate-900/20 border border-slate-800/80 rounded-3xl p-5 flex flex-col justify-between relative overflow-hidden min-h-[550px] flex-1">
-                
-                {/* 2-A. 보유 목록 셀렉터 */}
-                {!isDrawing && (
-                  <div className={`grid gap-3 shrink-0 z-10 ${
-                    activeCrate.type === "loot_crate" ? "grid-cols-2" : "grid-cols-1"
+                      {/* G코인으로 이어서 열기: 밀수품 상자이고 G코인이 200 이상인 경우 노출 */}
+                      {activeCrate?.type === "contraband" && gcoin >= 200 && (
+                        <button
+                          onClick={() => {
+                            collectRemainingCards();
+                            setDrawnCards([]);
+                            handleOpenContrabandCrateWithGCoin(gcoin >= gcoinCostForTen ? "ten" : "one");
+                          }}
+                          disabled={!areAllCardsRevealed}
+                          className="text-[10px] font-black text-amber-400 hover:text-amber-300 border border-amber-950 px-2.5 py-1 rounded bg-amber-950/10 hover:bg-amber-950/30 disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer flex items-center gap-1"
+                        >
+                          <Coins className="w-3 h-3 text-amber-500" />
+                          {gcoin >= gcoinCostForTen ? `이어서 10개 열기 (${gcoinCostForTen.toLocaleString()} G코인)` : "이어서 1개 열기 (200 G코인)"}
+                        </button>
+                      )}
+
+                      <button
+                        onClick={() => {
+                          collectRemainingCards();
+                          setDrawnCards([]);
+                        }}
+                        className="text-[10px] font-black text-slate-400 hover:text-slate-300 border border-slate-800 px-2.5 py-1 rounded bg-slate-950/50 transition-all cursor-pointer"
+                      >
+                        결과 닫기
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className={`grid gap-3 justify-center mt-2 ${
+                    drawnCards.length === 1 
+                      ? "grid-cols-1 max-w-[160px] mx-auto" 
+                      : "grid-cols-2 sm:grid-cols-5"
                   }`}>
-                    {activeCrate.type === "loot_crate" ? (
-                      <>
-                        {/* 전리품 상자 */}
+                    {drawnCards.map((card, idx) => (
+                      <CrateCard
+                        key={card.id}
+                        card={card}
+                        isRevealed={revealedCards[idx]}
+                        onClick={() => handleCardClick(idx)}
+                        getRarityBadgeStyle={getRarityBadgeStyle}
+                        getCardBorderGlow={getCardBorderGlow}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* 1. 은신처 상점 탭 */}
+                {drawSubTab === "shop" && activeCrate && (
+                  <div className="bg-slate-900/30 border border-slate-800/80 rounded-3xl p-6 flex flex-col justify-between items-center relative overflow-hidden min-h-[550px] flex-1">
+                    
+                    {/* 배경 그라데이션 광 효과 */}
+                    <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(30,58,138,0.1)_0%,transparent_80%)] pointer-events-none" />
+
+                    {/* 중앙 상단: 상자 타이틀 및 실시간 D-Day 타이머 */}
+                    <div className="text-center z-10 space-y-2 mt-2">
+                      {activeCrate.end_date && (
+                        <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-slate-950/80 border border-slate-800 text-[10px] text-amber-500 font-extrabold rounded-full shadow-md">
+                          <span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-ping" />
+                          판매 종료까지: {timeLeft.isExpired ? "판매 종료됨" : `${timeLeft.days}일 ${timeLeft.hours}시간 ${timeLeft.minutes}분 ${timeLeft.seconds}초`}
+                        </div>
+                      )}
+                      <h2 className="text-3xl font-black text-slate-100 tracking-tight">{activeCrate.name}</h2>
+                      <p className="text-xs text-slate-400 max-w-md mx-auto">{activeCrate.description}</p>
+                    </div>
+
+                    {/* 중앙 메인: 웅장한 쇼케이스 이미지 */}
+                    <div className="relative w-full max-w-xs aspect-square flex items-center justify-center my-6 z-10 group">
+                      <div className="absolute inset-0 bg-amber-500/5 rounded-full blur-3xl group-hover:bg-amber-500/10 transition-colors pointer-events-none" />
+                      <img
+                        src={activeCrate.image_url}
+                        alt={activeCrate.name}
+                        className="object-contain max-h-56 drop-shadow-[0_15px_30px_rgba(0,0,0,0.8)] transform group-hover:scale-105 transition-all duration-500 ease-out"
+                        onError={(e) => {
+                          (e.target as any).style.display = "none";
+                        }}
+                      />
+                      {/* 이미지 에러시 대체 카드 */}
+                      <Box className="w-20 h-20 text-slate-800 absolute inset-0 m-auto -z-10 animate-pulse" />
+                    </div>
+
+                    {/* 하단 제어부: 밀수품 vs 전리품 각각의 상점 구매 버튼 */}
+                    <div className="w-full max-w-xl z-10 border-t border-slate-800/80 pt-5 space-y-4">
+                      
+                      {activeCrate.type === "contraband" ? (
+                        /* [사진 1] 밀수품 상자용 버튼 세트 */
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                          
+                          {/* 1회 열기 (200 G코인) */}
+                          <button
+                            onClick={() => handleOpenContrabandCrateWithGCoin("one")}
+                            disabled={timeLeft.isExpired}
+                            className="py-3.5 bg-slate-850 hover:bg-slate-800 text-white font-extrabold rounded-xl border border-slate-700 active:scale-95 shadow-lg flex flex-col items-center justify-center gap-1 cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <span className="text-slate-400 text-[10px] font-bold">1회 열기</span>
+                            <div className="flex items-center gap-1 text-xs">
+                              <Coins className="w-4 h-4 text-amber-500" />
+                              <span>200 G코인</span>
+                            </div>
+                          </button>
+
+                          {/* 10회 열기 (할인 노출) */}
+                          <button
+                            onClick={() => handleOpenContrabandCrateWithGCoin("ten")}
+                            disabled={timeLeft.isExpired}
+                            className="py-3.5 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-slate-950 font-black rounded-xl active:scale-95 shadow-xl shadow-orange-500/10 flex flex-col items-center justify-center gap-1 cursor-pointer transition-all disabled:opacity-50 disabled:cursor-not-allowed relative overflow-hidden"
+                          >
+                            {/* 10% 또는 50% 할인 동적 뱃지 */}
+                            <div className="absolute top-1 right-1 text-[8px] font-black bg-red-600 text-white px-1 py-0.2 rounded uppercase">
+                              {isTenDrawCompleted ? "10% 할인" : "50% 할인"}
+                            </div>
+                            <span className="text-slate-950 text-[10px] font-black">10회 열기</span>
+                            <div className="flex items-center gap-1 text-xs">
+                              <Coins className="w-4 h-4 text-slate-950" />
+                              <span className="line-through text-slate-950/50 text-[9px]">2,000 G코인</span>
+                              <span className="font-black">{isTenDrawCompleted ? "1,800" : "1,000"} G코인</span>
+                            </div>
+                          </button>
+
+                          {/* 쿠폰으로 열기 */}
+                          <button
+                            onClick={() => handleOpenContrabandWithCoupons("one")}
+                            disabled={timeLeft.isExpired || coupons < 10}
+                            className={`py-3.5 bg-indigo-950/80 hover:bg-indigo-900/90 text-indigo-200 font-extrabold rounded-xl border border-indigo-700/60 active:scale-95 shadow-lg flex flex-col items-center justify-center gap-1 cursor-pointer transition-all disabled:opacity-40 disabled:cursor-not-allowed`}
+                          >
+                            <span className="text-indigo-400 text-[10px] font-bold">쿠폰으로 열기</span>
+                            <div className="flex items-center gap-1 text-xs text-indigo-300">
+                              <Ticket className="w-4 h-4 text-indigo-400" />
+                              <span>10장 보유: {coupons}/10</span>
+                            </div>
+                          </button>
+
+                        </div>
+                      ) : (
+                        /* 전리품 상자용 패키지 구매 버튼바 (구매시 보관함으로 자동 이관) */
+                        <div className="space-y-4">
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                            {/* X55 */}
+                            <button
+                              onClick={() => handleBuyPackage("X55")}
+                              disabled={timeLeft.isExpired}
+                              className="p-3 bg-slate-950 hover:bg-slate-850 border border-slate-800 hover:border-amber-500/50 rounded-xl text-center active:scale-95 transition-all cursor-pointer flex flex-col items-center justify-between min-h-[90px] disabled:opacity-50"
+                            >
+                              <span className="text-[10px] font-black text-amber-500">화물 상자 55개</span>
+                              <div className="text-[8px] text-slate-500 mt-1 leading-tight">상자55+토큰800</div>
+                              <span className="text-xs font-black text-slate-300 mt-2">12,500 G코인</span>
+                            </button>
+
+                            {/* X27 */}
+                            <button
+                              onClick={() => handleBuyPackage("X27")}
+                              disabled={timeLeft.isExpired}
+                              className="p-3 bg-slate-950 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 rounded-xl text-center active:scale-95 transition-all cursor-pointer flex flex-col items-center justify-between min-h-[90px] disabled:opacity-50"
+                            >
+                              <span className="text-[10px] font-black text-slate-200">화물 상자 27개</span>
+                              <div className="text-[8px] text-slate-500 mt-1 leading-tight">상자27+토큰400</div>
+                              <span className="text-xs font-black text-slate-350 mt-2">6,250 G코인</span>
+                            </button>
+
+                            {/* X11 */}
+                            <button
+                              onClick={() => handleBuyPackage("X11")}
+                              disabled={timeLeft.isExpired}
+                              className="p-3 bg-slate-950 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 rounded-xl text-center active:scale-95 transition-all cursor-pointer flex flex-col items-center justify-between min-h-[90px] disabled:opacity-50"
+                            >
+                              <span className="text-[10px] font-black text-slate-200">화물 상자 11개</span>
+                              <div className="text-[8px] text-slate-500 mt-1 leading-tight">상자11+토큰150</div>
+                              <span className="text-xs font-black text-slate-350 mt-2">2,500 G코인</span>
+                            </button>
+
+                            {/* X1 */}
+                            <button
+                              onClick={() => handleBuyPackage("X1", "gcoin")}
+                              disabled={timeLeft.isExpired}
+                              className="p-3 bg-slate-950 hover:bg-slate-850 border border-slate-800 hover:border-slate-700 rounded-xl text-center active:scale-95 transition-all cursor-pointer flex flex-col items-center justify-between min-h-[90px] disabled:opacity-50"
+                            >
+                              <span className="text-[10px] font-black text-slate-200">화물 상자 1개</span>
+                              <div className="text-[8px] text-slate-500 mt-1 leading-tight">상자1+토큰15</div>
+                              <span className="text-xs font-black text-slate-350 mt-2">250 G코인</span>
+                            </button>
+                          </div>
+
+                          {/* BP로 X1 전리품 상자 구매 추가 슬롯 */}
+                          <div className="pt-1">
+                            <button
+                              onClick={() => handleBuyPackage("X1", "bp")}
+                              disabled={timeLeft.isExpired || bpBuyCount >= 50}
+                              className="w-full py-2.5 bg-indigo-950/30 hover:bg-indigo-950/60 border border-indigo-900/40 text-indigo-300 font-extrabold rounded-lg flex items-center justify-center gap-1 active:scale-95 transition-all cursor-pointer disabled:opacity-40 text-xs"
+                            >
+                              상자 1개 구매 (10,000 BP) - ({bpBuyCount}/50회)
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                    </div>
+                  </div>
+                )}
+
+                {/* 2. 제작소 보관함 탭 */}
+                {drawSubTab === "inventory" && activeCrate && (
+                  <div className="bg-slate-900/20 border border-slate-800/80 rounded-3xl p-5 flex flex-col justify-between relative overflow-hidden min-h-[550px] flex-1">
+                    
+                    {/* 2-A. 보유 목록 셀렉터 */}
+                    <div className="grid gap-3 shrink-0 z-10 grid-cols-1">
+                      {activeCrate.type === "loot_crate" ? (
+                        /* 전리품 상자 */
                         <div
                           onClick={() => {
                             collectRemainingCards();
@@ -643,347 +747,201 @@ export default function CratesClient({ initialCrates, exchangeRate }: CratesClie
                             </p>
                           </div>
                         </div>
-
-                        {/* 최고급 꾸러미 */}
+                      ) : (
                         <div
                           onClick={() => {
                             collectRemainingCards();
-                            setSelectedInventoryItem("prime_parcel");
+                            setSelectedInventoryItem("coupon");
                             setDrawnCards([]);
                           }}
                           className={`p-3.5 rounded-xl border cursor-pointer transition-all flex items-center gap-2.5 relative ${
-                            selectedInventoryItem === "prime_parcel"
-                              ? "bg-slate-850 border-pink-500 shadow-md shadow-pink-500/10 font-bold"
+                            selectedInventoryItem === "coupon"
+                              ? "bg-slate-850 border-indigo-500 shadow-md shadow-indigo-500/10 font-bold"
                               : "bg-slate-950/60 border-slate-850 hover:border-slate-700"
                           }`}
                         >
-                          <Sparkles className="w-7 h-7 text-pink-400 shrink-0" />
+                          <Ticket className="w-7 h-7 text-indigo-400 shrink-0" />
                           <div className="min-w-0">
-                            <h4 className="text-[11px] font-black text-slate-200 truncate">최고급 꾸러미</h4>
+                            <h4 className="text-[11px] font-black text-slate-200 truncate">밀수품 쿠폰</h4>
                             <p className="text-[9px] text-slate-500 mt-0.5">
-                              보유: <span className="font-extrabold text-pink-400">{primeParcels}</span> 개
+                              보유: <span className="font-extrabold text-indigo-400">{coupons}</span> 장
                             </p>
                           </div>
                         </div>
-                      </>
-                    ) : (
-                      <div
-                        onClick={() => {
-                          collectRemainingCards();
-                          setSelectedInventoryItem("coupon");
-                          setDrawnCards([]);
-                        }}
-                        className={`p-3.5 rounded-xl border cursor-pointer transition-all flex items-center gap-2.5 relative ${
-                          selectedInventoryItem === "coupon"
-                            ? "bg-slate-850 border-indigo-500 shadow-md shadow-indigo-500/10 font-bold"
-                            : "bg-slate-950/60 border-slate-850 hover:border-slate-700"
-                        }`}
-                        style={{ gridColumn: activeCrate.type === "contraband" ? "span 3" : "span 1" }}
-                      >
-                        <Ticket className="w-7 h-7 text-indigo-400 shrink-0" />
-                        <div className="min-w-0">
-                          <h4 className="text-[11px] font-black text-slate-200 truncate">밀수품 쿠폰</h4>
-                          <p className="text-[9px] text-slate-500 mt-0.5">
-                            보유: <span className="font-extrabold text-indigo-400">{coupons}</span> 장
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* 2-B. 바디 영역: 개봉 애니메이션 진행 or 상자 단품 대기 (우측 명세 패널 병합) */}
-                {isDrawing ? (
-                  <div className="flex-1 flex flex-col items-center justify-center space-y-5 z-10 py-10">
-                    <div className="relative w-36 h-36 flex items-center justify-center">
-                      <div className={`absolute inset-0 rounded-full blur-3xl ${
-                        hasBonusEffect ? "bg-amber-500/40 gold-glow-active" : "bg-amber-500/5 animate-ping"
-                      }`} />
-                      <Box className={`w-24 h-24 text-amber-500 anim-shake rounded-2xl ${
-                        hasBonusEffect ? "border border-amber-400/80 gold-glow-active shadow-2xl" : ""
-                      }`} />
-                    </div>
-                    <div className="text-center">
-                      <h3 className="text-lg font-black text-amber-400 tracking-wide">
-                        {drawMode === "prime" ? "최고급 꾸러미 해제 중..." : "상자 해제 중..."}
-                      </h3>
-                      {hasBonusEffect ? (
-                        <div className="mt-1 text-[10px] text-amber-400 font-black animate-pulse">
-                          ★ 보너스 전리품 당첨! 금색 광 방출 중 ★
-                        </div>
-                      ) : (
-                        <p className="text-[10px] text-slate-500 mt-1">상자가 흔들리며 구성품이 인벤토리에 지급되고 있습니다.</p>
                       )}
                     </div>
-                  </div>
-                ) : drawnCards.length > 0 ? (
-                  /* 가챠 결과 카드 리스트 노출 */
-                  <div className="flex-1 flex flex-col justify-between space-y-4 my-4 z-10">
-                    <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-                      <span className="text-[10px] text-slate-400 font-bold">개봉 결과 목록</span>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={handleRevealAll}
-                          className="text-[10px] font-black text-amber-400 hover:text-amber-300 border border-amber-950 px-2.5 py-1 rounded bg-amber-950/10 transition-all cursor-pointer"
-                        >
-                          전체 뒤집기
-                        </button>
-                        <button
-                          onClick={() => {
-                            collectRemainingCards();
-                            setDrawnCards([]);
-                          }}
-                          className="text-[10px] font-black text-slate-400 hover:text-slate-300 border border-slate-800 px-2.5 py-1 rounded bg-slate-950/50 transition-all cursor-pointer"
-                        >
-                          결과 닫기
-                        </button>
-                      </div>
-                    </div>
 
-                    <div className={`grid gap-3 flex-1 items-center justify-center ${
-                      drawnCards.length === 1 
-                        ? "grid-cols-1 max-w-[160px] mx-auto" 
-                        : "grid-cols-2 sm:grid-cols-5"
-                    }`}>
-                      {drawnCards.map((card, idx) => (
-                        <CrateCard
-                          key={card.id}
-                          card={card}
-                          isRevealed={revealedCards[idx]}
-                          onClick={() => handleCardClick(idx)}
-                          getRarityBadgeStyle={getRarityBadgeStyle}
-                          getCardBorderGlow={getCardBorderGlow}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  /* [사진 2] 보관함 개봉 대기 상태 - (좌: 상자 그래픽 / 우: 구성품 명세 구조) */
-                  <div className="flex-1 flex flex-col md:flex-row gap-6 my-6 z-10 items-stretch">
-                    
-                    {/* 좌측: 상자 대형 이미지 및 개봉 상태 */}
-                    <div className="flex-1 bg-slate-950/50 rounded-2xl border border-slate-850/60 p-6 flex flex-col items-center justify-center text-center">
-                      <div className="w-28 h-28 flex items-center justify-center relative mb-4">
-                        {selectedInventoryItem === "coupon" ? (
-                          <Ticket className="w-16 h-16 text-indigo-400 anim-float" />
-                        ) : selectedInventoryItem === "loot_crate" ? (
-                          <img
-                            src={activeCrate.image_url}
-                            alt={activeCrate.name}
-                            className="max-h-24 object-contain drop-shadow-[0_8px_16px_rgba(0,0,0,0.6)]"
-                          />
-                        ) : (
-                          <Sparkles className="w-16 h-16 text-pink-400 anim-float" />
-                        )}
-                      </div>
+                    {/* [사진 2] 보관함 개봉 대기 상태 - (좌: 상자 그래픽 / 우: 구성품 명세 구조) */}
+                    <div className="flex-1 flex flex-col md:flex-row gap-6 my-6 z-10 items-stretch">
                       
-                      <h3 className="text-base font-black text-slate-200">
-                        {selectedInventoryItem === "coupon" 
-                          ? "밀수품 쿠폰 사용" 
-                          : selectedInventoryItem === "loot_crate" 
-                            ? `${activeCrate.name} 열기` 
-                            : "최고급 꾸러미 열기"}
-                      </h3>
-                      
-                      <p className="text-[10px] text-slate-400 mt-1">
-                        보유량:{" "}
-                        <span className="font-extrabold text-amber-500">
+                      {/* 좌측: 상자 대형 이미지 및 개봉 상태 */}
+                      <div className="flex-1 bg-slate-950/50 rounded-2xl border border-slate-850/60 p-6 flex flex-col items-center justify-center text-center">
+                        <div className="w-28 h-28 flex items-center justify-center relative mb-4">
+                          {selectedInventoryItem === "coupon" ? (
+                            <Ticket className="w-16 h-16 text-indigo-400 anim-float" />
+                          ) : (
+                            <img
+                              src={activeCrate.image_url}
+                              alt={activeCrate.name}
+                              className="max-h-24 object-contain drop-shadow-[0_8px_16px_rgba(0,0,0,0.6)]"
+                            />
+                          )}
+                        </div>
+                        
+                        <h3 className="text-base font-black text-slate-200">
                           {selectedInventoryItem === "coupon" 
-                            ? coupons 
-                            : selectedInventoryItem === "loot_crate" 
-                              ? (inventoryCrates[activeCrate.id] || 0) 
-                              : primeParcels}
-                        </span>
-                        {selectedInventoryItem === "coupon" ? "장" : "개"}
-                      </p>
-                    </div>
+                            ? "밀수품 쿠폰 사용" 
+                            : `${activeCrate.name} 열기`}
+                        </h3>
+                        
+                        <p className="text-[10px] text-slate-400 mt-1">
+                          보유량:{" "}
+                          <span className="font-extrabold text-amber-500">
+                            {selectedInventoryItem === "coupon" 
+                              ? coupons 
+                              : (inventoryCrates[activeCrate.id] || 0)}
+                          </span>
+                          {selectedInventoryItem === "coupon" ? "장" : "개"}
+                        </p>
+                      </div>
 
-                    {/* [사진 2 우측] 구성품 및 보너스 구성품 목록 명세 */}
-                    <div className="w-full md:w-60 bg-slate-950/80 rounded-2xl border border-slate-850 p-4 flex flex-col justify-between text-xs space-y-4">
-                      <div className="space-y-3">
-                        {/* 기본 구성품 */}
-                        <div className="space-y-1.5">
-                          <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1 border-b border-slate-850 pb-1">
-                            <Box className="w-3 h-3 text-amber-500" />
-                            기본 구성품
-                          </h4>
-                          <ul className="space-y-1 text-[10px] text-slate-300 font-bold max-h-[120px] overflow-y-auto pr-1">
-                            {selectedInventoryItem === "prime_parcel" ? (
-                              activeCrate.prime_parcel_items
-                                .filter(item => !item.name.includes("토큰"))
-                                .slice(0, 5)
-                                .map((item, idx) => (
-                                  <li key={idx} className="flex justify-between items-center bg-slate-900/30 p-1.5 rounded">
-                                    <span className="truncate pr-2">{item.name}</span>
-                                    <span className="text-[8px] bg-red-950/50 text-red-400 px-1 rounded shrink-0">{getKoreanRarityName(item.rarity)}</span>
-                                  </li>
-                                ))
-                            ) : (
-                              activeCrate.items
+                      {/* [사진 2 우측] 구성품 및 보너스 구성품 목록 명세 */}
+                      <div className="w-full md:w-60 bg-slate-950/80 rounded-2xl border border-slate-850 p-4 flex flex-col justify-between text-xs space-y-4">
+                        <div className="space-y-3">
+                          {/* 기본 구성품 */}
+                          <div className="space-y-1.5">
+                            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1 border-b border-slate-850 pb-1">
+                              <Box className="w-3 h-3 text-amber-500" />
+                              기본 구성품
+                            </h4>
+                            <ul className="space-y-1 text-[10px] text-slate-300 font-bold max-h-[120px] overflow-y-auto pr-1">
+                              {activeCrate.items
                                 .slice(0, 5)
                                 .map((item, idx) => (
                                   <li key={idx} className="flex justify-between items-center bg-slate-900/30 p-1.5 rounded">
                                     <span className="truncate pr-2">{item.name}</span>
                                     <span className="text-[8px] bg-indigo-950/50 text-indigo-400 px-1 rounded shrink-0">{getKoreanRarityName(item.rarity)}</span>
                                   </li>
-                                ))
-                            )}
-                          </ul>
-                        </div>
-
-                        {/* 보너스 구성품 */}
-                        {activeCrate.bonus_items && activeCrate.bonus_items.length > 0 && selectedInventoryItem !== "prime_parcel" && (
-                          <div className="space-y-1.5">
-                            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1 border-b border-slate-850 pb-1">
-                              <Sparkles className="w-3 h-3 text-amber-500" />
-                              보너스 구성품
-                            </h4>
-                            <ul className="space-y-1 text-[10px] text-amber-400 font-extrabold">
-                              {activeCrate.bonus_items.slice(0, 4).map((bItem, idx) => (
-                                <li key={idx} className="flex justify-between items-center bg-amber-950/10 p-1.5 rounded border border-amber-900/10">
-                                  <span className="truncate">{bItem.name}</span>
-                                </li>
-                              ))}
+                                ))}
                             </ul>
                           </div>
-                        )}
+
+                          {/* 보너스 구성품 */}
+                          {activeCrate.bonus_items && activeCrate.bonus_items.length > 0 && (
+                            <div className="space-y-1.5">
+                              <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1 border-b border-slate-850 pb-1">
+                                <Sparkles className="w-3 h-3 text-amber-500" />
+                                보너스 구성품
+                              </h4>
+                              <ul className="space-y-1 text-[10px] text-amber-400 font-extrabold">
+                                {activeCrate.bonus_items.slice(0, 4).map((bItem, idx) => (
+                                  <li key={idx} className="flex justify-between items-center bg-amber-950/10 p-1.5 rounded border border-amber-900/10">
+                                    <span className="truncate">{bItem.name}</span>
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                        
+                        <div className="text-[10px] text-slate-500 bg-slate-900/40 p-2 rounded-lg leading-snug">
+                          ※ 상자 개봉 시 구성품 획득 확률은 인게임 공식 확률표 탭의 데이터 비율과 100% 동일하게 작동합니다.
+                        </div>
                       </div>
-                      
-                      <div className="text-[10px] text-slate-500 bg-slate-900/40 p-2 rounded-lg leading-snug">
-                        ※ 상자 개봉 시 구성품 획득 확률은 인게임 공식 확률표 탭의 데이터 비율과 100% 동일하게 작동합니다.
-                      </div>
+
+                    </div>
+
+                    {/* 2-C. 개봉 버튼바 */}
+                    <div className="mt-4 border-t border-slate-850/80 pt-4 shrink-0">
+                      {selectedInventoryItem === "coupon" ? (
+                        <div className="flex flex-wrap gap-2 justify-center w-full">
+                          <button
+                            onClick={() => handleOpenContrabandWithCoupons("one")}
+                            disabled={isDrawing || coupons < 10}
+                            className="flex-1 min-w-[100px] py-3 bg-slate-850 hover:bg-slate-800 text-white font-extrabold rounded-xl border border-slate-700 active:scale-95 transition-all text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed text-center"
+                          >
+                            1개 열기 (10장)
+                          </button>
+                          {coupons >= 50 && coupons < 100 && (
+                            <button
+                              onClick={() => handleOpenContrabandWithCoupons("five")}
+                              disabled={isDrawing}
+                              className="flex-1 min-w-[100px] py-3 bg-slate-850 hover:bg-slate-800 text-white font-extrabold rounded-xl border border-slate-700 active:scale-95 transition-all text-xs cursor-pointer text-center"
+                            >
+                              5개 열기 (50장)
+                            </button>
+                          )}
+                          {coupons >= 100 && (
+                            <button
+                              onClick={() => handleOpenContrabandWithCoupons("ten")}
+                              disabled={isDrawing}
+                              className="flex-1 min-w-[100px] py-3 bg-slate-850 hover:bg-slate-800 text-white font-extrabold rounded-xl border border-slate-700 active:scale-95 transition-all text-xs cursor-pointer text-center"
+                            >
+                              10개 열기 (100장)
+                            </button>
+                          )}
+                          {coupons >= 20 && (
+                            <button
+                              onClick={() => handleOpenContrabandWithCoupons("all")}
+                              disabled={isDrawing}
+                              className="flex-1 min-w-[120px] py-3 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-black rounded-xl active:scale-95 transition-all text-xs cursor-pointer text-center"
+                            >
+                              전체 열기 ({Math.floor(coupons / 10)}개)
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap gap-2 justify-center w-full">
+                          <button
+                            onClick={() => handleOpenInventoryCrates("one")}
+                            disabled={isDrawing || (inventoryCrates[activeCrate.id] || 0) < 1}
+                            className="flex-1 min-w-[100px] py-3 bg-slate-850 hover:bg-slate-800 text-white font-extrabold rounded-xl border border-slate-700 active:scale-95 transition-all text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed text-center"
+                          >
+                            1개 열기 (1개)
+                          </button>
+                          {(inventoryCrates[activeCrate.id] || 0) >= 5 && (inventoryCrates[activeCrate.id] || 0) < 10 && (
+                            <button
+                              onClick={() => handleOpenInventoryCrates("five")}
+                              disabled={isDrawing}
+                              className="flex-1 min-w-[100px] py-3 bg-slate-850 hover:bg-slate-800 text-white font-extrabold rounded-xl border border-slate-700 active:scale-95 transition-all text-xs cursor-pointer text-center"
+                            >
+                              5개 열기 (5개)
+                            </button>
+                          )}
+                          {(inventoryCrates[activeCrate.id] || 0) >= 10 && (
+                            <button
+                              onClick={() => handleOpenInventoryCrates("ten")}
+                              disabled={isDrawing}
+                              className="flex-1 min-w-[100px] py-3 bg-slate-850 hover:bg-slate-800 text-white font-extrabold rounded-xl border border-slate-700 active:scale-95 transition-all text-xs cursor-pointer text-center"
+                            >
+                              10개 열기 (10개)
+                            </button>
+                          )}
+                          {(inventoryCrates[activeCrate.id] || 0) >= 55 && (
+                            <button
+                              onClick={() => handleOpenInventoryCrates("fiftyfive")}
+                              disabled={isDrawing}
+                              className="flex-1 min-w-[100px] py-3 bg-slate-850 hover:bg-slate-800 text-white font-extrabold rounded-xl border border-slate-700 active:scale-95 transition-all text-xs cursor-pointer text-center"
+                            >
+                              55개 열기 (55개)
+                            </button>
+                          )}
+                          {(inventoryCrates[activeCrate.id] || 0) >= 2 && (
+                            <button
+                              onClick={() => handleOpenInventoryCrates("all")}
+                              disabled={isDrawing}
+                              className="flex-1 min-w-[120px] py-3 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-slate-950 font-black rounded-xl active:scale-95 transition-all text-xs cursor-pointer text-center"
+                            >
+                              전체 열기 ({(inventoryCrates[activeCrate.id] || 0)}개)
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
 
                   </div>
                 )}
-
-                {/* 2-C. 개봉 버튼바 */}
-                <div className="mt-4 border-t border-slate-850/80 pt-4 shrink-0">
-                  {selectedInventoryItem === "coupon" ? (
-                    <div className="flex flex-wrap gap-2 justify-center w-full">
-                      <button
-                        onClick={() => handleOpenContrabandWithCoupons("one")}
-                        disabled={isDrawing || coupons < 10}
-                        className="flex-1 min-w-[100px] py-3 bg-slate-850 hover:bg-slate-800 text-white font-extrabold rounded-xl border border-slate-700 active:scale-95 transition-all text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed text-center"
-                      >
-                        1개 열기 (10장)
-                      </button>
-                      {coupons >= 50 && coupons < 100 && (
-                        <button
-                          onClick={() => handleOpenContrabandWithCoupons("five")}
-                          disabled={isDrawing}
-                          className="flex-1 min-w-[100px] py-3 bg-slate-850 hover:bg-slate-800 text-white font-extrabold rounded-xl border border-slate-700 active:scale-95 transition-all text-xs cursor-pointer text-center"
-                        >
-                          5개 열기 (50장)
-                        </button>
-                      )}
-                      {coupons >= 100 && (
-                        <button
-                          onClick={() => handleOpenContrabandWithCoupons("ten")}
-                          disabled={isDrawing}
-                          className="flex-1 min-w-[100px] py-3 bg-slate-850 hover:bg-slate-800 text-white font-extrabold rounded-xl border border-slate-700 active:scale-95 transition-all text-xs cursor-pointer text-center"
-                        >
-                          10개 열기 (100장)
-                        </button>
-                      )}
-                      {coupons >= 20 && (
-                        <button
-                          onClick={() => handleOpenContrabandWithCoupons("all")}
-                          disabled={isDrawing}
-                          className="flex-1 min-w-[120px] py-3 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-black rounded-xl active:scale-95 transition-all text-xs cursor-pointer text-center"
-                        >
-                          전체 열기 ({Math.floor(coupons / 10)}개)
-                        </button>
-                      )}
-                    </div>
-                  ) : selectedInventoryItem === "loot_crate" ? (
-                    <div className="flex flex-wrap gap-2 justify-center w-full">
-                      <button
-                        onClick={() => handleOpenInventoryCrates("one")}
-                        disabled={isDrawing || (inventoryCrates[activeCrate.id] || 0) < 1}
-                        className="flex-1 min-w-[100px] py-3 bg-slate-850 hover:bg-slate-800 text-white font-extrabold rounded-xl border border-slate-700 active:scale-95 transition-all text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed text-center"
-                      >
-                        1개 열기 (1개)
-                      </button>
-                      {(inventoryCrates[activeCrate.id] || 0) >= 5 && (inventoryCrates[activeCrate.id] || 0) < 10 && (
-                        <button
-                          onClick={() => handleOpenInventoryCrates("five")}
-                          disabled={isDrawing}
-                          className="flex-1 min-w-[100px] py-3 bg-slate-850 hover:bg-slate-800 text-white font-extrabold rounded-xl border border-slate-700 active:scale-95 transition-all text-xs cursor-pointer text-center"
-                        >
-                          5개 열기 (5개)
-                        </button>
-                      )}
-                      {(inventoryCrates[activeCrate.id] || 0) >= 10 && (
-                        <button
-                          onClick={() => handleOpenInventoryCrates("ten")}
-                          disabled={isDrawing}
-                          className="flex-1 min-w-[100px] py-3 bg-slate-850 hover:bg-slate-800 text-white font-extrabold rounded-xl border border-slate-700 active:scale-95 transition-all text-xs cursor-pointer text-center"
-                        >
-                          10개 열기 (10개)
-                        </button>
-                      )}
-                      {(inventoryCrates[activeCrate.id] || 0) >= 55 && (
-                        <button
-                          onClick={() => handleOpenInventoryCrates("fiftyfive")}
-                          disabled={isDrawing}
-                          className="flex-1 min-w-[100px] py-3 bg-slate-850 hover:bg-slate-800 text-white font-extrabold rounded-xl border border-slate-700 active:scale-95 transition-all text-xs cursor-pointer text-center"
-                        >
-                          55개 열기 (55개)
-                        </button>
-                      )}
-                      {(inventoryCrates[activeCrate.id] || 0) >= 2 && (
-                        <button
-                          onClick={() => handleOpenInventoryCrates("all")}
-                          disabled={isDrawing}
-                          className="flex-1 min-w-[120px] py-3 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-slate-950 font-black rounded-xl active:scale-95 transition-all text-xs cursor-pointer text-center"
-                        >
-                          전체 열기 ({(inventoryCrates[activeCrate.id] || 0)}개)
-                        </button>
-                      )}
-                    </div>
-                  ) : (
-                    /* 최고급 꾸러미 */
-                    <div className="flex flex-wrap gap-2 justify-center w-full">
-                      <button
-                        onClick={() => handleOpenPrimeParcel(1)}
-                        disabled={isDrawing || primeParcels < 1}
-                        className="flex-1 min-w-[100px] py-3 bg-slate-850 hover:bg-slate-800 text-white font-extrabold rounded-xl border border-slate-700 active:scale-95 transition-all text-xs cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed text-center"
-                      >
-                        1개 열기 (1개)
-                      </button>
-                      {primeParcels >= 5 && primeParcels < 10 && (
-                        <button
-                          onClick={() => handleOpenPrimeParcel(5)}
-                          disabled={isDrawing}
-                          className="flex-1 min-w-[100px] py-3 bg-slate-850 hover:bg-slate-800 text-white font-extrabold rounded-xl border border-slate-700 active:scale-95 transition-all text-xs cursor-pointer text-center"
-                        >
-                          5개 열기 (5개)
-                        </button>
-                      )}
-                      {primeParcels >= 10 && (
-                        <button
-                          onClick={() => handleOpenPrimeParcel(10)}
-                          disabled={isDrawing}
-                          className="flex-1 min-w-[100px] py-3 bg-slate-850 hover:bg-slate-800 text-white font-extrabold rounded-xl border border-slate-700 active:scale-95 transition-all text-xs cursor-pointer text-center"
-                        >
-                          10개 열기 (10개)
-                        </button>
-                      )}
-                      {primeParcels >= 2 && (
-                        <button
-                          onClick={() => handleOpenPrimeParcel("all")}
-                          disabled={isDrawing}
-                          className="flex-1 min-w-[120px] py-3 bg-gradient-to-r from-pink-500 to-rose-600 hover:from-pink-600 hover:to-rose-700 text-white font-black rounded-xl active:scale-95 transition-all text-xs cursor-pointer text-center"
-                        >
-                          전체 열기 ({primeParcels}개)
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-              </div>
+              </>
             )}
 
           </div>
