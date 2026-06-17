@@ -11,6 +11,7 @@ export const getKoreanRarityName = (rarity: string) => {
     case "RARE": return "레어";
     case "SPECIAL": return "스페셜";
     case "COMMON": return "일반";
+    case "ELITE": return "엘리트";
     default: return rarity;
   }
 };
