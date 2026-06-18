@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/utils/supabase/server";
 import { uploadToR2 } from "@/lib/pubg-analysis/r2Service";
+import { normalizeCrateItemName } from "@/lib/crates/assetMapping";
 
 // 관리자 권한 검증 및 세션 체크
 async function verifyAdmin() {
@@ -29,6 +30,8 @@ export async function POST(request: Request) {
 
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
+    const requestedAssetKey = String(formData.get("assetKey") || "").trim();
+    const displayName = String(formData.get("displayName") || "").trim();
     
     if (!file) {
       return NextResponse.json({ error: "업로드할 파일이 존재하지 않습니다." }, { status: 400 });
@@ -43,11 +46,15 @@ export async function POST(request: Request) {
     const lastDotIndex = rawFilename.lastIndexOf(".");
     const ext = lastDotIndex !== -1 ? rawFilename.substring(lastDotIndex) : ".png";
     const baseName = lastDotIndex !== -1 ? rawFilename.substring(0, lastDotIndex) : rawFilename;
-    const sanitizedBase = baseName.replace(/[^a-zA-Z0-9.\-_]/g, "_");
-    
-    // 6자리 랜덤 난수를 추가하여 한글명 치환(예: _______.png) 시 덮어쓰기 및 경로 꼬임 원천 방지
+    const normalizedDisplayName = normalizeCrateItemName(displayName);
+    const sanitizedBase = (requestedAssetKey || normalizedDisplayName || baseName)
+      .replace(/[^a-zA-Z0-9.\-_]/g, "_")
+      .replace(/^_+|_+$/g, "");
+
     const uniqueId = Math.random().toString(36).substring(2, 8);
-    const uniqueFilename = `${sanitizedBase}_${uniqueId}${ext}`;
+    const uniqueFilename = requestedAssetKey
+      ? `${sanitizedBase}${ext}`
+      : `${sanitizedBase || "crate_asset"}_${uniqueId}${ext}`;
     
     const r2Key = `crates/${uniqueFilename}`;
 
@@ -60,6 +67,8 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       url: cdnUrl,
+      asset_key: uniqueFilename.replace(/\.[^.]+$/, ""),
+      r2_key: r2Key,
       filename: uniqueFilename
     });
 
