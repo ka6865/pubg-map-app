@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient as createSupabaseAdminClient } from "@supabase/supabase-js";
 import { createClient } from "@/utils/supabase/server";
 import { revalidateTag } from "next/cache";
+import { resolveCrateAssetFields } from "@/lib/crates/assetMapping";
 
 // 관리자 권한 검증 및 Supabase Admin 클라이언트 반환
 async function verifyAdmin() {
@@ -23,6 +24,110 @@ async function verifyAdmin() {
     return { user, supabaseAdmin };
   }
   return null;
+}
+
+function buildAssetPayload(row: any) {
+  const assetFields = resolveCrateAssetFields(row);
+  return {
+    ...assetFields,
+    display_name: row.name,
+    image_url: row.image_url || "",
+    aliases: [row.name].filter(Boolean),
+  };
+}
+
+function buildTemplatePayload(template: any, assetIdByKey = new Map<string, string>()) {
+  const assetFields = resolveCrateAssetFields(template);
+  return {
+    ...assetFields,
+    asset_id: assetIdByKey.get(assetFields.asset_key) || template.asset_id || null,
+    id: template.id,
+    name: template.name,
+    type: template.type,
+    price_gcoin: Number(template.price_gcoin || 0),
+    bundle_price_gcoin: Number(template.bundle_price_gcoin || 0),
+    price_bp: template.price_bp !== undefined && template.price_bp !== null && template.price_bp !== "" ? Number(template.price_bp) : null,
+    price_bp_limit: template.price_bp_limit !== undefined && template.price_bp_limit !== null && template.price_bp_limit !== "" ? Number(template.price_bp_limit) : null,
+    ticket_currency_code: template.ticket_currency_code || null,
+    ticket_price_single: template.ticket_price_single !== undefined && template.ticket_price_single !== null && template.ticket_price_single !== "" ? Number(template.ticket_price_single) : null,
+    ticket_price_bundle: template.ticket_price_bundle !== undefined && template.ticket_price_bundle !== null && template.ticket_price_bundle !== "" ? Number(template.ticket_price_bundle) : null,
+    bonus_currency_code: template.bonus_currency_code || null,
+    bonus_amount_single: template.bonus_amount_single !== undefined && template.bonus_amount_single !== null && template.bonus_amount_single !== "" ? Number(template.bonus_amount_single) : null,
+    bonus_amount_bundle: template.bonus_amount_bundle !== undefined && template.bonus_amount_bundle !== null && template.bonus_amount_bundle !== "" ? Number(template.bonus_amount_bundle) : null,
+    image_url: template.image_url || "",
+    description: template.description || "",
+    active: template.active === true || template.active === "true",
+    end_date: template.end_date || null
+  };
+}
+
+function buildCrateItemPayload(templateId: string, item: any, assetIdByKey = new Map<string, string>()) {
+  const assetFields = resolveCrateAssetFields(item);
+  return {
+    ...assetFields,
+    asset_id: assetIdByKey.get(assetFields.asset_key) || item.asset_id || null,
+    crate_template_id: templateId,
+    name: item.name,
+    rarity: item.rarity,
+    probability: Number(item.probability),
+    image_url: item.image_url || "",
+    is_prime_parcel: item.is_prime_parcel === true || item.is_prime_parcel === "true",
+    token_count: Number(item.token_count || 0)
+  };
+}
+
+function buildPrimeItemPayload(templateId: string, item: any, assetIdByKey = new Map<string, string>()) {
+  const assetFields = resolveCrateAssetFields(item);
+  return {
+    ...assetFields,
+    asset_id: assetIdByKey.get(assetFields.asset_key) || item.asset_id || null,
+    crate_template_id: templateId,
+    name: item.name,
+    rarity: item.rarity,
+    probability: Number(item.probability),
+    image_url: item.image_url || ""
+  };
+}
+
+function buildBonusItemPayload(templateId: string, item: any, assetIdByKey = new Map<string, string>()) {
+  const assetFields = resolveCrateAssetFields(item);
+  return {
+    ...assetFields,
+    asset_id: assetIdByKey.get(assetFields.asset_key) || item.asset_id || null,
+    crate_template_id: templateId,
+    name: item.name,
+    probability: Number(item.probability),
+    token_count: Number(item.token_count || 0),
+    is_prime_parcel: item.is_prime_parcel === true || item.is_prime_parcel === "true",
+    is_extra_crate: item.is_extra_crate === true || item.is_extra_crate === "true",
+    image_url: item.image_url || ""
+  };
+}
+
+async function upsertCrateAssets(supabaseAdmin: any, rows: any[]) {
+  const assetsByKey = new Map<string, ReturnType<typeof buildAssetPayload>>();
+  rows.forEach((row) => {
+    const asset = buildAssetPayload(row);
+    if (asset.asset_key) assetsByKey.set(asset.asset_key, asset);
+  });
+
+  const assets = Array.from(assetsByKey.values());
+  if (assets.length === 0) return new Map<string, string>();
+
+  const { error } = await supabaseAdmin
+    .from("crate_item_assets")
+    .upsert(assets, { onConflict: "asset_key" });
+
+  if (error) throw new Error(`아이템 이미지 매핑 저장 실패: ${error.message}`);
+
+  const { data, error: selectError } = await supabaseAdmin
+    .from("crate_item_assets")
+    .select("id, asset_key")
+    .in("asset_key", assets.map((asset) => asset.asset_key));
+
+  if (selectError) throw new Error(`아이템 이미지 매핑 조회 실패: ${selectError.message}`);
+
+  return new Map<string, string>((data || []).map((asset: any) => [asset.asset_key, asset.id]));
 }
 
 // 1. GET: 은신처 상점 목록 및 세부 정보 로드
@@ -110,19 +215,17 @@ export async function POST(request: Request) {
     const templateId = template.id;
 
     // A. 상자 템플릿 정보 저장
+    const assetIdByKey = await upsertCrateAssets(adminContext.supabaseAdmin, [
+      template,
+      ...(items || []),
+      ...(prime_parcel_items || []),
+      ...(bonus_items || []),
+    ]);
+    const templatePayload = buildTemplatePayload(template, assetIdByKey);
+
     const { error: tErr } = await adminContext.supabaseAdmin
       .from("crate_templates")
-      .upsert({
-        id: templateId,
-        name: template.name,
-        type: template.type,
-        price_gcoin: Number(template.price_gcoin || 0),
-        bundle_price_gcoin: Number(template.bundle_price_gcoin || 0),
-        image_url: template.image_url,
-        description: template.description || "",
-        active: template.active === true || template.active === "true",
-        end_date: template.end_date || null
-      });
+      .upsert(templatePayload);
 
     if (tErr) throw new Error(`상자 정보 저장 실패: ${tErr.message}`);
 
@@ -133,15 +236,7 @@ export async function POST(request: Request) {
       .eq("crate_template_id", templateId);
 
     if (items && items.length > 0) {
-      const itemsToInsert = items.map((item: any) => ({
-        crate_template_id: templateId,
-        name: item.name,
-        rarity: item.rarity,
-        probability: Number(item.probability),
-        image_url: item.image_url || "",
-        is_prime_parcel: item.is_prime_parcel === true || item.is_prime_parcel === "true",
-        token_count: Number(item.token_count || 0)
-      }));
+      const itemsToInsert = items.map((item: any) => buildCrateItemPayload(templateId, item, assetIdByKey));
 
       const { error: itemsErr } = await adminContext.supabaseAdmin
         .from("crate_items")
@@ -157,13 +252,7 @@ export async function POST(request: Request) {
       .eq("crate_template_id", templateId);
 
     if (template.type === "loot_crate" && prime_parcel_items && prime_parcel_items.length > 0) {
-      const primeToInsert = prime_parcel_items.map((pItem: any) => ({
-        crate_template_id: templateId,
-        name: pItem.name,
-        rarity: pItem.rarity,
-        probability: Number(pItem.probability),
-        image_url: pItem.image_url || ""
-      }));
+      const primeToInsert = prime_parcel_items.map((pItem: any) => buildPrimeItemPayload(templateId, pItem, assetIdByKey));
 
       const { error: primeErr } = await adminContext.supabaseAdmin
         .from("prime_parcel_items")
@@ -179,15 +268,7 @@ export async function POST(request: Request) {
       .eq("crate_template_id", templateId);
 
     if (bonus_items && bonus_items.length > 0) {
-      const bonusToInsert = bonus_items.map((bItem: any) => ({
-        crate_template_id: templateId,
-        name: bItem.name,
-        probability: Number(bItem.probability),
-        token_count: Number(bItem.token_count || 0),
-        is_prime_parcel: bItem.is_prime_parcel === true || bItem.is_prime_parcel === "true",
-        is_extra_crate: bItem.is_extra_crate === true || bItem.is_extra_crate === "true",
-        image_url: bItem.image_url || ""
-      }));
+      const bonusToInsert = bonus_items.map((bItem: any) => buildBonusItemPayload(templateId, bItem, assetIdByKey));
 
       const { error: bonusErr } = await adminContext.supabaseAdmin
         .from("bonus_items")

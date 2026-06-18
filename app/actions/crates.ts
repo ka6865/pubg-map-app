@@ -3,6 +3,7 @@
 import { createClient } from "@supabase/supabase-js";
 import { unstable_cache } from "next/cache";
 import type { CrateRarity, CrateTemplate } from "@/types/crates";
+import { resolveCrateAssetFields } from "@/lib/crates/assetMapping";
 
 const cleanEnv = (val: string | undefined) => (val || '').replace(/['";\s]+/g, '').trim();
 
@@ -33,73 +34,127 @@ export const getActiveCrates = unstable_cache(
       const result: CrateTemplate[] = [];
 
       for (const t of templates) {
-        // 2. 1차 획득 아이템 목록 조회
-        const { data: items, error: itemsError } = await supabase
-          .from("crate_items")
-          .select("*")
-          .eq("crate_template_id", t.id)
-          .order("probability", { ascending: false });
+        // 2. 해당 상자 템플릿의 모든 아이템 관계 및 자산 조회 (M:N 정규화 구조)
+        const { data: relations, error: relationsError } = await supabase
+          .from("crate_item_relations")
+          .select(`
+            id,
+            drop_type,
+            probability,
+            token_count,
+            is_prime_parcel,
+            is_extra_crate,
+            crate_item_assets (
+              id,
+              asset_key,
+              display_name,
+              normalized_name,
+              r2_key,
+              image_url,
+              rarity
+            )
+          `)
+          .eq("crate_template_id", t.id);
 
-        if (itemsError) {
-          console.error(`Error loading items for crate ${t.id}:`, itemsError.message);
+        if (relationsError) {
+          console.error(`Error loading relations for crate ${t.id}:`, relationsError.message);
         }
 
-        // 3. 2차 최고급 꾸러미 아이템 목록 조회 (전리품 상자 전용)
-        const { data: primeItems, error: primeError } = await supabase
-          .from("prime_parcel_items")
-          .select("*")
-          .eq("crate_template_id", t.id)
-          .order("probability", { ascending: false });
+        const activeRelations = relations || [];
 
-        if (primeError) {
-          console.error(`Error loading prime parcel items for crate ${t.id}:`, primeError.message);
-        }
+        // 3. drop_type별로 분류 및 매핑하여 기존 UI 컴포넌트 데이터 스펙과 동기화
+        const items = activeRelations
+          .filter((r) => r.drop_type === "base")
+          .map((r) => {
+            const asset = r.crate_item_assets as any;
+            const itemData = {
+              id: r.id, // 기존 API 호환을 위해 relation id를 고유 id로 제공
+              name: asset?.display_name || "",
+              asset_key: asset?.asset_key || "",
+              normalized_name: asset?.normalized_name || "",
+              r2_key: asset?.r2_key || "",
+              asset_id: asset?.id || null,
+              rarity: (asset?.rarity || "COMMON") as CrateRarity,
+              probability: Number(r.probability),
+              image_url: asset?.image_url || "",
+              is_prime_parcel: r.is_prime_parcel,
+              token_count: r.token_count || 0,
+            };
+            return {
+              ...resolveCrateAssetFields(itemData),
+              ...itemData,
+            };
+          })
+          .sort((a, b) => b.probability - a.probability);
 
-        // 4. 보너스 구성품 목록 조회
-        const { data: bonusItems, error: bonusError } = await supabase
-          .from("bonus_items")
-          .select("*")
-          .eq("crate_template_id", t.id)
-          .order("probability", { ascending: false });
+        const primeItems = activeRelations
+          .filter((r) => r.drop_type === "prime")
+          .map((r) => {
+            const asset = r.crate_item_assets as any;
+            const itemData = {
+              id: r.id,
+              name: asset?.display_name || "",
+              asset_key: asset?.asset_key || "",
+              normalized_name: asset?.normalized_name || "",
+              r2_key: asset?.r2_key || "",
+              asset_id: asset?.id || null,
+              rarity: (asset?.rarity || "COMMON") as CrateRarity,
+              probability: Number(r.probability),
+              image_url: asset?.image_url || "",
+            };
+            return {
+              ...resolveCrateAssetFields(itemData),
+              ...itemData,
+            };
+          })
+          .sort((a, b) => b.probability - a.probability);
 
-        if (bonusError) {
-          console.error(`Error loading bonus items for crate ${t.id}:`, bonusError.message);
-        }
+        const bonusItems = activeRelations
+          .filter((r) => r.drop_type === "bonus")
+          .map((r) => {
+            const asset = r.crate_item_assets as any;
+            const itemData = {
+              id: r.id,
+              name: asset?.display_name || "",
+              asset_key: asset?.asset_key || "",
+              normalized_name: asset?.normalized_name || "",
+              r2_key: asset?.r2_key || "",
+              asset_id: asset?.id || null,
+              probability: Number(r.probability),
+              token_count: r.token_count || 0,
+              is_prime_parcel: r.is_prime_parcel,
+              is_extra_crate: r.is_extra_crate,
+              image_url: asset?.image_url || "",
+            };
+            return {
+              ...resolveCrateAssetFields(itemData),
+              ...itemData,
+            };
+          })
+          .sort((a, b) => b.probability - a.probability);
 
         result.push({
+          ...resolveCrateAssetFields(t),
           id: t.id,
           name: t.name,
+          asset_id: t.asset_id || null,
           type: t.type as "loot_crate" | "contraband",
           price_gcoin: t.price_gcoin,
           bundle_price_gcoin: t.bundle_price_gcoin,
+          price_bp: t.price_bp,
+          price_bp_limit: t.price_bp_limit,
+          ticket_currency_code: t.ticket_currency_code,
+          ticket_price_single: t.ticket_price_single,
+          ticket_price_bundle: t.ticket_price_bundle,
+          bonus_currency_code: t.bonus_currency_code,
+          bonus_amount_single: t.bonus_amount_single,
+          bonus_amount_bundle: t.bonus_amount_bundle,
           image_url: t.image_url || "",
           description: t.description || "",
           end_date: t.end_date,
-          items: (items || []).map((item) => ({
-            id: item.id,
-            name: item.name,
-            rarity: item.rarity as CrateRarity,
-            probability: Number(item.probability),
-            image_url: item.image_url || "",
-            is_prime_parcel: item.is_prime_parcel,
-            token_count: item.token_count || 0,
-          })),
-          prime_parcel_items: (primeItems || []).map((pItem) => ({
-            id: pItem.id,
-            name: pItem.name,
-            rarity: pItem.rarity as CrateRarity,
-            probability: Number(pItem.probability),
-            image_url: pItem.image_url || "",
-          })),
-          bonus_items: (bonusItems || []).map((bItem) => ({
-            id: bItem.id,
-            name: bItem.name,
-            probability: Number(bItem.probability),
-            token_count: bItem.token_count || 0,
-            is_prime_parcel: bItem.is_prime_parcel,
-            is_extra_crate: bItem.is_extra_crate,
-            image_url: bItem.image_url || "",
-          })),
+          items,
+          prime_parcel_items: primeItems,
+          bonus_items: bonusItems,
         });
       }
 
@@ -110,6 +165,60 @@ export const getActiveCrates = unstable_cache(
     }
   },
   ["active-crates-data"],
+  {
+    revalidate: 604800, // 7 days
+    tags: ["crate-data"],
+  }
+);
+
+/**
+ * 특정 시즌에 속하는 제작소의 특수 제작 아이템 목록을 Supabase에서 조회합니다.
+ * unstable_cache를 사용해 캐싱하여 속도를 극대화합니다.
+ */
+export const getCraftableItems = unstable_cache(
+  async (seasonKey: string): Promise<any[]> => {
+    try {
+      const { data, error } = await supabase
+        .from("craftable_items")
+        .select(`
+          id,
+          season_key,
+          display_name,
+          token_cost,
+          category,
+          crate_item_assets (
+            id,
+            asset_key,
+            display_name,
+            normalized_name,
+            r2_key,
+            image_url,
+            rarity
+          )
+        `)
+        .eq("season_key", seasonKey)
+        .order("token_cost", { ascending: false });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      return (data || []).map((item: any) => {
+        const asset = item.crate_item_assets as any;
+        return {
+          name: item.display_name,
+          tokenCost: item.token_cost,
+          category: item.category,
+          rarity: asset?.rarity || "LEGENDARY",
+          image_url: asset?.image_url || "",
+        };
+      });
+    } catch (error) {
+      console.error("Error in getCraftableItems Server Action:", error);
+      return [];
+    }
+  },
+  ["craftable-items-data"],
   {
     revalidate: 604800, // 7 days
     tags: ["crate-data"],
