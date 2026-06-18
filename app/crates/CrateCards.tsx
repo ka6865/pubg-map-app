@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Box, Sparkles } from "lucide-react";
 import type { PrimeParcelItem } from "@/types/crates";
 import { DrawnCard, HistoryItem } from "./types";
@@ -16,6 +16,36 @@ export const getKoreanRarityName = (rarity: string) => {
   }
 };
 
+/**
+ * 금색 카드 뒤집기 특수 인게임 연출을 재생할 핵심 성장형 무기 스킨 및 크로마 스킨 목록 판별 함수
+ */
+export function isSpecialFlipEffectItem(itemName: string): boolean {
+  const targetItems = [
+    // 징글 벨 - 미니14 계열
+    "징글 벨 - 미니14 (골드 블루)",
+    "징글 벨 - 미니14",
+    // 네온 드림 - AUG 계열
+    "네온 드림 - AUG (화이트 오렌지)",
+    "네온 드림 - AUG (마젠타)",
+    "네온 드림 - AUG",
+    // 레스트 인 핑크 - 드라구노프 계열
+    "레스트 인 핑크 - 드라구노프 (핑크 옐로우)",
+    "레스트 인 핑크 - 드라구노프 (청록색)",
+    "레스트 인 핑크 - 드라구노프",
+    // 악마의 손길 - ACE32 계열
+    "악마의 손길 - ACE32 (퍼플 푸시아)",
+    "악마의 손길 - ACE32 (청록색)",
+    "악마의 손길 - ACE32",
+    // 라이드 오어 다이 - M249 계열
+    "라이드 오어 다이 - M249 (블랙 틸)",
+    "라이드 오어 다이 - M249",
+    // 코스믹 칼리버 - Kar98k 계열
+    "코스믹 칼리버 - Kar98k (화이트 옐로우)",
+    "코스믹 칼리버 - Kar98k"
+  ];
+  return targetItems.includes(itemName);
+}
+
 // ----------------------------------------------------
 // CrateCard Props & Component
 // ----------------------------------------------------
@@ -30,6 +60,39 @@ interface CrateCardProps {
 export function CrateCard({ card, isRevealed, onClick, getRarityBadgeStyle, getCardBorderGlow }: CrateCardProps) {
   const [imageError, setImageError] = useState(false);
   const [bonusImageError, setBonusImageError] = useState(false);
+  
+  // 특수 카드 뒤집기 연출용 로컬 상태
+  const [isAnimating, setIsAnimating] = useState(false);
+  const [particles, setParticles] = useState<{ x: number; y: number; delay: number; duration: number }[]>([]);
+  
+  const wasRevealed = useRef(isRevealed);
+
+  useEffect(() => {
+    // 카드가 뒤집히기 시작하고, 대상 특수 무기/크로마인 경우에만 이펙트 구동
+    if (isRevealed && !wasRevealed.current && isSpecialFlipEffectItem(card.name)) {
+      setIsAnimating(true);
+      
+      // 약 15개의 골드 스파클 파티클의 방출 방향과 시간차 난수 계산
+      const newParticles = Array.from({ length: 15 }).map(() => {
+        const angle = Math.random() * Math.PI * 2;
+        const velocity = 80 + Math.random() * 90; // 비산 거리 (px)
+        const x = Math.cos(angle) * velocity;
+        const y = Math.sin(angle) * velocity;
+        const delay = Math.random() * 0.12; // 미세 시간차 (s)
+        const duration = 0.8 + Math.random() * 0.4; // 지속 시간 (s)
+        return { x, y, delay, duration };
+      });
+      setParticles(newParticles);
+
+      const timer = setTimeout(() => {
+        setIsAnimating(false);
+      }, 1400); // 1.4초 후 애니메이션 종료
+
+      return () => clearTimeout(timer);
+    }
+    wasRevealed.current = isRevealed;
+  }, [isRevealed, card.name]);
+
   // Prevent spoiler: only show rarity glowing border/shadow when revealed
   const borderGlow = isRevealed 
     ? getCardBorderGlow(card.rarity, card.isBonus ?? false) 
@@ -40,10 +103,40 @@ export function CrateCard({ card, isRevealed, onClick, getRarityBadgeStyle, getC
   return (
     <div
       onClick={onClick}
-      className="w-full aspect-[3/4] min-h-[140px] perspective-1000 cursor-pointer group"
+      className={`w-full aspect-[3/4] min-h-[140px] perspective-1000 cursor-pointer group ${
+        isAnimating ? "relative z-[101]" : ""
+      }`}
     >
-      <div className={`relative w-full h-full transition-transform duration-500 preserve-3d ${
-        isRevealed ? "" : "rotate-y-180"
+      {/* 1단계: 전체 화면 Spotlight 어두운 딤 배경 */}
+      {isAnimating && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-[3px] z-[100] pointer-events-none animate-dimBg" />
+      )}
+
+      {/* 2단계: 금색 광원 충격파 고리 */}
+      {isAnimating && (
+        <div className="absolute top-1/2 left-1/2 w-40 h-40 rounded-full border-4 border-amber-400/80 pointer-events-none animate-goldShockwave z-[102]" />
+      )}
+
+      {/* 3단계: 카드 뒤쪽에서 퍼지는 금색 스파클 파티클 */}
+      {isAnimating && particles.map((p, i) => (
+        <div
+          key={i}
+          className="absolute w-1.5 h-1.5 rounded-full bg-gradient-to-r from-amber-400 via-yellow-500 to-orange-500 pointer-events-none animate-particleOut z-[102]"
+          style={{
+            left: "50%",
+            top: "50%",
+            "--tw-particle-x": `${p.x}px`,
+            "--tw-particle-y": `${p.y}px`,
+            "--tw-particle-duration": `${p.duration}s`,
+            animationDelay: `${p.delay}s`,
+          } as React.CSSProperties}
+        />
+      ))}
+
+      <div className={`relative w-full h-full preserve-3d ${
+        isAnimating 
+          ? "animate-goldBounceZoom" 
+          : `transition-transform duration-500 ${isRevealed ? "" : "rotate-y-180"}`
       }`}>
         {/* 카드 앞면 (공개됨) */}
         <div className={`absolute inset-0 rounded-xl bg-slate-900 border-2 p-2 sm:p-2.5 flex flex-col justify-between items-center backface-hidden ${borderGlow}`}>

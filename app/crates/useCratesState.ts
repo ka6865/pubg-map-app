@@ -188,6 +188,7 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
 
   // BP 구매 평생 한도 (50회 제한)
   const [bpBuyCount, setBpBuyCount] = useState<number>(0);
+  const [blackmarketTickets, setBlackmarketTickets] = useState<number>(0);
 
   // 이벤트 재화 보충기 모달 상태
   const [isRefillModalOpen, setIsRefillModalOpen] = useState<boolean>(false);
@@ -1097,6 +1098,7 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
     setSpentBp(0);
     setChargeCount(0);
     setBpBuyCount(0);
+    setBlackmarketTickets(0);
     setDrawnCards([]);
     setRevealedCards([]);
     setHistory([]);
@@ -1147,6 +1149,171 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
     return true;
   };
 
+  // 2026 블랙 마켓 화물 티켓 구매 핸들러 (BP 사용)
+  const handleBuyBlackmarketTickets = (count: number) => {
+    if (!activeCrate) return;
+    const ticketPrice = (activeCrate.price_bp || 10000) * count;
+    const limit = activeCrate.price_bp_limit || 50;
+
+    if (bp < ticketPrice) {
+      toast.error("보유 가상 BP가 부족합니다. 미션 수행 등으로 추가 BP를 확보하세요.");
+      return;
+    }
+    if (bpBuyCount + count > limit) {
+      toast.warning(`BP를 통한 구매 한도(${limit}회)를 초과할 수 없습니다. (현재 구매 횟수: ${bpBuyCount}/${limit}회)`);
+      return;
+    }
+
+    setBp((prev) => prev - ticketPrice);
+    setSpentBp((prev) => prev + ticketPrice);
+    setBlackmarketTickets((prev) => prev + count);
+    setBpBuyCount((prev) => prev + count);
+
+    toast.success(`2026 블랙 마켓 화물 티켓 ${count}장 구매가 완료되었습니다. (보유: ${blackmarketTickets + count}장)`);
+  };
+
+  // 전리품 상자(Loot Crate) 즉시 개봉 핸들러 (G-Coin 또는 티켓 사용)
+  const handleOpenLootCrateDirect = (mode: "one" | "ten", paymentMethod: "gcoin" | "ticket") => {
+    if (!activeCrate) return;
+
+    let price = 0;
+    let countToOpen = 0;
+    let bonusAmount = 0;
+
+    if (mode === "one") {
+      price = paymentMethod === "gcoin"
+        ? (activeCrate.price_gcoin || 250)
+        : (activeCrate.ticket_price_single || 1);
+      countToOpen = 1;
+      bonusAmount = activeCrate.bonus_amount_single || 10;
+    } else {
+      price = paymentMethod === "gcoin"
+        ? (activeCrate.bundle_price_gcoin || 2500)
+        : (activeCrate.ticket_price_bundle || 10);
+      countToOpen = 10;
+      bonusAmount = activeCrate.bonus_amount_bundle || 100;
+    }
+
+    if (paymentMethod === "gcoin") {
+      if (gcoin < price) {
+        toast.error("보유 가상 G-Coin이 부족합니다. 상단의 충전 버튼을 이용해주세요.");
+        return;
+      }
+      setGcoin((prev) => prev - price);
+      setSpentGcoin((prev) => prev + price);
+    } else {
+      const ticketCode = activeCrate.ticket_currency_code || "blackmarket_ticket";
+      if (ticketCode === "blackmarket_ticket") {
+        if (blackmarketTickets < price) {
+          toast.error("보유한 화물 티켓이 부족합니다. BP로 티켓을 구매해보세요.");
+          return;
+        }
+        setBlackmarketTickets((prev) => prev - price);
+      } else {
+        if (coupons < price) {
+          toast.error("보유한 쿠폰이 부족합니다.");
+          return;
+        }
+        setCoupons((prev) => prev - price);
+      }
+    }
+
+    // 보너스 토큰 지급 (bonus_currency_code 가 blackmarket_token 일 때)
+    if (bonusAmount > 0) {
+      setTokens((prev) => prev + bonusAmount);
+    }
+
+    drawLootCratesDirect(countToOpen);
+  };
+
+  // 전리품 상자 즉시 개봉 드롭 연출 헬퍼
+  const drawLootCratesDirect = (countToOpen: number) => {
+    if (!activeCrate) return;
+
+    const needsCollect = hasPendingOrUnrevealedCards();
+    if (needsCollect) {
+      collectRemainingCards(1500);
+    }
+
+    const startDraw = () => {
+      // GA4 트래킹: 상자 개봉 기록
+      trackEvent({
+        name: "crate_opened",
+        params: {
+          crate_id: activeCrate.id,
+          open_count: countToOpen
+        }
+      });
+      setIsDrawing(true);
+      setDrawMode("standard");
+
+      const results: DrawnCard[] = [];
+      let hasBonusWon = false;
+
+      for (let i = 0; i < countToOpen; i++) {
+        const baseItem = drawSingleItem(activeCrate.items);
+        const card: DrawnCard = {
+          id: crypto.randomUUID(),
+          name: baseItem.name,
+          asset_key: baseItem.asset_key,
+          normalized_name: baseItem.normalized_name,
+          r2_key: baseItem.r2_key,
+          asset_id: baseItem.asset_id,
+          rarity: baseItem.rarity,
+          image_url: baseItem.image_url,
+          isFromPrimeParcel: false,
+          isBonus: false,
+          is_prime_parcel: baseItem.is_prime_parcel,
+          token_count: baseItem.token_count,
+          probability: baseItem.probability,
+        };
+
+        if (activeCrate.bonus_items && activeCrate.bonus_items.length > 0) {
+          const bonusItem = tryDrawBonusItem(activeCrate.bonus_items);
+          if (bonusItem) {
+            hasBonusWon = true;
+            card.bonus = {
+              id: crypto.randomUUID(),
+              name: bonusItem.name,
+              asset_key: bonusItem.asset_key,
+              normalized_name: bonusItem.normalized_name,
+              r2_key: bonusItem.r2_key,
+              asset_id: bonusItem.asset_id,
+              rarity: bonusItem.is_prime_parcel
+                ? "ULTIMATE"
+                : bonusItem.name.includes("획득권")
+                  ? "EPIC"
+                  : bonusItem.is_extra_crate
+                    ? "RARE"
+                    : "LEGENDARY",
+              image_url: bonusItem.image_url,
+              is_prime_parcel: bonusItem.is_prime_parcel,
+              is_extra_crate: bonusItem.is_extra_crate,
+              token_count: bonusItem.token_count,
+              probability: bonusItem.probability,
+            };
+          }
+        }
+
+        results.push(card);
+      }
+
+      setHasBonusEffect(hasBonusWon);
+      setDrawnCards(results);
+      setRevealedCards(new Array(results.length).fill(false));
+
+      setTimeout(() => {
+        setIsDrawing(false);
+        setStats((prev) => ({
+          ...prev,
+          totalOpens: prev.totalOpens + countToOpen,
+        }));
+      }, 1500);
+    };
+
+    startDraw();
+  };
+
   return {
     bp,
     setBp,
@@ -1167,6 +1334,8 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
     spentBp,
     chargeCount,
     bpBuyCount,
+    blackmarketTickets,
+    setBlackmarketTickets,
     isDrawing,
     hasBonusEffect,
     drawMode,
@@ -1213,6 +1382,8 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
     handleResetSimulator,
     collectRemainingCards,
     handleCraftItem,
+    handleBuyBlackmarketTickets,
+    handleOpenLootCrateDirect,
     isResetModalOpen,
     setIsResetModalOpen,
     executeResetSimulator

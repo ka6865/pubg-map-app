@@ -7,6 +7,7 @@ import { supabase } from "../../lib/supabase";
 import { toast } from "sonner";
 import { ItemCategory, GameItem, Vehicle, Weapon } from "@/types/game-data";
 import ConfirmModal from "@/components/common/ConfirmModal";
+import { resolveCrateAssetFields } from "@/lib/crates/assetMapping";
 
 export default function GameDataEditor() {
   const router = useRouter();
@@ -192,6 +193,31 @@ export default function GameDataEditor() {
   } | null>(null);
   const [crateEditorTab, setCrateEditorTab] = useState<"items" | "prime" | "bonus">("items");
 
+  const getCrateUploadSource = (
+    target: "template" | "items" | "prime" | "bonus",
+    index?: number
+  ) => {
+    if (!selectedCrateDetail) return null;
+    if (target === "template") return selectedCrateDetail.template;
+    if (target === "items" && index !== undefined) return selectedCrateDetail.items[index];
+    if (target === "prime" && index !== undefined) return selectedCrateDetail.prime_parcel_items[index];
+    if (target === "bonus" && index !== undefined) return selectedCrateDetail.bonus_items[index];
+    return null;
+  };
+
+  const withCrateAssetFields = (row: any, result?: any) => {
+    const merged = {
+      ...row,
+      image_url: result?.url || row.image_url || "",
+      asset_key: result?.asset_key || row.asset_key,
+      r2_key: result?.r2_key || row.r2_key,
+    };
+    return {
+      ...merged,
+      ...resolveCrateAssetFields(merged),
+    };
+  };
+
   // R2 이미지 업로드 공통 핸들러
   const handleImageUpload = async (
     e: React.ChangeEvent<HTMLInputElement>,
@@ -206,6 +232,10 @@ export default function GameDataEditor() {
       const { data: { session } } = await supabase.auth.getSession();
       const formData = new FormData();
       formData.append("file", file);
+      const uploadSource = getCrateUploadSource(target, index);
+      const assetFields = resolveCrateAssetFields(uploadSource || { name: file.name });
+      formData.append("displayName", uploadSource?.name || file.name);
+      if (assetFields.asset_key) formData.append("assetKey", assetFields.asset_key);
 
       const response = await fetch("/api/admin/crates/upload", {
         method: "POST",
@@ -226,26 +256,26 @@ export default function GameDataEditor() {
             ...selectedCrateDetail,
             template: {
               ...selectedCrateDetail.template,
-              image_url: result.url
+              ...withCrateAssetFields(selectedCrateDetail.template, result)
             }
           });
         }
       } else if (target === "items" && index !== undefined) {
         if (selectedCrateDetail) {
           const updatedItems = [...selectedCrateDetail.items];
-          updatedItems[index] = { ...updatedItems[index], image_url: result.url };
+          updatedItems[index] = withCrateAssetFields(updatedItems[index], result);
           setSelectedCrateDetail({ ...selectedCrateDetail, items: updatedItems });
         }
       } else if (target === "prime" && index !== undefined) {
         if (selectedCrateDetail) {
           const updatedPrime = [...selectedCrateDetail.prime_parcel_items];
-          updatedPrime[index] = { ...updatedPrime[index], image_url: result.url };
+          updatedPrime[index] = withCrateAssetFields(updatedPrime[index], result);
           setSelectedCrateDetail({ ...selectedCrateDetail, prime_parcel_items: updatedPrime });
         }
       } else if (target === "bonus" && index !== undefined) {
         if (selectedCrateDetail) {
           const updatedBonus = [...selectedCrateDetail.bonus_items];
-          updatedBonus[index] = { ...updatedBonus[index], image_url: result.url };
+          updatedBonus[index] = withCrateAssetFields(updatedBonus[index], result);
           setSelectedCrateDetail({ ...selectedCrateDetail, bonus_items: updatedBonus });
         }
       }
@@ -658,6 +688,14 @@ export default function GameDataEditor() {
           type: "contraband",
           price_gcoin: 200,
           bundle_price_gcoin: 1800,
+          price_bp: 8000,
+          price_bp_limit: 50,
+          ticket_currency_code: "contraband_coupon",
+          ticket_price_single: 10,
+          ticket_price_bundle: 100,
+          bonus_currency_code: "contraband_scrap",
+          bonus_amount_single: 1,
+          bonus_amount_bundle: 10,
           image_url: "",
           description: "",
           active: true,
@@ -1740,6 +1778,108 @@ export default function GameDataEditor() {
                           onChange={(e) => setSelectedCrateDetail({
                             ...selectedCrateDetail,
                             template: { ...selectedCrateDetail.template, bundle_price_gcoin: Number(e.target.value) }
+                          })}
+                          className="w-full bg-[#111] border border-[#333] rounded px-4 py-2.5 text-sm focus:outline-none focus:border-[#F2A900]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-500 mb-2">BP 가격 (1회)</label>
+                        <input
+                          type="number"
+                          value={selectedCrateDetail.template.price_bp !== null && selectedCrateDetail.template.price_bp !== undefined ? selectedCrateDetail.template.price_bp : ""}
+                          onChange={(e) => setSelectedCrateDetail({
+                            ...selectedCrateDetail,
+                            template: { ...selectedCrateDetail.template, price_bp: e.target.value ? Number(e.target.value) : null }
+                          })}
+                          className="w-full bg-[#111] border border-[#333] rounded px-4 py-2.5 text-sm focus:outline-none focus:border-[#F2A900]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-500 mb-2">BP 구매 평생 한도</label>
+                        <input
+                          type="number"
+                          value={selectedCrateDetail.template.price_bp_limit !== null && selectedCrateDetail.template.price_bp_limit !== undefined ? selectedCrateDetail.template.price_bp_limit : ""}
+                          onChange={(e) => setSelectedCrateDetail({
+                            ...selectedCrateDetail,
+                            template: { ...selectedCrateDetail.template, price_bp_limit: e.target.value ? Number(e.target.value) : null }
+                          })}
+                          className="w-full bg-[#111] border border-[#333] rounded px-4 py-2.5 text-sm focus:outline-none focus:border-[#F2A900]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-500 mb-2">티켓/쿠폰 재화 코드</label>
+                        <select
+                          value={selectedCrateDetail.template.ticket_currency_code || ""}
+                          onChange={(e) => setSelectedCrateDetail({
+                            ...selectedCrateDetail,
+                            template: { ...selectedCrateDetail.template, ticket_currency_code: e.target.value || null }
+                          })}
+                          className="w-full bg-[#111] border border-[#333] rounded px-4 py-2.5 text-sm focus:outline-none focus:border-[#F2A900]"
+                        >
+                          <option value="">없음 (비활성화)</option>
+                          <option value="blackmarket_ticket">2026 블랙 마켓 티켓 (blackmarket_ticket)</option>
+                          <option value="contraband_coupon">밀수품 쿠폰 (contraband_coupon)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-500 mb-2">티켓 1회 가격</label>
+                        <input
+                          type="number"
+                          value={selectedCrateDetail.template.ticket_price_single !== null && selectedCrateDetail.template.ticket_price_single !== undefined ? selectedCrateDetail.template.ticket_price_single : ""}
+                          onChange={(e) => setSelectedCrateDetail({
+                            ...selectedCrateDetail,
+                            template: { ...selectedCrateDetail.template, ticket_price_single: e.target.value ? Number(e.target.value) : null }
+                          })}
+                          className="w-full bg-[#111] border border-[#333] rounded px-4 py-2.5 text-sm focus:outline-none focus:border-[#F2A900]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-500 mb-2">티켓 10회 가격</label>
+                        <input
+                          type="number"
+                          value={selectedCrateDetail.template.ticket_price_bundle !== null && selectedCrateDetail.template.ticket_price_bundle !== undefined ? selectedCrateDetail.template.ticket_price_bundle : ""}
+                          onChange={(e) => setSelectedCrateDetail({
+                            ...selectedCrateDetail,
+                            template: { ...selectedCrateDetail.template, ticket_price_bundle: e.target.value ? Number(e.target.value) : null }
+                          })}
+                          className="w-full bg-[#111] border border-[#333] rounded px-4 py-2.5 text-sm focus:outline-none focus:border-[#F2A900]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-500 mb-2">보너스 재화 코드</label>
+                        <select
+                          value={selectedCrateDetail.template.bonus_currency_code || ""}
+                          onChange={(e) => setSelectedCrateDetail({
+                            ...selectedCrateDetail,
+                            template: { ...selectedCrateDetail.template, bonus_currency_code: e.target.value || null }
+                          })}
+                          className="w-full bg-[#111] border border-[#333] rounded px-4 py-2.5 text-sm focus:outline-none focus:border-[#F2A900]"
+                        >
+                          <option value="">없음 (비활성화)</option>
+                          <option value="blackmarket_token">2026 블랙 마켓 토큰 (blackmarket_token)</option>
+                          <option value="contraband_scrap">밀수품 스크랩 (contraband_scrap)</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-500 mb-2">1회 개봉 보너스 수량</label>
+                        <input
+                          type="number"
+                          value={selectedCrateDetail.template.bonus_amount_single !== null && selectedCrateDetail.template.bonus_amount_single !== undefined ? selectedCrateDetail.template.bonus_amount_single : ""}
+                          onChange={(e) => setSelectedCrateDetail({
+                            ...selectedCrateDetail,
+                            template: { ...selectedCrateDetail.template, bonus_amount_single: e.target.value ? Number(e.target.value) : null }
+                          })}
+                          className="w-full bg-[#111] border border-[#333] rounded px-4 py-2.5 text-sm focus:outline-none focus:border-[#F2A900]"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-500 mb-2">10회 개봉 보너스 수량</label>
+                        <input
+                          type="number"
+                          value={selectedCrateDetail.template.bonus_amount_bundle !== null && selectedCrateDetail.template.bonus_amount_bundle !== undefined ? selectedCrateDetail.template.bonus_amount_bundle : ""}
+                          onChange={(e) => setSelectedCrateDetail({
+                            ...selectedCrateDetail,
+                            template: { ...selectedCrateDetail.template, bonus_amount_bundle: e.target.value ? Number(e.target.value) : null }
                           })}
                           className="w-full bg-[#111] border border-[#333] rounded px-4 py-2.5 text-sm focus:outline-none focus:border-[#F2A900]"
                         />

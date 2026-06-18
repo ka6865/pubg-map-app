@@ -12,14 +12,20 @@ export type R2BucketUsage = {
   configured: boolean;
 };
 
+const cleanEnv = (val: string | undefined) => (val || '').replace(/['";\s]+/g, '').trim();
+
 function getR2Client(): S3Client {
   if (!r2ClientInstance) {
+    const endpoint = cleanEnv(process.env.CLOUDFLARE_R2_ENDPOINT);
+    const accessKeyId = cleanEnv(process.env.CLOUDFLARE_R2_ACCESS_KEY_ID);
+    const secretAccessKey = cleanEnv(process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY);
+
     r2ClientInstance = new S3Client({
       region: 'auto',
-      endpoint: process.env.CLOUDFLARE_R2_ENDPOINT,
+      endpoint: endpoint || undefined,
       credentials: {
-        accessKeyId: process.env.CLOUDFLARE_R2_ACCESS_KEY_ID || '',
-        secretAccessKey: process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY || '',
+        accessKeyId: accessKeyId || '',
+        secretAccessKey: secretAccessKey || '',
       },
       forcePathStyle: true,
     });
@@ -28,7 +34,7 @@ function getR2Client(): S3Client {
 }
 
 function getBucketName(): string {
-  return process.env.CLOUDFLARE_R2_BUCKET_NAME || 'telemetry';
+  return cleanEnv(process.env.CLOUDFLARE_R2_BUCKET_NAME) || 'telemetry';
 }
 
 /**
@@ -38,7 +44,7 @@ function getBucketName(): string {
  * @param contentType The MIME content type of the file
  */
 export async function uploadToR2(key: string, body: string | Buffer, contentType: string = 'application/json'): Promise<void> {
-  if (!process.env.CLOUDFLARE_R2_ENDPOINT) {
+  if (!cleanEnv(process.env.CLOUDFLARE_R2_ENDPOINT)) {
     console.warn('[R2 Warning] Cloudflare R2 Credentials are not configured. Skipping upload.');
     return;
   }
@@ -64,7 +70,7 @@ export async function uploadToR2(key: string, body: string | Buffer, contentType
  * @param expiresInSeconds Duration in seconds for the link to remain active (default: 3600s / 1 Hour)
  */
 export async function getPresignedUrlFromR2(key: string, expiresInSeconds: number = 3600): Promise<string> {
-  if (!process.env.CLOUDFLARE_R2_ENDPOINT) {
+  if (!cleanEnv(process.env.CLOUDFLARE_R2_ENDPOINT)) {
     console.warn('[R2 Warning] Cloudflare R2 Credentials are not configured. Returning local mock URL.');
     return `/mock-telemetry/${key}`;
   }
@@ -88,7 +94,7 @@ export async function getPresignedUrlFromR2(key: string, expiresInSeconds: numbe
  * @param key The filename/key of the file to retrieve
  */
 export async function downloadFromR2(key: string): Promise<string | null> {
-  if (!process.env.CLOUDFLARE_R2_ENDPOINT) {
+  if (!cleanEnv(process.env.CLOUDFLARE_R2_ENDPOINT)) {
     console.warn('[R2 Warning] Cloudflare R2 Credentials are not configured. Returning null.');
     return null;
   }
@@ -117,7 +123,7 @@ export async function downloadFromR2(key: string): Promise<string | null> {
  * @param key The filename/key of the file to remove
  */
 export async function deleteFromR2(key: string): Promise<void> {
-  if (!process.env.CLOUDFLARE_R2_ENDPOINT) {
+  if (!cleanEnv(process.env.CLOUDFLARE_R2_ENDPOINT)) {
     console.warn('[R2 Warning] Cloudflare R2 Credentials are not configured. Skipping delete.');
     return;
   }
@@ -140,7 +146,7 @@ export async function deleteFromR2(key: string): Promise<void> {
  * @param keys Array of filenames/keys of the files to remove
  */
 export async function deleteMultipleFromR2(keys: string[]): Promise<void> {
-  if (!process.env.CLOUDFLARE_R2_ENDPOINT || keys.length === 0) {
+  if (!cleanEnv(process.env.CLOUDFLARE_R2_ENDPOINT) || keys.length === 0) {
     return;
   }
 
@@ -174,7 +180,7 @@ export async function deleteMultipleFromR2(keys: string[]): Promise<void> {
  * @param limit Maximum number of files to return (default: 1000)
  */
 export async function listR2Files(limit: number = 1000): Promise<{ key: string; size: number }[]> {
-  if (!process.env.CLOUDFLARE_R2_ENDPOINT) {
+  if (!cleanEnv(process.env.CLOUDFLARE_R2_ENDPOINT)) {
     console.warn('[R2 Warning] Cloudflare R2 Credentials are not configured. Returning empty file list.');
     return [];
   }
@@ -209,7 +215,7 @@ export async function listR2Files(limit: number = 1000): Promise<{ key: string; 
  */
 export async function getR2BucketUsage(options: { maxObjects?: number; pageSize?: number } = {}): Promise<R2BucketUsage> {
   const bucketName = getBucketName();
-  if (!process.env.CLOUDFLARE_R2_ENDPOINT) {
+  if (!cleanEnv(process.env.CLOUDFLARE_R2_ENDPOINT)) {
     console.warn('[R2 Warning] Cloudflare R2 Credentials are not configured. Returning zero usage.');
     return {
       bucketName,
@@ -269,7 +275,7 @@ export async function getR2BucketUsage(options: { maxObjects?: number; pageSize?
  * @param key The filename/key of the file to retrieve
  */
 export async function downloadBufferFromR2(key: string): Promise<Buffer | null> {
-  if (!process.env.CLOUDFLARE_R2_ENDPOINT) {
+  if (!cleanEnv(process.env.CLOUDFLARE_R2_ENDPOINT)) {
     console.warn('[R2 Warning] Cloudflare R2 Credentials are not configured. Returning null.');
     return null;
   }

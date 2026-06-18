@@ -486,16 +486,19 @@ interface CraftingModalProps {
   tokens: number;
   obtainedSkins: Record<string, number>;
   onCraft: (itemName: string, tokenCost: number) => boolean;
+  craftableItems: any[];
 }
 
-export function CraftingModal({ isOpen, onClose, tokens, obtainedSkins, onCraft }: CraftingModalProps) {
+export function CraftingModal({ isOpen, onClose, tokens, obtainedSkins, onCraft, craftableItems }: CraftingModalProps) {
   const [activeSubTab, setActiveSubTab] = useState<string>("전체");
   
   if (!isOpen) return null;
 
   const filteredItems = activeSubTab === "전체" 
-    ? HARLEY_CRAFTABLE_ITEMS 
-    : HARLEY_CRAFTABLE_ITEMS.filter(item => item.category === activeSubTab);
+    ? craftableItems 
+    : craftableItems.filter(item => item.category === activeSubTab);
+
+  const categories = ["전체", ...Array.from(new Set(craftableItems.map(item => item.category)))];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-md animate-[fadeIn_0.2s_ease-out]">
@@ -509,7 +512,7 @@ export function CraftingModal({ isOpen, onClose, tokens, obtainedSkins, onCraft 
               제작소 &gt; 특수 제작
             </h2>
             <p className="text-xs text-slate-400 mt-1">
-              획득한 할리데이비슨 토큰을 소모하여 당신만의 특별한 도안 아이템을 제작해 보세요.
+              획득한 이벤트 토큰을 소모하여 당신만의 특별한 도안 아이템을 제작해 보세요.
             </p>
           </div>
           <div className="flex items-center gap-4">
@@ -533,7 +536,7 @@ export function CraftingModal({ isOpen, onClose, tokens, obtainedSkins, onCraft 
 
         {/* 탭 네비게이션 */}
         <div className="px-6 py-3 border-b border-slate-800 bg-slate-950/20 flex gap-2 overflow-x-auto shrink-0">
-          {["전체", "CVO™ ROAD GLIDE® ST (리미티드)", "CVO™ ROAD GLIDE® ST", "세트", "장비", "페인트"].map((tab) => (
+          {categories.map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveSubTab(tab)}
@@ -622,7 +625,7 @@ export function CraftingModal({ isOpen, onClose, tokens, obtainedSkins, onCraft 
         {/* 푸터 경고 */}
         <footer className="p-4 border-t border-slate-800 bg-slate-950/60 text-center flex items-center justify-center gap-2 text-[10px] text-slate-500 shrink-0">
           <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
-          <span>※ 할리데이비슨 토큰은 2026/06/22 09:00(KST)까지 사용 가능합니다. 기간 만료 시 소멸되며 타 상품으로 환불 및 교환이 불가능합니다.</span>
+          <span>※ 획득하신 이벤트 토큰은 시즌 종료 시점까지 사용 가능합니다. 기간 만료 시 소멸되며 타 상품으로 환불 및 교환이 불가능합니다.</span>
         </footer>
       </div>
     </div>
@@ -728,7 +731,23 @@ export function DetailModal({
               
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
                 {activeCrate.items
-                  .filter((item) => !item.name.includes("폴리머") && !item.name.includes("도면") && !item.name.includes("토큰"))
+                  .filter((item) => {
+                    // 밀수품 상자(성장형 무기 가챠)
+                    if (activeCrate.type === "contraband") {
+                      return (
+                        !item.name.includes("폴리머") && 
+                        !item.name.includes("도면") && 
+                        !item.name.includes("토큰")
+                      );
+                    }
+                    // 블랙 마켓 화물 상자
+                    return (
+                      !item.name.includes("폴리머") && 
+                      !item.name.includes("도면") && 
+                      !item.name.includes("토큰") && 
+                      !item.name.includes("크레딧")
+                    );
+                  })
                   .map((item) => {
                     const count = getOwnedCount(obtainedSkins, item);
                     const hasObtained = count > 0;
