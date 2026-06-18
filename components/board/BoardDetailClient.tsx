@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import DOMPurify from "isomorphic-dompurify";
+import DOMPurify from "dompurify";
 import "react-quill-new/dist/quill.snow.css";
 import Image from "next/image";
 import CommentSection from "../CommentSection";
@@ -19,15 +19,23 @@ interface BoardDetailClientProps {
   initialComments: Comment[];
 }
 
-const sanitizeHTML = (html: string) => {
+const sanitizeHTML = (html: string, isMounted: boolean) => {
   if (!html) return "";
-  return DOMPurify.sanitize(html, { 
-    ALLOWED_TAGS: [
-      "p", "br", "strong", "em", "u", "s", "ul", "ol", "li", 
-      "h1", "h2", "h3", "blockquote", "img", "a", "span", "iframe", "div"
-    ],
-    ALLOWED_ATTR: ["href", "target", "rel", "src", "style", "class", "width", "height", "alt", "title", "frameborder", "allow", "allowfullscreen"]
-  });
+  // SSR 단계 혹은 클라이언트 마운트 전에는 Hydration Mismatch를 막기 위해 원본 html을 그대로 반환합니다.
+  if (typeof window === "undefined" || !isMounted) {
+    return html;
+  }
+  // 클라이언트 마운트 완료 후에만 브라우저 전용 dompurify로 안전하게 정화합니다.
+  if (DOMPurify && typeof DOMPurify.sanitize === "function") {
+    return DOMPurify.sanitize(html, { 
+      ALLOWED_TAGS: [
+        "p", "br", "strong", "em", "u", "s", "ul", "ol", "li", 
+        "h1", "h2", "h3", "blockquote", "img", "a", "span", "iframe", "div"
+      ],
+      ALLOWED_ATTR: ["href", "target", "rel", "src", "style", "class", "width", "height", "alt", "title", "frameborder", "allow", "allowfullscreen"]
+    });
+  }
+  return html;
 };
 
 export default function BoardDetailClient({
@@ -480,7 +488,7 @@ export default function BoardDetailClient({
   };
 
   const processedContent = useMemo(() => {
-    let sanitizedContent = sanitizeHTML(post.content || "");
+    let sanitizedContent = sanitizeHTML(post.content || "", mounted);
     sanitizedContent = sanitizedContent
       .replace(/<p>\s*<\/p>/g, '<p><br/></p>')
       .replace(/<p><br><\/p>/g, '<p><br/></p>')
@@ -491,7 +499,7 @@ export default function BoardDetailClient({
       /<img/gi,
       '<img style="max-width:100%!important;height:auto!important;display:block;border-radius:8px;margin:20px auto;"'
     );
-  }, [post.content]);
+  }, [post.content, mounted]);
 
   return (
     <div className="w-full flex justify-center pb-20">
