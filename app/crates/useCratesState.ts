@@ -5,6 +5,10 @@ import { DrawnCard, HistoryItem } from "./types";
 import { trackEvent } from "../../lib/analytics";
 import { toast } from "sonner";
 
+function getRewardKey(item: { asset_key?: string | null; name: string }) {
+  return item.asset_key || item.name;
+}
+
 interface UseCratesStateProps {
   initialCrates: CrateTemplate[];
   selectedCrateId: string;
@@ -59,7 +63,7 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
         const tokenAmount = tokenMatch ? parseInt(tokenMatch[1], 10) : 0;
         extraTokens += tokenAmount;
       } else {
-        skinsToObtain[card.name] = 1;
+        skinsToObtain[getRewardKey(card)] = 1;
       }
     } else {
       if (card.is_prime_parcel) {
@@ -67,7 +71,7 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
       } else if (card.token_count && card.token_count > 0) {
         extraTokens += card.token_count;
       } else {
-        skinsToObtain[card.name] = 1;
+        skinsToObtain[getRewardKey(card)] = 1;
       }
     }
 
@@ -201,44 +205,7 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
   const [revealedCards, setRevealedCards] = useState<boolean[]>([]);
 
   // 최종 획득 스킨 컬렉션 상태
-  const [obtainedSkins, setObtainedSkins] = useState<Record<string, number>>({
-    '"CVO™ Road Glide® ST (리미티드)" 모터사이클 도안': 0,
-    '"CVO™ Road Glide® ST" 모터사이클 도안': 0,
-    "CVO™ ROAD GLIDE® ST (리미티드) 풀 세트 (골든 네이비 & 샴페인 골드) 도안": 0,
-    "CVO™ ROAD GLIDE® ST (리미티드) 세트 (미드나잇 블레이즈 & 폴리시드 크롬) 도안": 0,
-    "CVO™ ROAD GLIDE® ST (리미티드) 세트 (브론즈 플레임 & 액센티드 브론즈) 도안": 0,
-    "CVO™ ROAD GLIDE® ST (리미티드) SET (볼드 아이보리 & 액센티드 글로스 BLACK) 도안": 0,
-    "CVO™ ROAD GLIDE® ST 세트 (매트 나이트셰이드 & 알루미늄) 도안": 0,
-    "CVO™ Road Glide® ST (리미티드) 페인트 (샴페인 골드) 도안": 0,
-    "CVO™ Road Glide® ST 페인트 (팬텀 포레스트) 도안": 0,
-    "CVO™ Road Glide® ST 페인트 (터콰이즈 타이드) 도안": 0,
-    "CVO™ Road Glide® ST 페인트 (골든 화이트 펄) 도안": 0,
-    "CVO™ Road Glide® ST 페인트 (일렉트릭 코스트) 도안": 0,
-    "할리데이비슨® 블랙탑 바이커 세트 도안": 0,
-    "할리데이비슨® 스트리트 스마트 세트 도안": 0,
-    "할리데이비슨® 낙하산 도안": 0,
-    "할리데이비슨® - 클로즈 업 도안": 0,
-    "할리데이비슨™ - 달리기 위해 살고, 살기 위해 달린다 도안": 0,
-    "할리데이비슨® 엔진 배지 도안": 0,
-    "라이드 오어 다이 - M249": 0,
-    "라이드 오어 다이 - M249 (블랙 틸)": 0,
-    "도면 (Schematic)": 0,
-    "폴리머 (Polymer) x100": 0,
-    "러프 라이드 - S12K": 0,
-    "다이너스티 - Kar98k": 0,
-    "러프 라이드 - 베릴 M762 & 토미 건": 0,
-    "일반 클래식 스킨군": 0,
-    "코스믹 칼리버 - Kar98k": 0,
-    "코스믹 칼리버 - Kar98k (화이트 옐로우)": 0,
-    "행성 경비대 - SCAR-L": 0,
-    "스팀 게이지 - Kar98k": 0,
-    "행성 경비대 - M249 & 뮤턴트": 0,
-    "노란색 연막탄": 0,
-    "분홍색 연막탄": 0,
-    "골드 리프 - M416": 0,
-    "골든 서킷 - 미니14": 0,
-    "골든 서킷 - 마이크로 UZI": 0,
-  });
+  const [obtainedSkins, setObtainedSkins] = useState<Record<string, number>>({});
 
   // 가상 뽑기 히스토리
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -282,7 +249,8 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
             const tokenAmount = tokenMatch ? parseInt(tokenMatch[1], 10) : 0;
             extraTokens += tokenAmount;
           } else {
-            skinsToObtain[card.name] = (skinsToObtain[card.name] || 0) + 1;
+            const rewardKey = getRewardKey(card);
+            skinsToObtain[rewardKey] = (skinsToObtain[rewardKey] || 0) + 1;
           }
         } else {
           if (card.is_prime_parcel) {
@@ -290,7 +258,8 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
           } else if (card.token_count && card.token_count > 0) {
             extraTokens += card.token_count;
           } else {
-            skinsToObtain[card.name] = (skinsToObtain[card.name] || 0) + 1;
+            const rewardKey = getRewardKey(card);
+            skinsToObtain[rewardKey] = (skinsToObtain[rewardKey] || 0) + 1;
           }
         }
 
@@ -600,12 +569,17 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
         const card: DrawnCard = {
           id: crypto.randomUUID(),
           name: baseItem.name,
+          asset_key: baseItem.asset_key,
+          normalized_name: baseItem.normalized_name,
+          r2_key: baseItem.r2_key,
+          asset_id: baseItem.asset_id,
           rarity: baseItem.rarity,
           image_url: baseItem.image_url,
           isFromPrimeParcel: false,
           isBonus: false,
           is_prime_parcel: baseItem.is_prime_parcel,
           token_count: baseItem.token_count,
+          probability: baseItem.probability,
         };
 
         // 2. 보너스 아이템 드롭 검사 (27.00%)
@@ -617,6 +591,10 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
             card.bonus = {
               id: crypto.randomUUID(),
               name: bonusItem.name,
+              asset_key: bonusItem.asset_key,
+              normalized_name: bonusItem.normalized_name,
+              r2_key: bonusItem.r2_key,
+              asset_id: bonusItem.asset_id,
               rarity: bonusItem.is_prime_parcel 
                 ? "ULTIMATE" 
                 : bonusItem.name.includes("획득권") 
@@ -628,6 +606,7 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
               is_prime_parcel: bonusItem.is_prime_parcel,
               is_extra_crate: bonusItem.is_extra_crate,
               token_count: bonusItem.token_count,
+              probability: bonusItem.probability,
             };
           }
         }
@@ -688,10 +667,15 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
         results.push({
           id: crypto.randomUUID(),
           name: result.name,
+          asset_key: result.asset_key,
+          normalized_name: result.normalized_name,
+          r2_key: result.r2_key,
+          asset_id: result.asset_id,
           rarity: result.rarity,
           image_url: result.image_url,
           isBonus: false,
           isFromPrimeParcel: true,
+          probability: result.probability,
         });
       }
 
@@ -810,12 +794,17 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
         const card: DrawnCard = {
           id: crypto.randomUUID(),
           name: baseItem.name,
+          asset_key: baseItem.asset_key,
+          normalized_name: baseItem.normalized_name,
+          r2_key: baseItem.r2_key,
+          asset_id: baseItem.asset_id,
           rarity: baseItem.rarity,
           image_url: baseItem.image_url,
           isFromPrimeParcel: false,
           isBonus: false,
           is_prime_parcel: baseItem.is_prime_parcel,
           token_count: baseItem.token_count,
+          probability: baseItem.probability,
         };
 
         if (activeCrate.bonus_items && activeCrate.bonus_items.length > 0) {
@@ -826,6 +815,10 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
             card.bonus = {
               id: crypto.randomUUID(),
               name: bonusItem.name,
+              asset_key: bonusItem.asset_key,
+              normalized_name: bonusItem.normalized_name,
+              r2_key: bonusItem.r2_key,
+              asset_id: bonusItem.asset_id,
               rarity: bonusItem.is_prime_parcel 
                 ? "ULTIMATE" 
                 : bonusItem.name.includes("획득권") 
@@ -837,6 +830,7 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
               is_prime_parcel: bonusItem.is_prime_parcel,
               is_extra_crate: bonusItem.is_extra_crate,
               token_count: bonusItem.token_count,
+              probability: bonusItem.probability,
             };
           }
         }
@@ -955,12 +949,17 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
         const card: DrawnCard = {
           id: crypto.randomUUID(),
           name: baseItem.name,
+          asset_key: baseItem.asset_key,
+          normalized_name: baseItem.normalized_name,
+          r2_key: baseItem.r2_key,
+          asset_id: baseItem.asset_id,
           rarity: baseItem.rarity,
           image_url: baseItem.image_url,
           isFromPrimeParcel: false,
           isBonus: false,
           is_prime_parcel: baseItem.is_prime_parcel,
           token_count: baseItem.token_count,
+          probability: baseItem.probability,
         };
 
         if (activeCrate.bonus_items && activeCrate.bonus_items.length > 0) {
@@ -970,6 +969,10 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
             card.bonus = {
               id: crypto.randomUUID(),
               name: bonusItem.name,
+              asset_key: bonusItem.asset_key,
+              normalized_name: bonusItem.normalized_name,
+              r2_key: bonusItem.r2_key,
+              asset_id: bonusItem.asset_id,
               rarity: bonusItem.is_prime_parcel 
                 ? "ULTIMATE" 
                 : bonusItem.name.includes("획득권") 
@@ -981,6 +984,7 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
               is_prime_parcel: bonusItem.is_prime_parcel,
               is_extra_crate: bonusItem.is_extra_crate,
               token_count: bonusItem.token_count,
+              probability: bonusItem.probability,
             };
           }
         }
@@ -1096,44 +1100,7 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
     setDrawnCards([]);
     setRevealedCards([]);
     setHistory([]);
-    setObtainedSkins({
-      '"CVO™ Road Glide® ST (리미티드)" 모터사이클 도안': 0,
-      '"CVO™ Road Glide® ST" 모터사이클 도안': 0,
-      "CVO™ ROAD GLIDE® ST (리미티드) 풀 세트 (골든 네이비 & 샴페인 골드) 도안": 0,
-      "CVO™ ROAD GLIDE® ST (리미티드) 세트 (미드나잇 블레이즈 & 폴리시드 크롬) 도안": 0,
-      "CVO™ ROAD GLIDE® ST (리미티드) 세트 (브론즈 플레임 & 액센티드 브론즈) 도안": 0,
-      "CVO™ ROAD GLIDE® ST (리미티드) SET (볼드 아이보리 & 액센티드 글로스 BLACK) 도안": 0,
-      "CVO™ ROAD GLIDE® ST 세트 (매트 나이트셰이드 & 알루미늄) 도안": 0,
-      "CVO™ Road Glide® ST (리미티드) 페인트 (샴페인 골드) 도안": 0,
-      "CVO™ Road Glide® ST 페인트 (팬텀 포레스트) 도안": 0,
-      "CVO™ Road Glide® ST 페인트 (터콰이즈 타이드) 도안": 0,
-      "CVO™ Road Glide® ST 페인트 (골든 화이트 펄) 도안": 0,
-      "CVO™ Road Glide® ST 페인트 (일렉트릭 코스트) 도안": 0,
-      "할리데이비슨® 블랙탑 바이커 세트 도안": 0,
-      "할리데이비슨® 스트리트 스마트 세트 도안": 0,
-      "할리데이비슨® 낙하산 도안": 0,
-      "할리데이비슨® - 클로즈 업 도안": 0,
-      "할리데이비슨™ - 달리기 위해 살고, 살기 위해 달린다 도안": 0,
-      "할리데이비슨® 엔진 배지 도안": 0,
-      "라이드 오어 다이 - M249": 0,
-      "라이드 오어 다이 - M249 (블랙 틸)": 0,
-      "도면 (Schematic)": 0,
-      "폴리머 (Polymer) x100": 0,
-      "러프 라이드 - S12K": 0,
-      "다이너스티 - Kar98k": 0,
-      "러프 라이드 - 베릴 M762 & 토미 건": 0,
-      "일반 클래식 스킨군": 0,
-      "코스믹 칼리버 - Kar98k": 0,
-      "코스믹 칼리버 - Kar98k (화이트 옐로우)": 0,
-      "행성 경비대 - SCAR-L": 0,
-      "스팀 게이지 - Kar98k": 0,
-      "행성 경비대 - M249 & 뮤턴트": 0,
-      "노란색 연막탄": 0,
-      "분홍색 연막탄": 0,
-      "골드 리프 - M416": 0,
-      "골든 서킷 - 미니14": 0,
-      "골든 서킷 - 마이크로 UZI": 0,
-    });
+    setObtainedSkins({});
     setStats({
       totalOpens: 0,
       primeParcelOpens: 0,
@@ -1154,15 +1121,15 @@ export function useCratesState({ initialCrates, selectedCrateId }: UseCratesStat
       toast.error(`보유한 이벤트 토큰이 부족합니다. (필요: ${tokenCost}개, 보유: ${tokens}개)`);
       return false;
     }
+    const matchedPrime = activeCrate?.prime_parcel_items.find(p => p.name === itemName);
+    const matchedNormal = activeCrate?.items.find(i => i.name === itemName);
+    const rewardKey = matchedPrime?.asset_key || matchedNormal?.asset_key || itemName;
     setTokens((prev) => prev - tokenCost);
     setObtainedSkins((prev) => ({
       ...prev,
-      [itemName]: (prev[itemName] || 0) + 1,
+      [rewardKey]: (prev[rewardKey] || 0) + 1,
     }));
-    
-    // 이미지 매핑
-    const matchedPrime = activeCrate?.prime_parcel_items.find(p => p.name === itemName);
-    const matchedNormal = activeCrate?.items.find(i => i.name === itemName);
+
     const imgUrl = matchedPrime?.image_url || matchedNormal?.image_url || "";
     
     const craftHistory: HistoryItem = {

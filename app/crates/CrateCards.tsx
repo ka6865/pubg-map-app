@@ -56,7 +56,7 @@ export function CrateCard({ card, isRevealed, onClick, getRarityBadgeStyle, getC
           </div>
           
           {!imageError && card.image_url ? (
-            <div className="w-12 h-12 sm:w-16 sm:h-16 flex items-center justify-center bg-slate-950/50 rounded-lg p-1 border border-slate-800/80 relative group-hover:scale-105 transition-transform">
+            <div className="w-20 h-20 sm:w-32 sm:h-32 flex items-center justify-center bg-slate-950/50 rounded-lg p-1 border border-slate-800/80 relative group-hover:scale-105 transition-transform">
               <Box className="w-8 h-8 text-slate-700 absolute inset-0 m-auto -z-10" />
               <img 
                 src={card.image_url} 
@@ -114,6 +114,12 @@ export function CrateCard({ card, isRevealed, onClick, getRarityBadgeStyle, getC
             </div>
           )}
 
+          {card.probability !== undefined && card.probability > 0 && isRevealed && (
+            <div className="absolute bottom-8.5 left-2 text-[8px] sm:text-[9px] text-slate-400 font-extrabold bg-slate-950/70 px-1 py-0.2 rounded border border-slate-800/40 z-10 select-none">
+              {card.probability}%
+            </div>
+          )}
+
           {/* 보너스 오버레이 박스 (카드 뒤집혔을 때만 팝업 - 스포 차단) */}
           {card.bonus && isRevealed && (
             <div className="absolute inset-0 rounded-xl bg-slate-950/95 border-2 border-amber-400 p-2 flex flex-col justify-between items-center z-20 animate-[fadeIn_0.3s_ease-out] shadow-[0_0_20px_rgba(245,158,11,0.5)]">
@@ -147,7 +153,7 @@ export function CrateCard({ card, isRevealed, onClick, getRarityBadgeStyle, getC
               </div>
 
               {!bonusImageError && card.bonus.image_url ? (
-                <div className="w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center bg-slate-900 rounded-lg p-1 border border-amber-500/20 relative">
+                <div className="w-20 h-20 sm:w-32 sm:h-32 flex items-center justify-center bg-slate-900 rounded-lg p-1 border border-amber-500/20 relative">
                   <img 
                     src={card.bonus.image_url} 
                     alt={card.bonus.name}
@@ -218,6 +224,12 @@ export function CrateCard({ card, isRevealed, onClick, getRarityBadgeStyle, getC
                   </div>
                 )}
               </div>
+
+              {card.bonus.probability !== undefined && card.bonus.probability > 0 && (
+                <div className="absolute bottom-8.5 left-2 text-[8px] sm:text-[9px] text-amber-400 font-extrabold bg-slate-950/70 px-1 py-0.2 rounded border border-amber-500/20 z-25 select-none">
+                  {card.bonus.probability}%
+                </div>
+              )}
             </div>
           )}
         </div>
