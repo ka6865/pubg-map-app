@@ -5,7 +5,7 @@ import { cookies } from "next/headers";
 import { ANALYTICS_EVENT_NAMES } from "@/lib/analytics";
 
 const clean = (value: string | undefined) => (value || "").replace(/['";\s]+/g, "").trim();
-const MAX_PAYLOAD_BYTES = 8 * 1024;
+const MAX_PAYLOAD_BYTES = 128 * 1024; // 배치 발송을 위해 128KB로 확장
 const MAX_PARAM_BYTES = 2 * 1024;
 const ALLOWED_EVENT_NAMES = new Set<string>(ANALYTICS_EVENT_NAMES);
 const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "0.0.0.0", "::1"]);
@@ -24,24 +24,8 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json().catch(() => null);
-  if (!body || typeof body !== "object") {
+  if (!body) {
     return NextResponse.json({ error: "이벤트 payload가 올바르지 않습니다." }, { status: 400 });
-  }
-
-  const eventName = sanitizeText(body.name, 80);
-  if (!eventName || !ALLOWED_EVENT_NAMES.has(eventName)) {
-    return NextResponse.json({ error: "허용되지 않은 이벤트입니다." }, { status: 400 });
-  }
-
-  const sessionId = sanitizeText(body.sessionId, 100);
-  const pagePath = sanitizePath(body.pagePath);
-  if (!sessionId || !pagePath) {
-    return NextResponse.json({ error: "sessionId와 pagePath가 필요합니다." }, { status: 400 });
-  }
-
-  const params = sanitizeParams(body.params);
-  if (JSON.stringify(params).length > MAX_PARAM_BYTES) {
-    return NextResponse.json({ error: "이벤트 params가 너무 큽니다." }, { status: 413 });
   }
 
   const supabaseAdmin = createSupabaseAdminClient(
@@ -54,20 +38,43 @@ export async function POST(request: Request) {
     return NextResponse.json({ success: true, skipped: "admin_activity" });
   }
 
-  const insertPayload = {
-    event_name: eventName,
-    user_id: userProfile?.id || null,
-    session_id: sessionId,
-    page_path: pagePath,
-    page_title: sanitizeText(body.pageTitle, 160),
-    referrer_path: sanitizePath(body.referrerPath),
-    params,
-    client_environment: sanitizeText(body.clientEnvironment, 40) || getServerAnalyticsEnvironment(),
-    source_host: sanitizeText(body.sourceHost, 160) || requestHost,
-    is_internal: Boolean(body.isInternal) || isLocalHost(requestHost) || sanitizeText(body.clientEnvironment, 40) === "development"
-  };
+  // 단일 이벤트 오브젝트와 이벤트 배열 페이로드 모두 호환되도록 정규화
+  const isBatch = Array.isArray(body);
+  const rawEvents = isBatch ? body : [body];
+  const insertPayloads: any[] = [];
 
-  const { error } = await insertAnalyticsEvent(supabaseAdmin, insertPayload);
+  for (const rawEvent of rawEvents) {
+    if (!rawEvent || typeof rawEvent !== "object") continue;
+
+    const eventName = sanitizeText(rawEvent.name, 80);
+    if (!eventName || !ALLOWED_EVENT_NAMES.has(eventName)) continue;
+
+    const sessionId = sanitizeText(rawEvent.sessionId, 100);
+    const pagePath = sanitizePath(rawEvent.pagePath);
+    if (!sessionId || !pagePath) continue;
+
+    const params = sanitizeParams(rawEvent.params);
+    if (JSON.stringify(params).length > MAX_PARAM_BYTES) continue;
+
+    insertPayloads.push({
+      event_name: eventName,
+      user_id: userProfile?.id || null,
+      session_id: sessionId,
+      page_path: pagePath,
+      page_title: sanitizeText(rawEvent.pageTitle, 160),
+      referrer_path: sanitizePath(rawEvent.referrerPath),
+      params,
+      client_environment: sanitizeText(rawEvent.clientEnvironment, 40) || getServerAnalyticsEnvironment(),
+      source_host: sanitizeText(rawEvent.sourceHost, 160) || requestHost,
+      is_internal: Boolean(rawEvent.isInternal) || isLocalHost(requestHost) || sanitizeText(rawEvent.clientEnvironment, 40) === "development"
+    });
+  }
+
+  if (insertPayloads.length === 0) {
+    return NextResponse.json({ success: true, skipped: "no_valid_events" });
+  }
+
+  const { error } = await insertAnalyticsEvents(supabaseAdmin, insertPayloads);
 
   if (error) {
     console.warn("[analytics:event] insert failed:", error.message);
@@ -77,15 +84,18 @@ export async function POST(request: Request) {
   return NextResponse.json({ success: true });
 }
 
-async function insertAnalyticsEvent(supabaseAdmin: any, insertPayload: Record<string, unknown>) {
-  const result = await supabaseAdmin.from("analytics_events").insert(insertPayload);
+async function insertAnalyticsEvents(supabaseAdmin: any, payloads: any[]) {
+  const result = await supabaseAdmin.from("analytics_events").insert(payloads);
   if (!isMissingAnalyticsOriginColumn(result.error)) return result;
 
-  const legacyPayload = { ...insertPayload };
-  delete legacyPayload.client_environment;
-  delete legacyPayload.source_host;
-  delete legacyPayload.is_internal;
-  return supabaseAdmin.from("analytics_events").insert(legacyPayload);
+  const legacyPayloads = payloads.map((p) => {
+    const legacy = { ...p };
+    delete legacy.client_environment;
+    delete legacy.source_host;
+    delete legacy.is_internal;
+    return legacy;
+  });
+  return supabaseAdmin.from("analytics_events").insert(legacyPayloads);
 }
 
 function isMissingAnalyticsOriginColumn(error: any) {

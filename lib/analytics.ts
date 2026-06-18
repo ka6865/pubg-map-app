@@ -158,6 +158,13 @@ export type BgmsEvent =
       };
     };
 
+// ─── 전역 배치 큐 및 타이머 ───────────────────────────────────────────
+
+const eventQueue: any[] = [];
+let flushTimer: any = null;
+let isListenerBound = false;
+const BATCH_INTERVAL_MS = 15000; // 15초 배치 주기
+
 // ─── 발송 함수 ──────────────────────────────────────────────────────────────
 
 export function trackEvent(event: BgmsEvent): void {
@@ -173,62 +180,94 @@ export function trackEvent(event: BgmsEvent): void {
     (window as any).gtag("event", event.name, params);
   }
 
-  void mirrorEventToSupabase(event);
+  enqueueEvent(event);
 }
 
-async function mirrorEventToSupabase(event: BgmsEvent): Promise<void> {
+function enqueueEvent(event: BgmsEvent): void {
   if (!MIRRORED_EVENTS.has(event.name)) return;
   if (process.env.NEXT_PUBLIC_ANALYTICS_MIRROR_DISABLED === "true") return;
   if (getAnalyticsMirrorSkipReason()) return;
 
-  try {
-    const payload = JSON.stringify({
-      name: event.name,
-      params: event.params,
-      sessionId: getOrCreateSessionId(),
-      pagePath: window.location.pathname,
-      pageTitle: document.title || (event.name === "page_view" ? event.params.title : undefined),
-      referrerPath: document.referrer ? toPath(document.referrer) : undefined,
-      clientEnvironment: getClientAnalyticsEnvironment(),
-      sourceHost: window.location.hostname,
-      isInternal: isLocalHostname(window.location.hostname)
-    });
+  const eventPayload = {
+    name: event.name,
+    params: event.params,
+    sessionId: getOrCreateSessionId(),
+    pagePath: window.location.pathname,
+    pageTitle: document.title || (event.name === "page_view" ? event.params.title : undefined),
+    referrerPath: document.referrer ? toPath(document.referrer) : undefined,
+    clientEnvironment: getClientAnalyticsEnvironment(),
+    sourceHost: window.location.hostname,
+    isInternal: isLocalHostname(window.location.hostname)
+  };
 
+  eventQueue.push(eventPayload);
+
+  // 첫 이벤트 적재 시 타이머 구동 및 이탈 감지 리스너 바인딩
+  if (typeof window !== "undefined" && !flushTimer) {
+    flushTimer = setInterval(flushQueue, BATCH_INTERVAL_MS);
+    setupExitListeners();
+  }
+}
+
+async function flushQueue(): Promise<void> {
+  if (eventQueue.length === 0) return;
+
+  const payloadsToSend = [...eventQueue];
+  eventQueue.length = 0;
+
+  try {
+    const payloadStr = JSON.stringify(payloadsToSend);
     const accessToken = await getCurrentAccessToken();
+
     if (accessToken) {
-      fetch("/api/analytics/event", {
+      await fetch("/api/analytics/event", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${accessToken}`
         },
-        body: payload,
+        body: payloadStr,
         keepalive: true,
         credentials: "same-origin"
-      }).catch(() => {
-        // Analytics mirror must never affect user-facing features.
       });
       return;
     }
 
     if (navigator.sendBeacon) {
-      const blob = new Blob([payload], { type: "application/json" });
+      const blob = new Blob([payloadStr], { type: "application/json" });
       const accepted = navigator.sendBeacon("/api/analytics/event", blob);
       if (accepted) return;
     }
 
-    fetch("/api/analytics/event", {
+    await fetch("/api/analytics/event", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: payload,
+      body: payloadStr,
       keepalive: true,
       credentials: "same-origin"
-    }).catch(() => {
-      // Analytics mirror must never affect user-facing features.
     });
   } catch {
-    // Ignore analytics mirror errors by design.
+    // 네트워크 장애 등 발송 실패 시 데이터 손실 방지를 위해 큐 앞부분에 다시 추가 (최대 100개 제한)
+    if (eventQueue.length < 100) {
+      eventQueue.unshift(...payloadsToSend);
+    }
   }
+}
+
+function setupExitListeners(): void {
+  if (typeof window === "undefined" || isListenerBound) return;
+  isListenerBound = true;
+
+  const handleExit = () => {
+    void flushQueue();
+  };
+
+  window.addEventListener("beforeunload", handleExit);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") {
+      handleExit();
+    }
+  });
 }
 
 function getAnalyticsMirrorSkipReason() {
