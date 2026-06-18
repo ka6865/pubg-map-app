@@ -209,7 +209,7 @@ export function CrateCard({ card, isRevealed, onClick, getRarityBadgeStyle, getC
 
           {card.probability !== undefined && card.probability > 0 && isRevealed && (
             <div className="absolute bottom-8.5 left-2 text-[8px] sm:text-[9px] text-slate-400 font-extrabold bg-slate-950/70 px-1 py-0.2 rounded border border-slate-800/40 z-10 select-none">
-              {card.probability}%
+              {parseFloat((card.probability * 100).toFixed(4))}%
             </div>
           )}
 
@@ -320,7 +320,7 @@ export function CrateCard({ card, isRevealed, onClick, getRarityBadgeStyle, getC
 
               {card.bonus.probability !== undefined && card.bonus.probability > 0 && (
                 <div className="absolute bottom-8.5 left-2 text-[8px] sm:text-[9px] text-amber-400 font-extrabold bg-slate-950/70 px-1 py-0.2 rounded border border-amber-500/20 z-25 select-none">
-                  {card.bonus.probability}%
+                  {parseFloat((card.bonus.probability * 100).toFixed(4))}%
                 </div>
               )}
             </div>
