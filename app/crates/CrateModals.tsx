@@ -4,6 +4,10 @@ import type { CrateTemplate } from "@/types/crates";
 import { HistoryItem } from "./types";
 import { VaultCard, HistoryCard, getKoreanRarityName } from "./CrateCards";
 
+function getOwnedCount(obtainedSkins: Record<string, number>, item: { name: string; asset_key?: string | null }) {
+  return obtainedSkins[item.asset_key || item.name] || obtainedSkins[item.name] || 0;
+}
+
 // ----------------------------------------------------
 // ChargeModal Props & Component
 // ----------------------------------------------------
@@ -548,7 +552,7 @@ export function CraftingModal({ isOpen, onClose, tokens, obtainedSkins, onCraft 
         <div className="flex-1 overflow-y-auto p-6 bg-slate-950/40">
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-6">
             {filteredItems.map((item) => {
-              const ownedCount = obtainedSkins[item.name] || 0;
+              const ownedCount = getOwnedCount(obtainedSkins, item);
               const isAffordable = tokens >= item.tokenCost;
               return (
                 <div
@@ -723,39 +727,21 @@ export function DetailModal({
               </p>
               
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
-                {activeCrate.type === "loot_crate" ? (
-                  activeCrate.prime_parcel_items
-                    .filter((item) => !item.name.includes("토큰"))
-                    .map((item) => {
-                      const count = obtainedSkins[item.name] || 0;
-                      const hasObtained = count > 0;
-                      return (
-                        <VaultCard
-                          key={item.id}
-                          item={item}
-                          count={count}
-                          hasObtained={hasObtained}
-                          getRarityBadgeStyle={getRarityBadgeStyle}
-                        />
-                      );
-                    })
-                ) : (
-                  activeCrate.items
-                    .filter((item) => !item.name.includes("폴리머") && !item.name.includes("도면"))
-                    .map((item) => {
-                      const count = obtainedSkins[item.name] || 0;
-                      const hasObtained = count > 0;
-                      return (
-                        <VaultCard
-                          key={item.id}
-                          item={item as any}
-                          count={count}
-                          hasObtained={hasObtained}
-                          getRarityBadgeStyle={getRarityBadgeStyle}
-                        />
-                      );
-                    })
-                )}
+                {activeCrate.items
+                  .filter((item) => !item.name.includes("폴리머") && !item.name.includes("도면") && !item.name.includes("토큰"))
+                  .map((item) => {
+                    const count = getOwnedCount(obtainedSkins, item);
+                    const hasObtained = count > 0;
+                    return (
+                      <VaultCard
+                        key={item.id}
+                        item={item as any}
+                        count={count}
+                        hasObtained={hasObtained}
+                        getRarityBadgeStyle={getRarityBadgeStyle}
+                      />
+                    );
+                  })}
               </div>
             </div>
           )}
