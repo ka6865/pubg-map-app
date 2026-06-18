@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 let r2ClientInstance: S3Client | null = null;
@@ -298,3 +298,36 @@ export async function downloadBufferFromR2(key: string): Promise<Buffer | null> 
     throw error;
   }
 }
+
+/**
+ * HeadObject API를 사용하여 Cloudflare R2 버킷에 파일이 존재하는지 가볍게 검증합니다.
+ * @param key 버킷 내 파일 경로/이름
+ */
+export async function checkObjectExists(key: string): Promise<boolean> {
+  if (!cleanEnv(process.env.CLOUDFLARE_R2_ENDPOINT)) {
+    console.warn('[R2 Warning] Cloudflare R2 Credentials are not configured. Returning false.');
+    return false;
+  }
+
+  const command = new HeadObjectCommand({
+    Bucket: getBucketName(),
+    Key: key,
+  });
+
+  try {
+    await getR2Client().send(command);
+    return true;
+  } catch (error: any) {
+    // 오브젝트가 없는 경우는 에러 이름 혹은 status 코드로 감지하여 안전하게 false 반환
+    if (
+      error.name === 'NotFound' ||
+      error.name === 'NoSuchKey' ||
+      error.$metadata?.httpStatusCode === 404
+    ) {
+      return false;
+    }
+    console.error(`[R2 Error] Failed to check object existence for key: ${key}`, error);
+    return false;
+  }
+}
+
