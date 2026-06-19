@@ -164,11 +164,16 @@ const eventQueue: any[] = [];
 let flushTimer: any = null;
 let isListenerBound = false;
 const BATCH_INTERVAL_MS = 15000; // 15초 배치 주기
+let cachedAccessToken: string | null = null;
+let isAuthSubscribed = false;
+
 
 // ─── 발송 함수 ──────────────────────────────────────────────────────────────
 
 export function trackEvent(event: BgmsEvent): void {
   if (typeof window === "undefined") return;
+
+  setupAuthSubscription();
 
   // 개발 환경(Local)에서 실시간으로 GA4 DebugView를 모니터링할 수 있도록 debug_mode 적용
   const params = {
@@ -209,45 +214,84 @@ function enqueueEvent(event: BgmsEvent): void {
   }
 }
 
+const MAX_KEEPALIVE_BYTES = 30 * 1024; // keepalive 안전 임계치 (30KB)
+
 async function flushQueue(): Promise<void> {
   if (eventQueue.length === 0) return;
 
   const payloadsToSend = [...eventQueue];
   eventQueue.length = 0;
 
-  try {
-    const payloadStr = JSON.stringify(payloadsToSend);
-    const accessToken = await getCurrentAccessToken();
+  const payloadStr = JSON.stringify(payloadsToSend);
+  const payloadBytes = new Blob([payloadStr]).size;
+  const accessToken = await getCurrentAccessToken();
 
+  try {
+    // 1. 로그인 유저인 경우 -> fetch + keepalive: true + Authorization 헤더 사용
     if (accessToken) {
-      await fetch("/api/analytics/event", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${accessToken}`
-        },
-        body: payloadStr,
-        keepalive: true,
-        credentials: "same-origin"
-      });
+      if (payloadBytes > MAX_KEEPALIVE_BYTES) {
+        // 백그라운드 전송 용량 제한을 우회하기 위해 30개 단위의 청크로 쪼개어 발송
+        const chunkSize = 30;
+        for (let i = 0; i < payloadsToSend.length; i += chunkSize) {
+          const chunk = payloadsToSend.slice(i, i + chunkSize);
+          await fetch("/api/analytics/event", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${accessToken}`
+            },
+            body: JSON.stringify(chunk),
+            keepalive: true,
+            credentials: "same-origin"
+          });
+        }
+      } else {
+        await fetch("/api/analytics/event", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`
+          },
+          body: payloadStr,
+          keepalive: true,
+          credentials: "same-origin"
+        });
+      }
       return;
     }
 
-    if (navigator.sendBeacon) {
+    // 2. 비로그인 유저인 경우 -> sendBeacon 또는 일반 fetch 적용
+    if (payloadBytes <= MAX_KEEPALIVE_BYTES && navigator.sendBeacon) {
       const blob = new Blob([payloadStr], { type: "application/json" });
       const accepted = navigator.sendBeacon("/api/analytics/event", blob);
       if (accepted) return;
     }
 
-    await fetch("/api/analytics/event", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: payloadStr,
-      keepalive: true,
-      credentials: "same-origin"
-    });
-  } catch {
-    // 네트워크 장애 등 발송 실패 시 데이터 손실 방지를 위해 큐 앞부분에 다시 추가 (최대 100개 제한)
+    // sendBeacon 미지원 또는 실패 시, 혹은 용량이 클 때 일반 fetch 처리
+    if (payloadBytes > MAX_KEEPALIVE_BYTES) {
+      const chunkSize = 30;
+      for (let i = 0; i < payloadsToSend.length; i += chunkSize) {
+        const chunk = payloadsToSend.slice(i, i + chunkSize);
+        await fetch("/api/analytics/event", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(chunk),
+          keepalive: true,
+          credentials: "same-origin"
+        });
+      }
+    } else {
+      await fetch("/api/analytics/event", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: payloadStr,
+        keepalive: true,
+        credentials: "same-origin"
+      });
+    }
+  } catch (err) {
+    console.warn("[analytics] Failed to flush event queue:", err);
+    // 실패 시 유실 방지를 위해 다시 큐의 앞에 추가 (최대 100개)
     if (eventQueue.length < 100) {
       eventQueue.unshift(...payloadsToSend);
     }
@@ -297,14 +341,32 @@ function isLocalHostname(hostname: string) {
   return LOCAL_HOSTS.has(normalized) || normalized.endsWith(".local");
 }
 
+function setupAuthSubscription() {
+  if (typeof window === "undefined" || isAuthSubscribed) return;
+  isAuthSubscribed = true;
+
+  import("@/lib/supabase")
+    .then(({ supabase }) => {
+      // 1. 최초 로드 시 비동기로 스토리지/쿠키 세션 동기 복원 시도
+      supabase.auth.getSession().then(({ data }) => {
+        cachedAccessToken = data.session?.access_token || null;
+      }).catch(() => {
+        cachedAccessToken = null;
+      });
+
+      // 2. 인증 상태 변경 리스너를 구독하여 동기화 유지
+      supabase.auth.onAuthStateChange((_event, session) => {
+        cachedAccessToken = session?.access_token || null;
+      });
+    })
+    .catch((err) => {
+      console.warn("[analytics] Failed to initialize auth subscription:", err);
+      isAuthSubscribed = false;
+    });
+}
+
 async function getCurrentAccessToken() {
-  try {
-    const { supabase } = await import("@/lib/supabase");
-    const { data } = await supabase.auth.getSession();
-    return data.session?.access_token || null;
-  } catch {
-    return null;
-  }
+  return cachedAccessToken;
 }
 
 function getOrCreateSessionId() {
