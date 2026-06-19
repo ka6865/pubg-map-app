@@ -75,7 +75,7 @@ describe("analytics event API", () => {
     const response = await POST(buildRequest());
 
     expect(response.status).toBe(200);
-    expect(mockAnalyticsInsert).toHaveBeenCalledWith(expect.objectContaining({
+    expect(mockAnalyticsInsert).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({
       event_name: "page_view",
       user_id: null,
       session_id: "session-1",
@@ -83,7 +83,7 @@ describe("analytics event API", () => {
       client_environment: "production",
       source_host: "bgms.test",
       is_internal: false
-    }));
+    })]));
   });
 
   it("로컬 host 이벤트는 기본 저장하지 않는다", async () => {
@@ -109,9 +109,9 @@ describe("analytics event API", () => {
 
     expect(response.status).toBe(200);
     expect(mockAuthGetUser).toHaveBeenCalledWith("access-token");
-    expect(mockAnalyticsInsert).toHaveBeenCalledWith(expect.objectContaining({
+    expect(mockAnalyticsInsert).toHaveBeenCalledWith(expect.arrayContaining([expect.objectContaining({
       user_id: "user-1"
-    }));
+    })]));
   });
 
   it("관리자 이벤트는 analytics_events에 저장하지 않는다", async () => {
