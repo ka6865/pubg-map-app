@@ -187,7 +187,15 @@ async function smartCleanup() {
   if (bucketFiles && bucketFiles.length > 0) {
     const { data: activeRecords } = await supabase.from('match_master_telemetry').select('storage_path');
     const activePaths = new Set(activeRecords?.map(r => r.storage_path) || []);
-    const orphanedFiles = bucketFiles.map(f => f.key).filter(name => !activePaths.has(name));
+    const orphanedFiles = bucketFiles
+      .map(f => f.key)
+      .filter(name => {
+        // crates/ 및 weapons/ 하위의 서비스 영구 자산들은 고립 파일 정리에서 제외
+        if (name.startsWith('crates/') || name.startsWith('weapons/')) {
+          return false;
+        }
+        return !activePaths.has(name);
+      });
 
     if (orphanedFiles.length > 0) {
       try {
