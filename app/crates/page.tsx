@@ -33,6 +33,9 @@ export default async function CratesPage() {
     getUSDtoKRWRate(),
   ]);
 
+  const fallbackRate = 1500;
+  const validRate = (typeof rate === "number" && !isNaN(rate) && rate > 0) ? rate : fallbackRate;
+
   // 브레드크럼 스키마 데이터 (JSON-LD)
   const jsonLd = {
     "@context": "https://schema.org",
@@ -60,7 +63,7 @@ export default async function CratesPage() {
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
       <main id="crates-simulator-page" className="w-full">
-        <CratesClient initialCrates={crates} exchangeRate={rate} />
+        <CratesClient initialCrates={crates} exchangeRate={validRate} />
       </main>
     </>
   );

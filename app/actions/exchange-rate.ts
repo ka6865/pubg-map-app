@@ -2,7 +2,7 @@
 
 import { unstable_cache } from "next/cache";
 
-const FALLBACK_RATE = 1380.0;
+const FALLBACK_RATE = 1500.0;
 
 /**
  * 실시간 USD to KRW 환율을 가져오며, Next.js unstable_cache를 사용해 24시간 동안 캐싱합니다.

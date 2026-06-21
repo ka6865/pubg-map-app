@@ -1,5 +1,6 @@
 import React from 'react';
 import { AlertCircle, Trash2, Info } from 'lucide-react';
+import { useLockBodyScroll } from '@/hooks/useLockBodyScroll';
 
 interface ConfirmModalProps {
   isOpen: boolean;
@@ -24,6 +25,8 @@ export default function ConfirmModal({
   type = 'info',
   isPending = false,
 }: ConfirmModalProps) {
+  useLockBodyScroll(isOpen);
+
   if (!isOpen) return null;
 
   // 타입별 아이콘 및 테마 색상 설정
@@ -86,6 +89,8 @@ export default function ConfirmModal({
           borderRadius: '24px',
           maxWidth: '400px',
           width: '100%',
+          maxHeight: '90vh',
+          overflowY: 'auto',
           padding: '28px',
           display: 'flex',
           flexDirection: 'column',
