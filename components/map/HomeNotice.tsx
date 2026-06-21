@@ -13,44 +13,94 @@ export default function HomeNotice() {
 
   useEffect(() => {
     const fetchLatestNotice = async () => {
-      const { data, error } = await supabase
-        .from('posts')
-        .select('id, title, category, created_at')
-        .eq('is_notice', true)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      
-      if (!error && data) {
-        // 공지사항 생성 후 7일(1주일) 경과 여부 확인
-        const createdAtTime = new Date(data.created_at).getTime();
-        const currentTime = new Date().getTime();
-        const oneWeekMs = 7 * 24 * 60 * 60 * 1000;
-        
-        if (currentTime - createdAtTime > oneWeekMs) {
-          setIsVisible(false);
-        } else {
-          // localStorage에서 숨김 처리된 ID 확인
-          const dismissedNoticeId = localStorage.getItem('dismissed_notice_id');
-          if (dismissedNoticeId === data.id.toString()) {
-            setIsVisible(false);
+      try {
+        // 시스템 설정 가져오기
+        const settingsRes = await fetch('/api/admin/settings');
+        let activeId: string | null = null;
+        let displayDays = 7; // 기본 노출 기한 7일
+
+        if (settingsRes.ok) {
+          const settingsData = await settingsRes.json();
+          if (settingsData.success && settingsData.settings) {
+            activeId = settingsData.settings.notice_active_id || null;
+            displayDays = settingsData.settings.notice_display_days !== undefined
+              ? parseInt(settingsData.settings.notice_display_days, 10)
+              : 7;
           }
         }
-        setLatestNotice(data);
+
+        // 공지 비활성화 조건 처리 ('none' 또는 '-1' 인 경우 공지 비노출)
+        if (activeId === 'none' || activeId === '-1') {
+          setIsVisible(false);
+          setIsLoading(false);
+          return;
+        }
+
+        let data = null;
+        let error = null;
+
+        // 특정 공지글 ID가 지정되어 있다면 해당 공지 조회
+        if (activeId) {
+          const activeIdNum = parseInt(activeId, 10);
+          if (!isNaN(activeIdNum)) {
+            const result = await supabase
+              .from('posts')
+              .select('id, title, category, created_at')
+              .eq('id', activeIdNum)
+              .maybeSingle();
+            data = result.data;
+            error = result.error;
+          }
+        }
+
+        // 지정된 공지가 없거나 에러인 경우 fallback으로 최신 공지글 1건 조회
+        if (!data || error) {
+          const result = await supabase
+            .from('posts')
+            .select('id, title, category, created_at')
+            .eq('is_notice', true)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          data = result.data;
+          error = result.error;
+        }
+
+        if (!error && data) {
+          const createdAtTime = new Date(data.created_at).getTime();
+          const currentTime = new Date().getTime();
+
+          // displayDays가 0이면 무제한 노출, 0보다 크면 기한 만료 여부 판별
+          if (displayDays > 0 && (currentTime - createdAtTime > displayDays * 24 * 60 * 60 * 1000)) {
+            setIsVisible(false);
+          } else {
+            // localStorage에서 숨김 처리된 ID 확인
+            const dismissedNoticeId = localStorage.getItem('dismissed_notice_id');
+            if (dismissedNoticeId === data.id.toString()) {
+              setIsVisible(false);
+            } else {
+              setIsVisible(true);
+            }
+          }
+          setLatestNotice(data);
+        } else {
+          setIsVisible(false);
+        }
+      } catch (err) {
+        console.error('공지사항 조회 중 오류 발생:', err);
+        setIsVisible(false);
+      } finally {
+        setIsLoading(false);
       }
-      setIsLoading(false);
     };
 
     fetchLatestNotice();
-    
-    // 🌟 실시간 데이터 구독 (새 공지 등록 시 즉각 반영)
+
+    // 실시간 데이터 구독 (새 공지 등록 시 즉각 반영)
     const channel = supabase
       .channel('public:posts')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'posts' }, (payload) => {
-        if (payload.new.is_notice) {
-          setLatestNotice(payload.new);
-          setIsVisible(true); // 새 공지가 오면 다시 표시
-        }
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'posts' }, () => {
+        fetchLatestNotice();
       })
       .subscribe();
 

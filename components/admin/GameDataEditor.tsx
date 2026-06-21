@@ -41,6 +41,12 @@ export default function GameDataEditor() {
   const [isMobile, setIsMobile] = useState(false);
   const [showUserListOnMobile, setShowUserListOnMobile] = useState(false);
 
+  // 전역 공지 설정 상태
+  const [noticeActiveId, setNoticeActiveId] = useState("");
+  const [noticeDisplayDays, setNoticeDisplayDays] = useState("7");
+  const [isFetchingSettings, setIsFetchingSettings] = useState(false);
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+
   // 카테고리 변경 시 모바일 유저 목록 보기 상태 초기화
   useEffect(() => {
     setShowUserListOnMobile(false);
@@ -74,6 +80,54 @@ export default function GameDataEditor() {
       setIsLoadingDashboard(false);
     }
   }, []);
+
+  const fetchSettings = useCallback(async () => {
+    setIsFetchingSettings(true);
+    try {
+      const response = await fetch("/api/admin/settings");
+      if (!response.ok) throw new Error("시스템 설정 로드 실패");
+      const data = await response.json();
+      if (data.success && data.settings) {
+        setNoticeActiveId(data.settings.notice_active_id || "");
+        setNoticeDisplayDays(data.settings.notice_display_days || "7");
+      }
+    } catch (err: any) {
+      console.error("[Settings Load Error]", err.message);
+      toast.error("시스템 설정 로드 오류: " + err.message);
+    } finally {
+      setIsFetchingSettings(false);
+    }
+  }, []);
+
+  const handleSaveSettings = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingSettings(true);
+    const toastId = toast.loading("시스템 설정 저장 중...");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch("/api/admin/settings", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session?.access_token}`
+        },
+        body: JSON.stringify({
+          settings: {
+            notice_active_id: noticeActiveId,
+            notice_display_days: noticeDisplayDays
+          }
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "시스템 설정 저장 실패");
+      toast.success("✅ 시스템 설정이 저장되었습니다.", { id: toastId });
+      fetchSettings();
+    } catch (err: any) {
+      toast.error("설정 저장 오류: " + err.message, { id: toastId });
+    } finally {
+      setIsSavingSettings(false);
+    }
+  };
 
   const timeAgo = useCallback((dateStr: string | null) => {
     if (!dateStr) return "접속 기록 없음";
@@ -331,6 +385,7 @@ export default function GameDataEditor() {
     if (activeCategory === "system") {
       setItems([]);
       fetchDashboardData();
+      fetchSettings();
       return;
     }
 
@@ -385,7 +440,7 @@ export default function GameDataEditor() {
       setSelectedItem(null);
       setSelectedCrateDetail(null);
     }
-  }, [activeCategory, fetchDashboardData, setItems, setSelectedCrateDetail, setSelectedItem]);
+  }, [activeCategory, fetchDashboardData, fetchSettings, setItems, setSelectedCrateDetail, setSelectedItem]);
 
   useEffect(() => {
     if (isAuthorized) {
@@ -1706,6 +1761,62 @@ export default function GameDataEditor() {
                       </button>
                     </div>
                   </div>
+                </div>
+
+                {/* 전역 공지 노출 설정 */}
+                <div className="bg-[#1a1a1a] p-6 rounded-xl border border-[#333] space-y-4">
+                  <h3 className="text-lg font-bold text-[#F2A900] mb-2">📢 전역 공지 노출 제어</h3>
+                  <p className="text-sm text-gray-400 mb-4">
+                    지도의 상단 배너에 노출될 공지사항의 글 ID와 노출 기한을 설정합니다.<br />
+                    노출 기한이 0일인 경우 영구 노출되며, <strong>공지글 ID에 -1 또는 none 입력 시 공지가 완전히 숨겨집니다.</strong>
+                  </p>
+                  
+                  {isFetchingSettings ? (
+                    <div className="flex items-center gap-2 text-xs text-gray-500 py-2">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-[#F2A900]"></div>
+                      <span>설정 불러오는 중...</span>
+                    </div>
+                  ) : (
+                    <form onSubmit={handleSaveSettings} className="space-y-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-bold text-gray-500 mb-2">공지글 ID (notice_active_id)</label>
+                          <input 
+                            type="text"
+                            placeholder="예: 42 (최근 자동 노출 시 빈칸, 숨김 시 -1 또는 none)"
+                            className="w-full bg-[#222] border border-[#333] rounded px-3 py-2 text-sm focus:border-[#F2A900] focus:outline-none"
+                            value={noticeActiveId}
+                            onChange={(e) => setNoticeActiveId(e.target.value)}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-gray-500 mb-2">노출 기한 (일 기준, 0은 무제한)</label>
+                          <input 
+                            type="number"
+                            min="0"
+                            placeholder="예: 7"
+                            className="w-full bg-[#222] border border-[#333] rounded px-3 py-2 text-sm focus:border-[#F2A900] focus:outline-none"
+                            required
+                            value={noticeDisplayDays}
+                            onChange={(e) => setNoticeDisplayDays(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                      <div className="flex justify-end pt-2">
+                        <button
+                          type="submit"
+                          disabled={isSavingSettings}
+                          className={`px-5 py-2 rounded-lg text-sm font-bold border transition-all whitespace-nowrap cursor-pointer ${
+                            isSavingSettings 
+                              ? "bg-gray-800 border-gray-700 text-gray-500 cursor-not-allowed" 
+                              : "bg-[#F2A900] border-[#F2A900]/30 text-black hover:bg-[#d89700]"
+                          }`}
+                        >
+                          {isSavingSettings ? "⏳ 저장 중..." : "⚙️ 공지 설정 저장"}
+                        </button>
+                      </div>
+                    </form>
+                  )}
                 </div>
               </div>
             </div>
