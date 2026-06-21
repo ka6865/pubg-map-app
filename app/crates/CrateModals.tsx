@@ -3,6 +3,7 @@ import { Coins, Box, Award, Ticket, Sparkles, History, AlertTriangle, Layers } f
 import type { CrateTemplate } from "@/types/crates";
 import { HistoryItem } from "./types";
 import { VaultCard, HistoryCard, getKoreanRarityName } from "./CrateCards";
+import { useLockBodyScroll } from "@/hooks/useLockBodyScroll";
 
 function getOwnedCount(obtainedSkins: Record<string, number>, item: { name: string; asset_key?: string | null }) {
   return obtainedSkins[item.asset_key || item.name] || obtainedSkins[item.name] || 0;
@@ -18,22 +19,24 @@ interface ChargeModalProps {
   exchangeRate: number;
 }
 
-export function ChargeModal({ isOpen, onClose, onCharge, exchangeRate }: ChargeModalProps) {
+export function ChargeModal({ isOpen, onClose, onCharge, exchangeRate = 1500 }: ChargeModalProps) {
+  useLockBodyScroll(isOpen);
+
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md animate-[fadeIn_0.2s_ease-out]">
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-xl mx-4 space-y-6 shadow-2xl relative">
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-xl mx-4 space-y-6 shadow-2xl relative max-h-[90vh] flex flex-col">
         
         {/* 닫기 버튼 */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 text-slate-400 hover:text-white font-bold text-lg cursor-pointer px-2 py-1 rounded-lg hover:bg-slate-800 transition-all"
+          className="absolute top-4 right-4 text-slate-400 hover:text-white font-bold text-lg cursor-pointer px-2 py-1 rounded-lg hover:bg-slate-800 transition-all z-10"
         >
           ✕
         </button>
 
-        <div className="text-center">
+        <div className="text-center shrink-0">
           <h2 className="text-xl font-black text-amber-400 flex items-center justify-center gap-1.5">
             <Coins className="w-6 h-6 text-amber-500" />
             가상 G코인 충전소
@@ -43,7 +46,7 @@ export function ChargeModal({ isOpen, onClose, onCharge, exchangeRate }: ChargeM
           </p>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1 overflow-y-auto pr-1">
           {[
             { amount: 11200, price: 99.99, badge: "최고 효율" },
             { amount: 5500, price: 49.99, badge: "인기" },
@@ -55,7 +58,7 @@ export function ChargeModal({ isOpen, onClose, onCharge, exchangeRate }: ChargeM
             <div
               key={pack.amount}
               onClick={() => onCharge(pack.amount, pack.price)}
-              className="bg-slate-950/60 hover:bg-slate-950 border border-slate-800 hover:border-amber-500/50 p-4 rounded-2xl flex flex-col justify-between items-start cursor-pointer hover:scale-[1.02] hover:shadow-[0_0_15px_rgba(245,158,11,0.05)] transition-all group relative overflow-hidden"
+              className="bg-slate-950/60 hover:bg-slate-950 border border-slate-800 hover:border-amber-500/50 p-4 rounded-2xl flex flex-col justify-between items-start cursor-pointer hover:scale-[1.02] hover:shadow-[0_0_15px_rgba(245,158,11,0.05)] transition-all group relative overflow-hidden min-h-[112px]"
             >
               {pack.badge && (
                 <span className="absolute top-2 right-2 bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[8px] font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wider">
@@ -81,7 +84,7 @@ export function ChargeModal({ isOpen, onClose, onCharge, exchangeRate }: ChargeM
           ))}
         </div>
 
-        <div className="bg-slate-950/40 border border-slate-850 p-4 rounded-xl text-center">
+        <div className="bg-slate-950/40 border border-slate-850 p-4 rounded-xl text-center shrink-0">
           <p className="text-[10px] text-slate-500 leading-relaxed">
             ※ 본 상자깡 시뮬레이터는 완전한 무료 체험판 게임입니다. <br />
             실제 결제는 발생하지 않으며, 임의의 소모 요율 측정 목적으로만 환전 요율이 적용됩니다.
@@ -114,11 +117,13 @@ export function QuantityModal({
   paymentMethod,
   onConfirm
 }: QuantityModalProps) {
+  useLockBodyScroll(isOpen);
+
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md animate-[fadeIn_0.2s_ease-out]">
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-sm mx-4 space-y-6 shadow-2xl relative">
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-sm mx-4 space-y-6 shadow-2xl relative max-h-[90vh] overflow-y-auto">
         
         {/* 닫기 버튼 */}
         <button
@@ -234,11 +239,13 @@ export function RefillModal({
   onRefill,
   onRefillInfinite
 }: RefillModalProps) {
+  useLockBodyScroll(isOpen);
+
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md animate-[fadeIn_0.2s_ease-out]">
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-md mx-4 space-y-6 shadow-2xl relative">
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-md mx-4 space-y-6 shadow-2xl relative max-h-[90vh] flex flex-col">
         
         {/* 닫기 버튼 */}
         <button
@@ -248,7 +255,7 @@ export function RefillModal({
           ✕
         </button>
 
-        <div className="text-center">
+        <div className="text-center shrink-0">
           <h2 className="text-xl font-black text-indigo-400 flex items-center justify-center gap-1.5">
             <Sparkles className="w-6 h-6 text-indigo-500 animate-pulse" />
             이벤트 재화 보충기
@@ -258,7 +265,7 @@ export function RefillModal({
           </p>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-4 flex-1 overflow-y-auto pr-1">
           {/* 재화 유형 선택 */}
           <div className="space-y-2">
             <label className="text-xs font-bold text-slate-400">재화 종류 선택</label>
@@ -323,7 +330,7 @@ export function RefillModal({
         </div>
 
         {/* 보충 확정 버튼 */}
-        <div className="flex flex-col gap-2.5">
+        <div className="flex flex-col gap-2.5 shrink-0">
           <button
             onClick={onRefill}
             className="w-full py-3.5 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-black rounded-xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2 cursor-pointer text-sm"
@@ -492,6 +499,8 @@ interface CraftingModalProps {
 export function CraftingModal({ isOpen, onClose, tokens, obtainedSkins, onCraft, craftableItems }: CraftingModalProps) {
   const [activeSubTab, setActiveSubTab] = useState<string>("전체");
   
+  useLockBodyScroll(isOpen);
+
   if (!isOpen) return null;
 
   const filteredItems = activeSubTab === "전체" 
@@ -656,6 +665,8 @@ export function DetailModal({
 }: DetailModalProps) {
   const [activeTab, setActiveTab] = useState<"vault" | "history" | "stats">("vault");
   const [probSubTab, setProbSubTab] = useState<"base" | "prime" | "bonus">("base");
+
+  useLockBodyScroll(isOpen);
 
   if (!isOpen || !activeCrate) return null;
 
