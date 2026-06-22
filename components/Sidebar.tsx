@@ -2,7 +2,6 @@
 
 import { X } from "lucide-react";
 import { useMapSettings } from "@/hooks/useMapSettings";
-import AdfitBanner from "@/components/ads/AdfitBanner";
 
 
 interface SidebarProps {
@@ -255,22 +254,6 @@ export default function Sidebar({
             </button>
           );
         })}
-      </div>
-
-      {/* 사이드바 하단 광고 — 심사 통과용 및 데스크톱 광고 영역 */}
-      <div 
-        style={{ 
-          padding: "12px 16px 0 16px", 
-          display: "flex", 
-          justifyContent: "center",
-          borderTop: "1px solid rgba(255,255,255,0.05)"
-        }}
-      >
-        <AdfitBanner
-          adUnit="DAN-tQGcqmddMC8tPpXA"
-          adWidth={320}
-          adHeight={100}
-        />
       </div>
 
       {/* 미니 푸터 (사이드바 하단) */}

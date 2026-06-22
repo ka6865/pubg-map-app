@@ -4,6 +4,7 @@ import L from "leaflet";
 import Sidebar from "../Sidebar";
 import MobileBottomSheet from "./MobileBottomSheet";
 import MapView from "./MapView";
+import AdfitBanner from "../ads/AdfitBanner";
 import { X, Hammer, Map as MapIcon, Crosshair, Plane, AlertCircle, SlidersHorizontal, Menu, Flame, Grid, MapPin, Target } from 'lucide-react';
 import type { MapTab, MapMarker, AuthUser, PendingVehicle } from "../../types/map";
 import { useTelemetry } from "../../hooks/useTelemetry";
@@ -186,6 +187,16 @@ const MapShell = memo(({
         <div className="flex-1 flex overflow-hidden relative bg-[#0a0a0a]">
           {/* Left: Map Area */}
           <div className="flex-1 flex flex-col relative min-w-0">
+            {/* 데스크톱 전용 우측 하단 플로팅 카카오 애드핏 광고 — 사이드바 침범 방지 및 광고 설치 검증 보장 */}
+            {!isMobile && (
+              <div className="absolute right-4 bottom-4 z-[1000] shadow-[0_4px_12px_rgba(0,0,0,0.5)] border border-white/10 rounded-lg overflow-hidden bg-black/80 p-1">
+                <AdfitBanner
+                  adUnit="DAN-tQGcqmddMC8tPpXA"
+                  adWidth={320}
+                  adHeight={100}
+                />
+              </div>
+            )}
             <HomeNotice />
 
             {/* 구형 상태바 제거됨 */}

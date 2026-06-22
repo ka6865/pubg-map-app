@@ -1,6 +1,7 @@
 'use client';
 
 import React from 'react';
+import AdfitBanner from "../ads/AdfitBanner";
 
 
 import { X, ChevronUp, Map as MapIcon, SlidersHorizontal } from 'lucide-react';
@@ -130,6 +131,15 @@ export default function MobileBottomSheet({
                   </div>
                 </section>
                 
+                {/* 모바일 화면 하단 광고 — 심사 통과 및 규격에 맞춰 320x100 탑재 */}
+                <div className="my-4 flex justify-center">
+                  <AdfitBanner
+                    adUnit="DAN-tQGcqmddMC8tPpXA"
+                    adWidth={320}
+                    adHeight={100}
+                  />
+                </div>
+
                 {/* 하단 미니 푸터 */}
                 <div className="mt-8 pt-6 border-t border-[#222] pb-10">
                   <div className="flex items-center gap-4 mb-3 px-1">
