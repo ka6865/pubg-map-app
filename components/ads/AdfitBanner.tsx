@@ -25,7 +25,7 @@ export default function AdfitBanner({ adUnit, adWidth, adHeight, className }: Ad
     const container = containerRef.current;
     if (!container) return;
 
-    // 기존 ins 태그 제거 후 재생성 (SPA 라우팅 후 재초기화)
+    // 기존 태그 제거 후 ins와 script 쌍으로 재마운트 (SPA 동적 로드 완벽 보장)
     container.innerHTML = '';
 
     const ins = document.createElement('ins');
@@ -34,16 +34,14 @@ export default function AdfitBanner({ adUnit, adWidth, adHeight, className }: Ad
     ins.setAttribute('data-ad-unit', adUnit);
     ins.setAttribute('data-ad-width', String(adWidth));
     ins.setAttribute('data-ad-height', String(adHeight));
-    container.appendChild(ins);
 
-    // 전역 스크립트가 이미 로드된 경우 adfit.run() 호출
-    if (typeof (window as any).adfit !== 'undefined') {
-      try {
-        (window as any).adfit.run();
-      } catch {
-        // adfit.run() 미지원 버전 무시
-      }
-    }
+    const script = document.createElement('script');
+    script.async = true;
+    script.type = 'text/javascript';
+    script.src = '//t1.kakaocdn.net/kas/static/ba.min.js';
+
+    container.appendChild(ins);
+    container.appendChild(script);
   }, [adUnit, adWidth, adHeight, isDev]);
 
   // 개발 환경: 광고 위치 시각적 placeholder
