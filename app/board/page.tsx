@@ -72,21 +72,23 @@ export default async function BoardPage({
 
   return (
     <div className="w-full h-full overflow-y-auto bg-[#121212] flex flex-col pt-6">
+      {/* 상단 타이틀 영역 — 중앙 정렬용 900px wrapper */}
       <div className="w-full max-w-[900px] mx-auto px-4 box-border">
-         {/* 게시판 최상단 광고나 배너가 들어갈 수 있는 공간 */}
          <div className="mb-6 flex flex-col items-center">
             <h1 className="text-2xl font-black text-[#F2A900] tracking-tighter italic">커뮤니티</h1>
             <p className="text-white/40 text-xs mt-1">자유롭게 배틀그라운드 정보를 나누는 공간입니다</p>
          </div>
+      </div>
 
-         {/* 데이터는 서버에서 가져오고 뷰는 Client 컴포넌트가 담당 */}
+      {/* 게시판 리스트 컴포넌트 — 900px 안쪽에 relative가 선언되어 있으므로 w-full로 배치 */}
+      <div className="w-full">
          <BoardListClient 
-           posts={posts} 
-           totalPosts={count || 0} 
-           currentPage={page} 
-           currentFilter={filter}
-           currentSearchOption={searchType}
-           currentSearchQuery={q}
+            posts={posts} 
+            totalPosts={count || 0} 
+            currentPage={page} 
+            currentFilter={filter}
+            currentSearchOption={searchType}
+            currentSearchQuery={q}
          />
       </div>
     </div>
