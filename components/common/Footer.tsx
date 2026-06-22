@@ -121,6 +121,40 @@ const Footer = () => {
           >
             무기 도감
           </Link>
+
+          <span style={{ width: "1px", height: "14px", backgroundColor: "rgba(255,255,255,0.1)" }} />
+
+          <Link
+            href="/privacy"
+            style={{
+              fontSize: "12px",
+              fontWeight: 600,
+              color: "rgba(255,255,255,0.35)",
+              textDecoration: "none",
+              transition: "color 0.15s ease",
+            }}
+            onMouseEnter={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "rgba(255,255,255,0.7)")}
+            onMouseLeave={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "rgba(255,255,255,0.35)")}
+          >
+            개인정보처리방침
+          </Link>
+
+          <span style={{ width: "1px", height: "14px", backgroundColor: "rgba(255,255,255,0.1)" }} />
+
+          <Link
+            href="/terms"
+            style={{
+              fontSize: "12px",
+              fontWeight: 600,
+              color: "rgba(255,255,255,0.35)",
+              textDecoration: "none",
+              transition: "color 0.15s ease",
+            }}
+            onMouseEnter={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "rgba(255,255,255,0.7)")}
+            onMouseLeave={(e) => ((e.currentTarget as HTMLAnchorElement).style.color = "rgba(255,255,255,0.35)")}
+          >
+            이용약관
+          </Link>
         </div>
 
         {/* 법적 고지 */}
