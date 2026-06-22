@@ -27,6 +27,7 @@ import { useCratesState } from "./useCratesState";
 import { getCraftableItems } from "../actions/crates";
 import { toast } from "sonner";
 import ConfirmModal from "@/components/common/ConfirmModal";
+import AdfitBanner from "@/components/ads/AdfitBanner";
 
 interface CratesClientProps {
   initialCrates: CrateTemplate[];
@@ -350,7 +351,7 @@ export default function CratesClient({ initialCrates, exchangeRate = 1500 }: Cra
         }
       `}</style>
 
-      <div className="max-w-7xl mx-auto space-y-6">
+      <div className="max-w-7xl mx-auto space-y-6 relative">
 
         {/* BETA 서비스 공지 배너 (접이식 details/summary 적용) */}
         <details className="bg-slate-900/60 border-2 border-amber-500/20 rounded-3xl p-5 text-slate-300 text-xs sm:text-sm backdrop-blur-[12px] shadow-2xl relative overflow-hidden group transition-all duration-300">
@@ -1162,6 +1163,26 @@ export default function CratesClient({ initialCrates, exchangeRate = 1500 }: Cra
           </div>
 
         </div>
+
+        {/* 모바일/일반 화면 하단 광고 — 2xl 미만에서만 표시, 320x100 가로 배너 */}
+        <div className="my-6 flex justify-center 2xl:hidden">
+          <AdfitBanner
+            adUnit="DAN-tQGcqmddMC8tPpXA"
+            adWidth={320}
+            adHeight={100}
+          />
+        </div>
+
+        {/* 데스크톱 사이드바 광고 — 2xl 이상에서만 표시, 본문 정중앙 정렬 유지하며 우측 여백에 둥둥 뜨게 배치 */}
+        <aside className="hidden 2xl:block w-[160px] absolute left-[calc(100%+24px)] top-0 h-full">
+          <div className="sticky top-16">
+            <AdfitBanner
+              adUnit="DAN-RjyosR2uf8eSsVIC"
+              adWidth={160}
+              adHeight={600}
+            />
+          </div>
+        </aside>
 
       </div>
 
