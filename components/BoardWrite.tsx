@@ -46,6 +46,24 @@ const QuillGlobalStyles = (
       color: #adb5bd;
       font-style: normal;
     }
+    /* 다크모드 하에서 ql-tooltip(링크 정보 레이어)이 보이지 않거나 깨지는 버그 수정 */
+    .quill-wrapper .ql-tooltip {
+      background-color: #252525 !important;
+      color: #e5e5e5 !important;
+      border: 1px solid #444 !important;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5) !important;
+      border-radius: 4px !important;
+      z-index: 2000 !important;
+    }
+    .quill-wrapper .ql-tooltip input[type=text] {
+      background-color: #1a1a1a !important;
+      color: #fff !important;
+      border: 1px solid #333 !important;
+      border-radius: 4px !important;
+    }
+    .quill-wrapper .ql-tooltip a {
+      color: #F2A900 !important;
+    }
   `}</style>
 );
 
@@ -327,6 +345,53 @@ export default function BoardWrite({
     };
   }, [uploadImage]);
 
+  const linkHandler = useCallback(() => {
+    if (!quillRef.current) return;
+    const editor = quillRef.current.getEditor();
+    const range = editor.getSelection();
+
+    if (range) {
+      if (range.length === 0) {
+        // 드래그한 텍스트가 없는 경우: 텍스트와 링크 주소를 모두 입력받아 삽입
+        const text = prompt("링크로 표시할 텍스트를 입력하세요:");
+        if (text === null || text.trim() === "") return;
+
+        const url = prompt("링크 주소를 입력하세요 (예: https://example.com):", "https://");
+        if (url === null || url.trim() === "") return;
+
+        let targetUrl = url.trim();
+        if (!/^https?:\/\//i.test(targetUrl) && !/^mailto:/i.test(targetUrl) && !/^tel:/i.test(targetUrl)) {
+          targetUrl = "https://" + targetUrl;
+        }
+
+        editor.insertText(range.index, text, { link: targetUrl });
+        editor.setSelection(range.index + text.length);
+        toast.success("링크가 삽입되었습니다.");
+      } else {
+        // 드래그한 텍스트가 있는 경우: 기존 선택한 텍스트에 링크만 적용
+        const [format] = editor.getFormat(range);
+        const initialUrl = typeof format === 'object' && format.link ? format.link : "";
+
+        const url = prompt("링크 주소를 입력하세요 (예: https://example.com):", initialUrl || "https://");
+        if (url === null) return;
+
+        if (url.trim() === "") {
+          editor.format("link", false);
+          toast.success("링크가 제거되었습니다.");
+        } else {
+          let targetUrl = url.trim();
+          if (!/^https?:\/\//i.test(targetUrl) && !/^mailto:/i.test(targetUrl) && !/^tel:/i.test(targetUrl)) {
+            targetUrl = "https://" + targetUrl;
+          }
+          editor.format("link", targetUrl);
+          toast.success("링크가 삽입되었습니다.");
+        }
+      }
+    } else {
+      toast.warning("에디터를 먼저 선택해 주세요.");
+    }
+  }, []);
+
   const handleWrapperClick = useCallback(() => {
     if (quillRef.current) {
       const editor = quillRef.current.getEditor();
@@ -469,7 +534,10 @@ export default function BoardWrite({
         ["link", "image"],
         ["clean"],
       ],
-      handlers: { image: imageHandler },
+      handlers: { 
+        image: imageHandler,
+        link: linkHandler
+      },
     },
     // 🌟 [안전] 클립보드 붙여넣기 시 Base64 이미지 자동 필터링 및 스타일 클리닝
     clipboard: {
@@ -506,7 +574,7 @@ export default function BoardWrite({
         }]
       ]
     }
-  }), [imageHandler]);
+  }), [imageHandler, linkHandler]);
 
   return (
     <div
