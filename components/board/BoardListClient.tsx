@@ -11,6 +11,7 @@ import BoardSearch from "./BoardSearch";
 import BoardPagination from "./BoardPagination";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
+import AdfitBanner from "@/components/ads/AdfitBanner";
 
 const BOARD_CATEGORIES = ["배그 소식", "자유", "듀오/스쿼드 모집", "클랜홍보", "제보/문의"];
 const POSTS_PER_PAGE = 10;
@@ -117,112 +118,126 @@ export default function BoardListClient({
   };
 
   return (
-    <div className="w-full flex justify-center pb-20">
-      <div className="w-full max-w-[900px]">
-        {/* 상단 필터 및 글쓰기 버튼 */}
-        <div className="flex justify-between items-center mb-6 gap-4">
-          <div className="flex gap-2 overflow-x-auto no-scrollbar flex-1 py-1 px-1">
-          {filterCategories.map((f) => {
-            const isActive = currentFilter === f;
-            const href = f === "전체" ? "/board" : `/board?f=${f}`;
-              return (
-                <Link key={f} href={href} className="shrink-0">
-                  <button
-                    className={`px-4 py-2 rounded-lg border text-[13px] whitespace-nowrap transition-all duration-200 ${
-                      isActive
-                        ? "border-[#F2A900] bg-[#F2A900] text-black font-extrabold shadow-[0_0_15px_rgba(242,169,0,0.3)]"
-                        : "border-white/5 bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/70"
-                    }`}
-                  >
-                    {f}
-                  </button>
-                </Link>
-              );
-            })}
+    <div className="w-full flex justify-center pb-20 overflow-x-hidden">
+      <div className="w-full max-w-[900px] px-4 relative">
+        {/* 본문 영역 */}
+        <div className="w-full min-w-0">
+          {/* 상단 필터 및 글쓰기 버튼 */}
+          <div className="flex justify-between items-center mb-6 gap-4">
+            <div className="flex gap-2 overflow-x-auto no-scrollbar flex-1 py-1 px-1">
+            {filterCategories.map((f) => {
+              const isActive = currentFilter === f;
+              const href = f === "전체" ? "/board" : `/board?f=${f}`;
+                return (
+                  <Link key={f} href={href} className="shrink-0">
+                    <button
+                      className={`px-4 py-2 rounded-lg border text-[13px] whitespace-nowrap transition-all duration-200 ${
+                        isActive
+                          ? "border-[#F2A900] bg-[#F2A900] text-black font-extrabold shadow-[0_0_15px_rgba(242,169,0,0.3)]"
+                          : "border-white/5 bg-white/5 text-white/40 hover:bg-white/10 hover:text-white/70"
+                      }`}
+                    >
+                      {f}
+                    </button>
+                  </Link>
+                );
+              })}
+            </div>
+
+            <Link href="/board/write" className="shrink-0">
+              <button className="flex items-center gap-2 px-5 py-2 bg-[#F2A900] border-none rounded-lg font-black text-[14px] text-black hover:bg-[#d4940a] active:scale-95 transition-all shadow-[0_4px_12px_rgba(242,169,0,0.2)]">
+                <PenLine size={16} strokeWidth={3} />
+                글쓰기
+              </button>
+            </Link>
           </div>
 
-          <Link href="/board/write" className="shrink-0">
-            <button className="flex items-center gap-2 px-5 py-2 bg-[#F2A900] border-none rounded-lg font-black text-[14px] text-black hover:bg-[#d4940a] active:scale-95 transition-all shadow-[0_4px_12px_rgba(242,169,0,0.2)]">
-              <PenLine size={16} strokeWidth={3} />
-              글쓰기
-            </button>
-          </Link>
-        </div>
-
-        {/* 게시글 목록 */}
-        <div className="bg-[#1a1a1a] rounded-2xl border border-white/5 overflow-hidden shadow-2xl">
-          {posts.length === 0 ? (
-            <div className="py-24 text-center text-white/20">
-              <p className="text-base font-medium">등록된 게시글이 없습니다</p>
-              <p className="text-xs mt-2 opacity-50">첫 번째 주인공이 되어보세요!</p>
-            </div>
-          ) : isMobile ? (
-            <ul className="list-none p-0 m-0 divide-y divide-white/5">
-              {posts.map((post) => (
-                <PostItem 
-                  key={post.id} 
-                  post={post} 
-                  isMobile={true} 
-                  onClickDesktop={() => router.push(`/board/${post.id}`)}
-                  formatTimeAgo={formatTimeAgo} 
-                />
-              ))}
-            </ul>
-          ) : (
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="bg-white/[0.02] border-b border-white/5">
-                  {[
-                    { label: "분류", width: "100px" },
-                    { label: "제목", width: "auto" },
-                    { label: "글쓴이", width: "120px" },
-                    { label: "작성일", width: "100px" },
-                    { label: "조회", width: "80px" },
-                    { label: "추천", width: "80px" }
-                  ].map((h) => (
-                    <th 
-                      key={h.label} 
-                      style={{ width: h.width }}
-                      className="p-4 text-left text-[11px] font-black tracking-widest uppercase text-white/20"
-                    >
-                      {h.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/[0.03]">
+          {/* 게시글 목록 */}
+          <div className="bg-[#1a1a1a] rounded-2xl border border-white/5 overflow-hidden shadow-2xl">
+            {posts.length === 0 ? (
+              <div className="py-24 text-center text-white/20">
+                <p className="text-base font-medium">등록된 게시글이 없습니다</p>
+                <p className="text-xs mt-2 opacity-50">첫 번째 주인공이 되어보세요!</p>
+              </div>
+            ) : isMobile ? (
+              <ul className="list-none p-0 m-0 divide-y divide-white/5">
                 {posts.map((post) => (
                   <PostItem 
                     key={post.id} 
                     post={post} 
-                    isMobile={false}
+                    isMobile={true} 
                     onClickDesktop={() => router.push(`/board/${post.id}`)}
                     formatTimeAgo={formatTimeAgo} 
                   />
                 ))}
-              </tbody>
-            </table>
-          )}
+              </ul>
+            ) : (
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="bg-white/[0.02] border-b border-white/5">
+                    {[
+                      { label: "분류", width: "100px" },
+                      { label: "제목", width: "auto" },
+                      { label: "글쓴이", width: "120px" },
+                      { label: "작성일", width: "100px" },
+                      { label: "조회", width: "80px" },
+                      { label: "추천", width: "80px" }
+                    ].map((h) => (
+                      <th 
+                        key={h.label} 
+                        style={{ width: h.width }}
+                        className="p-4 text-left text-[11px] font-black tracking-widest uppercase text-white/20"
+                      >
+                        {h.label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/[0.03]">
+                  {posts.map((post) => (
+                    <PostItem 
+                      key={post.id} 
+                      post={post} 
+                      isMobile={false}
+                      onClickDesktop={() => router.push(`/board/${post.id}`)}
+                      formatTimeAgo={formatTimeAgo} 
+                    />
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* 하단 검색 및 페이지네이션 */}
+          <div className="flex justify-between items-center mt-4 flex-wrap gap-3">
+            <BoardSearch 
+              searchOption={searchOption}
+              setSearchOption={setSearchOption}
+              searchInput={searchInput}
+              setSearchInput={setSearchInput}
+              onSearch={handleSearch}
+            />
+
+            <BoardPagination 
+              currentPage={currentPage}
+              totalPages={totalPages}
+              pageNumbers={pageNumbers}
+              buildPageLink={buildPageLink}
+            />
+          </div>
         </div>
 
-        {/* 하단 검색 및 페이지네이션 */}
-        <div className="flex justify-between items-center mt-4 flex-wrap gap-3">
-          <BoardSearch 
-            searchOption={searchOption}
-            setSearchOption={setSearchOption}
-            searchInput={searchInput}
-            setSearchInput={setSearchInput}
-            onSearch={handleSearch}
-          />
-
-          <BoardPagination 
-            currentPage={currentPage}
-            totalPages={totalPages}
-            pageNumbers={pageNumbers}
-            buildPageLink={buildPageLink}
-          />
-        </div>
-      </div>
+        {/* 데스크톱 사이드바 광고 — xl 이상에서만 표시, 본문 정중앙 정렬 유지하며 우측 여백에 둥둥 뜨게 배치 */}
+        <aside className="hidden xl:block w-[160px] absolute left-[calc(100%+24px)] top-0 h-full">
+          <div className="sticky top-16">
+            <AdfitBanner
+              adUnit="DAN-RjyosR2uf8eSsVIC"
+              adWidth={160}
+              adHeight={600}
+            />
+          </div>
+        </aside>
     </div>
+  </div>
   );
 }

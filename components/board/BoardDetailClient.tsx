@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { trackEvent } from "@/lib/analytics";
 import ConfirmModal from "../common/ConfirmModal";
 import TurnstileWidget from "./TurnstileWidget";
+import AdfitBanner from "@/components/ads/AdfitBanner";
 
 interface BoardDetailClientProps {
   initialPost: Post;
@@ -502,8 +503,10 @@ export default function BoardDetailClient({
   }, [post.content, mounted]);
 
   return (
-    <div className="w-full flex justify-center pb-20">
-      <div className="w-full max-w-[900px]">
+    <div className="w-full flex justify-center pb-20 overflow-x-hidden">
+      <div className="w-full max-w-[900px] px-4 relative">
+        {/* 본문 영역 */}
+        <div className="w-full min-w-0">
         {/* 🌟 어드민 승인 대기 초안 프리뷰 배너 렌더링 */}
         {post.status === 'draft' && isAdmin && (
           <div className="w-full bg-[#1e1e1e] border border-[#F2A900]/30 rounded-xl p-5 mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-[0_0_20px_rgba(242,169,0,0.1)]">
@@ -659,6 +662,15 @@ export default function BoardDetailClient({
             <button onClick={handleLikePost} className="px-[16px] py-[8px] bg-[#252525] border border-[#F2A900] text-[#F2A900] rounded-[20px] text-[13px] hover:bg-[#F2A900] hover:text-black transition-colors">
               추천 {post.likes}
             </button>
+          </div>
+
+          {/* 광고 — 댓글 섹션 위 (데스크톱 xl 크기 이상에서는 숨김) */}
+          <div className="my-5 flex justify-center xl:hidden">
+            <AdfitBanner
+              adUnit="DAN-tQGcqmddMC8tPpXA"
+              adWidth={320}
+              adHeight={100}
+            />
           </div>
 
           <CommentSection
@@ -826,7 +838,17 @@ export default function BoardDetailClient({
           </div>
         </div>
       )}
+      {/* 데스크톱 사이드바 광고 — xl 이상에서만 표시, 본문 정중앙 정렬 유지하며 우측 여백에 둥둥 뜨게 배치 */}
+      <aside className="hidden xl:block w-[160px] absolute left-[calc(100%+24px)] top-0 h-full">
+        <div className="sticky top-16">
+          <AdfitBanner
+            adUnit="DAN-RjyosR2uf8eSsVIC"
+            adWidth={160}
+            adHeight={600}
+          />
+        </div>
+      </aside>
     </div>
-
+  </div>
   );
 }
