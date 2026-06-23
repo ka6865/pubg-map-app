@@ -9,6 +9,11 @@ import {
 } from "../../lib/backpackUtils";
 import { trackEvent } from "../../lib/analytics";
 import { toast } from "sonner";
+import AdfitBanner from "../../components/ads/AdfitBanner";
+
+const BACKPACK_MOBILE_AD_UNIT = "DAN-tQGcqmddMC8tPpXA";
+const BACKPACK_LEADERBOARD_AD_UNIT = "DAN-dPiCxgIGtXKjLPP3";
+const BACKPACK_DESKTOP_AD_UNIT = "DAN-RjyosR2uf8eSsVIC";
 
 interface InventoryItem {
   id: string;
@@ -144,11 +149,8 @@ export default function BackpackSimulator() {
     });
 
     async function fetchAllData() {
-      console.log("[Backpack] 데이터 로드 시작...");
-      
       // 10초 후 강제 로딩 해제 (무한 로딩 방지)
       const timeoutId = setTimeout(() => {
-        console.warn("[Backpack] 데이터 로드 타임아웃 발생 (10초)");
         setLoading(false);
       }, 10000);
 
@@ -164,11 +166,6 @@ export default function BackpackSimulator() {
           supabase.from("weapons").select("*")
         ]);
 
-        console.log("[Backpack] 데이터 로드 완료:", { 
-          consumables: cons?.length, 
-          vehicles: vehs?.length 
-        });
-
         setConsumables(cons || []);
         setThrowables(throwa || []);
         setAttachments(atts || []);
@@ -180,8 +177,8 @@ export default function BackpackSimulator() {
           const porter = vehs.find(v => v.id === 'porter');
           setSelectedVehicleId(porter ? porter.id : vehs[0].id);
         }
-      } catch (err) {
-        console.error("[Backpack] 데이터 로드 실패:", err);
+      } catch {
+        toast.error("가방 시뮬레이터 데이터를 불러오지 못했습니다.");
       } finally {
         clearTimeout(timeoutId);
         setLoading(false);
@@ -375,7 +372,7 @@ export default function BackpackSimulator() {
 
   return (
     <div className="min-h-screen bg-[#0b0f19] text-white p-6 pb-20 overflow-y-auto w-full font-sans safe-top safe-bottom">
-      <div className="max-w-[1600px] mx-auto w-full">
+      <div className="relative max-w-[1600px] mx-auto w-full">
         
         {/* 헤더 */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-white/10 pb-6 mb-8">
@@ -559,6 +556,34 @@ export default function BackpackSimulator() {
             </div>
           </div>
         </div>
+
+        <div className="mt-8 flex justify-center md:hidden" aria-label="광고">
+          <AdfitBanner
+            adUnit={BACKPACK_MOBILE_AD_UNIT}
+            adWidth={320}
+            adHeight={100}
+            className="max-w-full"
+          />
+        </div>
+
+        <div className="mt-8 hidden justify-center md:flex min-[1880px]:hidden" aria-label="광고">
+          <AdfitBanner
+            adUnit={BACKPACK_LEADERBOARD_AD_UNIT}
+            adWidth={728}
+            adHeight={90}
+            className="max-w-full"
+          />
+        </div>
+
+        <aside className="hidden min-[1880px]:block absolute left-[calc(100%+24px)] top-0 w-[160px] h-full" aria-label="광고">
+          <div className="sticky top-24">
+            <AdfitBanner
+              adUnit={BACKPACK_DESKTOP_AD_UNIT}
+              adWidth={160}
+              adHeight={600}
+            />
+          </div>
+        </aside>
       </div>
     </div>
   );

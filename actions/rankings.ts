@@ -47,6 +47,12 @@ const GAME_MODE_KO: Record<string, string> = {
   'solo-fpp': '솔로 FPP',
 };
 
+function logRankingError(scope: string, error: unknown) {
+  if (error) {
+    console.error(`[RANKINGS] ${scope} query failed`, error);
+  }
+}
+
 function getModes(filter: GameModeFilter, perspective: PerspectiveFilter): string[] {
   let modes: string[] = [];
   if (filter === 'all') {
@@ -91,14 +97,19 @@ export async function getWeeklyTopDamage(
     .gte('created_at', since)
     .in('game_mode', getModes(modeFilter, perspectiveFilter))
     .order('damage', { ascending: false })
-    .limit(150);
+    .order('kills', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(500);
 
   if (matchTypeFilter !== 'all') {
     query = query.eq('match_type', matchTypeFilter);
   }
 
   const { data, error } = await query;
-  if (error || !data) return [];
+  if (error || !data) {
+    logRankingError('weekly_top_damage', error);
+    return [];
+  }
 
   // 플레이어당 최고 딜량만 유지
   const seen = new Set<string>();
@@ -140,14 +151,19 @@ export async function getWeeklyTopKills(
     .gte('created_at', since)
     .in('game_mode', getModes(modeFilter, perspectiveFilter))
     .order('kills', { ascending: false })
-    .limit(150);
+    .order('damage', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(500);
 
   if (matchTypeFilter !== 'all') {
     query = query.eq('match_type', matchTypeFilter);
   }
 
   const { data, error } = await query;
-  if (error || !data) return [];
+  if (error || !data) {
+    logRankingError('weekly_top_kills', error);
+    return [];
+  }
 
   const seen = new Set<string>();
   const deduped: typeof data = [];
@@ -180,11 +196,16 @@ export async function getTopTierRanking(
   perspectiveFilter: PerspectiveFilter = 'all',
   matchTypeFilter: MatchTypeFilter = 'all'
 ): Promise<RankingEntry[]> {
+  const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
   let query = supabase
     .from('global_benchmarks')
     .select('player_id, score, tier, damage, kills, game_mode, created_at')
+    .gte('created_at', since)
     .in('game_mode', getModes(modeFilter, perspectiveFilter))
     .order('score', { ascending: false })
+    .order('damage', { ascending: false })
+    .order('created_at', { ascending: false })
     .limit(500);
 
   if (matchTypeFilter !== 'all') {
@@ -192,7 +213,10 @@ export async function getTopTierRanking(
   }
 
   const { data, error } = await query;
-  if (error || !data) return [];
+  if (error || !data) {
+    logRankingError('top_tier', error);
+    return [];
+  }
 
   // 플레이어당 최고 스코어만 유지 + match_count 집계
   const playerBest = new Map<string, { score: number; tier: string; damage: number; kills: number; game_mode: string; created_at: string; count: number }>();

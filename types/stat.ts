@@ -8,6 +8,7 @@ export interface MatchStats {
   kills: number;
   assists: number;
   damageDealt: number;
+  processedDamageDealt?: number;
   timeSurvived: number;
   DBNOs: number;
   headshotKills: number;

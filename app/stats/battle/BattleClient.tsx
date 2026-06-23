@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Camera, Copy, Download, Share2, Star, Clock, User, X } from "lucide-react";
 import { STORAGE_KEY_RECENT, STORAGE_KEY_FAVORITES } from "../../../lib/pubg-analysis/constants";
 import { trackEvent } from "@/lib/analytics";
+import AdfitBanner from "@/components/ads/AdfitBanner";
 
 interface Comparison {
   key: string;
@@ -35,6 +36,9 @@ interface BattleResult {
 }
 
 type PlayerSuggestion = { nickname: string; platform: string };
+
+const BATTLE_MOBILE_AD_UNIT = "DAN-tQGcqmddMC8tPpXA";
+const BATTLE_DESKTOP_AD_UNIT = "DAN-RjyosR2uf8eSsVIC";
 
 const normalizeBattlePlatform = (platform?: string | null) => {
   const value = String(platform || "").trim().toLowerCase();
@@ -494,7 +498,11 @@ function BattleContent() {
         const res = await fetch(`/api/pubg/suggest?q=${encodeURIComponent(nick1)}`);
         const data = await res.json();
         setSuggestions1(data.suggestions || []);
-      } catch (err) { console.error(err); } finally { setIsSuggesting1(false); }
+      } catch {
+        setSuggestions1([]);
+      } finally {
+        setIsSuggesting1(false);
+      }
     }, 300);
     return () => clearTimeout(timer);
   }, [nick1]);
@@ -511,14 +519,18 @@ function BattleContent() {
         const res = await fetch(`/api/pubg/suggest?q=${encodeURIComponent(nick2)}`);
         const data = await res.json();
         setSuggestions2(data.suggestions || []);
-      } catch (err) { console.error(err); } finally { setIsSuggesting2(false); }
+      } catch {
+        setSuggestions2([]);
+      } finally {
+        setIsSuggesting2(false);
+      }
     }, 300);
     return () => clearTimeout(timer);
   }, [nick2]);
 
   return (
     <main className="min-h-screen bg-[#080810] text-white px-4 py-12">
-      <div className="max-w-2xl mx-auto flex flex-col gap-8">
+      <div className="relative max-w-2xl mx-auto flex flex-col gap-8">
 
         {/* 헤더 */}
         <div className="text-center">
@@ -632,6 +644,15 @@ function BattleContent() {
           >
             {loading ? "⏳ 분석 중..." : "⚔️ 대결 시작!"}
           </button>
+        </div>
+
+        <div className="flex justify-center xl:hidden" aria-label="광고">
+          <AdfitBanner
+            adUnit={BATTLE_MOBILE_AD_UNIT}
+            adWidth={320}
+            adHeight={100}
+            className="max-w-full"
+          />
         </div>
 
         {/* 에러 */}
@@ -800,6 +821,16 @@ function BattleContent() {
             </div>
           </div>
         )}
+
+        <aside className="hidden xl:block absolute left-[calc(100%+24px)] top-0 w-[160px] h-full" aria-label="광고">
+          <div className="sticky top-24">
+            <AdfitBanner
+              adUnit={BATTLE_DESKTOP_AD_UNIT}
+              adWidth={160}
+              adHeight={600}
+            />
+          </div>
+        </aside>
       </div>
     </main>
   );

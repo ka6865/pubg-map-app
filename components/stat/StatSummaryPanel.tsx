@@ -4,11 +4,9 @@ import React, { useState, useTransition, useRef, useEffect } from "react";
 import { getTierIconPath } from "@/utils/tier";
 import {
   Trophy,
-  Target,
   Swords,
   Shield,
   Clock,
-  Crosshair,
   Users,
   HelpCircle,
   X,
@@ -40,7 +38,7 @@ type GameType = "duo" | "squad" | "solo";
 
 interface StatSummaryPanelProps {
   stats: {
-    ranked?: { duo?: any; squad?: any };
+    ranked?: { solo?: any; duo?: any; squad?: any };
     normal?: { solo?: any; duo?: any; squad?: any };
   };
   isMobile: boolean;
@@ -138,13 +136,9 @@ export const StatSummaryPanel = ({ stats, isMobile }: StatSummaryPanelProps) => 
   const [showDbnoTooltip, setShowDbnoTooltip] = useState(false);
   const tooltipRef = useRef<HTMLDivElement>(null);
 
-  // 경쟁전엔 솔로 없음 → 모드 전환 시 서브탭 보정
   const handleModeChange = (newMode: Mode) => {
     startTransition(() => {
       setMode(newMode);
-      if (newMode === "ranked" && gameType === "solo") {
-        setGameType("squad");
-      }
     });
   };
 
@@ -166,23 +160,18 @@ export const StatSummaryPanel = ({ stats, isMobile }: StatSummaryPanelProps) => 
 
   const isRanked = mode === "ranked";
   const data = isRanked
-    ? stats?.ranked?.[gameType as "duo" | "squad"]
+    ? stats?.ranked?.[gameType]
     : stats?.normal?.[gameType];
 
   const hasData = data && data.roundsPlayed > 0;
   const tierInfo = hasData ? getTierStyle(data?.currentTier?.tier) : null;
 
   // 서브탭 목록
-  const subTabs: { key: GameType; label: string }[] = isRanked
-    ? [
-        { key: "duo", label: "듀오" },
-        { key: "squad", label: "스쿼드" },
-      ]
-    : [
-        { key: "solo", label: "솔로" },
-        { key: "duo", label: "듀오" },
-        { key: "squad", label: "스쿼드" },
-      ];
+  const subTabs: { key: GameType; label: string }[] = [
+    { key: "solo", label: "솔로" },
+    { key: "duo", label: "듀오" },
+    { key: "squad", label: "스쿼드" },
+  ];
 
   return (
     <div className="w-full bg-black/60 backdrop-blur-2xl border border-white/10 rounded-[2.5rem] overflow-hidden shadow-2xl">
