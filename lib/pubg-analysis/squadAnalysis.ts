@@ -58,35 +58,51 @@ export async function getSquadAnalysisData(nickname: string, platform: string = 
     return mode.includes("squad");
   });
 
-  const groupMap = new Map<string, { matchIds: string[]; members: string[] }>();
+  const groupMap = new Map<string, { matchIds: string[]; memberNamesByKey: Map<string, string> }>();
 
   squadMatches.forEach(m => {
     const fullResult = m.data?.fullResult;
     const team = fullResult.team || [];
-    const teammates = team
-      .map((t: any) => t.name)
-      .filter((name: string) => name && normalizeName(name) !== lowerNickname)
-      .sort((a: string, b: string) => a.localeCompare(b));
+    const teammateNameMap = new Map<string, string>();
+    team.forEach((t: any) => {
+      const name = String(t.name || "").trim();
+      const normalized = normalizeName(name);
+      if (!name || !normalized || normalized === lowerNickname) return;
+      if (!teammateNameMap.has(normalized)) {
+        teammateNameMap.set(normalized, name);
+      }
+    });
+    const teammates = Array.from(teammateNameMap.values()).sort((a: string, b: string) => a.localeCompare(b));
 
     if (teammates.length === 0) return;
 
-    const key = teammates.join(", ");
-    const existing = groupMap.get(key);
+    const normalizedKey = Array.from(teammateNameMap.keys()).sort().join(",");
+    const existing = groupMap.get(normalizedKey);
     if (existing) {
       existing.matchIds.push(m.match_id);
+      teammateNameMap.forEach((displayName, normalizedName) => {
+        if (!existing.memberNamesByKey.has(normalizedName)) {
+          existing.memberNamesByKey.set(normalizedName, displayName);
+        }
+      });
     } else {
-      groupMap.set(key, {
+      groupMap.set(normalizedKey, {
         matchIds: [m.match_id],
-        members: teammates
+        memberNamesByKey: teammateNameMap
       });
     }
   });
 
-  const groups = Array.from(groupMap.entries()).map(([key, value]) => ({
-    groupKey: key,
+  const groups = Array.from(groupMap.values()).map((value) => ({
+    groupKey: Array.from(value.memberNamesByKey.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([, displayName]) => displayName)
+      .join(", "),
     matchCount: value.matchIds.length,
     matchIds: value.matchIds,
-    members: value.members
+    members: Array.from(value.memberNamesByKey.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([, displayName]) => displayName)
   })).sort((a, b) => b.matchCount - a.matchCount);
 
   if (!groupKey) {
@@ -111,15 +127,23 @@ export async function getSquadAnalysisData(nickname: string, platform: string = 
   let totalTeamWipes = 0;
   let accumTeammateKnocks = 0;
 
-  const allMembers = [
-    selectedGroup.members.find(m => normalizeName(m) === lowerNickname) || nickname,
-    ...selectedGroup.members
-  ];
-  const squadMembers = Array.from(new Set(allMembers)).filter(Boolean);
+  const memberNameByKey = new Map<string, string>();
+  const addSquadMember = (name: string) => {
+    const displayName = String(name || "").trim();
+    const normalizedName = normalizeName(displayName);
+    if (!displayName || !normalizedName) return;
+    if (!memberNameByKey.has(normalizedName)) {
+      memberNameByKey.set(normalizedName, displayName);
+    }
+  };
+
+  addSquadMember(nickname);
+  selectedGroup.members.forEach(addSquadMember);
+  const squadMemberKeys = Array.from(memberNameByKey.keys());
 
   const playerAccumStats: Record<string, { damage: number; kills: number; assists: number; dbnos: number }> = {};
-  squadMembers.forEach(name => {
-    playerAccumStats[name] = { damage: 0, kills: 0, assists: 0, dbnos: 0 };
+  squadMemberKeys.forEach(key => {
+    playerAccumStats[key] = { damage: 0, kills: 0, assists: 0, dbnos: 0 };
   });
 
   const tierCounts: Record<string, number> = {};
@@ -154,12 +178,12 @@ export async function getSquadAnalysisData(nickname: string, platform: string = 
 
     const team = fullResult.team || [];
     team.forEach((t: any) => {
-      const matchingMember = squadMembers.find(mName => normalizeName(mName) === normalizeName(t.name));
-      if (matchingMember) {
-        playerAccumStats[matchingMember].damage += t.damageDealt || 0;
-        playerAccumStats[matchingMember].kills += t.kills || 0;
-        playerAccumStats[matchingMember].assists += t.assists || 0;
-        playerAccumStats[matchingMember].dbnos += t.DBNOs || 0;
+      const matchingMemberKey = squadMemberKeys.find(memberKey => memberKey === normalizeName(t.name));
+      if (matchingMemberKey) {
+        playerAccumStats[matchingMemberKey].damage += t.damageDealt || 0;
+        playerAccumStats[matchingMemberKey].kills += t.kills || 0;
+        playerAccumStats[matchingMemberKey].assists += t.assists || 0;
+        playerAccumStats[matchingMemberKey].dbnos += t.DBNOs || 0;
       }
     });
   });
@@ -316,8 +340,8 @@ export async function getSquadAnalysisData(nickname: string, platform: string = 
   else squadGrade = "D";
 
   const totalStats = { damage: 0, kills: 0, assists: 0, dbnos: 0 };
-  squadMembers.forEach(name => {
-    const stats = playerAccumStats[name];
+  squadMemberKeys.forEach(key => {
+    const stats = playerAccumStats[key];
     totalStats.damage += stats.damage;
     totalStats.kills += stats.kills;
     totalStats.assists += stats.assists;
@@ -333,8 +357,9 @@ export async function getSquadAnalysisData(nickname: string, platform: string = 
   let maxAssistName = "";
   let maxAssistValue = -1;
 
-  squadMembers.forEach(name => {
-    const stats = playerAccumStats[name];
+  squadMemberKeys.forEach(key => {
+    const name = memberNameByKey.get(key) || key;
+    const stats = playerAccumStats[key];
     if (stats.damage > maxDamageValue) {
       maxDamageValue = stats.damage;
       maxDamageName = name;
@@ -353,8 +378,9 @@ export async function getSquadAnalysisData(nickname: string, platform: string = 
     }
   });
 
-  const roleProfiles = squadMembers.map(name => {
-    const stats = playerAccumStats[name];
+  const roleProfiles = squadMemberKeys.map(key => {
+    const name = memberNameByKey.get(key) || key;
+    const stats = playerAccumStats[key];
     const shares = {
       damage: totalStats.damage > 0 ? Math.round((stats.damage / totalStats.damage) * 100) : 25,
       kill: totalStats.kills > 0 ? Math.round((stats.kills / totalStats.kills) * 100) : 25,
