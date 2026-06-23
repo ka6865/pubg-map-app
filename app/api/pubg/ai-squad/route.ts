@@ -8,6 +8,8 @@ import { normalizeName } from "@/lib/pubg-analysis/utils";
 import { normalizePlatform } from "@/lib/pubg-analysis/cacheIdentity";
 import crypto from "crypto";
 import { getSquadAnalysisData } from "@/lib/pubg-analysis/squadAnalysis";
+import { buildSquadAiCoachingPrompt } from "@/lib/pubg-analysis/squadAiCoachingPrompt";
+import { sanitizeAiCoachingLanguage } from "@/lib/pubg-analysis/aiCoachingQuality";
 
 function extractValidJson(text: string): string {
   try {
@@ -58,7 +60,6 @@ export async function POST(request: Request) {
 
     body = await request.json();
     const { groupKey, stats, scores, roleProfiles, nickname, platform = "steam", coachingStyle = "spicy", squadGrade = "B", benchmarkStats } = body;
-    const isMild = coachingStyle === "mild";
     const playerId = normalizeName(nickname);
     const cachePlatform = normalizePlatform(platform);
 
@@ -105,105 +106,23 @@ export async function POST(request: Request) {
         .maybeSingle();
 
       if (!cacheErr && cached && cached.ai_result) {
-        return NextResponse.json(cached.ai_result);
+        return NextResponse.json(sanitizeAiCoachingLanguage(cached.ai_result));
       }
     } catch (dbErr) {
       console.warn("[AI-SQUAD] Cache lookup failed:", dbErr);
     }
 
-    const matchCount = body.matchCount || 1;
-    const myTradeLatencySec = stats.avgTradeLatency > 0 ? (stats.avgTradeLatency / 1000).toFixed(2) : "0.0";
-    const benchmarkTradeLatencySec = benchmarkStats?.avgTradeLatency ? (benchmarkStats.avgTradeLatency / 1000).toFixed(2) : "0.0";
-    const coverRatePercent = Math.round(stats.avgCoverRate * 100);
-
-    // 1. Serialize members performance data for prompt context
-    const membersReport = roleProfiles.map((p: any) => {
-      return `- Nickname: ${p.name}
-  * Tactical Role: ${p.role} (${p.roleDesc})
-  * Avg Match Stats: ${p.avgDamage} Damage / ${p.avgKills} Kills / ${p.avgAssists} Assists / ${p.avgDbnos} Knockouts
-  * Team Contribution Shares: Damage ${p.shares.damage}%, Kills ${p.shares.kill}%, Assists ${p.shares.assist}%, Knockouts ${p.shares.dbno}%
-      `.trim();
-    }).join("\n\n");
-
-    const benchmarkContext = benchmarkStats ? `
-[Global Benchmark Context (Tier: ${benchmarkStats.tier})]
-- Global Avg Isolation Index (대열 이탈 고립도): ${benchmarkStats.avgIsolation} (Our Squad Avg: ${stats.avgIsolation})
-- Global Avg Backup Speed (백업 반응 속도): ${benchmarkTradeLatencySec}초 (Our Squad Avg: ${myTradeLatencySec}초)
-- Global Avg Revive Success Rate (부활 성공률): ${benchmarkStats.avgReviveRate}%
-- Global Avg Smoke Rescue Rate (연막탄 구출 성공률): ${benchmarkStats.avgSmokeRate}%
-- Global Avg Squad Team Wipes (경기당 적 전멸 기여): ${benchmarkStats.avgTeamWipes}회 (Our Squad Avg: ${(stats.totalTeamWipes / matchCount).toFixed(2)}회)
-
-[Assigned Fixed Squad Grade]
-- Given Grade: ${squadGrade} (You must strictly output this exact grade in the "squadGrade" JSON field. Do NOT change it.)
-` : `
-[Assigned Fixed Squad Grade]
-- Given Grade: ${squadGrade} (You must strictly output this exact grade in the "squadGrade" JSON field. Do NOT change it.)
-`;
-    const squadReportSummary = `
-[Squad Teammates]
-- Target Player: ${nickname}
-- Teammates: ${groupKey}
-- Match Count Together: ${matchCount} matches
-
-[Individual Member Role & Stats]
-${membersReport}
-
-[Squad Collaboration Performance Average]
-- Average Isolation Index (대열 이탈 고립도): ${stats.avgIsolation} (낮을수록 좋음. 1.0은 대열 유지 우수, 3.5 이상은 높은 고립 데스 위험)
-- Backup Speed (아군 기절 후 백업 속도): ${myTradeLatencySec}초 (평균적으로 아군이 누운 뒤 복수 킬을 내는 데 걸린 시간)
-- Smoke Rescues (연막 구출 세이브 성공 수): ${stats.totalSmokeRescues}회 (단순히 연막탄을 던진 횟수가 아니라, 기절한 팀원 주변에 연막을 쳐서 안전을 도모하고 소생까지 성공적으로 완료한 '연막 세이브' 횟수)
-- Ally Revives (아군 부활 성공 수): ${stats.totalRevives}회
-- Average Cover Rate (평균 아군 집중사격 커버율): ${coverRatePercent}% (동시 교전 참여 지표)
-- Enemy Squad Team Wipes (적 스쿼드 전멸 유발 수): ${stats.totalTeamWipes}회
-${benchmarkContext}
-
-[Synergy Balance Scores (Scale 10 - 100)]
-- Formation & Cohesion (대열 유지): ${scores.formation}
-- Backup Trade Speed (백업 속도): ${scores.backupSpeed}
-- Survival Care & Rescue (생존 케어): ${scores.survivalCare}
-- Focus Fire Co-op (화력 집중): ${scores.focusFire}
-- Team Decisive Wipe (전멸 기여): ${scores.teamWipe}
-    `.trim();
-
-    // 2. Select AI persona based on coachingStyle
-    let systemInstruction = "";
-    if (isMild) {
-      systemInstruction = `
-You are "KIND COACH", a warm, encouraging, and tactical PUBG coach.
-Analyze the provided squad synergy report and write a report.
-- Focus on positive collaboration indices first.
-- Defend teammates' mistakes by explaining situational context.
-- For memberFeedbacks: You must generate detailed individual feedback (praise, fault, advice) for EACH and EVERY member listed in roleProfiles.
-- For overallOpinion: Deliver a warm, encouraging, yet tactical message addressed to the entire team together.
-- Output MUST be structured in JSON matching the exact schema.
-- Language: Output fields MUST be written in Korean.
-- CRITICAL: You MUST use the exact GIVEN squadGrade ("${squadGrade}") in the "squadGrade" output property. Do NOT change or recalculate the grade yourself.
-      `.trim();
-    } else {
-      systemInstruction = `
-You are "SPICY BOMBER", a brutal, fact-based, and highly sarcastic PUBG tactical analyst.
-Analyze the provided squad synergy report and write a detailed roast and analysis.
-
-[Rules for roasting & tone]:
-1. NEVER use explicit vulgar swear words (e.g. "병신", "개새끼", "시발") directly, to prevent safety filters from blocking the response.
-2. Maximize mental damage using PUBG community terms and sarcastic metaphors:
-   - "킬로그 배달부" (Killfeed delivery), "걸어다니는 파밍 상자/보급 상자" (Walking lootbox)
-   - "뇌 빼고 배그함?" (Brainless play), "손가락 압수 마렵다" (Confiscating fingers)
-   - "에임 실화냐?" (Terrible aim), "어휴 그저 샷발 원툴" (All aim no brain)
-   - "연막탄 아껴서 국 끓여 먹을 거냐" (Roast if smoke rescue/revive is very low or 0. Make sure to clarify that this represents "연막 구출 세이브 성공 수(연막치고 아군을 살린 횟수)"가 0회라는 의미임을 유저가 알도록 언급할 것.)
-   - "혼자 정글북 찍으며 각개전투함" (Roast if isolation index is high, e.g. > 3.0)
-3. Highlight metrics aggressively using clear, human-readable units (e.g. "X.X초", "X회", "X%"):
-   - NEVER output raw millisecond values like "22958ms" or "12000ms" in the response. Always divide by 1000 and round to convert them to seconds like "23.0초" or "12.0초".
-   - If trade latency is slow: "아군 기절하고 장례식 다 치른 뒤에야 늦장 백업 오실 겁니까? 평균 대비 너무 느립니다."
-   - If isolation rate is high: "4인 스쿼드를 하는 게 아니라 1인 솔로 4개를 돌리는 오합지졸 상태입니다."
-4. Deliver extremely sharp, critical, yet constructive, fact-based overall opinion and feedback.
-5. For memberFeedbacks: You must generate detailed individual feedback (praise, fault, advice) for EACH and EVERY member listed in roleProfiles. Don't be soft. Roast them based on their relative stat shares (e.g. high kill share but zero assist/revive).
-6. For overallOpinion: Deliver a sharp, critical, yet highly constructive message addressed to the entire team together.
-7. Output MUST be structured in JSON matching the exact schema.
-8. Language: Output fields MUST be written in Korean.
-9. CRITICAL: You MUST use the exact GIVEN squadGrade ("${squadGrade}") in the "squadGrade" output property. Do NOT change or recalculate the grade yourself.
-      `.trim();
-    }
+    const { prompt, systemInstruction } = buildSquadAiCoachingPrompt({
+      groupKey,
+      stats,
+      scores,
+      roleProfiles,
+      nickname,
+      coachingStyle,
+      squadGrade,
+      benchmarkStats,
+      matchCount: body.matchCount || 1,
+    });
 
     // 3. Try multiple Gemini models sequentially
     const genAI = new GoogleGenerativeAI(apiKey);
@@ -219,13 +138,6 @@ Analyze the provided squad synergy report and write a detailed roast and analysi
       { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
       { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE }
     ];
-
-    const prompt = `
-${squadReportSummary}
-
-Based on the above performance data, write a tactical coaching report according to your designated persona.
-Make sure to reference the GIVEN squadGrade "${squadGrade}" and the compared benchmark statistics to provide concrete, quantitative facts (e.g. "평균 대비 X초 빠름") in your feedback.
-    `.trim();
 
     let responseText = "";
     let selectedModelName = "";
@@ -299,7 +211,7 @@ Make sure to reference the GIVEN squadGrade "${squadGrade}" and the compared ben
     }
 
     const validJsonString = extractValidJson(responseText);
-    const resultJson = JSON.parse(validJsonString);
+    const resultJson = sanitizeAiCoachingLanguage(JSON.parse(validJsonString));
 
     // 3. Write to DB Cache
     try {
@@ -365,8 +277,8 @@ Make sure to reference the GIVEN squadGrade "${squadGrade}" and the compared ben
         }
       : {
           squadGrade: fallbackGrade,
-          summary: "정교한 오더와 백업 부재로 따로 놀다 전멸하는 오합지졸 스쿼드",
-          strength: "각자도생하는 피지컬은 나쁘지 않으나, 개인플레이에 의존하여 시너지가 전무합니다.",
+          summary: "정교한 오더와 백업 타이밍 보완이 필요한 스쿼드",
+          strength: "각자의 교전 능력은 보이지만, 팀 단위 시너지를 더 끌어올릴 여지가 있습니다.",
           weakness: "아군이 물렸을 때 백업하는 속도가 너무 느리고, 엄폐 연막도 없이 무지성 소생을 시도해 더블 킬을 헌납합니다.",
           coaching: "구경만 하지 말고 고립 지수를 낮추기 위해 미니맵을 보며 대열을 맞추고, 백업 타이밍에 연막탄 투척 후 확실한 사각을 확보하세요.",
           memberFeedbacks: roleProfilesFallback.map((p: any) => ({

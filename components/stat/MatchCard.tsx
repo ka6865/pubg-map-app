@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { 
   ChevronDown, 
@@ -19,14 +19,15 @@ import {
   X,
   Car,
   Video,
-  Map
+  Map as MapIcon
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { MatchTimeline } from "./MatchTimeline";
 import dynamic from "next/dynamic";
-import type { MatchData } from "../../types/stat";
+import type { MatchData, MatchTeamMember } from "../../types/stat";
 import { getTranslatedWeaponName } from "@/lib/pubg-analysis/constants";
 import { estimateUserTier, getNextTierInfo } from "@/lib/pubg-analysis/benchmarkScore";
+import { normalizeName } from "@/lib/pubg-analysis/utils";
 import { useAIStatus, aiManager } from "@/lib/ai-management";
 import { useAuth } from "@/components/AuthProvider";
 import { toast } from "sonner";
@@ -328,6 +329,61 @@ const TierEvidenceList = ({ section }: { section: TierEvidenceSection }) => (
   </div>
 );
 
+const CollapsibleDetailSection = ({
+  title,
+  eyebrow,
+  icon,
+  isOpen,
+  onToggle,
+  summary,
+  children
+}: {
+  title: string;
+  eyebrow: string;
+  icon: React.ReactNode;
+  isOpen: boolean;
+  onToggle: () => void;
+  summary?: React.ReactNode;
+  children: React.ReactNode;
+}) => (
+  <section className="mt-5 overflow-hidden rounded-[1.75rem] border border-white/5 bg-white/[0.015] md:mt-6 md:rounded-[2rem]">
+    <button
+      type="button"
+      onClick={(event) => {
+        event.stopPropagation();
+        onToggle();
+      }}
+      aria-expanded={isOpen}
+      className="flex w-full items-center justify-between gap-4 p-4 text-left transition-colors hover:bg-white/[0.03] active:bg-white/[0.05] md:p-5"
+    >
+      <div className="flex min-w-0 items-center gap-3">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/5 text-white/70">
+          {icon}
+        </div>
+        <div className="min-w-0">
+          <div className="truncate text-sm font-black text-white">{title}</div>
+          <div className="mt-0.5 truncate text-[10px] font-bold uppercase tracking-widest text-gray-500">{eyebrow}</div>
+        </div>
+      </div>
+      <div className="flex shrink-0 items-center gap-2">
+        {summary && (
+          <div className="hidden max-w-[12rem] truncate text-right text-[10px] font-black text-white/40 sm:block">
+            {summary}
+          </div>
+        )}
+        <div className="rounded-lg border border-white/5 bg-white/5 p-1.5">
+          <ChevronDown size={14} className={`text-gray-400 transition-transform duration-300 ${isOpen ? "rotate-180 text-white" : ""}`} />
+        </div>
+      </div>
+    </button>
+    {isOpen && (
+      <div className="border-t border-white/5 p-4 pt-4 animate-in slide-in-from-top-2 duration-300 md:p-5">
+        {children}
+      </div>
+    )}
+  </section>
+);
+
 const getRelativeTime = (dateStr: string) => {
   if (!dateStr) return "";
   const date = new Date(dateStr);
@@ -418,7 +474,12 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
   const [matchData, setMatchData] = useState<MatchData | null>(null);
   const [loading, setLoading] = useState(true);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [isTimelineExpanded, setIsTimelineExpanded] = useState(false);
+  const [openDetailSections, setOpenDetailSections] = useState({
+    weapons: false,
+    tactical: false,
+    ai: false,
+    team: false
+  });
   const [showReplayModal, setShowReplayModal] = useState(false);
   const [mounted, setMounted] = useState(false);
 
@@ -448,6 +509,75 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
   const roadKnocks = matchData ? (matchData.stats?.roadKnocks ?? matchData.roadKnocks ?? 0) : 0;
   const vehicleCombatTotal = leadKills + leadKnocks + ridingKills + ridingKnocks + roadKills + roadKnocks;
   const hasVehicleCombat = vehicleCombatTotal > 0;
+  const normalizedNickname = normalizeName(nickname);
+  const normalizedTeamMembers = useMemo(() => {
+    const memberMap = new Map<string, MatchTeamMember>();
+    (matchData?.team || []).forEach((member) => {
+      const key = normalizeName(member.name);
+      if (!key) return;
+      const existing = memberMap.get(key);
+      if (!existing) {
+        memberMap.set(key, { ...member });
+        return;
+      }
+      memberMap.set(key, {
+        ...existing,
+        kills: (existing.kills || 0) + (member.kills || 0),
+        assists: (existing.assists || 0) + (member.assists || 0),
+        damageDealt: (existing.damageDealt || 0) + (member.damageDealt || 0),
+        DBNOs: (existing.DBNOs || 0) + (member.DBNOs || 0),
+        revives: (existing.revives || 0) + (member.revives || 0),
+        deaths: (existing.deaths || 0) + (member.deaths || 0),
+        deathType: existing.deathType || member.deathType
+      });
+    });
+    return Array.from(memberMap.values());
+  }, [matchData]);
+  const normalizedSquadWeaponStats = useMemo(() => {
+    type SquadWeaponStat = NonNullable<MatchData["squadWeaponStats"]>[string][number];
+    const playerMap = new Map<string, { displayName: string; weapons: Map<string, SquadWeaponStat> }>();
+
+    Object.entries(matchData?.squadWeaponStats || {}).forEach(([playerName, weapons]) => {
+      const playerKey = normalizeName(playerName);
+      if (!playerKey || !Array.isArray(weapons)) return;
+      const playerEntry = playerMap.get(playerKey) || { displayName: playerName, weapons: new Map<string, SquadWeaponStat>() };
+
+      weapons.forEach((weaponStat) => {
+        const weaponKey = weaponStat.weapon || "unknown";
+        const existing = playerEntry.weapons.get(weaponKey);
+        if (!existing) {
+          playerEntry.weapons.set(weaponKey, { ...weaponStat });
+          return;
+        }
+        const shots = (existing.shots || 0) + (weaponStat.shots || 0);
+        const hits = (existing.hits || 0) + (weaponStat.hits || 0);
+        playerEntry.weapons.set(weaponKey, {
+          ...existing,
+          damage: (existing.damage || 0) + (weaponStat.damage || 0),
+          dBNODamage: (existing.dBNODamage || 0) + (weaponStat.dBNODamage || 0),
+          shots,
+          hits,
+          dBNOHits: (existing.dBNOHits || 0) + (weaponStat.dBNOHits || 0),
+          holdingTime: (existing.holdingTime || 0) + (weaponStat.holdingTime || 0),
+          accuracy: shots > 0 ? Math.round((hits / shots) * 100) : 0,
+          hitDetails: [...(existing.hitDetails || []), ...(weaponStat.hitDetails || [])]
+        });
+      });
+
+      playerMap.set(playerKey, playerEntry);
+    });
+
+    return Array.from(playerMap.values()).reduce<Record<string, SquadWeaponStat[]>>((acc, entry) => {
+      acc[entry.displayName] = Array.from(entry.weapons.values());
+      return acc;
+    }, {});
+  }, [matchData]);
+  const toggleDetailSection = (section: keyof typeof openDetailSections) => {
+    setOpenDetailSections((current) => ({
+      ...current,
+      [section]: !current[section]
+    }));
+  };
 
   const updateTierTooltipLayout = useCallback(() => {
     if (isMobile || !tierRef.current) return;
@@ -1248,18 +1378,15 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
 
           {/* [V58.4] 무기 세부 분석 및 아군 기여도 (Weapon & Squad Armory) */}
           {((matchData.weaponStats && Object.keys(matchData.weaponStats).length > 0) || 
-            (matchData.squadWeaponStats && Object.keys(matchData.squadWeaponStats).length > 0)) && (
-            <div className="mt-8">
-              <div className="flex items-center gap-2 mb-6">
-                <div className="w-8 h-8 bg-amber-500/20 rounded-lg flex items-center justify-center">
-                  <Flame size={16} className="text-amber-400" />
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-white font-black text-sm">고정밀 무기 교전 분석</span>
-                  <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">무기 숙련도 및 아군 화력 기여</span>
-                </div>
-              </div>
-
+            (Object.keys(normalizedSquadWeaponStats).length > 0)) && (
+            <CollapsibleDetailSection
+              title="고정밀 무기 교전 분석"
+              eyebrow="무기 숙련도 및 아군 화력 기여"
+              icon={<Flame size={16} className="text-amber-400" />}
+              isOpen={openDetailSections.weapons}
+              onToggle={() => toggleDetailSection("weapons")}
+              summary={`${Object.keys(matchData.weaponStats || {}).length}개 무기`}
+            >
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 {/* Left: 나의 무기 스탯 (7/12) */}
                 {matchData.weaponStats && Object.keys(matchData.weaponStats).length > 0 ? (
@@ -1367,7 +1494,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                 )}
 
                 {/* Right: 아군 무기 기여도 (5/12) */}
-                {matchData.squadWeaponStats && Object.keys(matchData.squadWeaponStats).length > 0 ? (
+                {Object.keys(normalizedSquadWeaponStats).length > 0 ? (
                   <div className="lg:col-span-5 bg-white/2 border border-white/5 rounded-[2.5rem] p-6 flex flex-col gap-4">
                     <div className="flex justify-between items-center mb-2">
                       <span className="text-[10px] text-gray-500 font-black uppercase tracking-widest">아군 무기 상세 스탯</span>
@@ -1375,7 +1502,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                     </div>
 
                     <div className="flex flex-col gap-4 max-h-[350px] overflow-y-auto pr-1 custom-scrollbar">
-                      {Object.entries(matchData.squadWeaponStats).map(([sName, sWeapons]) => {
+                      {Object.entries(normalizedSquadWeaponStats).map(([sName, sWeapons]) => {
                         if (!Array.isArray(sWeapons)) return null;
                         const totalSDeamage = sWeapons.reduce((sum, w) => sum + w.damage, 0);
                         
@@ -1423,52 +1550,19 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                   </div>
                 )}
               </div>
-            </div>
+            </CollapsibleDetailSection>
           )}
 
           {/* [V12.5] New Tactical Dashboard (Radar + Timeline) */}
           {!isTdmMatch && (
-            <div className="mt-8 border border-white/5 rounded-[2.5rem] bg-white/[0.01] overflow-hidden">
-              <div 
-                onClick={() => setIsTimelineExpanded(!isTimelineExpanded)}
-                className="flex items-center justify-between p-5 cursor-pointer hover:bg-white/[0.03] active:bg-white/[0.05] transition-all duration-300"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-9 h-9 bg-indigo-500/20 rounded-xl flex items-center justify-center shrink-0">
-                    <Target size={18} className="text-indigo-400" />
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="text-white font-black text-sm flex items-center gap-1.5">
-                      전술 위치 분석 및 타임라인
-                      {isMobile && !isTimelineExpanded && (
-                        <span className="text-[9px] text-indigo-400 font-bold bg-indigo-500/10 px-2 py-0.5 rounded-full animate-pulse">
-                          TAP TO VIEW
-                        </span>
-                      )}
-                    </span>
-                    <span className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">
-                      {isMobile ? "터치하여 인터랙티브 지도와 교전 기록 확인" : "전술 위치 및 매치 타임라인"}
-                    </span>
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {isMobile && !isTimelineExpanded && (
-                    <span className="text-[10px] text-gray-400 font-black tracking-tighter">
-                      이벤트 {matchData!.timeline?.filter((e: any) => e.type !== 'PHASE_START').length || 0}개
-                    </span>
-                  )}
-                  <div className="p-1.5 bg-white/5 rounded-lg border border-white/5">
-                    <ChevronDown 
-                      size={14} 
-                      className={`text-gray-400 transition-transform duration-300 ${
-                        (!isMobile || isTimelineExpanded) ? 'rotate-180 text-white' : ''
-                      }`} 
-                    />
-                  </div>
-                </div>
-              </div>
-              
-              {(!isMobile || isTimelineExpanded) && (
+            <CollapsibleDetailSection
+              title="전술 위치 분석 및 타임라인"
+              eyebrow="전술 위치 및 매치 타임라인"
+              icon={<Target size={18} className="text-indigo-400" />}
+              isOpen={openDetailSections.tactical}
+              onToggle={() => toggleDetailSection("tactical")}
+              summary={`이벤트 ${matchData!.timeline?.filter((e: any) => e.type !== 'PHASE_START').length || 0}개`}
+            >
                 <div className="p-4 md:p-6 pt-0 grid grid-cols-1 lg:grid-cols-12 gap-3 md:gap-6 animate-in slide-in-from-top-2 duration-300">
                   {/* Left: Mini Map */}
                   <div className="lg:col-span-5 xl:col-span-4 bg-white/2 border border-white/5 rounded-[2rem] overflow-hidden min-h-[300px] lg:min-h-0 lg:h-[500px] relative group/map">
@@ -1513,25 +1607,22 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                     </div>
                   </div>
                 </div>
-              )}
-            </div>
+            </CollapsibleDetailSection>
           )}
 
           {/* AI Analysis Section */}
           {!isTdmMatch && (
-            <div className="mt-8">
-              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 mb-6">
+            <CollapsibleDetailSection
+              title="AI 전술 코칭"
+              eyebrow="Tactical Analysis"
+              icon={<BarChart2 size={20} className={isRanked ? 'text-amber-500' : 'text-indigo-400'} />}
+              isOpen={openDetailSections.ai}
+              onToggle={() => toggleDetailSection("ai")}
+              summary={analysis ? "분석 완료" : coachingStyle === 'mild' ? "다정한 맛" : "매운맛"}
+            >
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-end gap-4 mb-6">
                 <div className="flex items-center gap-2">
-                  <div className={`w-10 h-10 ${isRanked ? 'bg-amber-500/20' : 'bg-indigo-500/20'} rounded-xl flex items-center justify-center`}>
-                    <BarChart2 size={20} className={isRanked ? 'text-amber-500' : 'text-indigo-400'} />
-                  </div>
-                  <div>
-                    <h3 className="text-white font-black text-lg">AI 전술 코칭</h3>
-                    <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest">Tactical Analysis</p>
-                  </div>
-                </div>
-                
-                <div className="flex gap-2 bg-black/40 p-1 rounded-2xl border border-white/10">
+                  <div className="flex gap-2 bg-black/40 p-1 rounded-2xl border border-white/10">
                   <button 
                     onClick={(e) => { e.stopPropagation(); setCoachingStyle("mild"); setAnalysis(null); }}
                     className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 ${
@@ -1552,6 +1643,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                   >
                     <span>🔥</span> 매운맛
                   </button>
+                  </div>
                 </div>
               </div>
 
@@ -1692,19 +1784,21 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                 </div>
               </button>
             )}
-          </div>
+            </CollapsibleDetailSection>
           )}
 
           {/* 팀원 리스트 및 개인 교전 성적 */}
-          <div className="mt-10 pt-8 border-t border-white/5">
-            <div className="flex items-center gap-2 mb-6">
-              <span className="text-xs text-gray-500 font-black uppercase tracking-[0.2em]">팀원 교전 성적</span>
-              <div className="flex-1 h-px bg-gradient-to-r from-white/10 to-transparent" />
-            </div>
-            
+          <CollapsibleDetailSection
+            title="팀원 교전 성적"
+            eyebrow="Squad combat stats"
+            icon={<User size={18} className="text-gray-400" />}
+            isOpen={openDetailSections.team}
+            onToggle={() => toggleDetailSection("team")}
+            summary={`${normalizedTeamMembers.length}명`}
+          >
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {matchData!.team?.map((member, idx) => {
-                const isMe = member.name === nickname;
+              {normalizedTeamMembers.map((member, idx) => {
+                const isMe = normalizeName(member.name) === normalizedNickname;
                 return (
                   <div 
                     key={idx} 
@@ -1760,7 +1854,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                 );
               })}
             </div>
-          </div>
+          </CollapsibleDetailSection>
         </div>
       )}
 
@@ -1837,7 +1931,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                 className="w-full text-left p-4 bg-white/3 hover:bg-white/5 border border-white/5 hover:border-white/10 rounded-2xl transition-all flex gap-3.5 items-center cursor-pointer group hover:scale-[1.01]"
               >
                 <div className="w-10 h-10 bg-indigo-500/10 rounded-xl flex items-center justify-center text-indigo-400 shrink-0">
-                  <Map size={20} className="group-hover:scale-110 transition-transform" />
+                  <MapIcon size={20} className="group-hover:scale-110 transition-transform" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <span className="text-white font-black text-sm font-sans">2D 맵 리플레이 (간이)</span>

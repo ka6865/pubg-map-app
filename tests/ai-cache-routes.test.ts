@@ -105,7 +105,7 @@ function createRequest(body: any) {
   });
 }
 
-function createSummaryMatch(matchId = "match-1") {
+function createSummaryMatch(matchId = "match-1", overrides: Record<string, any> = {}) {
   return {
     matchId,
     player_id: "player_a",
@@ -150,10 +150,11 @@ function createSummaryMatch(matchId = "match-1") {
     itemUseStats: { distanceDamage: { short: 100, mid: 150, long: 70 } },
     goldenTimeDamage: { early: 100, mid1: 120, mid2: 80, late: 20 },
     killContribution: { solo: 1, cleanup: 1, assist: 0 },
+    ...overrides,
   };
 }
 
-function mockSummaryGeminiResponse() {
+function mockSummaryGeminiResponse(assertPrompt?: (prompt: string) => void) {
   const json = JSON.stringify({
     signature: "테스트 전술가",
     signatureSub: "캐시 안정화 테스트 응답",
@@ -174,13 +175,39 @@ function mockSummaryGeminiResponse() {
     actionItems: [{ icon: "target", title: "검증", desc: "테스트 유지" }],
   });
 
-  mockGenerateContentStream.mockResolvedValue({
+  mockGenerateContentStream.mockImplementation(async (prompt: string) => {
+    assertPrompt?.(prompt);
+    return {
     stream: (async function* () {
       yield { text: () => json };
     })(),
     response: Promise.resolve({
       usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 20 },
     }),
+    };
+  });
+}
+
+function mockSummaryGeminiRawText(text: string, assertPrompt?: (prompt: string) => void) {
+  mockGenerateContentStream.mockImplementation(async (prompt: string) => {
+    assertPrompt?.(prompt);
+    return {
+    stream: (async function* () {
+      yield { text: () => text };
+    })(),
+    response: Promise.resolve({
+      usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 20 },
+    }),
+    };
+  });
+}
+
+function mockSquadGeminiJson(json: any) {
+  mockGenerateContent.mockResolvedValue({
+    response: {
+      text: () => JSON.stringify(json),
+      usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 20 },
+    },
   });
 }
 
@@ -224,6 +251,87 @@ describe("AI cache route stabilization", () => {
     expect(matchCache.eq).toHaveBeenCalledWith("prompt_version", AI_CACHE_VERSION);
   });
 
+  it("ai-analyze는 캐시된 단일 경기 코칭의 과한 표현을 순화해서 반환한다", async () => {
+    const matchCache = createQueryChain({
+      data: { ai_result: { text: "혼자 다 해먹는 화력이고 팀 지원 지표가 바닥입니다." } },
+      error: null,
+    });
+    const supabase = createSupabaseMock({
+      match_ai_coaching_cache: matchCache,
+    });
+    mockWithAuthGuard.mockResolvedValue({ user: { id: "user-1" }, supabaseAdmin: supabase });
+
+    const response = await aiAnalyzePOST(createRequest({
+      nickname: "Player_A",
+      platform: "kakao",
+      coachingStyle: "spicy",
+      matchData: {
+        matchId: "match-sanitize-cache",
+        stats: { kills: 1, assists: 0, DBNOs: 1, damageDealt: 100, winPlace: 10, timeSurvived: 600 },
+      },
+    }));
+    const text = await response.text();
+
+    expect(text).toContain("강한 화력을 보여주는");
+    expect(text).toContain("팀 지원 지표 보완이 필요");
+    expect(text).not.toContain("혼자 다 해먹");
+    expect(text).not.toContain("팀 지원 지표가 바닥");
+  });
+
+  it("ai-analyze는 신규 Gemini 단일 경기 코칭도 순화한 뒤 캐시에 저장한다", async () => {
+    mockSummaryGeminiRawText("혼자 다 해먹는 화력이고 팀 지원 지표가 바닥이며 22.4초는 느린 백업입니다.");
+
+    const matchCache = createQueryChain({ data: null, error: null });
+    const supabase = createSupabaseMock({
+      match_ai_coaching_cache: matchCache,
+    });
+    mockWithAuthGuard.mockResolvedValue({ user: { id: "user-1" }, supabaseAdmin: supabase });
+
+    const response = await aiAnalyzePOST(createRequest({
+      nickname: "Player_A",
+      platform: "kakao",
+      coachingStyle: "spicy",
+      matchData: {
+        matchId: "match-sanitize-new",
+        mapName: "Baltic_Main",
+        gameMode: "squad",
+        stats: {
+          name: "Player_A",
+          kills: 1,
+          assists: 0,
+          DBNOs: 1,
+          damageDealt: 100,
+          processedDamageDealt: 100,
+          winPlace: 10,
+          timeSurvived: 600,
+        },
+        tradeStats: {
+          teammateKnocks: 1,
+          tradeKills: 0,
+          revCount: 0,
+          smokeRescues: 0,
+          tradeLatencyMs: 22400,
+        },
+        combatPressure: {
+          utilityStats: { throwCount: 0, lethalThrowCount: 0, hitCount: 0, totalDamage: 0 },
+        },
+        teamImpact: {},
+      },
+    }));
+    const text = await response.text();
+    const upsertPayload = matchCache.upsert.mock.calls[0]?.[0];
+
+    expect(text).toContain("강한 화력을 보여주는");
+    expect(text).toContain("팀 지원 지표 보완이 필요");
+    expect(text).toContain("백업 지연 위험");
+    expect(text).not.toContain("혼자 다 해먹");
+    expect(text).not.toContain("팀 지원 지표가 바닥");
+    expect(text).not.toContain("느린 백업");
+    expect(upsertPayload.ai_result.text).toContain("강한 화력을 보여주는");
+    expect(upsertPayload.ai_result.text).toContain("백업 지연 위험");
+    expect(upsertPayload.ai_result.text).not.toContain("혼자 다 해먹");
+  });
+
   it("ai-summary는 force=true일 때 기존 AI 캐시 조회를 건너뛰고 새 결과를 upsert한다", async () => {
     mockSummaryGeminiResponse();
 
@@ -263,6 +371,213 @@ describe("AI cache route stabilization", () => {
       }),
       { onConflict: "player_id,platform,match_ids_hash,prompt_version" }
     );
+  });
+
+  it("ai-summary는 캐시된 최종 리포트의 과한 팀 비난 표현을 순화해서 반환한다", async () => {
+    const cachedFinal = JSON.stringify({
+      signature: "테스트",
+      signatureSub: "검증",
+      finalVerdict: "혼자 다 해먹는 화력이고 팀 지원 지표가 바닥입니다.",
+      debateIssues: [],
+      actionItems: [],
+    });
+    const summaryCache = createQueryChain({
+      data: {
+        ai_result: {
+          visuals: { ok: true },
+          final: cachedFinal,
+        },
+      },
+      error: null,
+    });
+    const supabase = createSupabaseMock({
+      player_ai_summary_cache: summaryCache,
+    });
+    mockWithAuthGuard.mockResolvedValue({ user: { id: "user-1" }, supabaseAdmin: supabase });
+
+    const response = await aiSummaryPOST(createRequest({
+      matchIds: ["match-cached"],
+      nickname: "Player_A",
+      platform: "kakao",
+    }));
+    const text = await response.text();
+
+    expect(text).toContain("강한 화력을 보여주는");
+    expect(text).toContain("팀 지원 지표 보완이 필요");
+    expect(text).not.toContain("혼자 다 해먹");
+    expect(text).not.toContain("팀 지원 지표가 바닥");
+  });
+
+  it("ai-summary는 신규 Gemini 최종 리포트도 순화한 뒤 캐시에 저장한다", async () => {
+    mockSummaryGeminiRawText(JSON.stringify({
+      signature: "테스트",
+      signatureSub: "검증",
+      finalVerdict: "혼자 다 해먹는 화력이고 팀 지원 지표가 바닥입니다.",
+      debateIssues: [],
+      actionItems: [],
+    }));
+
+    const summaryCache = createQueryChain();
+    const telemetry = createQueryChain({
+      data: [{
+        match_id: "match-sanitize-summary",
+        data: { fullResult: createSummaryMatch("match-sanitize-summary") },
+      }],
+      error: null,
+    });
+    const globalBenchmarks = createQueryChain({ data: [], error: null });
+    const tierBenchmarks = createQueryChain({ data: null, error: null });
+    const supabase = createSupabaseMock({
+      player_ai_summary_cache: summaryCache,
+      processed_match_telemetry: telemetry,
+      global_benchmarks: globalBenchmarks,
+      benchmark_stats_by_tier: tierBenchmarks,
+    });
+    mockWithAuthGuard.mockResolvedValue({ user: { id: "user-1" }, supabaseAdmin: supabase });
+
+    const response = await aiSummaryPOST(createRequest({
+      matchIds: ["match-sanitize-summary"],
+      nickname: "Player_A",
+      platform: "kakao",
+      force: true,
+    }));
+    const text = await response.text();
+    const upsertPayload = summaryCache.upsert.mock.calls[0]?.[0];
+
+    expect(text).toContain("강한 화력을 보여주는");
+    expect(text).toContain("팀 지원 지표 보완이 필요");
+    expect(text).not.toContain("혼자 다 해먹");
+    expect(text).not.toContain("팀 지원 지표가 바닥");
+    expect(upsertPayload.ai_result.final).toContain("강한 화력을 보여주는");
+    expect(upsertPayload.ai_result.final).not.toContain("혼자 다 해먹");
+  });
+
+  it("ai-summary는 성공한 긴 백업을 느린 백업으로 단정하지 않도록 프롬프트에 결과 맥락을 포함한다", async () => {
+    mockSummaryGeminiResponse((prompt) => {
+      expect(prompt).toContain("22.00s");
+      expect(prompt).toContain("교전 정리 후 복구 성공");
+      expect(prompt).toContain("느린 백업이라고 단정하지 말 것");
+      expect(prompt).toContain("적 제압 2회/전멸 기여 1회와 소생 1회");
+      expect(prompt).toContain("팀원을 방패");
+      expect(prompt).toContain("팀원을 들러리");
+      expect(prompt).toContain("화력 분담 보완");
+      expect(prompt).toContain("팀 지원 지표 보완");
+    });
+
+    const summaryCache = createQueryChain();
+    const winningRecoveryMatch = createSummaryMatch("match-win", {
+      player_id: "kangheesung_",
+      stats: {
+        name: "KangHeeSung_",
+        kills: 4,
+        assists: 1,
+        DBNOs: 3,
+        damageDealt: 520,
+        processedDamageDealt: 520,
+        winPlace: 1,
+        timeSurvived: 1800,
+      },
+      tradeStats: {
+        teammateKnocks: 1,
+        tradeKills: 2,
+        suppCount: 1,
+        revCount: 1,
+        smokeCount: 0,
+        smokeRescues: 0,
+        reactionLatencyMs: 600,
+        tradeLatencyMs: 22000,
+        enemyTeamWipes: 1,
+      },
+    });
+    const telemetry = createQueryChain({
+      data: [{
+        match_id: "match-win",
+        data: { fullResult: winningRecoveryMatch },
+      }],
+      error: null,
+    });
+    const globalBenchmarks = createQueryChain({ data: [], error: null });
+    const tierBenchmarks = createQueryChain({ data: null, error: null });
+    const supabase = createSupabaseMock({
+      player_ai_summary_cache: summaryCache,
+      processed_match_telemetry: telemetry,
+      global_benchmarks: globalBenchmarks,
+      benchmark_stats_by_tier: tierBenchmarks,
+    });
+    mockWithAuthGuard.mockResolvedValue({ user: { id: "user-1" }, supabaseAdmin: supabase });
+
+    const response = await aiSummaryPOST(createRequest({
+      matchIds: ["match-win"],
+      nickname: "KangHeeSung_",
+      platform: "kakao",
+      force: true,
+    }));
+    const text = await response.text();
+
+    expect(text).toContain("\"type\":\"done\"");
+    expect(mockGenerateContentStream).toHaveBeenCalled();
+  });
+
+  it("ai-summary는 피해형 투척 수를 연막 포함 총 투척 수와 분리해 프롬프트에 전달한다", async () => {
+    mockSummaryGeminiResponse((prompt) => {
+      expect(prompt).toContain("총 투척 12회, 피해형 투척 3회, 피해 적중 1회");
+      expect(prompt).toContain("연막 9회");
+    });
+
+    const summaryCache = createQueryChain();
+    const utilityMatch = createSummaryMatch("match-utility", {
+      player_id: "kangheesung_",
+      platform: "kakao",
+      stats: {
+        name: "KangHeeSung_",
+        kills: 2,
+        assists: 1,
+        DBNOs: 1,
+        damageDealt: 320,
+        processedDamageDealt: 320,
+        winPlace: 4,
+        timeSurvived: 1200,
+      },
+      combatPressure: {
+        pressureIndex: 2.4,
+        utilityStats: {
+          throwCount: 12,
+          lethalThrowCount: 3,
+          hitCount: 1,
+          totalDamage: 90,
+          killCount: 0,
+        },
+      },
+      itemUseSummary: { frags: 2, molotovs: 1, smokes: 9 },
+      itemUseStats: { distanceDamage: { short: 100, mid: 150, long: 70 } },
+    });
+    const telemetry = createQueryChain({
+      data: [{
+        match_id: "match-utility",
+        data: { fullResult: utilityMatch },
+      }],
+      error: null,
+    });
+    const globalBenchmarks = createQueryChain({ data: [], error: null });
+    const tierBenchmarks = createQueryChain({ data: null, error: null });
+    const supabase = createSupabaseMock({
+      player_ai_summary_cache: summaryCache,
+      processed_match_telemetry: telemetry,
+      global_benchmarks: globalBenchmarks,
+      benchmark_stats_by_tier: tierBenchmarks,
+    });
+    mockWithAuthGuard.mockResolvedValue({ user: { id: "user-1" }, supabaseAdmin: supabase });
+
+    const response = await aiSummaryPOST(createRequest({
+      matchIds: ["match-utility"],
+      nickname: "KangHeeSung_",
+      platform: "kakao",
+      force: true,
+    }));
+    const text = await response.text();
+
+    expect(text).toContain("\"type\":\"done\"");
+    expect(mockGenerateContentStream).toHaveBeenCalled();
   });
 
   it("ai-squad는 Gemini 실패 시 최초 파싱한 body로 fallback 응답을 만든다", async () => {
@@ -309,6 +624,125 @@ describe("AI cache route stabilization", () => {
     expect(squadCache.eq).toHaveBeenCalledWith("player_id", "player_a");
     expect(squadCache.eq).toHaveBeenCalledWith("platform", "steam");
     expect(squadCache.eq).toHaveBeenCalledWith("prompt_version", AI_CACHE_VERSION);
+  });
+
+  it("ai-squad는 캐시된 스쿼드 코칭 결과를 순화해서 반환한다", async () => {
+    const squadCache = createQueryChain({
+      data: {
+        ai_result: {
+          squadGrade: "A",
+          summary: "나머지 팀원들의 화력 지원이 전무합니다.",
+          strength: "검증",
+          weakness: "존재감이 희미합니다.",
+          coaching: "혼자 다 해먹는 구조입니다.",
+          memberFeedbacks: [
+            { name: "Player_A", praise: "검증", fault: "팀 전체가 휘청거릴 수 있으니 조심하십시오.", advice: "검증" },
+          ],
+          overallOpinion: "검증",
+        },
+      },
+      error: null,
+    });
+    const supabase = createSupabaseMock({
+      squad_ai_coaching_cache: squadCache,
+    });
+    mockWithAuthGuard.mockResolvedValue({ user: { id: "user-1" }, supabaseAdmin: supabase });
+
+    const response = await aiSquadPOST(createRequest({
+      groupKey: "alpha,beta",
+      nickname: "Player_A",
+      platform: "steam",
+      coachingStyle: "spicy",
+      squadGrade: "A",
+      matchIds: ["match-1", "match-2"],
+      stats: {
+        avgIsolation: 1.5,
+        avgTradeLatency: 8000,
+        avgCoverRate: 0.45,
+        totalSmokeRescues: 2,
+        totalRevives: 3,
+        totalTeamWipes: 1,
+      },
+      scores: {
+        formation: 70,
+        backupSpeed: 75,
+        survivalCare: 80,
+        focusFire: 76,
+        teamWipe: 65,
+      },
+      roleProfiles: [
+        { name: "Player_A", role: "Entry", roleDesc: "진입", avgDamage: 300, avgKills: 2, avgAssists: 1, avgDbnos: 1, shares: { damage: 55, kill: 50, assist: 30, dbno: 50 } },
+      ],
+    }));
+    const json = await response.json();
+    const text = JSON.stringify(json);
+
+    expect(text).toContain("다른 팀원들의 화력 지원 보완이 필요");
+    expect(text).toContain("교전 기여를 더 선명하게 만들 필요가 있습니다");
+    expect(text).toContain("강한 화력을 보여주는");
+    expect(text).toContain("팀 교전 안정성이 흔들릴 수 있으니");
+    expect(text).not.toContain("전무");
+    expect(text).not.toContain("존재감이 희미");
+    expect(text).not.toContain("혼자 다 해먹");
+    expect(text).not.toContain("팀 전체가 휘청");
+  });
+
+  it("ai-squad는 신규 Gemini 스쿼드 코칭 결과도 순화해서 캐시에 저장한다", async () => {
+    mockSquadGeminiJson({
+      squadGrade: "A",
+      summary: "나머지 팀원들의 화력 지원이 전무합니다.",
+      strength: "검증",
+      weakness: "존재감이 희미합니다.",
+      coaching: "혼자 다 해먹는 구조입니다.",
+      memberFeedbacks: [
+        { name: "Player_A", praise: "검증", fault: "팀 전체가 휘청거릴 수 있으니 조심하십시오.", advice: "검증" },
+      ],
+      overallOpinion: "검증",
+    });
+
+    const squadCache = createQueryChain({ data: null, error: null });
+    const supabase = createSupabaseMock({
+      squad_ai_coaching_cache: squadCache,
+    });
+    mockWithAuthGuard.mockResolvedValue({ user: { id: "user-1" }, supabaseAdmin: supabase });
+
+    const response = await aiSquadPOST(createRequest({
+      groupKey: "alpha,beta",
+      nickname: "Player_A",
+      platform: "steam",
+      coachingStyle: "spicy",
+      squadGrade: "A",
+      matchIds: ["match-1", "match-2"],
+      stats: {
+        avgIsolation: 1.5,
+        avgTradeLatency: 8000,
+        avgCoverRate: 0.45,
+        totalSmokeRescues: 2,
+        totalRevives: 3,
+        totalTeamWipes: 1,
+      },
+      scores: {
+        formation: 70,
+        backupSpeed: 75,
+        survivalCare: 80,
+        focusFire: 76,
+        teamWipe: 65,
+      },
+      roleProfiles: [
+        { name: "Player_A", role: "Entry", roleDesc: "진입", avgDamage: 300, avgKills: 2, avgAssists: 1, avgDbnos: 1, shares: { damage: 55, kill: 50, assist: 30, dbno: 50 } },
+      ],
+    }));
+    const json = await response.json();
+    const text = JSON.stringify(json);
+    const upsertPayload = squadCache.upsert.mock.calls[0]?.[0];
+
+    expect(text).toContain("다른 팀원들의 화력 지원 보완이 필요");
+    expect(text).toContain("교전 기여를 더 선명하게 만들 필요가 있습니다");
+    expect(text).not.toContain("전무");
+    expect(text).not.toContain("존재감이 희미");
+    expect(text).not.toContain("혼자 다 해먹");
+    expect(upsertPayload.ai_result.summary).toContain("다른 팀원들의 화력 지원 보완이 필요");
+    expect(JSON.stringify(upsertPayload.ai_result)).not.toContain("혼자 다 해먹");
   });
 });
 

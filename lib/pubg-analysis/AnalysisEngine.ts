@@ -337,7 +337,7 @@ export class AnalysisEngine {
 
     // weaponStats 맵에 최종 저장된 순수 유효 대인 딜량의 총합을 계산하여 총 딜량 정합성을 일치화함
     let processedDamageDealt = 0;
-    for (const [_, wStat] of this.state.weaponStats.entries()) {
+    for (const wStat of this.state.weaponStats.values()) {
       processedDamageDealt += wStat.damage || 0;
     }
     processedDamageDealt = Math.round(processedDamageDealt);
@@ -424,11 +424,13 @@ export class AnalysisEngine {
         pressureIndex: Number((this.state.combatPressure.totalHits / Math.max(5, (this.state.myActionTimestamps.length / 10))).toFixed(2)),
         utilityStats: {
           throwCount: this.state.itemUseStats.throwCount,
-          hitCount: this.state.combatPressure.utilityHits,
+          lethalThrowCount: this.state.itemUseStats.lethalThrowCount,
+          hitCount: Math.min(this.state.combatPressure.utilityHits, this.state.itemUseStats.lethalThrowCount),
+          damageEventCount: this.state.combatPressure.utilityHits,
           totalDamage: this.state.combatPressure.utilityDamage,
           killCount: 0, // [V11.9.4] 유틸리티 킬 추적은 향후 고도화 예정
-          accuracy: this.state.itemUseStats.lethalThrowCount > 0 ? Number(((this.state.combatPressure.utilityHits / this.state.itemUseStats.lethalThrowCount) * 100).toFixed(1)) : 0,
-          accuracyRaw: this.state.itemUseStats.lethalThrowCount > 0 ? (this.state.combatPressure.utilityHits / this.state.itemUseStats.lethalThrowCount) : 0,
+          accuracy: this.state.itemUseStats.lethalThrowCount > 0 ? Number(((Math.min(this.state.combatPressure.utilityHits, this.state.itemUseStats.lethalThrowCount) / this.state.itemUseStats.lethalThrowCount) * 100).toFixed(1)) : 0,
+          accuracyRaw: this.state.itemUseStats.lethalThrowCount > 0 ? (Math.min(this.state.combatPressure.utilityHits, this.state.itemUseStats.lethalThrowCount) / this.state.itemUseStats.lethalThrowCount) : 0,
           avgDamagePerThrow: this.state.itemUseStats.lethalThrowCount > 0 ? Number((this.state.combatPressure.utilityDamage / this.state.itemUseStats.lethalThrowCount).toFixed(1)) : 0
         },
         isClutched: false,

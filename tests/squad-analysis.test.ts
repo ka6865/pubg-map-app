@@ -7,7 +7,7 @@ function normalizeName(name: string): string {
 
 // 1. Party Group Detection Logic
 function groupSquadMatches(matches: any[], lowerNickname: string) {
-  const groupMap = new Map<string, { matchIds: string[]; members: string[] }>();
+  const groupMap = new Map<string, { matchIds: string[]; memberNamesByKey: Map<string, string> }>();
 
   matches.forEach(m => {
     const fullResult = m.data?.fullResult;
@@ -16,31 +16,46 @@ function groupSquadMatches(matches: any[], lowerNickname: string) {
     if (!mode.includes("squad")) return;
 
     const team = fullResult.team || [];
-    // Keep casing for returned members but filter out the search player
-    const members = team
-      .map((t: any) => t.name)
-      .filter((name: string) => name && normalizeName(name) !== lowerNickname)
-      .sort((a: string, b: string) => a.localeCompare(b));
+    const memberNamesByKey = new Map<string, string>();
+    team.forEach((t: any) => {
+      const name = String(t.name || "").trim();
+      const normalized = normalizeName(name);
+      if (!name || !normalized || normalized === lowerNickname) return;
+      if (!memberNamesByKey.has(normalized)) {
+        memberNamesByKey.set(normalized, name);
+      }
+    });
+    const members = Array.from(memberNamesByKey.values()).sort((a: string, b: string) => a.localeCompare(b));
 
     if (members.length === 0) return;
 
-    const key = members.join(", ");
+    const key = Array.from(memberNamesByKey.keys()).sort().join(",");
     const existing = groupMap.get(key);
     if (existing) {
       existing.matchIds.push(m.match_id);
+      memberNamesByKey.forEach((displayName, normalized) => {
+        if (!existing.memberNamesByKey.has(normalized)) {
+          existing.memberNamesByKey.set(normalized, displayName);
+        }
+      });
     } else {
       groupMap.set(key, {
         matchIds: [m.match_id],
-        members: members
+        memberNamesByKey
       });
     }
   });
 
-  return Array.from(groupMap.entries()).map(([key, value]) => ({
-    groupKey: key,
+  return Array.from(groupMap.values()).map((value) => ({
+    groupKey: Array.from(value.memberNamesByKey.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([, displayName]) => displayName)
+      .join(", "),
     matchCount: value.matchIds.length,
     matchIds: value.matchIds,
-    members: value.members
+    members: Array.from(value.memberNamesByKey.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([, displayName]) => displayName)
   })).sort((a, b) => b.matchCount - a.matchCount);
 }
 
@@ -147,6 +162,44 @@ describe("PUBG Squad Synergy Analysis Tests", () => {
     expect(result.length).toBe(1);
     // Verified casing preserved key
     expect(result[0].groupKey).toBe("MiaeQ_Q, PlayerC, PlayerD");
+    expect(result[0].matchCount).toBe(2);
+  });
+
+  it("should merge teammate casing variants into one squad member", () => {
+    const mockMatches = [
+      {
+        match_id: "match-1",
+        data: {
+          fullResult: {
+            gameMode: "squad-fpp",
+            team: [
+              { name: "Player_A" },
+              { name: "MiaeQ_Q" },
+              { name: "PlayerC" },
+              { name: "PlayerD" }
+            ]
+          }
+        }
+      },
+      {
+        match_id: "match-2",
+        data: {
+          fullResult: {
+            gameMode: "squad-fpp",
+            team: [
+              { name: "Player_A" },
+              { name: "miaeq_q" },
+              { name: "PlayerC" },
+              { name: "PlayerD" }
+            ]
+          }
+        }
+      }
+    ];
+
+    const result = groupSquadMatches(mockMatches, "player_a");
+    expect(result).toHaveLength(1);
+    expect(result[0].members).toEqual(["MiaeQ_Q", "PlayerC", "PlayerD"]);
     expect(result[0].matchCount).toBe(2);
   });
 

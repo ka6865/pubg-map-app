@@ -42,7 +42,9 @@ export interface PlayerStats {
 
 export interface UtilityStats {
   hitCount: number;
+  damageEventCount?: number;
   throwCount: number;
+  lethalThrowCount?: number;
   totalDamage: number;
   killCount: number;
   accuracy: number;
