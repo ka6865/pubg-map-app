@@ -1,0 +1,8 @@
+BGMS Overwolf Verification
+
+Domain: bgms.kr
+Service: BGMS
+Owner / Developer: Kang Hee Sung
+Overwolf Developer Account Email: ka6865@gmail.com
+
+This file is provided to verify that I control and operate the BGMS service and domain for the Overwolf app review process.
