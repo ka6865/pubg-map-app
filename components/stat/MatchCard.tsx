@@ -106,9 +106,11 @@ const getOpportunityRate = (success?: number, total?: number) => {
     return { value: "기회 없음 보정", note: "아군 기절 샘플 없음", isOpportunityMissing: true, isFieldMissing: false };
   }
   const safeSuccess = isFiniteNumber(success) ? success : 0;
+  const cappedSuccess = Math.min(safeSuccess, total);
+  const cappedNote = safeSuccess > total ? `점수 반영 ${cappedSuccess} / ${total}회, 실제 ${safeSuccess}회` : `${safeSuccess} / ${total}회`;
   return {
-    value: formatPercent((safeSuccess / total) * 100),
-    note: `${safeSuccess} / ${total}회`,
+    value: formatPercent((cappedSuccess / total) * 100),
+    note: cappedNote,
     isOpportunityMissing: false,
     isFieldMissing: false
   };
@@ -122,7 +124,8 @@ const buildTierEvidence = (matchData: MatchData) => {
   const damageRankPct = matchData.matchInfo?.rankPct;
   const survivalBase = matchData.totalTeams || matchData.totalPlayers;
   const survivalRankPct = survivalBase && survivalBase > 0 ? stats.winPlace / survivalBase : null;
-  const isEarlyDeath = (stats.timeSurvived || 0) < 600 || (matchData.deathPhase ?? 99) <= 3;
+  const isActualDeath = Boolean(stats.deathType && stats.deathType !== "alive");
+  const isEarlyDeath = (stats.timeSurvived || 0) < 600 || (isActualDeath && (matchData.deathPhase ?? 99) <= 3);
   const isHardEarlyDeath = (stats.timeSurvived || 0) < 300;
   const smokeRate = getOpportunityRate(tradeStats?.smokeRescues, totalTeammateKnocks);
   const reviveRate = getOpportunityRate(tradeStats?.revCount, totalTeammateKnocks);
@@ -142,6 +145,19 @@ const buildTierEvidence = (matchData: MatchData) => {
   const pressureValue = isFiniteNumber(matchData.combatPressure?.pressureIndex)
     ? matchData.combatPressure.pressureIndex.toFixed(2)
     : "응답 필드 없음";
+  const supportValue = isFiniteNumber(tradeStats?.suppCount) ? `${tradeStats.suppCount}회` : "응답 필드 없음";
+  const supportNote = isFiniteNumber(tradeStats?.suppRate)
+    ? `지원율 ${formatPercent(tradeStats.suppRate)}`
+    : totalTeammateKnocks && totalTeammateKnocks > 0
+      ? `아군 기절 ${totalTeammateKnocks}회 기준`
+      : undefined;
+  const teamWipeValue = isFiniteNumber(tradeStats?.enemyTeamWipes) ? `${tradeStats.enemyTeamWipes}회` : "응답 필드 없음";
+  const reversalValue = isFiniteNumber(matchData.duelStats?.reversalRate)
+    ? formatPercent(matchData.duelStats.reversalRate)
+    : "응답 필드 없음";
+  const reversalNote = isFiniteNumber(matchData.duelStats?.reversals) && isFiniteNumber(matchData.duelStats?.reversalAttempts)
+    ? `${matchData.duelStats.reversals} / ${matchData.duelStats.reversalAttempts}회`
+    : undefined;
   const survivalRankValue = survivalBase ? `#${stats.winPlace} / ${survivalBase}` : `#${stats.winPlace}`;
   const survivalRankNote = survivalRankPct !== null
     ? `순위 비율 ${formatPercent(Math.min(1, Math.max(0, survivalRankPct)) * 100)}`
@@ -249,6 +265,20 @@ const buildTierEvidence = (matchData: MatchData) => {
           value: pressureValue
         },
         ...tacticalOpportunityItems,
+        {
+          label: "견제 지원",
+          value: supportValue,
+          note: supportNote
+        },
+        {
+          label: "적 팀 전멸 기여",
+          value: teamWipeValue
+        },
+        {
+          label: "역전 승률",
+          value: reversalValue,
+          note: reversalNote
+        },
         {
           label: "고립 페널티",
           value: (matchData.isolationData?.isolationIndex ?? 0) >= 3.5 ? "적용 가능" : "미적용",
@@ -1108,6 +1138,19 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                       <ScoreBar compact={isMobile} label="전술" score={matchData.benchmark.breakdown.tactical} max={scoreMax.tactical} color="bg-gradient-to-r from-indigo-600 to-indigo-400" />
                       <ScoreBar compact={isMobile} label="생존" score={matchData.benchmark.breakdown.survival} max={scoreMax.survival} color="bg-gradient-to-r from-emerald-600 to-emerald-400" />
                     </div>
+                    {(matchData.benchmark.highlightBonus || 0) > 0 && (
+                      <div className="mt-3 rounded-xl border border-yellow-400/20 bg-yellow-400/10 p-2.5">
+                        <div className="flex items-center justify-between gap-3">
+                          <span className="text-[10px] font-black text-yellow-200">하이라이트 보정</span>
+                          <span className="text-[11px] font-black text-yellow-100">+{matchData.benchmark.highlightBonus}</span>
+                        </div>
+                        {matchData.benchmark.highlightReasons && matchData.benchmark.highlightReasons.length > 0 && (
+                          <p className="mt-1 text-[9px] font-semibold leading-relaxed text-yellow-100/60">
+                            {matchData.benchmark.highlightReasons.slice(0, 3).join(", ")}
+                          </p>
+                        )}
+                      </div>
+                    )}
                     <TierEvidenceSummary items={tierEvidence?.summaryItems || []} />
                     <div className="mt-3 md:mt-4 flex items-center justify-between gap-3 rounded-xl border border-amber-500/20 bg-amber-500/10 p-2.5 md:p-3">
                       <div className="flex flex-col">
