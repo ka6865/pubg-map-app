@@ -91,6 +91,14 @@ const formatSeconds = (ms?: number) => {
   return `${(ms / 1000).toFixed(2)}초`;
 };
 
+const getImpactGradeLabel = (grade?: string) => {
+  if (grade === "LEGEND") return "레전드";
+  if (grade === "HARD_CARRY") return "하드캐리";
+  if (grade === "CARRY") return "캐리";
+  if (grade === "GOOD") return "좋은 판";
+  return "일반";
+};
+
 const isDisplayValueAvailable = (value: string) => value !== "응답 필드 없음" && value !== "측정 불가";
 
 const joinEvidenceSummary = (parts: Array<string | false | undefined>, fallback = "측정 불가") => {
@@ -1119,7 +1127,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                       <div className="text-[12px] font-black text-indigo-400 uppercase tracking-widest">매치 상세 분석</div>
                       <div className="flex items-center gap-2">
                         <span className="text-white bg-indigo-500 px-2 py-0.5 rounded-full text-[10px] tabular-nums">
-                          {matchData.benchmark.score} / 100
+                          안정도 {matchData.benchmark.score} / 100
                         </span>
                         {isMobile && (
                           <button
@@ -1138,15 +1146,21 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                       <ScoreBar compact={isMobile} label="전술" score={matchData.benchmark.breakdown.tactical} max={scoreMax.tactical} color="bg-gradient-to-r from-indigo-600 to-indigo-400" />
                       <ScoreBar compact={isMobile} label="생존" score={matchData.benchmark.breakdown.survival} max={scoreMax.survival} color="bg-gradient-to-r from-emerald-600 to-emerald-400" />
                     </div>
-                    {(matchData.benchmark.highlightBonus || 0) > 0 && (
+                    {isFiniteNumber(matchData.benchmark.impactScore) && (
                       <div className="mt-3 rounded-xl border border-yellow-400/20 bg-yellow-400/10 p-2.5">
                         <div className="flex items-center justify-between gap-3">
-                          <span className="text-[10px] font-black text-yellow-200">하이라이트 보정</span>
-                          <span className="text-[11px] font-black text-yellow-100">+{matchData.benchmark.highlightBonus}</span>
+                          <span className="text-[10px] font-black text-yellow-200">매치 임팩트</span>
+                          <span className="text-[11px] font-black text-yellow-100 tabular-nums">
+                            {matchData.benchmark.impactScore} · {getImpactGradeLabel(matchData.benchmark.impactGrade)}
+                          </span>
                         </div>
-                        {matchData.benchmark.highlightReasons && matchData.benchmark.highlightReasons.length > 0 && (
+                        <div className="mt-1 flex items-center justify-between gap-3 text-[9px] font-bold text-yellow-100/60">
+                          <span>전술 안정도 대비</span>
+                          <span className="tabular-nums">+{matchData.benchmark.impactBonus || 0}</span>
+                        </div>
+                        {matchData.benchmark.impactReasons && matchData.benchmark.impactReasons.length > 0 && (
                           <p className="mt-1 text-[9px] font-semibold leading-relaxed text-yellow-100/60">
-                            {matchData.benchmark.highlightReasons.slice(0, 3).join(", ")}
+                            {matchData.benchmark.impactReasons.slice(0, 3).join(", ")}
                           </p>
                         )}
                       </div>
