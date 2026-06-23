@@ -8,15 +8,18 @@ import {
   Trash2, 
   Check, 
   SlidersHorizontal,
-  ChevronRight,
   TrendingDown,
-  Gauge,
   RotateCcw,
   Sparkles,
   Info
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
 import { trackEvent } from "../../lib/analytics";
+import AdfitBanner from "../../components/ads/AdfitBanner";
+
+const WEAPONS_MOBILE_AD_UNIT = "DAN-tQGcqmddMC8tPpXA";
+const WEAPONS_LEADERBOARD_AD_UNIT = "DAN-dPiCxgIGtXKjLPP3";
+const WEAPONS_DESKTOP_AD_UNIT = "DAN-RjyosR2uf8eSsVIC";
 
 // ----------------------------------------------------
 // 1. 파츠 DB 인터페이스 (Supabase attachments 테이블 기반)
@@ -183,7 +186,7 @@ export default function WeaponsPage() {
           const first = list.find(w => w.id === "ar_m416") || list[0];
           setSelectedWeaponId(first.id);
         }
-      } catch (err) {
+      } catch {
         // Suppress console.log per dead-code/cleanup rules but keep silent safety
       } finally {
         setLoading(false);
@@ -482,7 +485,7 @@ export default function WeaponsPage() {
 
   return (
     <div className="min-h-screen bg-[#070a13] text-white p-4 sm:p-6 pb-20 overflow-y-auto w-full safe-top safe-bottom">
-      <div className="max-w-[1200px] mx-auto w-full flex flex-col gap-6">
+      <div className="relative max-w-[1200px] mx-auto w-full flex flex-col gap-6">
         
         {/* 헤더 */}
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-800 pb-5">
@@ -886,8 +889,35 @@ export default function WeaponsPage() {
           </div>
         )}
 
+        <div className="flex justify-center md:hidden" aria-label="광고">
+          <AdfitBanner
+            adUnit={WEAPONS_MOBILE_AD_UNIT}
+            adWidth={320}
+            adHeight={100}
+            className="max-w-full"
+          />
+        </div>
+
+        <div className="hidden justify-center md:flex 2xl:hidden" aria-label="광고">
+          <AdfitBanner
+            adUnit={WEAPONS_LEADERBOARD_AD_UNIT}
+            adWidth={728}
+            adHeight={90}
+            className="max-w-full"
+          />
+        </div>
+
+        <aside className="hidden 2xl:block absolute left-[calc(100%+24px)] top-0 w-[160px] h-full" aria-label="광고">
+          <div className="sticky top-24">
+            <AdfitBanner
+              adUnit={WEAPONS_DESKTOP_AD_UNIT}
+              adWidth={160}
+              adHeight={600}
+            />
+          </div>
+        </aside>
+
       </div>
     </div>
   );
 }
-

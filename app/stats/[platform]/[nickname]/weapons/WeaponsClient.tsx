@@ -5,12 +5,16 @@ import Link from 'next/link';
 import { AlertCircle, ArrowLeft, Crosshair, RefreshCw, Trophy, Award, Calendar } from 'lucide-react';
 import { WEAPON_NAMES } from '@/lib/pubg-analysis/constants';
 import { normalizeWeaponMasteryItems, type WeaponMasteryCategory } from '@/lib/pubg/weaponMastery';
+import AdfitBanner from '@/components/ads/AdfitBanner';
 
 interface WeaponsClientProps {
   nickname: string;
   platform: string;
   cacheData: any;
 }
+
+const WEAPON_MASTERY_MOBILE_AD_UNIT = "DAN-tQGcqmddMC8tPpXA";
+const WEAPON_MASTERY_DESKTOP_AD_UNIT = "DAN-RjyosR2uf8eSsVIC";
 
 // 투척물 및 특수 무기, 근접 무기까지 모두 한글화하여 추가
 const WEAPON_NAME_MAP: Record<string, string> = {
@@ -244,6 +248,15 @@ export default function WeaponsClient({ nickname, platform, cacheData }: Weapons
               {nickname} 무기 마스터리 분석
             </h1>
           </div>
+        </div>
+
+        <div className="mb-8 flex justify-center xl:hidden" aria-label="광고">
+          <AdfitBanner
+            adUnit={WEAPON_MASTERY_MOBILE_AD_UNIT}
+            adWidth={320}
+            adHeight={100}
+            className="max-w-full"
+          />
         </div>
 
         {/* 무기 통계 메인 바디 */}
@@ -515,6 +528,16 @@ export default function WeaponsClient({ nickname, platform, cacheData }: Weapons
             </p>
           </div>
         )}
+
+        <aside className="hidden xl:block absolute left-[calc(100%+24px)] top-8 w-[160px] h-full" aria-label="광고">
+          <div className="sticky top-24">
+            <AdfitBanner
+              adUnit={WEAPON_MASTERY_DESKTOP_AD_UNIT}
+              adWidth={160}
+              adHeight={600}
+            />
+          </div>
+        </aside>
       </div>
     </div>
   );

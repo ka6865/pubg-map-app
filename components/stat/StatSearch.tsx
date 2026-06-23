@@ -7,6 +7,7 @@ import { MatchCard } from "./MatchCard";
 import { StatSummaryPanel } from "./StatSummaryPanel";
 import { RecentAISummary } from "./RecentAISummary";
 import SquadAnalysisPanel from "./SquadAnalysisPanel";
+import AdfitBanner from "@/components/ads/AdfitBanner";
 import { Shield, ChevronDown, Swords, Star, Clock, User, X, Zap, MapPin, LogIn, Crosshair } from "lucide-react";
 
 import { STORAGE_KEY_RECENT, STORAGE_KEY_FAVORITES } from "@/lib/pubg-analysis/constants";
@@ -15,6 +16,10 @@ import type { UserProfile } from "@/types/map";
 import { useAuth } from "@/components/AuthProvider";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+
+const STATS_MOBILE_AD_UNIT = "DAN-tQGcqmddMC8tPpXA";
+const STATS_LEADERBOARD_AD_UNIT = "DAN-dPiCxgIGtXKjLPP3";
+const STATS_DESKTOP_AD_UNIT = "DAN-RjyosR2uf8eSsVIC";
 
 interface StatSearchProps {
   initialPlatform?: string;
@@ -157,12 +162,16 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
     targetSeason?: string,
     overrideNickname?: string,
     overridePlatform?: string,
-    forceApiRefresh = false
+    forceApiRefresh = false,
+    bypassCooldown = false
   ) => {
-    const resolvedSeason = targetSeason ?? selectedSeasonRef.current;
+    const rawResolvedSeason = targetSeason ?? selectedSeasonRef.current;
+    const resolvedSeason = rawResolvedSeason && rawResolvedSeason !== "null" && rawResolvedSeason !== "undefined"
+      ? rawResolvedSeason
+      : "";
     const searchName = overrideNickname || nickname;
     const searchPlatform = overridePlatform || platform;
-    if (!searchName.trim() || cooldown) return;
+    if (!searchName.trim() || (!bypassCooldown && cooldown)) return;
 
     // 이중 호출 방지 가드
     if (isSearchingRef.current) return;
@@ -179,8 +188,9 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
 
     try {
       const refreshQuery = forceApiRefresh ? "&refresh=true" : "";
+      const seasonQuery = resolvedSeason ? `&season=${encodeURIComponent(resolvedSeason)}` : "";
       const res = await fetch(
-        `/api/pubg/player?nickname=${searchName}&platform=${searchPlatform}&season=${resolvedSeason}${refreshQuery}&_t=${Date.now()}`,
+        `/api/pubg/player?nickname=${encodeURIComponent(searchName)}&platform=${encodeURIComponent(searchPlatform)}${seasonQuery}${refreshQuery}&_t=${Date.now()}`,
         { cache: 'no-store' }
       );
       
@@ -209,8 +219,10 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
       }
 
       setResult(data);
-      setSelectedSeason(data.seasonId);
-      selectedSeasonRef.current = data.seasonId;
+      if (data.seasonId && data.seasonId !== "null" && data.seasonId !== "undefined") {
+        setSelectedSeason(data.seasonId);
+        selectedSeasonRef.current = data.seasonId;
+      }
       setActiveTab("overview");
 
       const actualName = data.nickname;
@@ -562,7 +574,7 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
       )}
 
       {result && (
-        <div style={{ display: "flex", flexDirection: "column", gap: "30px" }}>
+        <div className="relative" style={{ display: "flex", flexDirection: "column", gap: "30px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", borderBottom: "2px solid #333", paddingBottom: "15px", flexWrap: "wrap", gap: "15px" }}>
             <div className="flex flex-col gap-3">
               {/* 1행: 플랫폼/닉네임 + 클랜 배지 + 제재 확인 배지 */}
@@ -637,7 +649,11 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
               name="season"
               autoComplete="off"
               value={selectedSeason}
-              onChange={(e) => handleSearch(e.target.value)}
+              onChange={(e) => {
+                setSelectedSeason(e.target.value);
+                selectedSeasonRef.current = e.target.value;
+                handleSearch(e.target.value, result.nickname, result.platform, false, true);
+              }}
               style={{ padding: "8px 12px", backgroundColor: "#252525", color: "white", border: "1px solid #444", borderRadius: "6px" }}
             >
               {result.seasons.map((s: any) => (
@@ -767,6 +783,21 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
                 />
               )}
 
+              <div className="my-4 flex justify-center lg:hidden" aria-label="광고">
+                <AdfitBanner
+                  adUnit={STATS_MOBILE_AD_UNIT}
+                  adWidth={320}
+                  adHeight={100}
+                />
+              </div>
+              <div className="my-4 hidden justify-center lg:flex 2xl:hidden" aria-label="광고">
+                <AdfitBanner
+                  adUnit={STATS_LEADERBOARD_AD_UNIT}
+                  adWidth={728}
+                  adHeight={90}
+                />
+              </div>
+
               <div className="mt-8">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 mb-4">
                   <h3 className="text-lg font-black text-white flex items-center gap-2">
@@ -864,6 +895,16 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
           ) : (
             <SquadAnalysisPanel nickname={result.nickname} platform={result.platform} />
           )}
+
+          <aside className="hidden 2xl:block w-[160px] absolute left-[calc(100%+24px)] top-0 h-full" aria-label="광고">
+            <div className="sticky top-16">
+              <AdfitBanner
+                adUnit={STATS_DESKTOP_AD_UNIT}
+                adWidth={160}
+                adHeight={600}
+              />
+            </div>
+          </aside>
         </div>
       )}
     </div>

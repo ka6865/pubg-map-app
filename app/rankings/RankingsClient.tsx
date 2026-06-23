@@ -3,6 +3,7 @@
 import React, { useState, useTransition, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { Flame, Zap, Trophy, RefreshCw, ExternalLink, ChevronUp } from 'lucide-react';
+import AdfitBanner from '@/components/ads/AdfitBanner';
 import type { RankingEntry, GameModeFilter, MatchTypeFilter, PerspectiveFilter } from '@/actions/rankings';
 
 type TabType = 'damage' | 'kills' | 'tier';
@@ -54,6 +55,9 @@ const PERSPECTIVE_FILTERS: { label: string; value: PerspectiveFilter }[] = [
   { label: 'FPP (1인칭)', value: 'fpp' },
   { label: 'TPP (3인칭)', value: 'tpp' },
 ];
+
+const RANKINGS_MOBILE_AD_UNIT = 'DAN-tQGcqmddMC8tPpXA';
+const RANKINGS_DESKTOP_AD_UNIT = 'DAN-RjyosR2uf8eSsVIC';
 
 function timeAgo(iso: string): string {
   const diff = (Date.now() - new Date(iso).getTime()) / 1000;
@@ -217,7 +221,7 @@ export default function RankingsClient({ initialDamage, initialKills, initialTie
       </div>
 
       {/* 탭 */}
-      <div className="max-w-2xl mx-auto px-4">
+      <div className="relative max-w-2xl mx-auto px-4">
         <div className="flex gap-2 mb-4 overflow-x-auto no-scrollbar pb-1">
           {tabs.map((t) => {
             const isActive = tab === t.id;
@@ -302,7 +306,15 @@ export default function RankingsClient({ initialDamage, initialKills, initialTie
         <div className="mb-3 px-1">
           {tab === 'damage' && <p className="text-[11px] text-gray-600">최근 7일 내 단일 경기 최고 딜량 TOP 30 · 플레이어당 최고 기록만 표시</p>}
           {tab === 'kills' && <p className="text-[11px] text-gray-600">최근 7일 내 단일 경기 최고 킬 TOP 30 · 플레이어당 최고 기록만 표시</p>}
-          {tab === 'tier' && <p className="text-[11px] text-gray-600">BGMS 전술 분석 점수 기준 상위 30명 · 플레이어당 최고 점수 기준</p>}
+          {tab === 'tier' && <p className="text-[11px] text-gray-600">최근 7일 내 BGMS 전술 분석 점수 TOP 30 · 플레이어당 최고 점수 기준</p>}
+        </div>
+
+        <div className="mb-5 flex justify-center xl:hidden" aria-label="광고">
+          <AdfitBanner
+            adUnit={RANKINGS_MOBILE_AD_UNIT}
+            adWidth={320}
+            adHeight={100}
+          />
         </div>
 
         {/* 랭킹 리스트 */}
@@ -347,6 +359,16 @@ export default function RankingsClient({ initialDamage, initialKills, initialTie
           <ChevronUp size={12} className="text-gray-700" />
           <p className="text-[10px] text-gray-700">닉네임 클릭 시 해당 플레이어 전적 페이지로 이동</p>
         </div>
+
+        <aside className="hidden xl:block w-[160px] absolute left-[calc(100%+24px)] top-0 h-full" aria-label="광고">
+          <div className="sticky top-16">
+            <AdfitBanner
+              adUnit={RANKINGS_DESKTOP_AD_UNIT}
+              adWidth={160}
+              adHeight={600}
+            />
+          </div>
+        </aside>
       </div>
     </div>
   );
