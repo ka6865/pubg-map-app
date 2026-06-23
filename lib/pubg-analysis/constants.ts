@@ -12,7 +12,7 @@
  *   파일 수준의 캐시 무효화를 수행합니다. (R2 파일명 기반, ISR 무관)
  */
 
-export const RESULT_VERSION = 71.0; // [V71.0] 전술 안정도/매치 임팩트 분리 및 기존 캐시 자동 재분석 재기동
+export const RESULT_VERSION = 72.0; // [V72.0] 공식 딜량과 유효 딜량 필드 분리로 랭킹 딜량 정합성 복구
 export const TELEMETRY_VERSION = 60.0; // [V60.0] 아군 전멸 후 풀 매치 리플레이 데이터 기록 캐시 소각
 export const AI_CACHE_VERSION = "2026-06-24.impact-score-v1"; // AI 프롬프트/응답 구조 캐시 버전
 
