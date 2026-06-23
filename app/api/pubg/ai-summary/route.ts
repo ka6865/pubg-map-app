@@ -7,9 +7,11 @@ import { normalizeName } from "@/lib/pubg-analysis/utils";
 import { adaptBenchmark } from "@/lib/pubg-analysis/benchmarkAdapter";
 import { fetchTierBenchmarkStats } from "@/lib/pubg-analysis/benchmarkLookup";
 import { getValidFullResult, normalizePlatform } from "@/lib/pubg-analysis/cacheIdentity";
+import { buildBackupCoachingContext } from "@/lib/pubg-analysis/backupCoaching";
 import { jsonrepair } from "jsonrepair";
 import { withAuthGuard } from "@/utils/supabase/guard";
 import { trackAiUsage } from "@/lib/pubg-analysis/aiUsageTracker";
+import { sanitizeAiCoachingLanguageText } from "@/lib/pubg-analysis/aiCoachingQuality";
 import crypto from "crypto";
 
 export const maxDuration = 60;
@@ -164,8 +166,11 @@ function aggregateMatches(matches: any[]) {
     }
     if (m.combatPressure?.utilityStats) {
       const u = m.combatPressure.utilityStats;
+      const lethalThrowCount = u.lethalThrowCount
+        ?? m.itemUseStats?.lethalThrowCount
+        ?? ((m.itemUseSummary?.frags || 0) + (m.itemUseSummary?.molotovs || 0));
       totalUtilityThrows += u.throwCount || 0;
-      totalUtilityHits += u.hitCount || 0;
+      totalUtilityHits += Math.min(Number(u.hitCount || 0), Number(lethalThrowCount || 0));
       totalUtilityDamage += u.totalDamage || 0;
       totalUtilityKills += u.killCount || 0;
     }
@@ -254,7 +259,12 @@ function aggregateMatches(matches: any[]) {
   const avgDuelWinRate = totalDuels > 0 ? Math.round((totalDuelWins / totalDuels) * 100) : 0;
   const avgDeathPhase = mLen > 0 ? Number((totalDeathPhase / mLen).toFixed(1)) : 0;
   const avgPressureIndex = Number((matches.reduce((acc: number, m: any) => acc + (m.combatPressure?.pressureIndex || 0), 0) / mLen).toFixed(2));
-  const totalLethalThrows = matches.reduce((acc: number, m: any) => acc + (m.itemUseStats?.lethalThrowCount || 0), 0);
+  const totalLethalThrows = matches.reduce((acc: number, m: any) => {
+    const lethalThrowCount = m.combatPressure?.utilityStats?.lethalThrowCount
+      ?? m.itemUseStats?.lethalThrowCount
+      ?? ((m.itemUseSummary?.frags || 0) + (m.itemUseSummary?.molotovs || 0));
+    return acc + Number(lethalThrowCount || 0);
+  }, 0);
   const avgUtilityEfficiency = totalLethalThrows > 0 ? Math.round(totalUtilityDamage / totalLethalThrows) : 0;
 
   const avgMinDistStr = isolationCountFinal > 0 ? (totalMinDist / isolationCountFinal).toFixed(1) + "m" : "N/A";
@@ -347,11 +357,12 @@ export async function POST(request: Request) {
 
         if (!cacheErr && cached && cached.ai_result) {
           const cachedData = cached.ai_result as any;
+          const sanitizedFinal = sanitizeAiCoachingLanguageText(String(cachedData.final || ""));
           const encoder = new TextEncoder();
           const stream = new ReadableStream({
             start(controller) {
               controller.enqueue(encoder.encode(JSON.stringify({ type: "visuals", data: cachedData.visuals }) + "\n"));
-              controller.enqueue(encoder.encode(JSON.stringify({ type: "final", data: cachedData.final }) + "\n"));
+              controller.enqueue(encoder.encode(JSON.stringify({ type: "final", data: sanitizedFinal }) + "\n"));
               controller.enqueue(encoder.encode(JSON.stringify({ type: "done", valid: true }) + "\n"));
               controller.close();
             }
@@ -532,11 +543,16 @@ export async function POST(request: Request) {
         : "1. KIND COACH: 유저의 강력한 화력 공헌(1선 격수로서의 교전 지표, 딜량 비중 등)을 적극 옹호하고, 팀플레이 지표나 백업 속도가 부족하더라도 '팀의 화력을 책임지는 1선 에이스로서 당연히 짊어져야 할 역할'이라며 강하게 쉴드치고 동기부여를 제공하십시오.",
       isSoloSquadFocus
         ? "2. SPICY BOMBER: 솔로 스쿼드라는 핑계 뒤에 숨은 피지컬의 한계를 지적하십시오. '혼자 들어갔으면 전멸을 시켰어야지', '기절만 시키고 확킬을 못 내는 것은 실력 부족'이라며 더 높은 화력을 요구하십시오."
-        : `2. SPICY BOMBER: 유저의 지표가 상위권(엘리트) 지표보다 미달하는 부분을 냉혹하게 찌르십시오. ${isCompetitiveFocus ? '[경쟁전 룰셋]을 고려할 때 이 정도 수치는 팀에게 민폐 수준임을 강조하십시오.' : '[일반전] 데이터임을 감안해도 처참한 수준임을 강조하십시오.'} 수치 격차를 언급하며 유저의 전술적 오만을 꺾으십시오.`,
+        : `2. SPICY BOMBER: 유저의 지표가 상위권(엘리트) 지표보다 미달하는 부분을 냉혹하게 찌르십시오. ${isCompetitiveFocus ? '[경쟁전 룰셋]을 고려해 보완 우선순위를 분명히 제시하십시오.' : '[일반전] 데이터임을 감안해도 개선해야 할 지표를 분명히 제시하십시오.'} 수치 격차를 강하게 말하되 팀원 의도, 팀원 수준, 유저의 심리나 오만은 단정하지 마십시오.`,
       "- [STRICT KOREAN] 모든 응답에서 'DUO', 'SQUAD', 'SOLO', 'Benchmark'와 같은 영문 용어를 절대 사용하지 마십시오. 반드시 '듀오', '스쿼드', '솔로', '상위권 지표' 또는 '벤치마크'와 같은 한글 용어로 대체하여 출력하십시오.",
       "- [INTELLIGENT ANALYSIS] 유저의 승률이나 딜량이 상위권 지표를 압도한다면, SPICY BOMBER조차도 \"피지컬은 괴물이지만...\" 이라는 식으로 실력 자체는 인정하며 시작해야 합니다. 무조건적인 비난은 '멍청한 AI'처럼 보입니다.",
       "- [ZERO HALLUCINATION] 데이터에 명시된 숫자를 1%의 오차도 없이 그대로 인용하십시오. 상위권 지표를 인용할 때는 반드시 정확한 소수점까지 포함하십시오.",
       "- [UTILITY LOGIC] 연막 지표는 '투척형 연막탄'과 '연막 권총(M79)' 사용량을 모두 포함합니다. 연막탄은 '전체 사용량(포지셔닝/엄폐)'과 '전술적 구출(아군 기절 시)'을 엄격히 구분하십시오. 구출 시도가 0회더라도 전체 사용량이 있다면 '연막 미사용자'가 아닌 '개인 생존 중심' 혹은 '구출 기회 부족'으로 분석하십시오.",
+      "- [BACKUP OUTCOME LOGIC] 백업 속도는 시간 단독으로 평가하지 말고, 적 제압/팀 전멸 기여/소생/연막 구출 결과를 함께 판단하십시오. 결과가 성공한 긴 백업은 '느린 백업'으로 단정하지 말고 '교전 정리 후 복구 성공'과 '복구 시간 단축 과제'를 분리해 말하십시오.",
+      "- [LOW ISOLATION LOGIC] 고립 지수가 2.0 미만이면 양호한 대열 유지로 해석하십시오. 이 경우 '너무 멀리', '독단적인 플레이', '고립될 위험', '고립 위험이 높다' 같은 표현은 부정문에서도 쓰지 마십시오.",
+      "- [TEAM INTENT GUARD] 높은 딜량 비중은 '강한 교전 주도' 또는 '화력 분담 보완 필요'로 해석하십시오. 데이터에 명시된 미끼/방치/소생 실패 근거가 없으면 '팀원을 방패', '팀원을 들러리', '팀원을 방치', '혼자 다 해먹', '미끼' 같은 의도 단정 표현을 쓰지 마십시오.",
+      "- [TEAM DISMISSAL GUARD] 팀원을 낮춰 부르는 표현은 금지입니다. '팀 지원 지표가 바닥', '나머지 팀원들의 화력 지원이 전무', '팀 전체가 휘청', '존재감이 희미' 대신 '팀 지원 지표 보완', '화력 분담 보완', '교전 기여를 더 선명하게 만들 필요'라고 표현하십시오.",
+      "- [OUTPUT SELF CHECK] JSON을 작성한 뒤 signatureSub/finalVerdict/debateIssues/actionItems에 '혼자서 모든 것을 해결', '팀원들의 지원이 부족하다는 방증', '혼자 다 해먹', '팀 민폐', '오만' 같은 표현이 있으면 응답하기 전에 반드시 '강한 교전 주도와 화력 분담 보완 필요'로 고치십시오.",
       "- [DATA COMPARISON] 모든 피드백 항목에서 (내 수치 vs 상위권 수치) 형식을 사용하여 유저가 객관적인 실력 차이를 체감하게 하십시오.",
       "- debateIssues는 반드시 3개를 작성하고, 각 issue의 userStats/benchmarkStats는 항목명(label)과 값의 단위(%, 회, m 등)가 완벽히 대칭되어야 합니다.",
       "반드시 아래 구조의 JSON 객체로만 응답하세요.",
@@ -575,7 +591,18 @@ export async function POST(request: Request) {
       const tradeRateGap = Math.abs(userTradeRate - (bench.avgTradeRate || 30)) / 100;
       
       const userBackupLatency = parseFloat(stats.avgBackupLatency || "15");
-      const backupLatencyGap = isNaN(userBackupLatency) ? 0 : Math.min(1.0, Math.abs(userBackupLatency - (bench.avgTradeLatency || 12)) / 20);
+      const backupContext = buildBackupCoachingContext({
+        avgBackupLatency: stats.avgBackupLatency,
+        totalTradeKills: stats.totalTradeKills,
+        totalRevCount: stats.totalRevCount,
+        totalSmokeRescues: stats.totalSmokeRescues,
+        totalTeamWipes: stats.totalTeamWipes,
+        totalTeammateKnocks: stats.totalTeammateKnocks,
+        benchmarkTradeLatency: bench.avgTradeLatency,
+      });
+      const backupLatencyGap = isNaN(userBackupLatency) || backupContext.shouldAvoidSlowBackupBlame
+        ? 0
+        : Math.min(1.0, Math.abs(userBackupLatency - (bench.avgTradeLatency || 12)) / 20);
       
       const tradeAndBackupGap = Math.max(tradeRateGap, backupLatencyGap);
 
@@ -611,6 +638,14 @@ export async function POST(request: Request) {
       userPrompt += `\n### [전술 지표 분석]\n`;
       userPrompt += `- 교전 타이밍(GoldenTime): ${getGoldenTimePattern(summaryStats.goldenTimeAvg)}\n`;
       userPrompt += `- 평균 백업 속도(Trade): ${summaryStats.avgBackupLatency} (아군 기절 시 적 제압 시간)\n`;
+      userPrompt += `- 백업 결과 해석: ${buildBackupCoachingContext({
+        avgBackupLatency: summaryStats.avgBackupLatency,
+        totalTradeKills: summaryStats.totalTradeKills,
+        totalRevCount: summaryStats.totalRevCount,
+        totalSmokeRescues: summaryStats.totalSmokeRescues,
+        totalTeamWipes: summaryStats.totalTeamWipes,
+        totalTeammateKnocks: summaryStats.totalTeammateKnocks,
+      }).promptLine}\n`;
       userPrompt += `- 대응 사격 속도(Reaction): ${summaryStats.avgReactionLatency} (피격 시 반격 시간)\n`;
       userPrompt += `- 유틸리티 활용: 총 투척 ${summaryStats.totalUtilityThrows}회 (내 연막 ${summaryStats.totalSmokes}회 사용)\n`;
       userPrompt += `- 개인 전술 구출: 내 구출 연막 성공률 ${smokeRescueRate}% (구출 연막 시도 ${summaryStats.totalSmokeCount}회, 성공 ${summaryStats.totalSmokeRescues}회), 아군 기절 대비 연막 구출률 ${smokeOpportunityRate}%\n`;
@@ -733,7 +768,16 @@ export async function POST(request: Request) {
       const backupStr = gStats.avgBackupLatency === "측정 불가"
         ? "측정 불가 (아군 기절 후 복수 교전 샘플 없음 — 이 항목을 언급하거나 추론하지 말 것)"
         : `${gStats.avgBackupLatency} (Benchmark: ${bench.avgTradeLatency}s)`;
-      userPrompt += `- [반응 속도] 대응 사격 속도: ${reactionStr}, 반격 성공률: ${gStats.totalReversalAttempts > 0 ? Math.round((gStats.totalReversalWins / gStats.totalReversalAttempts) * 100) : 0}%\n- [백업 속도] 아군 백업 속도: ${backupStr}\n- [생존 환경] 고립 지수(운영/교전/사망): ${gStats.avgIsolationStr}/${gStats.isolationCountFinal > 0 ? (gStats.totalCombatIso / gStats.isolationCountFinal).toFixed(2) : "0"}/${gStats.isolationCountFinal > 0 ? (gStats.totalDeathIso / gStats.isolationCountFinal).toFixed(2) : "0"}, 양각 노출 상황: ${gStats.totalCrossfireExposureCount}회\n- [거리 관리] 팀원과의 평균 거리: ${gStats.avgMinDistStr}, 평균 고도차: ${gStats.avgHeightDiffStr}, 경기당 평균 거리별 데미지(근/중/원): ${gStats.avgDistanceDamage.short}/${gStats.avgDistanceDamage.mid}/${gStats.avgDistanceDamage.long}\n- [킬 분류] 솔로 킬: ${gStats.killContribFinal.solo}회, 클린업 킬: ${gStats.killContribFinal.cleanup}회 (솔로 비중: ${gStats.soloKillRate}% vs Benchmark: ${bench.avgSoloKillRate}%)\n- [유틸리티] 총 투척 ${gStats.totalUtilityThrows}회, 적중 ${gStats.totalUtilityHits}회, 데미지 ${Math.round(gStats.totalUtilityDamage / gStats.mLen)} (평균)\n- [운영 패턴] 평균 사망 페이즈: ${gStats.avgDeathPhase} (Benchmark: ${bench.avgDeathPhase}), 자기장 누적 피해: ${Math.round(gStats.totalBluezoneWaste / gStats.mLen)} HP, 엣지(Edge) 플레이: ${gStats.totalEdgePlay}회, 진입 지연: ${gStats.totalFatalDelay}회\n\n`;
+      const backupContext = buildBackupCoachingContext({
+        avgBackupLatency: gStats.avgBackupLatency,
+        totalTradeKills: gStats.totalTradeKills,
+        totalRevCount: gStats.totalRevCount,
+        totalSmokeRescues: gStats.totalSmokeRescues,
+        totalTeamWipes: gStats.totalTeamWipes,
+        totalTeammateKnocks: gStats.totalTeammateKnocks,
+        benchmarkTradeLatency: bench.avgTradeLatency,
+      });
+      userPrompt += `- [반응 속도] 대응 사격 속도: ${reactionStr}, 반격 성공률: ${gStats.totalReversalAttempts > 0 ? Math.round((gStats.totalReversalWins / gStats.totalReversalAttempts) * 100) : 0}%\n- [백업 속도] 아군 백업 속도: ${backupStr}\n- [백업 결과 해석] ${backupContext.promptLine}\n- [생존 환경] 고립 지수(운영/교전/사망): ${gStats.avgIsolationStr}/${gStats.isolationCountFinal > 0 ? (gStats.totalCombatIso / gStats.isolationCountFinal).toFixed(2) : "0"}/${gStats.isolationCountFinal > 0 ? (gStats.totalDeathIso / gStats.isolationCountFinal).toFixed(2) : "0"}, 양각 노출 상황: ${gStats.totalCrossfireExposureCount}회\n- [거리 관리] 팀원과의 평균 거리: ${gStats.avgMinDistStr}, 평균 고도차: ${gStats.avgHeightDiffStr}, 경기당 평균 거리별 데미지(근/중/원): ${gStats.avgDistanceDamage.short}/${gStats.avgDistanceDamage.mid}/${gStats.avgDistanceDamage.long}\n- [킬 분류] 솔로 킬: ${gStats.killContribFinal.solo}회, 클린업 킬: ${gStats.killContribFinal.cleanup}회 (솔로 비중: ${gStats.soloKillRate}% vs Benchmark: ${bench.avgSoloKillRate}%)\n- [유틸리티] 총 투척 ${gStats.totalUtilityThrows}회, 피해형 투척 ${gStats.totalLethalThrows}회, 피해 적중 ${gStats.totalUtilityHits}회, 피해형 투척 딜량 ${Math.round(gStats.totalUtilityDamage / gStats.mLen)} (평균), 연막 ${gStats.totalSmokes}회\n- [운영 패턴] 평균 사망 페이즈: ${gStats.avgDeathPhase} (Benchmark: ${bench.avgDeathPhase}), 자기장 누적 피해: ${Math.round(gStats.totalBluezoneWaste / gStats.mLen)} HP, 엣지(Edge) 플레이: ${gStats.totalEdgePlay}회, 진입 지연: ${gStats.totalFatalDelay}회\n\n`;
     }
 
     if (mainBench) {
@@ -821,11 +865,19 @@ export async function POST(request: Request) {
     }
 
     const reactionTier = (lat: string) => { const v = parseFloat(lat); return isNaN(v) ? "C" : v < 0.4 ? "S" : v < 0.6 ? "A" : v < 0.8 ? "B" : "C"; };
-    const backupTier = (lat: string) => { const v = parseFloat(lat); return isNaN(v) ? "C" : v < 10 ? "S" : v < 14 ? "A" : v < 18 ? "B" : "C"; };
+    const backupContextForVisuals = buildBackupCoachingContext({
+      avgBackupLatency,
+      totalTradeKills,
+      totalRevCount,
+      totalSmokeRescues,
+      totalTeamWipes: masteryStats.totalTeamWipes,
+      totalTeammateKnocks,
+      benchmarkTradeLatency: mainBench?.avgTradeLatency,
+    });
 
     const precomputedVisuals = {
       latestMatchTime, counterLatency: avgBackupLatency, reactionLatency: avgReactionLatency,
-      reactionTier: reactionTier(avgReactionLatency), backupTier: backupTier(avgBackupLatency), overallTier: mainUserTier, roleInfo,
+      reactionTier: reactionTier(avgReactionLatency), backupTier: backupContextForVisuals.tier, overallTier: mainUserTier, roleInfo,
       tierBreakdown: finalTierBreakdown,
       initiativeSuccess: `${userInitiativeRate}%`, pressureIndex: avgPressureIndex,
       reversalRate: `${totalReversalAttempts > 0 ? Math.round((totalReversalWins / totalReversalAttempts) * 100) : 0}%`,
@@ -888,7 +940,6 @@ export async function POST(request: Request) {
 
               const chunkText = chunk.text();
               aiResponseText += chunkText;
-              controller.enqueue(encoder.encode(JSON.stringify({ type: "chunk", data: chunkText }) + "\n"));
             }
 
             // 비동기로 사용량 메타데이터 획득 후 로깅
@@ -910,7 +961,7 @@ export async function POST(request: Request) {
 
           // [V54.4] 최종 데이터 정제 및 단일 chunk 전송
           const finalResult = aiResponseText || generateFallbackContent();
-          const validJsonString = extractValidJson(finalResult);
+          const validJsonString = sanitizeAiCoachingLanguageText(extractValidJson(finalResult));
 
           if (validJsonString) {
             // [V54.3] 'chunk' 대신 'final' 타입을 사용하여 데이터 중복 방지
@@ -948,7 +999,7 @@ export async function POST(request: Request) {
           console.error("[AI-SUMMARY-STREAM-ERROR] Critical failure during stream generation:", e?.message || e);
           try {
             // 실패 시 Fallback 데이터를 전송하여 UI 무한 대기 방지
-            const fallback = generateFallbackContent();
+            const fallback = sanitizeAiCoachingLanguageText(generateFallbackContent());
             controller.enqueue(encoder.encode(JSON.stringify({ type: "final", data: fallback }) + "\n"));
             controller.enqueue(encoder.encode(JSON.stringify({ type: "done", valid: false, error: e?.message }) + "\n"));
           } catch (innerError) {

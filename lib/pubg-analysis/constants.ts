@@ -14,7 +14,7 @@
 
 export const RESULT_VERSION = 70.0; // [V70.0] 블루존 수류탄(Damage_BlueZoneGrenade) 딜량 누락 패치 및 기존 캐시 자동 재분석 재기동
 export const TELEMETRY_VERSION = 60.0; // [V60.0] 아군 전멸 후 풀 매치 리플레이 데이터 기록 캐시 소각
-export const AI_CACHE_VERSION = "2026-06-11.ai-cache-v1"; // AI 프롬프트/응답 구조 캐시 버전
+export const AI_CACHE_VERSION = "2026-06-23.ai-coaching-guard-v3"; // AI 프롬프트/응답 구조 캐시 버전
 
 export const MAP_NAMES: Record<string, string> = {
   "Baltic_Main": "에란겔", 
