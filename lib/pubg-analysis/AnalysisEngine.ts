@@ -469,7 +469,7 @@ export class AnalysisEngine {
         reviveRate: this.state.totalTeammateKnocks > 0 ? (this.state.myReviveCount / this.state.totalTeammateKnocks) * 100 : -1,
         tradeRate: this.state.totalTeammateKnocks > 0 ? (Math.min(this.state.totalTeammateKnocks, this.state.totalTradeKills) / this.state.totalTeammateKnocks) * 100 : -1,
         teamWipes: this.state.wipedTeamsByUserParticipation.size,
-        reversalRate: reversalRate,
+        reversalRate: pData.reversalAttempts > 0 ? reversalRate : -1,
         deathPhase: this.state.deathPhaseSnapshot || this.state.currentPhase,
         suppRate: this.state.totalTeammateKnocks > 0 ? (this.state.totalSuppCount / this.state.totalTeammateKnocks) * 100 : -1,
         // [V68.0] 스쿼드 모드용 고립 지수 추가
@@ -482,7 +482,11 @@ export class AnalysisEngine {
         })(),
         myKnockCount: this.state.myDownedIntervals.length,
         myDeathCount: myStats.deathType === 'alive' ? 0 : 1,
-        winPlace: myStats.winPlace || 100
+        winPlace: myStats.winPlace || 100,
+        kills: myStats.kills ?? 0,
+        damageDealt: processedDamageDealt,
+        teamDamageShare,
+        safeRevivesWithoutSmoke: Math.max(0, this.state.myReviveCount - this.state.totalSmokeRescues)
       }, (this.state.gameMode || "").includes("solo")),
       isValidBenchmark: (myStats.timeSurvived || 0) >= 300,
       timeline: this.state.timeline.sort((a, b) => a.ts - b.ts),
