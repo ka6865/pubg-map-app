@@ -13,6 +13,16 @@ interface CacheEntry {
 const playerResponseCache = new Map<string, CacheEntry>();
 const CACHE_TTL_MS = 3 * 60 * 1000; // 3분 쿨다운
 
+function normalizeSeasonParam(value: string | null): string | null {
+  const trimmed = (value || "").trim();
+  if (!trimmed || trimmed === "null" || trimmed === "undefined") return null;
+  return trimmed;
+}
+
+function isValidSeasonId(value: unknown): value is string {
+  return typeof value === "string" && value.trim() !== "" && value !== "null" && value !== "undefined";
+}
+
 function pubgFetchInit(
   headers: HeadersInit,
   timeoutMs: number,
@@ -71,7 +81,7 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const nickname = searchParams.get("nickname");
   const platform = searchParams.get("platform") || "steam";
-  const reqSeason = searchParams.get("season");
+  const reqSeason = normalizeSeasonParam(searchParams.get("season"));
   // _t 타임스탬프 파라미터는 강제 갱신 조건에서 제외하여 단순 검색/로딩 시 캐시를 사용하도록 개편
   const forceRefresh = searchParams.get("refresh") === "true";
 
@@ -119,58 +129,67 @@ export async function GET(request: Request) {
       ) || availableSeasons[0];
       
       // 요청 시즌이 없거나 빈 문자열("")이면 마지막 저장 시즌 적용
-      const targetSeasonId = (reqSeason && reqSeason !== "")
+      const validLastSeasonId = isValidSeasonId(cacheData.last_season_id) ? cacheData.last_season_id : null;
+      const targetSeasonId = reqSeason
         ? reqSeason
-        : (cacheData.last_season_id || (currentSeason ? currentSeason.id : null));
+        : (validLastSeasonId || (currentSeason ? currentSeason.id : null));
       
+      let selectedStatsSeasonId = targetSeasonId;
       let statsForSeason = cacheData.season_stats_data ? cacheData.season_stats_data[targetSeasonId] : null;
+      const shouldFetchMissingRequestedSeason = !!reqSeason && !statsForSeason;
       
-      // 요청 시즌 통계가 없을 경우 DB 캐시에 있는 다른 시즌 데이터로 Fallback 대체
-      if (!statsForSeason && cacheData.season_stats_data) {
-        const fallbackSeasonId = cacheData.last_season_id || Object.keys(cacheData.season_stats_data)[0];
+      // 자동 시즌 선택일 때만 기록 있는 시즌으로 fallback합니다.
+      // 사용자가 드롭다운으로 명시 선택한 시즌은 선택값을 유지하고 빈 기록을 보여줍니다.
+      if (!statsForSeason && !reqSeason && cacheData.season_stats_data) {
+        const fallbackSeasonId = validLastSeasonId || Object.keys(cacheData.season_stats_data).find(isValidSeasonId);
         if (fallbackSeasonId) {
           statsForSeason = cacheData.season_stats_data[fallbackSeasonId];
+          selectedStatsSeasonId = fallbackSeasonId;
           console.log(`[DB CACHE SEASON FALLBACK] Stats for ${targetSeasonId} not found, fallback to ${fallbackSeasonId}`);
         }
       }
 
-      // 최근 매치들의 모드 정보를 match_master_telemetry에서 일괄 가져옴
-      const recentMatches = cacheData.recent_match_ids || [];
-      const { data: modeData } = await supabase
-        .from("match_master_telemetry")
-        .select("match_id, game_mode")
-        .in("match_id", recentMatches);
+      if (shouldFetchMissingRequestedSeason) {
+        console.log(`[DB CACHE MISS] Season ${targetSeasonId} stats not cached for ${targetNickname}. Fetching PUBG API.`);
+      } else {
+        // 최근 매치들의 모드 정보를 match_master_telemetry에서 일괄 가져옴
+        const recentMatches = cacheData.recent_match_ids || [];
+        const { data: modeData } = await supabase
+          .from("match_master_telemetry")
+          .select("match_id, game_mode")
+          .in("match_id", recentMatches);
 
-      const matchModes = (modeData || []).reduce((acc: Record<string, string>, item: any) => {
-        acc[item.match_id] = item.game_mode;
-        return acc;
-      }, {});
+        const matchModes = (modeData || []).reduce((acc: Record<string, string>, item: any) => {
+          acc[item.match_id] = item.game_mode;
+          return acc;
+        }, {});
 
-      console.log(`[DB CACHE FULL HIT] Returning stored stats for ${targetNickname} (Season: ${targetSeasonId})`);
-      const responseBody = {
-        nickname: targetNickname,
-        platform: cacheData.platform,
-        seasonId: targetSeasonId,
-        seasons: availableSeasons.map((s: any) => ({
-          id: s.id,
-          name: s.name || `Season ${s.id.split("-").pop()}`,
-        })),
-        stats: statsForSeason || { ranked: null, normal: null },
-        recentMatches,
-        matchModes,
-        clan: cacheData.clan_data,
-        weaponMastery: cacheData.weapon_mastery_data || [],
-        banType: cacheData.ban_type || "None",
-        updatedAt: cacheData.updated_at
-      };
+        console.log(`[DB CACHE FULL HIT] Returning stored stats for ${targetNickname} (Season: ${selectedStatsSeasonId})`);
+        const responseBody = {
+          nickname: targetNickname,
+          platform: cacheData.platform,
+          seasonId: selectedStatsSeasonId,
+          seasons: availableSeasons.map((s: any) => ({
+            id: s.id,
+            name: s.name || `Season ${s.id.split("-").pop()}`,
+          })),
+          stats: statsForSeason || { ranked: null, normal: null },
+          recentMatches,
+          matchModes,
+          clan: cacheData.clan_data,
+          weaponMastery: cacheData.weapon_mastery_data || [],
+          banType: cacheData.ban_type || "None",
+          updatedAt: cacheData.updated_at
+        };
 
-      // 인메모리 캐시 업데이트
-      playerResponseCache.set(cacheKey, {
-        timestamp: Date.now(),
-        data: responseBody
-      });
+        // 인메모리 캐시 업데이트
+        playerResponseCache.set(cacheKey, {
+          timestamp: Date.now(),
+          data: responseBody
+        });
 
-      return NextResponse.json(responseBody);
+        return NextResponse.json(responseBody);
+      }
     }
   }
 
