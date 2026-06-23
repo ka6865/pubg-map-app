@@ -349,7 +349,8 @@ export class AnalysisEngine {
       createdAt: matchAttr.createdAt,
       stats: {
         ...myStats,
-        damageDealt: processedDamageDealt,
+        damageDealt: myStats.damageDealt ?? processedDamageDealt,
+        processedDamageDealt,
         kills: myStats.kills ?? 0,
         winPlace: myStats.winPlace ?? 100,
         timeSurvived: myStats.timeSurvived ?? 0

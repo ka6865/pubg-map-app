@@ -35,6 +35,7 @@ export interface PlayerStats {
   kills: number;
   assists: number;
   damageDealt: number;
+  processedDamageDealt?: number;
   winPlace: number;
   timeSurvived: number;
   DBNOs: number;

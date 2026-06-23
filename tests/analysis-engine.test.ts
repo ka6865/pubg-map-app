@@ -102,6 +102,30 @@ if (hasRealDataFixture) describe('AnalysisEngine 실데이터(Gold Match) 정밀
 });
 
 describe('티어 산정 및 조기 탈락 폴백 엔진 검증', () => {
+  it('공식 딜량은 damageDealt에 유지하고 텔레메트리 유효 딜량은 processedDamageDealt에 분리해야 함', () => {
+    const engine = new AnalysisEngine(
+      'KangHeeSung_',
+      'account.main',
+      new Set(['kangheesung_']),
+      new Set(['account.main']),
+      new Set(),
+      new Set(),
+      'roster-main'
+    );
+
+    const result = engine.run(
+      [],
+      { id: 'official-damage-match', createdAt: '2026-06-24T00:00:00Z', gameMode: 'duo' },
+      [],
+      [],
+      { name: 'KangHeeSung_', damageDealt: 1250, kills: 12, winPlace: 1, timeSurvived: 1700, DBNOs: 5 },
+      [],
+      {}
+    );
+
+    expect(result.stats.damageDealt).toBe(1250);
+    expect(result.stats.processedDamageDealt).toBe(0);
+  });
 
   it('90점 이상 획득 시 S+ 등급으로 판정되어야 함', () => {
     // 만점에 가까운 높은 지표 입력 (스쿼드 기준)
