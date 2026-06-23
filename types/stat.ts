@@ -103,7 +103,9 @@ export interface MatchData {
     pressureIndex?: number;
     utilityStats?: {
       throwCount?: number;
+      lethalThrowCount?: number;
       hitCount?: number;
+      damageEventCount?: number;
       totalDamage?: number;
       killCount?: number;
       accuracy?: number;
