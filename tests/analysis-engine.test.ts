@@ -155,7 +155,7 @@ describe('티어 산정 및 조기 탈락 폴백 엔진 검증', () => {
     expect(result.score).toBeLessThan(90);
   });
 
-  it('미라마 12킬 1250딜 1등 캐리 판은 하이라이트 보정으로 S 등급을 받아야 함', () => {
+  it('미라마 12킬 1250딜 1등 캐리 판은 안정도 S와 하드캐리 이상 임팩트를 받아야 함', () => {
     const miramarCarryInput = {
       rankPct: 0.02,
       survivalTime: 1708,
@@ -179,6 +179,10 @@ describe('티어 산정 및 조기 탈락 폴백 엔진 검증', () => {
       damageDealt: 1250,
       teamDamageShare: 84,
       safeRevivesWithoutSmoke: 1,
+      teamMode: "duo" as const,
+      tradeKills: 2,
+      revives: 1,
+      smokeRescues: 0,
     };
 
     const result = getBenchmarkTier(miramarCarryInput, false);
@@ -186,13 +190,219 @@ describe('티어 산정 및 조기 탈락 폴백 엔진 검증', () => {
     expect(result.tier).toBe("S");
     expect(result.score).toBeGreaterThanOrEqual(82);
     expect(result.score).toBeLessThan(90);
-    expect(result.highlightBonus).toBe(8);
-    expect(result.highlightReasons).toEqual(expect.arrayContaining([
-      "1등 보너스",
-      "10킬 이상 캐리",
-      "1000딜 이상",
+    expect(result.impactScore).toBeGreaterThanOrEqual(110);
+    expect(["HARD_CARRY", "LEGEND"]).toContain(result.impactGrade);
+    expect(result.impactReasons).toEqual(expect.arrayContaining([
+      "10킬 이상 화력 캐리",
+      "1000딜 이상 압도적 화력",
       "연막 없이 안전 소생",
     ]));
+    expect(result.impactReasons).not.toContain("1등 보너스");
+  });
+
+  it('1등 1킬 180딜 판은 생존 점수는 높아도 승리 기여 보정을 받지 않아야 함', () => {
+    const result = getBenchmarkTier({
+      rankPct: 0.55,
+      survivalTime: 1700,
+      initiativeRate: 35,
+      counterLatencyMs: -1,
+      pressureIndex: 1.2,
+      smokeRate: -1,
+      suppCount: 0,
+      reviveRate: -1,
+      tradeRate: -1,
+      teamWipes: 0,
+      reversalRate: -1,
+      deathPhase: 0,
+      suppRate: -1,
+      isolationIndex: 1,
+      survivalRankPct: 1 / 25,
+      myKnockCount: 0,
+      myDeathCount: 0,
+      winPlace: 1,
+      kills: 1,
+      damageDealt: 180,
+      teamDamageShare: 20,
+      teamMode: "squad" as const,
+      tradeKills: 0,
+      revives: 0,
+      smokeRescues: 0,
+    }, false);
+
+    expect(result.impactReasons).not.toContain("승리 기여 근거 2개");
+    expect(result.impactReasons).not.toContain("명확한 승리 기여");
+    expect(result.impactReasons).not.toContain("승리 기여 근거 4개 이상");
+  });
+
+  it('듀오 팀 딜 35%는 팀 화력 보정을 받지 않고 스쿼드 35%는 인정한다', () => {
+    const base = {
+      rankPct: 0.2,
+      survivalTime: 1400,
+      initiativeRate: 50,
+      counterLatencyMs: -1,
+      pressureIndex: 3,
+      smokeRate: -1,
+      suppCount: 0,
+      reviveRate: -1,
+      tradeRate: -1,
+      teamWipes: 0,
+      reversalRate: -1,
+      deathPhase: 0,
+      suppRate: -1,
+      isolationIndex: 1,
+      survivalRankPct: 1 / 25,
+      myKnockCount: 0,
+      myDeathCount: 0,
+      winPlace: 1,
+      kills: 3,
+      damageDealt: 450,
+      teamDamageShare: 35,
+      tradeKills: 0,
+      revives: 0,
+      smokeRescues: 0,
+    };
+
+    const duo = getBenchmarkTier({ ...base, teamMode: "duo" as const }, false);
+    const squad = getBenchmarkTier({ ...base, teamMode: "squad" as const }, false);
+
+    expect(duo.impactReasons).not.toContain("듀오 팀 딜 55% 이상");
+    expect(squad.impactReasons).toContain("스쿼드 팀 딜 35% 이상");
+  });
+
+  it('딜 낮은 막타형 전멸 기여는 약한 마무리 보정만 받는다', () => {
+    const result = getBenchmarkTier({
+      rankPct: 0.7,
+      survivalTime: 1300,
+      initiativeRate: 40,
+      counterLatencyMs: -1,
+      pressureIndex: 2,
+      smokeRate: -1,
+      suppCount: 0,
+      reviveRate: -1,
+      tradeRate: -1,
+      teamWipes: 3,
+      reversalRate: -1,
+      deathPhase: 0,
+      suppRate: -1,
+      isolationIndex: 1,
+      survivalRankPct: 0.2,
+      myKnockCount: 0,
+      myDeathCount: 0,
+      winPlace: 3,
+      kills: 2,
+      damageDealt: 180,
+      teamDamageShare: 18,
+      teamMode: "squad" as const,
+      tradeKills: 0,
+      revives: 0,
+      smokeRescues: 0,
+    }, false);
+
+    expect(result.impactBonus).toBeLessThanOrEqual(5);
+    expect(result.impactReasons).toContain("전멸 마무리 기여");
+    expect(result.impactReasons).not.toContain("적 팀 전멸 결정 기여");
+  });
+
+  it('낮은 딜이라도 소생과 트레이드가 있으면 복구형 기여로 인정한다', () => {
+    const result = getBenchmarkTier({
+      rankPct: 0.65,
+      survivalTime: 1500,
+      initiativeRate: 40,
+      counterLatencyMs: -1,
+      pressureIndex: 2,
+      smokeRate: 0,
+      suppCount: 0,
+      reviveRate: 100,
+      tradeRate: 100,
+      teamWipes: 1,
+      reversalRate: -1,
+      deathPhase: 0,
+      suppRate: 0,
+      isolationIndex: 1,
+      survivalRankPct: 0.12,
+      myKnockCount: 0,
+      myDeathCount: 0,
+      winPlace: 2,
+      kills: 1,
+      damageDealt: 220,
+      teamDamageShare: 18,
+      teamMode: "squad" as const,
+      tradeKills: 1,
+      revives: 1,
+      smokeRescues: 0,
+    }, false);
+
+    expect(result.contributionTypes).toEqual(expect.arrayContaining(["RECOVERY", "SUPPORT"]));
+    expect(result.impactReasons).toEqual(expect.arrayContaining(["소생 성공", "트레이드 성공"]));
+  });
+
+  it('솔로 고킬 치킨은 팀 지표 없이 화력형 캐리로 인정한다', () => {
+    const result = getBenchmarkTier({
+      rankPct: 0.05,
+      survivalTime: 1700,
+      initiativeRate: 70,
+      counterLatencyMs: -1,
+      pressureIndex: 4,
+      smokeRate: -1,
+      suppCount: 0,
+      reviveRate: -1,
+      tradeRate: -1,
+      teamWipes: 0,
+      reversalRate: -1,
+      deathPhase: 0,
+      suppRate: -1,
+      survivalRankPct: 1 / 100,
+      myKnockCount: 0,
+      myDeathCount: 0,
+      winPlace: 1,
+      kills: 8,
+      damageDealt: 700,
+      teamMode: "solo" as const,
+    }, true);
+
+    expect(result.contributionTypes).toContain("FIREPOWER");
+    expect(result.impactScore).toBeGreaterThanOrEqual(110);
+  });
+
+  it('조기 사망 또는 고립 과다는 매치 임팩트 보정을 감경한다', () => {
+    const highImpactInput = {
+      rankPct: 0.05,
+      survivalTime: 1500,
+      initiativeRate: 70,
+      counterLatencyMs: -1,
+      pressureIndex: 4,
+      smokeRate: -1,
+      suppCount: 0,
+      reviveRate: -1,
+      tradeRate: -1,
+      teamWipes: 4,
+      reversalRate: -1,
+      deathPhase: 0,
+      suppRate: -1,
+      isolationIndex: 1,
+      survivalRankPct: 0.1,
+      myKnockCount: 0,
+      myDeathCount: 0,
+      winPlace: 1,
+      kills: 10,
+      damageDealt: 1000,
+      teamDamageShare: 50,
+      teamMode: "squad" as const,
+      tradeKills: 1,
+      revives: 1,
+    };
+    const safe = getBenchmarkTier(highImpactInput, false);
+    const risky = getBenchmarkTier({
+      ...highImpactInput,
+      survivalTime: 500,
+      deathPhase: 2,
+      myDeathCount: 1,
+      isolationIndex: 4.8,
+      survivalRankPct: 0.5,
+    }, false);
+
+    expect(risky.impactBonus).toBeLessThan(safe.impactBonus);
+    expect(risky.impactReasons).toEqual(expect.arrayContaining(["조기 사망 리스크 감경", "고립 리스크 감경"]));
   });
 
   it('getBaseTier 함수가 S+ 와 S 모두 S를 반환해야 함', () => {
