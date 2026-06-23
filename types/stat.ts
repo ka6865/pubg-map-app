@@ -196,10 +196,12 @@ export interface MatchData {
       combat: number;
       tactical: number;
       survival: number;
-      highlightBonus?: number;
     };
-    highlightBonus?: number;
-    highlightReasons?: string[];
+    impactScore?: number;
+    impactGrade?: "NORMAL" | "GOOD" | "CARRY" | "HARD_CARRY" | "LEGEND";
+    impactBonus?: number;
+    impactReasons?: string[];
+    contributionTypes?: Array<"FIREPOWER" | "FINISHER" | "RECOVERY" | "CLUTCH" | "SUPPORT" | "SURVIVAL_CONTROL">;
   };
   isValidBenchmark?: boolean;
   matchInfo?: {

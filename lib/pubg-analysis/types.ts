@@ -171,10 +171,12 @@ export interface AnalysisResult {
       combat: number;
       tactical: number;
       survival: number;
-      highlightBonus?: number;
     };
-    highlightBonus?: number;
-    highlightReasons?: string[];
+    impactScore?: number;
+    impactGrade?: "NORMAL" | "GOOD" | "CARRY" | "HARD_CARRY" | "LEGEND";
+    impactBonus?: number;
+    impactReasons?: string[];
+    contributionTypes?: Array<"FIREPOWER" | "FINISHER" | "RECOVERY" | "CLUTCH" | "SUPPORT" | "SURVIVAL_CONTROL">;
   };
   isValidBenchmark: boolean; // [V26.0] 벤치마크 유효성 여부 (300초 이상 생존)
   timeline: TimelineEvent[]; // [V12.5] 경기 타임라인 데이터
