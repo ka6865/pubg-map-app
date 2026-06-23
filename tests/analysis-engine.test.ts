@@ -155,6 +155,46 @@ describe('티어 산정 및 조기 탈락 폴백 엔진 검증', () => {
     expect(result.score).toBeLessThan(90);
   });
 
+  it('미라마 12킬 1250딜 1등 캐리 판은 하이라이트 보정으로 S 등급을 받아야 함', () => {
+    const miramarCarryInput = {
+      rankPct: 0.02,
+      survivalTime: 1708,
+      initiativeRate: 92,
+      counterLatencyMs: -1,
+      pressureIndex: 7.19,
+      smokeRate: 0,
+      suppCount: 0,
+      reviveRate: 100,
+      tradeRate: 100,
+      teamWipes: 8,
+      reversalRate: -1,
+      deathPhase: 0,
+      suppRate: 0,
+      isolationIndex: 0.8,
+      survivalRankPct: 1 / 34,
+      myKnockCount: 0,
+      myDeathCount: 0,
+      winPlace: 1,
+      kills: 12,
+      damageDealt: 1250,
+      teamDamageShare: 84,
+      safeRevivesWithoutSmoke: 1,
+    };
+
+    const result = getBenchmarkTier(miramarCarryInput, false);
+
+    expect(result.tier).toBe("S");
+    expect(result.score).toBeGreaterThanOrEqual(82);
+    expect(result.score).toBeLessThan(90);
+    expect(result.highlightBonus).toBe(8);
+    expect(result.highlightReasons).toEqual(expect.arrayContaining([
+      "1등 보너스",
+      "10킬 이상 캐리",
+      "1000딜 이상",
+      "연막 없이 안전 소생",
+    ]));
+  });
+
   it('getBaseTier 함수가 S+ 와 S 모두 S를 반환해야 함', () => {
     expect(getBaseTier('S+')).toBe('S');
     expect(getBaseTier('S')).toBe('S');
