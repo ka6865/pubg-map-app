@@ -54,6 +54,15 @@ export function buildMatchAiCoachingPrompt({ matchData, coachingStyle = "spicy" 
     totalTeammateKnocks: tradeStats.teammateKnocks || 0,
     benchmarkTradeLatency: eliteBenchmark.avgTradeLatency,
   });
+  const benchmark = matchData.benchmark || {};
+  const impactGradeLabel = benchmark.impactGrade === "LEGEND"
+    ? "레전드"
+    : benchmark.impactGrade === "HARD_CARRY" ? "하드캐리"
+      : benchmark.impactGrade === "CARRY" ? "캐리"
+        : benchmark.impactGrade === "GOOD" ? "좋은 판" : "일반";
+  const impactReasons = Array.isArray(benchmark.impactReasons) && benchmark.impactReasons.length > 0
+    ? benchmark.impactReasons.join(", ")
+    : "없음";
 
   const playerReportSummary = `
 [기본 성적]
@@ -64,6 +73,9 @@ export function buildMatchAiCoachingPrompt({ matchData, coachingStyle = "spicy" 
 - 팀 기여도: 팀 내 딜량 비중 ${teamImpact.teamDamageShare}% / 팀 내 킬 비중 ${teamImpact.teamKillShare}%
 - 획득 배지: ${badges.length > 0 ? badges.map((b: any) => `[${b.name}: ${b.desc}]`).join(", ") : "없음"}
 - 생존: ${Math.floor(stats.timeSurvived / 60)}분 ${stats.timeSurvived % 60}초
+- 전술 안정도: ${benchmark.score ?? "측정 불가"} / 100
+- 매치 임팩트: ${benchmark.impactScore ?? "측정 불가"} (${impactGradeLabel}, 안정도 대비 +${benchmark.impactBonus ?? 0})
+- 임팩트 근거: ${impactReasons}
 
 [전술 지표 (유저 vs DB 티어 평균)]
 - 1:1 교전 승률: ${matchData.duelStats?.duelWinRate || 0}% (Elite Avg: ${eliteBenchmark.avgDuelWinRate || 55}%)
@@ -101,6 +113,8 @@ export function buildMatchAiCoachingPrompt({ matchData, coachingStyle = "spicy" 
     "- [배지 우선순위] 유저가 획득한 배지가 있다면 이를 signature(칭호) 결정의 핵심 근거로 사용하십시오.",
     "- [팀 영향력] 내 딜량 비중이 40% 이상이면 '캐리', 15% 미만이면 '버스' 키워드를 전술적으로 활용하십시오.",
     "- [팀 영향력 해석 보호 규칙] 높은 딜량 비중은 우선 '강한 캐리/교전 주도'로 해석하십시오. 아군 소생 실패, 복구 실패, 팀원 사망 방치 데이터가 없으면 의도, 인성, 팀원 이용 여부를 단정하는 표현을 금지합니다.",
+    "- [매치 임팩트 해석 규칙] 매치 임팩트가 '하드캐리' 또는 '레전드'이면 해당 판은 단일 경기 하이라이트 성과로 인정하십시오. 낮은 세부 항목을 지적하더라도 '판 전체가 나쁘다'거나 '방관했다'고 단정하지 말고, 강한 성과와 보완점을 분리해 말하십시오.",
+    "- [승리 기여 중복 방지] 1등 자체는 생존 결과입니다. '1등이라서 보너스'라고 표현하지 말고, 화력 캐리/복구 기여/결정적 마무리/승리 기여 근거처럼 행동 근거만 말하십시오.",
     "- [고립 해석 보호 규칙] 고립 지수가 2.0 미만이면 양호한 대열 유지로 해석하십시오. 이 경우 '고립될 위험', '고립 위험이 높다', '너무 멀리', '독단적인 플레이', '독단 플레이'를 부정문에서도 쓰지 마십시오.",
     "- [금지 표현] '팀원을 방패', '팀원을 들러리', '팀원을 방치', '팀원 등쳐먹음', '이기적 독식', '혼자 다 해먹', '팀 지원 지표가 바닥', '팀원은 들러리', '나머지 팀원들의 화력 지원이 전무', '팀 전체가 휘청', '존재감이 희미'를 signature/signatureSub/briefFeedback/finalVerdict/actionItems 어디에도 쓰지 마십시오. 대신 '교전 분담 부족', '팀 지원 지표 보완', '강한 캐리지만 협업 지표 보완 필요'라고 표현하십시오.",
     "- [출력 전 자체 검수] JSON을 작성한 뒤 signatureSub/briefFeedback/finalVerdict/actionItems에 금지 표현이 하나라도 있으면 응답하기 전에 반드시 고치십시오. 특히 '혼자 다 해먹는 화력'은 절대 쓰지 말고 '강한 화력을 보여주지만 협업 지표 보완이 필요'라고 쓰십시오.",

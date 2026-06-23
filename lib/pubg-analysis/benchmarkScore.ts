@@ -22,6 +22,10 @@ export interface MatchTierInput {
   damageDealt?: number;      // 유효 딜량
   teamDamageShare?: number;  // 팀 내 딜량 비중 (0~100)
   safeRevivesWithoutSmoke?: number; // 연막 없이 안전하게 완료한 소생 추정 수
+  teamMode?: "solo" | "duo" | "squad";
+  tradeKills?: number;
+  revives?: number;
+  smokeRescues?: number;
 }
 
 /**
@@ -39,62 +43,193 @@ export interface BenchmarkResult {
     combat: number;
     tactical: number;
     survival: number;
-    highlightBonus?: number;
   };
-  highlightBonus?: number;
-  highlightReasons?: string[];
+  impactScore: number;
+  impactGrade: "NORMAL" | "GOOD" | "CARRY" | "HARD_CARRY" | "LEGEND";
+  impactBonus: number;
+  impactReasons: string[];
+  contributionTypes: Array<"FIREPOWER" | "FINISHER" | "RECOVERY" | "CLUTCH" | "SUPPORT" | "SURVIVAL_CONTROL">;
 }
 
-function getHighlightBonus(input: MatchTierInput, isSolo: boolean): { bonus: number; reasons: string[] } {
-  if (input.survivalTime < 300) return { bonus: 0, reasons: [] };
+function getImpactGrade(score: number): BenchmarkResult["impactGrade"] {
+  if (score >= 130) return "LEGEND";
+  if (score >= 110) return "HARD_CARRY";
+  if (score >= 95) return "CARRY";
+  if (score >= 75) return "GOOD";
+  return "NORMAL";
+}
+
+function getTeamDamageThresholds(input: MatchTierInput, isSolo: boolean) {
+  if (isSolo || input.teamMode === "solo") return null;
+  if (input.teamMode === "duo") return { core: 55, hard: 65 };
+  return { core: 35, hard: 45 };
+}
+
+function getImpactAnalysis(input: MatchTierInput, isSolo: boolean, score: number): Omit<BenchmarkResult, "tier" | "score" | "breakdown"> {
+  if (input.survivalTime < 300) {
+    return {
+      impactScore: 0,
+      impactGrade: "NORMAL",
+      impactBonus: 0,
+      impactReasons: [],
+      contributionTypes: [],
+    };
+  }
 
   const reasons: string[] = [];
-  let bonus = 0;
+  const contributionTypes = new Set<BenchmarkResult["contributionTypes"][number]>();
   const kills = input.kills || 0;
   const damageDealt = input.damageDealt || 0;
   const teamDamageShare = input.teamDamageShare || 0;
-  const isWinner = input.winPlace === 1;
   const isTopDamageOutlier = input.rankPct <= 0.03;
+  const tradeKills = input.tradeKills || 0;
+  const revives = input.revives || 0;
+  const smokeRescues = input.smokeRescues || 0;
+  const safeRevives = input.safeRevivesWithoutSmoke || 0;
+  const teamDamageThresholds = getTeamDamageThresholds(input, isSolo);
+  const hasTeamDamageCore = Boolean(teamDamageThresholds && teamDamageShare >= teamDamageThresholds.core);
 
-  if (isWinner) {
-    bonus += 1.5;
-    reasons.push("1등 보너스");
-  }
+  let firepowerBonus = 0;
   if (kills >= 10) {
-    bonus += 1.5;
-    reasons.push("10킬 이상 캐리");
+    firepowerBonus += 8;
+    reasons.push("10킬 이상 화력 캐리");
+    contributionTypes.add("FIREPOWER");
   } else if (kills >= 7) {
-    bonus += 0.8;
+    firepowerBonus += 5;
     reasons.push("7킬 이상 고화력");
-  }
-  if (damageDealt >= 1000 || isTopDamageOutlier) {
-    bonus += 1.5;
-    reasons.push(damageDealt >= 1000 ? "1000딜 이상" : "딜량 상위 3%");
-  }
-  if (!isSolo && teamDamageShare >= 45) {
-    bonus += 1;
-    reasons.push("팀 화력 핵심 기여");
-  }
-  if (!isSolo && input.teamWipes >= 4) {
-    bonus += 1.5;
-    reasons.push("적 팀 전멸 다수 기여");
-  } else if (!isSolo && input.teamWipes >= 2) {
-    bonus += 0.8;
-    reasons.push("적 팀 전멸 기여");
-  }
-  if (!isSolo && (input.safeRevivesWithoutSmoke || 0) > 0) {
-    bonus += 1;
-    reasons.push("연막 없이 안전 소생");
+    contributionTypes.add("FIREPOWER");
+  } else if (kills >= 5) {
+    firepowerBonus += 3;
+    reasons.push("5킬 이상 교전 기여");
+    contributionTypes.add("FIREPOWER");
   }
 
-  const riskPenalty = input.survivalTime < 600 || (input.myDeathCount > 0 && input.deathPhase <= 3) || (input.isolationIndex || 0) >= 4.5
-    ? 0.5
-    : 1;
-  const cappedBonus = Math.min(8, bonus * riskPenalty);
+  if (damageDealt >= 1000) {
+    firepowerBonus += 12;
+    reasons.push("1000딜 이상 압도적 화력");
+    contributionTypes.add("FIREPOWER");
+  } else if (damageDealt >= 800) {
+    firepowerBonus += 8;
+    reasons.push("800딜 이상 강한 화력");
+    contributionTypes.add("FIREPOWER");
+  } else if (damageDealt >= 500) {
+    firepowerBonus += 5;
+    reasons.push("500딜 이상 승리 기여");
+    contributionTypes.add("FIREPOWER");
+  } else if (damageDealt >= 300) {
+    firepowerBonus += 2;
+    reasons.push("300딜 이상 교전 참여");
+    contributionTypes.add("FIREPOWER");
+  }
+
+  if (isTopDamageOutlier) {
+    firepowerBonus += 7;
+    reasons.push("딜량 상위 3%");
+    contributionTypes.add("FIREPOWER");
+  } else if (input.rankPct <= 0.10) {
+    firepowerBonus += 4;
+    reasons.push("딜량 상위 10%");
+    contributionTypes.add("FIREPOWER");
+  }
+
+  if (teamDamageThresholds && teamDamageShare >= teamDamageThresholds.hard) {
+    firepowerBonus += 7;
+    reasons.push(input.teamMode === "duo" ? "듀오 팀 딜 65% 이상" : "스쿼드 팀 딜 45% 이상");
+    contributionTypes.add("FIREPOWER");
+  } else if (teamDamageThresholds && teamDamageShare >= teamDamageThresholds.core) {
+    firepowerBonus += 4;
+    reasons.push(input.teamMode === "duo" ? "듀오 팀 딜 55% 이상" : "스쿼드 팀 딜 35% 이상");
+    contributionTypes.add("FIREPOWER");
+  }
+
+  let roleBonus = 0;
+  const hasFinisherSupport = damageDealt >= 500 || kills >= 5 || hasTeamDamageCore || tradeKills >= 1 || revives >= 1;
+  if (!isSolo && input.teamWipes >= 2 && hasFinisherSupport) {
+    roleBonus += input.teamWipes >= 4 ? 6 : 3;
+    reasons.push(input.teamWipes >= 4 ? "적 팀 전멸 다수 결정 기여" : "적 팀 전멸 결정 기여");
+    contributionTypes.add("FINISHER");
+  } else if (!isSolo && input.teamWipes >= 2) {
+    roleBonus += 1;
+    reasons.push("전멸 마무리 기여");
+    contributionTypes.add("FINISHER");
+  }
+
+  if (!isSolo && tradeKills >= 1) {
+    roleBonus += 3;
+    reasons.push("트레이드 성공");
+    contributionTypes.add("SUPPORT");
+  }
+  if (!isSolo && revives >= 1) {
+    roleBonus += 3;
+    reasons.push("소생 성공");
+    contributionTypes.add("RECOVERY");
+  }
+  if (!isSolo && smokeRescues >= 1) {
+    roleBonus += 3;
+    reasons.push("연막 구출 성공");
+    contributionTypes.add("RECOVERY");
+  }
+  if (!isSolo && safeRevives > 0) {
+    roleBonus += 3;
+    reasons.push("연막 없이 안전 소생");
+    contributionTypes.add("RECOVERY");
+  }
+
+  let actionEvidenceCount = 0;
+  if (kills >= 5) actionEvidenceCount += 1;
+  if (damageDealt >= 500) actionEvidenceCount += 1;
+  if (input.rankPct <= 0.10) actionEvidenceCount += 1;
+  if (hasTeamDamageCore) actionEvidenceCount += 1;
+  if (!isSolo && input.teamWipes >= 2 && hasFinisherSupport) actionEvidenceCount += 1;
+  if (!isSolo && tradeKills >= 1) actionEvidenceCount += 1;
+  if (!isSolo && (revives >= 1 || smokeRescues >= 1 || safeRevives > 0)) actionEvidenceCount += 1;
+  let riskManagementEvidenceCount = 0;
+  if (input.myDeathCount === 0) riskManagementEvidenceCount += 1;
+  if ((input.isolationIndex || 0) < 2) riskManagementEvidenceCount += 1;
+  const winEvidenceCount = actionEvidenceCount > 0
+    ? actionEvidenceCount + Math.min(1, riskManagementEvidenceCount)
+    : 0;
+
+  let winContributionBonus = 0;
+  if (input.winPlace === 1 && winEvidenceCount >= 4) {
+    winContributionBonus = 10;
+    reasons.push("승리 기여 근거 4개 이상");
+    contributionTypes.add("SURVIVAL_CONTROL");
+  } else if (input.winPlace === 1 && winEvidenceCount >= 3) {
+    winContributionBonus = 7;
+    reasons.push("명확한 승리 기여");
+    contributionTypes.add("SURVIVAL_CONTROL");
+  } else if (input.winPlace === 1 && winEvidenceCount >= 2) {
+    winContributionBonus = 4;
+    reasons.push("승리 기여 근거 2개");
+    contributionTypes.add("SURVIVAL_CONTROL");
+  }
+
+  if (input.reversalRate >= 80) {
+    roleBonus += 3;
+    reasons.push("불리한 교전 역전");
+    contributionTypes.add("CLUTCH");
+  }
+
+  let riskPenalty = 0;
+  if (input.survivalTime < 600 || (input.myDeathCount > 0 && input.deathPhase <= 3)) {
+    riskPenalty += 8;
+    reasons.push("조기 사망 리스크 감경");
+  }
+  if ((input.isolationIndex || 0) >= 4.5) {
+    riskPenalty += 6;
+    reasons.push("고립 리스크 감경");
+  }
+
+  const impactBonus = Number(Math.max(0, firepowerBonus + winContributionBonus + roleBonus - riskPenalty).toFixed(1));
+  const impactScore = Number((score + impactBonus).toFixed(1));
 
   return {
-    bonus: Number(cappedBonus.toFixed(1)),
-    reasons,
+    impactScore,
+    impactGrade: getImpactGrade(impactScore),
+    impactBonus,
+    impactReasons: reasons,
+    contributionTypes: Array.from(contributionTypes),
   };
 }
 
@@ -111,7 +246,9 @@ export function calcBenchmarkScoreDetails(input: MatchTierInput, isSolo: boolean
   const safeTrade = input.tradeRate < 0 ? (isEarlyDeath ? 30 : 100) : input.tradeRate;
   const safeSmoke = input.smokeRate < 0 ? (isEarlyDeath ? 30 : 100) : input.smokeRate;
   const safeSuppRate = input.suppRate < 0 ? (isEarlyDeath ? 30 : 100) : input.suppRate;
-  const safeReversal = input.reversalRate < 0 ? (isEarlyDeath ? 10 : 50) : input.reversalRate;
+  const safeReversal = input.reversalRate < 0
+    ? (isEarlyDeath ? 10 : input.myDeathCount === 0 && input.survivalTime >= 1200 ? 100 : 50)
+    : input.reversalRate;
 
   const latencyScoreBase = input.counterLatencyMs < 0 ? 5 :
     (input.counterLatencyMs === 0 ? 0 : Math.max(0, Math.min(10, ((3000 - input.counterLatencyMs) / 2000) * 10)));
@@ -173,12 +310,22 @@ export function calcBenchmarkScoreDetails(input: MatchTierInput, isSolo: boolean
  * 세분화된 13단계 티어 판정 (S ~ D-)
  */
 export function getBenchmarkTier(input: MatchTierInput, isSolo: boolean): BenchmarkResult {
-  if (input.survivalTime < 300) return { tier: null, score: 0, breakdown: { combat: 0, tactical: 0, survival: 0 } };
+  if (input.survivalTime < 300) {
+    return {
+      tier: null,
+      score: 0,
+      breakdown: { combat: 0, tactical: 0, survival: 0 },
+      impactScore: 0,
+      impactGrade: "NORMAL",
+      impactBonus: 0,
+      impactReasons: [],
+      contributionTypes: [],
+    };
+  }
 
   const breakdown = calcBenchmarkScoreDetails(input, isSolo);
-  const highlight = getHighlightBonus(input, isSolo);
-  const s = breakdown.combat + breakdown.tactical + breakdown.survival + highlight.bonus;
-  const totalScore = Number(s.toFixed(1));
+  const totalScore = Math.min(100, Number((breakdown.combat + breakdown.tactical + breakdown.survival).toFixed(1)));
+  const impact = getImpactAnalysis(input, isSolo, totalScore);
 
   let tier = 'D-';
   if (totalScore >= 90) tier = 'S+';
@@ -197,13 +344,9 @@ export function getBenchmarkTier(input: MatchTierInput, isSolo: boolean): Benchm
 
   return {
     tier,
-    score: Math.min(100, totalScore),
-    breakdown: {
-      ...breakdown,
-      highlightBonus: highlight.bonus,
-    },
-    highlightBonus: highlight.bonus,
-    highlightReasons: highlight.reasons,
+    score: totalScore,
+    breakdown,
+    ...impact,
   };
 }
 
