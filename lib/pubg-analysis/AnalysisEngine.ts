@@ -486,7 +486,13 @@ export class AnalysisEngine {
         kills: myStats.kills ?? 0,
         damageDealt: processedDamageDealt,
         teamDamageShare,
-        safeRevivesWithoutSmoke: Math.max(0, this.state.myReviveCount - this.state.totalSmokeRescues)
+        safeRevivesWithoutSmoke: Math.max(0, this.state.myReviveCount - this.state.totalSmokeRescues),
+        teamMode: (this.state.gameMode || "").includes("solo")
+          ? "solo"
+          : (this.state.gameMode || "").includes("duo") ? "duo" : "squad",
+        tradeKills: this.state.totalTradeKills,
+        revives: this.state.myReviveCount,
+        smokeRescues: this.state.totalSmokeRescues
       }, (this.state.gameMode || "").includes("solo")),
       isValidBenchmark: (myStats.timeSurvived || 0) >= 300,
       timeline: this.state.timeline.sort((a, b) => a.ts - b.ts),
