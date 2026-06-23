@@ -171,7 +171,10 @@ export interface AnalysisResult {
       combat: number;
       tactical: number;
       survival: number;
+      highlightBonus?: number;
     };
+    highlightBonus?: number;
+    highlightReasons?: string[];
   };
   isValidBenchmark: boolean; // [V26.0] 벤치마크 유효성 여부 (300초 이상 생존)
   timeline: TimelineEvent[]; // [V12.5] 경기 타임라인 데이터

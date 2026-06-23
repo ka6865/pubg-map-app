@@ -196,7 +196,10 @@ export interface MatchData {
       combat: number;
       tactical: number;
       survival: number;
+      highlightBonus?: number;
     };
+    highlightBonus?: number;
+    highlightReasons?: string[];
   };
   isValidBenchmark?: boolean;
   matchInfo?: {
