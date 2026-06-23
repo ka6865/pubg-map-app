@@ -549,6 +549,8 @@ export async function POST(request: Request) {
       "- [ZERO HALLUCINATION] 데이터에 명시된 숫자를 1%의 오차도 없이 그대로 인용하십시오. 상위권 지표를 인용할 때는 반드시 정확한 소수점까지 포함하십시오.",
       "- [UTILITY LOGIC] 연막 지표는 '투척형 연막탄'과 '연막 권총(M79)' 사용량을 모두 포함합니다. 연막탄은 '전체 사용량(포지셔닝/엄폐)'과 '전술적 구출(아군 기절 시)'을 엄격히 구분하십시오. 구출 시도가 0회더라도 전체 사용량이 있다면 '연막 미사용자'가 아닌 '개인 생존 중심' 혹은 '구출 기회 부족'으로 분석하십시오.",
       "- [BACKUP OUTCOME LOGIC] 백업 속도는 시간 단독으로 평가하지 말고, 적 제압/팀 전멸 기여/소생/연막 구출 결과를 함께 판단하십시오. 결과가 성공한 긴 백업은 '느린 백업'으로 단정하지 말고 '교전 정리 후 복구 성공'과 '복구 시간 단축 과제'를 분리해 말하십시오.",
+      "- [MATCH IMPACT LOGIC] 매치 임팩트가 '하드캐리' 또는 '레전드'인 경기는 단일 경기 하이라이트 성과로 인정하십시오. 낮은 세부 지표를 지적하더라도 판 전체를 실패로 단정하지 말고, 강한 성과와 보완점을 분리하십시오.",
+      "- [WIN CONTRIBUTION LOGIC] 1등 자체는 생존 결과입니다. '1등 보너스'라고 표현하지 말고, 화력 캐리/복구 기여/결정적 마무리/승리 기여 근거처럼 행동 기반 근거만 사용하십시오.",
       "- [LOW ISOLATION LOGIC] 고립 지수가 2.0 미만이면 양호한 대열 유지로 해석하십시오. 이 경우 '너무 멀리', '독단적인 플레이', '고립될 위험', '고립 위험이 높다' 같은 표현은 부정문에서도 쓰지 마십시오.",
       "- [TEAM INTENT GUARD] 높은 딜량 비중은 '강한 교전 주도' 또는 '화력 분담 보완 필요'로 해석하십시오. 데이터에 명시된 미끼/방치/소생 실패 근거가 없으면 '팀원을 방패', '팀원을 들러리', '팀원을 방치', '혼자 다 해먹', '미끼' 같은 의도 단정 표현을 쓰지 마십시오.",
       "- [TEAM DISMISSAL GUARD] 팀원을 낮춰 부르는 표현은 금지입니다. '팀 지원 지표가 바닥', '나머지 팀원들의 화력 지원이 전무', '팀 전체가 휘청', '존재감이 희미' 대신 '팀 지원 지표 보완', '화력 분담 보완', '교전 기여를 더 선명하게 만들 필요'라고 표현하십시오.",
@@ -620,6 +622,18 @@ export async function POST(request: Request) {
     let userPrompt = `- 분석 대상: 최근 10경기 중 성적이 우수한 상위 ${summaryStats.mLen}경기 (랭크 매치: ${summaryStats.rankedCount}판 포함)\n`;
     userPrompt += `- 분석 기준: 유저의 최고 기량(Peak Performance)을 바탕으로 잠재력 및 보완점 분석\n`;
     userPrompt += `- 주력 모드: ${mainModeName.toUpperCase()} (신뢰도: ${tierConfidence}, 기반: ${summaryStats.mLen}판)\n`;
+    const impactHighlights = bestMatches
+      .filter((match: any) => match.benchmark?.impactScore)
+      .slice(0, 3);
+    if (impactHighlights.length > 0) {
+      userPrompt += `\n### [매치 임팩트 하이라이트]\n`;
+      impactHighlights.forEach((match: any, index: number) => {
+        const impactReasons = Array.isArray(match.benchmark?.impactReasons) && match.benchmark.impactReasons.length > 0
+          ? match.benchmark.impactReasons.slice(0, 3).join(", ")
+          : "근거 없음";
+        userPrompt += `- ${index + 1}. 전술 안정도 ${match.benchmark.score}/100, 매치 임팩트 ${match.benchmark.impactScore} (${match.benchmark.impactGrade || "NORMAL"}), 근거: ${impactReasons}\n`;
+      });
+    }
 
     // [V58.4] 차량 전투 종합 성과 공급
     const totalVehicleKnocks = (summaryStats.totalLeadShotKnocks || 0) + (summaryStats.totalRidingShotKnocks || 0) + (summaryStats.totalRoadKnocks || 0);
