@@ -126,6 +126,13 @@ export default function RootLayout({
           src="//t1.kakaocdn.net/kas/static/ba.min.js"
           strategy="afterInteractive"
         />
+        {/* 구글 애드센스 전역 스크립트 — 소유권 확인 및 자동 광고 활성화 */}
+        <Script
+          async
+          src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3993032200487955"
+          crossOrigin="anonymous"
+          strategy="afterInteractive"
+        />
       </body>
     </html>
   );
