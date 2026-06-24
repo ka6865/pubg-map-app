@@ -56,6 +56,9 @@ export const metadata: Metadata = {
     description: "에란겔, 테이고, 론도 등 배틀그라운드 비밀의 열쇠 및 차량 위치 정보를 한눈에!",
     images: ["/logo.png"],
   },
+  other: {
+    "google-adsense-account": "ca-pub-3993032200487955",
+  },
 };
 
 export const viewport = {
@@ -101,7 +104,6 @@ export default function RootLayout({
     <html lang="ko">
       <head>
         <meta name="naver-site-verification" content="7f13af8906644439c3d292d41b1e48a6e85d3f4a8" />
-        <meta name="google-adsense-account" content="ca-pub-3993032200487955" />
         <JsonLd data={siteJsonLd as any} />
       </head>
       <body className="antialiased bg-[#0d0d0d] text-white">
