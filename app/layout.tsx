@@ -101,6 +101,7 @@ export default function RootLayout({
     <html lang="ko">
       <head>
         <meta name="naver-site-verification" content="7f13af8906644439c3d292d41b1e48a6e85d3f4a8" />
+        <meta name="google-adsense-account" content="ca-pub-3993032200487955" />
         <JsonLd data={siteJsonLd as any} />
       </head>
       <body className="antialiased bg-[#0d0d0d] text-white">
