@@ -2,6 +2,7 @@ import { Metadata } from 'next';
 import { cache } from 'react';
 import { BreadcrumbList, ArticleSchema } from '@/types/seo';
 import { createClient } from '@/utils/supabase/server';
+import { toBoardImageProxyUrl } from '@/lib/board-image-proxy';
 
 // 환경 변수 정기화 유틸리티 (항시 최상단 위치)
 const clean = (val: string | undefined) => (val || '').replace(/['";\s]+/g, '').trim();
@@ -56,6 +57,7 @@ export async function getPostMetadata(postId: string): Promise<Metadata | null> 
 
   const plainText = post.content?.replace(/<[^>]*>/g, '').substring(0, 150) || '';
   const canonicalUrl = `${baseUrl}/board/${postId}`;
+  const imageUrl = post.image_url ? toBoardImageProxyUrl(post.image_url, baseUrl) : `${baseUrl}/logo.png`;
   
   return {
     title: `${post.title} | ${post.category} - BGMS`,
@@ -69,13 +71,13 @@ export async function getPostMetadata(postId: string): Promise<Metadata | null> 
       publishedTime: post.created_at,
       modifiedTime: post.created_at,
       authors: [post.author],
-      images: [post.image_url || `${baseUrl}/logo.png`],
+      images: [imageUrl],
     },
     twitter: {
       card: 'summary_large_image',
       title: `${post.title} - BGMS`,
       description: plainText,
-      images: [post.image_url || `${baseUrl}/logo.png`],
+      images: [imageUrl],
     }
   };
 }
@@ -137,12 +139,13 @@ export async function getPostArticleJsonLd(postId: string): Promise<ArticleSchem
   if (!post) return null;
 
   const plainText = post.content?.replace(/<[^>]*>/g, '').substring(0, 150) || '';
+  const imageUrl = post.image_url ? toBoardImageProxyUrl(post.image_url, baseUrl) : `${baseUrl}/logo.png`;
   return {
     "@context": "https://schema.org",
     "@type": "Article",
     headline: post.title,
     description: plainText,
-    image: post.image_url || `${baseUrl}/logo.png`,
+    image: imageUrl,
     datePublished: post.created_at,
     dateModified: post.created_at, // updated_at 대신 created_at 사용
     author: {

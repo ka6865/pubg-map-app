@@ -14,6 +14,7 @@ import { trackEvent } from "@/lib/analytics";
 import ConfirmModal from "../common/ConfirmModal";
 import TurnstileWidget from "./TurnstileWidget";
 import AdfitBanner from "@/components/ads/AdfitBanner";
+import { rewriteBoardImageUrls, toBoardImageProxyUrl } from "@/lib/board-image-proxy";
 
 interface BoardDetailClientProps {
   initialPost: Post;
@@ -424,7 +425,7 @@ export default function BoardDetailClient({
           }
           toast.success("삭제되었습니다.");
           router.push("/board");
-        } catch (e) {
+        } catch {
           toast.error("삭제 실패");
         }
         setConfirmModal((prev) => ({ ...prev, isOpen: false }));
@@ -490,6 +491,7 @@ export default function BoardDetailClient({
 
   const processedContent = useMemo(() => {
     let sanitizedContent = sanitizeHTML(post.content || "", mounted);
+    sanitizedContent = rewriteBoardImageUrls(sanitizedContent);
     sanitizedContent = sanitizedContent
       .replace(/<p>\s*<\/p>/g, '<p><br/></p>')
       .replace(/<p><br><\/p>/g, '<p><br/></p>')
@@ -501,6 +503,8 @@ export default function BoardDetailClient({
       '<img style="max-width:100%!important;height:auto!important;display:block;border-radius:8px;margin:20px auto;"'
     );
   }, [post.content, mounted]);
+
+  const postImageUrl = toBoardImageProxyUrl(post.image_url);
 
   return (
     <div className="w-full flex justify-center pb-20 overflow-x-hidden">
@@ -604,7 +608,7 @@ export default function BoardDetailClient({
 
           <div className="border-y border-[#333] py-[30px] min-h-[200px] text-[#e5e5e5]">
             {post.image_url && !(post.content || "").includes(post.image_url) && (
-              <Image priority={true} src={post.image_url} alt="기본 이미지" width={800} height={450} className="w-full h-auto mb-[20px] rounded-[8px]" />
+              <Image priority={true} src={postImageUrl} alt="기본 이미지" width={800} height={450} className="w-full h-auto mb-[20px] rounded-[8px]" />
             )}
             
             <style>{`
