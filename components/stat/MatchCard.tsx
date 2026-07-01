@@ -25,6 +25,7 @@ import { useRouter } from "next/navigation";
 import { MatchTimeline } from "./MatchTimeline";
 import dynamic from "next/dynamic";
 import type { MatchData, MatchTeamMember } from "../../types/stat";
+import type { MatchSummaryData } from "@/lib/pubg-analysis/matchSummary";
 import { getTranslatedWeaponName } from "@/lib/pubg-analysis/constants";
 import { estimateUserTier, getNextTierInfo } from "@/lib/pubg-analysis/benchmarkScore";
 import { normalizeName } from "@/lib/pubg-analysis/utils";
@@ -504,13 +505,14 @@ interface MatchCardProps {
   platform: string;
   isMobile: boolean;
   index?: number;
+  initialMatchData?: MatchSummaryData;
   onNicknameClick?: (nickname: string) => void;
   onModeDetected?: (matchId: string, gameMode: string) => void;
 }
 
-export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, onNicknameClick, onModeDetected }: MatchCardProps) => {
-  const [matchData, setMatchData] = useState<MatchData | null>(null);
-  const [loading, setLoading] = useState(true);
+export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, initialMatchData, onNicknameClick, onModeDetected }: MatchCardProps) => {
+  const [matchData, setMatchData] = useState<MatchData | null>(initialMatchData || null);
+  const [loading, setLoading] = useState(!initialMatchData);
   const [isExpanded, setIsExpanded] = useState(false);
   const [openDetailSections, setOpenDetailSections] = useState({
     weapons: false,
@@ -535,6 +537,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
   const tooltipRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const isAnalyzingRef = useRef(false); // [V46.0] 클로저 세이프 로딩 추적
+  const fullMatchFetchRef = useRef(false);
   const { isAnalyzing: isGlobalAnalyzing } = useAIStatus();
   const { user } = useAuth();
   const router = useRouter();
@@ -816,43 +819,62 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
     router.push(`/maps/${mapId}?playback=${matchId}&nickname=${nickname}`);
   };
 
-  useEffect(() => {
-    const fetchMatch = async () => {
-      try {
-        const res = await fetch(`/api/pubg/match?matchId=${matchId}&nickname=${nickname}&platform=${platform}`, { cache: 'no-store' });
-        const data = await res.json();
-        
-        if (!data.error) {
-          onModeDetected?.(matchId, data.gameMode || "");
-          // [V45.2] 정규 매치 필터링 완화 (TDM 및 커스텀 포함, 이벤트/ai-match/세이프하우스만 제외)
-          const mode = (data.gameMode || "").toLowerCase();
-          const map = data.mapName || "";
-          const isExcluded = 
-            mode.includes("event") ||
-            mode.includes("flare") ||
-            mode.includes("ai-match") ||
-            map.includes("SafeHouse") ||
-            (map.includes("Range_Main") && !mode.includes("tdm")); // TDM이 아닌 순수 훈련장은 제외
+  const fetchFullMatch = useCallback(async () => {
+    if (fullMatchFetchRef.current) return;
+    fullMatchFetchRef.current = true;
+    try {
+      const res = await fetch(`/api/pubg/match?matchId=${matchId}&nickname=${nickname}&platform=${platform}`, { cache: 'no-store' });
+      const data = await res.json();
 
-          if (!isExcluded) {
-            setMatchData(data);
-          }
+      if (!data.error) {
+        onModeDetected?.(matchId, data.gameMode || "");
+        // [V45.2] 정규 매치 필터링 완화 (TDM 및 커스텀 포함, 이벤트/ai-match/세이프하우스만 제외)
+        const mode = (data.gameMode || "").toLowerCase();
+        const map = data.mapName || "";
+        const isExcluded =
+          mode.includes("event") ||
+          mode.includes("flare") ||
+          mode.includes("ai-match") ||
+          map.includes("SafeHouse") ||
+          (map.includes("Range_Main") && !mode.includes("tdm")); // TDM이 아닌 순수 훈련장은 제외
+
+        if (!isExcluded) {
+          setMatchData(data);
         }
-      } catch (err) {
-        console.error("Match Fetch Error:", err);
-      } finally {
-        setLoading(false);
       }
-    };
-    
+    } catch {
+    } finally {
+      setLoading(false);
+    }
+  }, [matchId, nickname, platform, onModeDetected]);
+
+  useEffect(() => {
+    fullMatchFetchRef.current = false;
+
+    if (initialMatchData) {
+      setMatchData(initialMatchData);
+      setLoading(false);
+      onModeDetected?.(matchId, initialMatchData.gameMode || initialMatchData.matchInfo?.mode || "");
+      return;
+    }
+
+    setMatchData(null);
+    setLoading(true);
+
     // 개발 서버 환경 등에서 동시 요청으로 인한 병목을 줄이기 위해 인덱스 기반으로 딜레이 분산
-    const delay = index * 300;
+    const delay = index * 150;
     const timer = setTimeout(() => {
-      fetchMatch();
+      void fetchFullMatch();
     }, delay);
     
     return () => clearTimeout(timer);
-  }, [matchId, nickname, platform, index, onModeDetected]);
+  }, [matchId, nickname, platform, index, initialMatchData, fetchFullMatch, onModeDetected]);
+
+  useEffect(() => {
+    if (isExpanded && (matchData as MatchSummaryData | null)?.isSummary) {
+      void fetchFullMatch();
+    }
+  }, [isExpanded, matchData, fetchFullMatch]);
 
   const handleAnalyze = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -883,7 +905,6 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
     // [V46.1] 클라이언트 측 세이프티 타임아웃 (45초)
     const safetyTimeout = setTimeout(() => {
       if (isAnalyzingRef.current) {
-        console.warn(`[AI-MATCH] Safety timeout triggered for ${matchId}. Forced cleanup.`);
         abortController.abort();
         setIsAnalyzing(false);
         isAnalyzingRef.current = false;
@@ -934,8 +955,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
                   accumulatedAnalysis += parsed.data;
                   setAnalysis(accumulatedAnalysis);
                 }
-              } catch (err) {
-                console.error("NDJSON Parse Error in MatchCard:", err, line);
+              } catch {
               }
             }
           }
@@ -953,10 +973,6 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, on
         }
       });
     } catch (err: any) {
-      if (err.name !== 'AbortError') {
-        console.error("Analysis Error:", err);
-      }
-      
       // GA4 이벤트 트래킹: AI 코칭 실패
       trackEvent({
         name: "feature_consumption",
