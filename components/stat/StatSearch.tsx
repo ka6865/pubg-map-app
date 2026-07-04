@@ -456,7 +456,7 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
   const [showGuideline, setShowGuideline] = useState(false);
 
   return (
-    <div style={{ maxWidth: "1200px", margin: "0 auto", padding: "20px", color: "white" }}>
+    <div className="w-full max-w-[1200px] mx-auto px-3.5 py-5 md:p-5 text-white">
       <h1 style={{ color: "#F2A900", fontSize: "24px", fontWeight: "bold", marginBottom: "20px", textAlign: "center" }}>
         📊 AI 전적 검색
       </h1>
