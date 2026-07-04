@@ -358,18 +358,18 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
     }
   }, [initialNickname, initialPlatform]);
 
-  // [V62.0] 자동 검색 effect - result/handleSearch를 의존성에서 제거하여 재실행 루프 차단
-  // initialNickname이 있으면 마운트 시 1회만 실행, 이후 URL 변경은 위의 effect가 처리
-  const hasAutoSearchedRef = useRef(false);
+  // [V62.1] 자동 검색 대상 키를 저장하여 프로필 로딩 등 무관한 상태 변경 재검색 차단
+  const autoSearchedKeyRef = useRef<string | null>(null);
   useEffect(() => {
-    // 이미 자동 검색을 수행했거나 로딩/에러/결과 있으면 건너뜀
-    if (hasAutoSearchedRef.current || loading || error) return;
-
     if (initialNickname) {
-      hasAutoSearchedRef.current = true;
+      const autoSearchKey = `${initialPlatform || "steam"}:${initialNickname.toLowerCase()}`;
+      if (autoSearchedKeyRef.current === autoSearchKey || loading || error) return;
+      autoSearchedKeyRef.current = autoSearchKey;
       handleSearch(undefined, initialNickname, initialPlatform);
       return;
     }
+
+    autoSearchedKeyRef.current = null;
 
     if (userProfile?.pubg_nickname && !hasPrefilled) {
       const userPlatform = userProfile.pubg_platform || "steam";
@@ -378,12 +378,7 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
       setHasPrefilled(true);
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userProfile, hasPrefilled]);
-
-  // [V62.0] initialNickname이 변경되면 자동 검색 플래그를 리셋하고 재검색
-  useEffect(() => {
-    hasAutoSearchedRef.current = false;
-  }, [initialNickname, initialPlatform]);
+  }, [initialNickname, initialPlatform, userProfile, hasPrefilled]);
 
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY_FAVORITES, JSON.stringify(favorites));
