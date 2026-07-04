@@ -967,13 +967,15 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
                             onModeDetected={handleModeDetected}
                           />
                           {(index === 4 || index === 14) && (
-                            <div className="my-2 w-full bg-[#1a1a1a] rounded-3xl p-4 border border-white/5 overflow-hidden">
-                              <AdSenseBanner
-                                client="ca-pub-3993032200487955"
-                                slot="4661728917"
-                                format="fluid"
-                                layoutKey="-fb+5w+4e-db+86"
-                              />
+                            <div className="my-2 w-full bg-[#1a1a1a] rounded-3xl p-0 border border-white/5 overflow-hidden max-h-[150px] flex items-center justify-center">
+                              <div className="w-full">
+                                <AdSenseBanner
+                                  client="ca-pub-3993032200487955"
+                                  slot="4661728917"
+                                  format="fluid"
+                                  layoutKey="-fb+5w+4e-db+86"
+                                />
+                              </div>
                             </div>
                           )}
                         </React.Fragment>
