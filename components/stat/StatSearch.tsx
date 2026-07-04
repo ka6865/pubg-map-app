@@ -967,7 +967,7 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
                             onModeDetected={handleModeDetected}
                           />
                           {(index === 4 || index === 14) && (
-                            <div className="my-2 bg-[#1a1a1a] rounded-3xl p-4 border border-white/5 overflow-hidden">
+                            <div className="my-2 max-w-[840px] mx-auto w-full bg-[#1a1a1a] rounded-3xl p-4 border border-white/5 overflow-hidden">
                               <AdSenseBanner
                                 client="ca-pub-3993032200487955"
                                 slot="4661728917"
