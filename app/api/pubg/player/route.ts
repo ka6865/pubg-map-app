@@ -57,7 +57,6 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 2, delay = 1000): Pr
       lastError = err;
       const isNetworkError = err.message?.includes('fetch') || err.code === 'ECONNRESET' || err.code === 'EPIPE' || err.message?.includes('timeout');
       if (!isNetworkError) throw err;
-      console.warn(`[RETRY] Attempt ${i + 1} failed. Retrying in ${delay}ms...`, err.message);
       await new Promise(res => setTimeout(res, delay));
       delay *= 2;
     }
@@ -75,6 +74,37 @@ async function safeJsonParse(res: Response): Promise<any> {
   } catch (err: any) {
     throw new Error(`JSON 파싱 실패: ${err.message}`);
   }
+}
+
+async function getSimilarPlayerSuggestions(supabase: any, nickname: string, platform: string) {
+  try {
+    const { data } = await supabase.rpc("suggest_similar_players", {
+      search_name: nickname,
+      search_platform: platform,
+      limit_val: 3
+    });
+    return data || [];
+  } catch {
+    return [];
+  }
+}
+
+async function playerNotFoundResponse(supabase: any, nickname: string, platform: string) {
+  const suggestions = await getSimilarPlayerSuggestions(supabase, nickname, platform);
+
+  return NextResponse.json(
+    {
+      error: "닉네임을 찾을 수 없습니다. 대소문자와 플랫폼을 확인해 올바르게 검색해 주세요.",
+      code: "PLAYER_NOT_FOUND",
+      suggestions
+    },
+    {
+      status: 404,
+      headers: {
+        "Cache-Control": "no-store, max-age=0, must-revalidate"
+      }
+    }
+  );
 }
 
 export async function GET(request: Request) {
@@ -95,7 +125,6 @@ export async function GET(request: Request) {
   const cacheKey = `${platform}:${nickname.toLowerCase()}:${reqSeason || 'current'}`;
   const cachedEntry = playerResponseCache.get(cacheKey);
   if (!forceRefresh && cachedEntry && (Date.now() - cachedEntry.timestamp < CACHE_TTL_MS)) {
-    console.log(`[IN-MEMORY CACHE HIT] ${cacheKey}`);
     return NextResponse.json(cachedEntry.data);
   }
 
@@ -119,7 +148,6 @@ export async function GET(request: Request) {
 
   if (cacheData) {
     targetNickname = cacheData.nickname;
-    console.log(`[CACHE HIT] ${nickname} -> ${targetNickname}`);
 
     // [DB 캐시 우선 조회] 강제 갱신이 아니라면 외부 PUBG API 호출을 원천 차단하고 DB 캐시 즉시 반환
     if (!forceRefresh) {
@@ -145,13 +173,10 @@ export async function GET(request: Request) {
         if (fallbackSeasonId) {
           statsForSeason = cacheData.season_stats_data[fallbackSeasonId];
           selectedStatsSeasonId = fallbackSeasonId;
-          console.log(`[DB CACHE SEASON FALLBACK] Stats for ${targetSeasonId} not found, fallback to ${fallbackSeasonId}`);
         }
       }
 
-      if (shouldFetchMissingRequestedSeason) {
-        console.log(`[DB CACHE MISS] Season ${targetSeasonId} stats not cached for ${targetNickname}. Fetching PUBG API.`);
-      } else {
+      if (!shouldFetchMissingRequestedSeason) {
         // 최근 매치들의 모드 정보를 match_master_telemetry에서 일괄 가져옴
         const recentMatches = cacheData.recent_match_ids || [];
         const { data: modeData } = await supabase
@@ -164,7 +189,6 @@ export async function GET(request: Request) {
           return acc;
         }, {});
 
-        console.log(`[DB CACHE FULL HIT] Returning stored stats for ${targetNickname} (Season: ${selectedStatsSeasonId})`);
         const responseBody = {
           nickname: targetNickname,
           platform: cacheData.platform,
@@ -203,7 +227,6 @@ export async function GET(request: Request) {
 
     // 3. 캐시된 이름으로 실패 시 원본 입력으로 재시도 (Fallback)
     if (!playerRes.ok && playerRes.status === 404 && targetNickname !== nickname) {
-      console.log(`[CACHE STALE] ${targetNickname} 404. Falling back to original: ${nickname}`);
       playerRes = await withRetry(() => fetch(
         `https://api.pubg.com/shards/${platform}/players?filter[playerNames]=${nickname}`,
         pubgFetchInit(headers, 8000, 60, forceRefresh)
@@ -218,46 +241,22 @@ export async function GET(request: Request) {
         );
       }
       if (playerRes.status === 404) {
-        let suggestions: any[] = [];
-        try {
-          // [V60.1] pg_trgm 유사도 매칭 RPC 호출로 대소문자가 다르거나 유사한 닉네임 획득
-          const { data, error: rpcError } = await supabase.rpc("suggest_similar_players", {
-            search_name: nickname,
-            search_platform: platform,
-            limit_val: 3
-          });
-          if (rpcError) {
-            console.error("[suggest_similar_players RPC Error]:", rpcError);
-            throw rpcError;
-          }
-          if (data) suggestions = data;
-        } catch (rpcErr) {
-          console.error("[SUGGEST_SIMILAR_PLAYERS_ERROR]", rpcErr);
-        }
-
-        return NextResponse.json(
-          { 
-            error: "존재하지 않는 닉네임입니다. (닉네임 대소문자를 확인해주세요)",
-            suggestions 
-          },
-          { 
-            status: 404,
-            headers: {
-              "Cache-Control": "no-store, max-age=0, must-revalidate"
-            }
-          }
-        );
+        return playerNotFoundResponse(supabase, nickname, platform);
       }
       throw new Error(`PUBG API 에러: ${playerRes.status}`);
     }
     const playerData = await safeJsonParse(playerRes);
-    const accountId = playerData.data[0].id;
-    const actualNickname = playerData.data[0].attributes.name;
-    const banType = playerData.data[0].attributes?.banType ?? "None";
+    const playerRecord = playerData?.data?.[0];
+    if (!playerRecord?.id) {
+      return playerNotFoundResponse(supabase, nickname, platform);
+    }
+    const accountId = playerRecord.id;
+    const actualNickname = playerRecord.attributes.name;
+    const banType = playerRecord.attributes?.banType ?? "None";
 
     // (클랜/무기 데이터 갱신 여부를 포함하여 하단에서 통합 캐시 업데이트를 수행합니다.)
 
-    const recentMatches = playerData.data[0].relationships.matches.data.map(
+    const recentMatches = (playerRecord.relationships?.matches?.data || []).map(
       (m: any) => m.id
     );
 
@@ -267,7 +266,7 @@ export async function GET(request: Request) {
     ));
     trackPubgRateLimit(seasonRes.headers);
     const seasonData = await safeJsonParse(seasonRes);
-    // 🚀 [FIX] pc- 필터링을 완화하여 콘솔(Xbox, PSN) 시즌 데이터도 처리 가능하도록 수정
+    // [FIX] pc- 필터링을 완화하여 콘솔(Xbox, PSN) 시즌 데이터도 처리 가능하도록 수정
     const availableSeasons = seasonData.data
       .filter((s: any) => s.id.includes("pc-") || s.id.includes("console-"))
       .sort((a: any, b: any) => b.id.localeCompare(a.id));
@@ -309,13 +308,12 @@ export async function GET(request: Request) {
             }
           }
         }
-      } catch (e) {
-        console.error("Season fallback error:", e);
+      } catch {
       }
     }
 
     // Retrieve clanId from player attributes (NOT relationships — PUBG API spec)
-    const clanId: string | null = playerData.data[0].attributes?.clanId ?? null;
+    const clanId: string | null = playerRecord.attributes?.clanId ?? null;
 
     // 캐시 유효성 판단 (클랜 24시간)
     const CLAN_CACHE_TTL = 24 * 60 * 60 * 1000;
@@ -325,7 +323,6 @@ export async function GET(request: Request) {
 
     let clanDataPromise: Promise<{ source: string; data: any; updated: boolean }>;
     if (isClanCacheValid && cacheData?.clan_data) {
-      console.log(`[CLAN CACHE HIT] Using cached clan data for ${targetNickname}`);
       clanDataPromise = Promise.resolve({ source: 'cache', data: cacheData.clan_data, updated: false });
     } else {
       clanDataPromise = clanId
@@ -345,8 +342,7 @@ export async function GET(request: Request) {
               }
               throw new Error(`Clan API Error: ${res.status}`);
             })
-            .catch((err) => {
-              console.warn(`[CLAN API FAIL] Falling back to DB cache:`, err.message);
+            .catch(() => {
               return { source: 'fallback', data: cacheData?.clan_data || null, updated: false };
             })
         : Promise.resolve({ source: 'api', data: null, updated: false });
@@ -438,9 +434,7 @@ export async function GET(request: Request) {
 
     supabase.from('pubg_player_cache')
       .upsert(cacheUpdateData, { onConflict: 'id' })
-      .then(({ error }) => {
-        if (error) console.error('[CACHE UPDATE ERROR]', error.message);
-      });
+      .then(() => undefined);
 
     // 최근 매치들의 모드 정보를 match_master_telemetry에서 일괄 가져옴
     const { data: modeData } = await supabase

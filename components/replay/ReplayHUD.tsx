@@ -1,5 +1,5 @@
 import React from "react";
-import { ArrowLeft, Users, PanelLeftOpen } from "lucide-react";
+import { ArrowLeft, Users, PanelLeftOpen, Zap } from "lucide-react";
 import { ZoneState } from "@/types/replay3d";
 
 interface ReplayHUDProps {
@@ -24,7 +24,7 @@ export default function ReplayHUD({
   onToggleSidebar,
 }: ReplayHUDProps) {
   return (
-    <div className="absolute top-4 left-4 flex flex-col gap-2 z-10 pointer-events-none">
+    <div className="absolute left-3 top-3 flex flex-col gap-2 z-10 pointer-events-none sm:left-4 sm:top-4">
       {/* 뒤로가기 + 모바일 사이드바 토글 (같은 행) */}
       <div className="flex items-center gap-2">
         <button
@@ -46,17 +46,17 @@ export default function ReplayHUD({
       </div>
 
       {/* 현재 재생 시간 + 생존자 수 */}
-      <div className="bg-[#161b22]/90 backdrop-blur border border-[#30363d] rounded-lg px-3 py-2 flex items-center gap-3">
+      <div className="bg-[#161b22]/90 backdrop-blur border border-[#30363d] rounded-lg px-2.5 py-2 flex items-center gap-2.5 sm:px-3 sm:gap-3">
         <div className="flex flex-col">
           <span className="text-[8px] font-bold text-[#8b949e] uppercase tracking-widest">ELAPSED</span>
-          <span className="text-lg font-mono font-bold text-[#ff9f0a] leading-none">{formatTime(currentTimeMs)}</span>
+          <span className="text-base sm:text-lg font-mono font-bold text-[#ff9f0a] leading-none">{formatTime(currentTimeMs)}</span>
         </div>
         <div className="w-px h-8 bg-[#30363d]" />
         <div className="flex flex-col">
           <span className="text-[8px] font-bold text-[#8b949e] uppercase tracking-widest">ALIVE</span>
           <div className="flex items-center gap-1">
             <Users className="w-3.5 h-3.5 text-[#2ea043]" />
-            <span className="text-lg font-mono font-bold text-[#2ea043] leading-none">{aliveCount}</span>
+            <span className="text-base sm:text-lg font-mono font-bold text-[#2ea043] leading-none">{aliveCount}</span>
           </div>
         </div>
       </div>
@@ -68,8 +68,9 @@ export default function ReplayHUD({
           const z2 = zones.find((z) => z.t > currentTimeMs);
           const shrinking = z2 && z2.blueRadius < z1.blueRadius;
           return shrinking ? (
-            <div className="bg-[#ff3300]/20 border border-[#ff3300]/60 text-[#ff6633] px-3 py-1.5 rounded-lg text-[10px] font-bold animate-pulse">
-              ⚡ 자기장 수축 중
+            <div className="inline-flex items-center gap-1 bg-[#ff3300]/20 border border-[#ff3300]/60 text-[#ff6633] px-3 py-1.5 rounded-lg text-[10px] font-bold animate-pulse">
+              <Zap className="w-3 h-3" />
+              자기장 수축 중
             </div>
           ) : null;
         })()}

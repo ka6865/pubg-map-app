@@ -56,7 +56,6 @@ const getCachedMatchTelemetry = unstable_cache(
       .maybeSingle();
 
     if (error) {
-      console.error(`[NEXT-CACHE-MISS] DB 조회 오류:`, error.message);
       return null;
     }
     return cachedResult || null;
@@ -94,8 +93,7 @@ export async function GET(request: NextRequest) {
         const data = fs.readFileSync(filePath, "utf-8");
         return NextResponse.json(JSON.parse(data));
       }
-    } catch (e) {
-      console.error("[MOCK-ERROR]", e);
+    } catch {
     }
   }
 
@@ -104,6 +102,17 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    const isAdmin = secret === process.env.ADMIN_REVALIDATE_TOKEN;
+    const shouldForce = force && isAdmin;
+
+    if (!shouldForce) {
+      const cachedData = await getCachedMatchTelemetry(matchId, lowerNickname, platform) as any;
+      const cachedFullResult = getValidFullResult(cachedData, lowerNickname, platform);
+      if (cachedFullResult && (cachedFullResult.v || 0) >= RESULT_VERSION) {
+        return NextResponse.json(cachedFullResult);
+      }
+    }
+
     const apiKey = (process.env.PUBG_API_KEY || "").split(" ")[0];
     const res = await fetch(`https://api.pubg.com/shards/${platform}/matches/${matchId}`, {
       headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/vnd.api+json" },
@@ -142,9 +151,7 @@ export async function GET(request: NextRequest) {
     };
 
     supabase.from('pubg_player_cache').upsert(myCacheEntry, { onConflict: 'id' })
-      .then(({ error }) => {
-        if (error) console.warn('[CACHE-UPDATE-ERROR]', error.message);
-      });
+      .then(() => undefined);
 
     const myRoster = rosters.find((r: any) => r.relationships.participants.data.some((p: any) => p.id === myParticipant.id));
     const myRosterId = myRoster?.id || "";
@@ -161,10 +168,6 @@ export async function GET(request: NextRequest) {
     const myDamageRank = sortedByDamage.findIndex((s: any) => normalizeName(s.name) === lowerNickname) + 1;
     const rankPct = humanParticipants.length > 0 ? myDamageRank / humanParticipants.length : 1;
 
-    // 보안 검증된 어드민만 forceUpdate 활성화
-    const isAdmin = secret === process.env.ADMIN_REVALIDATE_TOKEN;
-    const shouldForce = force && isAdmin;
-
     // [ISR V1.0] unstable_cache 프록시를 통한 DB 캐시 조회
     let cachedData = null;
     if (!shouldForce) {
@@ -179,9 +182,7 @@ export async function GET(request: NextRequest) {
             matchId, nickname, platform, lowerNickname, matchData, teamNames, teamAccountIds,
             myRosterId, myParticipant, teamStats, rankPct, matchAttr, rosters, participants, request.url,
             true, source
-          ).catch(err => {
-            console.error(`[SWR-BACKGROUND-ERROR] Background reanalysis failed for ${matchId}:`, err.message);
-          });
+          ).catch(() => undefined);
 
           // Next.js request.waitUntil 이 지원되면 백그라운드 작업 생명주기 관리
           if (typeof (request as any).waitUntil === 'function') {
@@ -202,8 +203,6 @@ export async function GET(request: NextRequest) {
           ...cachedFullResult,
           sampleParticipants
         });
-      } else if (cachedData?.data?.fullResult) {
-        console.warn(`[MATCH-CACHE] Ignored mismatched cache row: ${matchId}/${platform}/${lowerNickname}`);
       }
     }
 
@@ -217,7 +216,6 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(finalResponse);
 
   } catch (err: any) {
-    console.error(`[CRITICAL-FAILURE]`, err);
     const isRateLimit = err.message?.includes("429") || err.status === 429;
     const status = isRateLimit ? 429 : 500;
     const errorMsg = isRateLimit
@@ -445,7 +443,7 @@ async function reanalyzeAndSave(
       rawParticipants: participants,
       source  // 'user' | 'scraper' — global_benchmarks 출처 구분
     })
-  }).catch(e => console.error("[MATCH-API] Ingest trigger failed:", e));
+  }).catch(() => undefined);
 
   const allParticipantNames = participants
     .filter((p: any) => !p.attributes.stats.playerId?.startsWith("ai."))

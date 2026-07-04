@@ -1,0 +1,83 @@
+import type { MatchData } from "@/types/stat";
+
+const EMPTY_STATS = {
+  winPlace: 0,
+  kills: 0,
+  assists: 0,
+  damageDealt: 0,
+  timeSurvived: 0,
+  DBNOs: 0,
+  headshotKills: 0,
+  longestKill: 0,
+  heals: 0,
+  boosts: 0,
+  deathType: "",
+  walkDistance: 0,
+  rideDistance: 0,
+  swimDistance: 0,
+  revives: 0,
+  name: "",
+  playerId: ""
+};
+
+export type MatchSummaryData = MatchData & {
+  isSummary?: boolean;
+  summarySource?: "processed_match_telemetry";
+};
+
+export function buildMatchSummary(fullResult: any): MatchSummaryData | null {
+  if (!fullResult) return null;
+
+  const stats = {
+    ...EMPTY_STATS,
+    ...(fullResult.stats || {})
+  };
+
+  return {
+    matchId: fullResult.matchId || fullResult.match_id || "",
+    stats,
+    mapName: fullResult.mapName || fullResult.matchInfo?.mapId || fullResult.matchInfo?.map || "",
+    mapId: fullResult.mapId || fullResult.matchInfo?.mapId || "",
+    createdAt: fullResult.createdAt || fullResult.matchInfo?.date || "",
+    gameMode: fullResult.gameMode || fullResult.matchInfo?.mode || "",
+    matchType: fullResult.matchType || fullResult.matchInfo?.matchType,
+    totalTeams: fullResult.totalTeams,
+    totalPlayers: fullResult.totalPlayers,
+    team: fullResult.team || [],
+    totalTeamKills: fullResult.totalTeamKills || 0,
+    totalTeamDamage: fullResult.totalTeamDamage || 0,
+    killDetails: [],
+    dbnoDetails: [],
+    teamImpact: fullResult.teamImpact,
+    badges: fullResult.badges || [],
+    myRank: fullResult.myRank,
+    teamWipeOccurred: fullResult.teamWipeOccurred,
+    combatPressure: fullResult.combatPressure,
+    tradeStats: fullResult.tradeStats,
+    isolationData: fullResult.isolationData,
+    initiativeStats: fullResult.initiativeStats,
+    eliteBenchmark: fullResult.eliteBenchmark,
+    tacticalTimeline: [],
+    goldenTimeDamage: fullResult.goldenTimeDamage,
+    initiative_rate: fullResult.initiative_rate,
+    initiativeSampleCount: fullResult.initiativeSampleCount,
+    deathPhase: fullResult.deathPhase,
+    edgePlay: fullResult.edgePlay,
+    bluezoneWaste: fullResult.bluezoneWaste,
+    v: fullResult.v || 0,
+    benchmark: fullResult.benchmark,
+    isValidBenchmark: fullResult.isValidBenchmark,
+    matchInfo: fullResult.matchInfo,
+    itemUseSummary: fullResult.itemUseSummary,
+    itemUseStats: fullResult.itemUseStats,
+    duelStats: fullResult.duelStats,
+    leadShotKills: fullResult.leadShotKills,
+    leadShotKnocks: fullResult.leadShotKnocks,
+    ridingShotKills: fullResult.ridingShotKills,
+    ridingShotKnocks: fullResult.ridingShotKnocks,
+    roadKills: fullResult.roadKills,
+    roadKnocks: fullResult.roadKnocks,
+    isSummary: true,
+    summarySource: "processed_match_telemetry"
+  };
+}

@@ -28,7 +28,7 @@ export default function ReplayTimeline({
   formatTime
 }: ReplayTimelineProps) {
   return (
-    <div className="absolute bottom-0 left-0 right-0 bg-[#161b22]/96 backdrop-blur-md border-t border-[#30363d] z-10 select-none pb-5 md:pb-0 touch-none">
+    <div className="absolute bottom-0 left-0 right-0 bg-[#161b22]/96 backdrop-blur-md border-t border-[#30363d] z-10 select-none pb-[max(1.25rem,env(safe-area-inset-bottom))] md:pb-0 touch-none">
       
       {/* 킬/기절 이벤트 마커가 있는 타임라인 트랙 */}
       <div
@@ -91,7 +91,7 @@ export default function ReplayTimeline({
       </div>
 
       {/* 컨트롤 바 (모바일 반응형 2-row 최적화) */}
-      <div className="px-4 py-2.5 flex flex-col md:flex-row md:items-center justify-between gap-3 bg-[#161b22]/98">
+      <div className="px-3 py-2 flex flex-col md:flex-row md:items-center justify-between gap-2.5 bg-[#161b22]/98 sm:px-4 md:py-2.5 md:gap-3">
         {/* 1. 슬라이더 (모바일에선 1열 풀 배치로 넉넉하게 스크러빙) */}
         <div className="w-full md:flex-1 order-1 md:order-2 px-1 md:px-4">
           <input
@@ -108,12 +108,12 @@ export default function ReplayTimeline({
         </div>
 
         {/* 2. 조작부 그룹 (모바일에선 2열 하단 가로 분배 배치) */}
-        <div className="w-full md:w-auto flex items-center justify-between gap-4 order-2 md:order-1 shrink-0">
+        <div className="w-full md:w-auto flex items-center justify-between gap-2.5 order-2 md:order-1 shrink-0">
           {/* 재생 버튼 & 리셋 */}
           <div className="flex items-center gap-2">
             <button
               onClick={() => setIsPlaying(!isPlaying)}
-              className="w-9 h-9 flex items-center justify-center bg-[#ff9f0a] hover:bg-[#e08b00] active:scale-95 text-[#0d1117] rounded-full transition-all cursor-pointer shadow-lg"
+              className="w-10 h-10 md:w-9 md:h-9 flex items-center justify-center bg-[#ff9f0a] hover:bg-[#e08b00] active:scale-95 text-[#0d1117] rounded-full transition-all cursor-pointer shadow-lg"
             >
               {isPlaying ? (
                 <Pause className="w-4 h-4 fill-current" />
@@ -126,14 +126,14 @@ export default function ReplayTimeline({
                 setIsPlaying(false);
                 setCurrentTimeMs(0);
               }}
-              className="w-8 h-8 flex items-center justify-center bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] rounded-full text-[#e6edf3] transition-all cursor-pointer"
+              className="w-9 h-9 md:w-8 md:h-8 flex items-center justify-center bg-[#21262d] hover:bg-[#30363d] border border-[#30363d] rounded-full text-[#e6edf3] transition-all cursor-pointer"
             >
               <RotateCcw className="w-3.5 h-3.5" />
             </button>
           </div>
 
           {/* 시간 표시 */}
-          <div className="font-mono text-xs md:text-sm font-bold whitespace-nowrap">
+          <div className="font-mono text-[11px] sm:text-xs md:text-sm font-bold whitespace-nowrap">
             <span className="text-[#ff9f0a]">{formatTime(currentTimeMs)}</span>
             <span className="text-[#484f58] mx-1">/</span>
             <span className="text-[#8b949e]">{formatTime(maxTimeMs)}</span>
@@ -143,7 +143,7 @@ export default function ReplayTimeline({
           <select
             value={playbackSpeed}
             onChange={(e) => setPlaybackSpeed(Number(e.target.value))}
-            className="bg-[#21262d] text-[#ff9f0a] text-[11px] font-bold border border-[#30363d] rounded-lg px-2 py-1.5 outline-none cursor-pointer"
+            className="bg-[#21262d] text-[#ff9f0a] text-[11px] font-bold border border-[#30363d] rounded-lg px-2 py-2 md:py-1.5 outline-none cursor-pointer"
           >
             {[1, 2, 4, 8, 16, 32].map((s) => (
               <option key={s} value={s}>

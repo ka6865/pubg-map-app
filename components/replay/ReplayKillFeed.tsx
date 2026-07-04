@@ -1,4 +1,5 @@
 import React from "react";
+import { Crosshair, Skull } from "lucide-react";
 import { PlayerTrajectory } from "@/types/replay3d";
 
 interface ReplayKillFeedProps {
@@ -10,7 +11,7 @@ export default function ReplayKillFeed({ activeKillLogs, players }: ReplayKillFe
   if (activeKillLogs.length === 0) return null;
 
   return (
-    <div className="absolute top-4 right-4 flex flex-col gap-2 z-10 pointer-events-none select-none max-w-[320px]">
+    <div className="absolute right-3 top-24 flex max-w-[min(20rem,calc(100vw-1.5rem))] flex-col gap-2 z-10 pointer-events-none select-none sm:right-4 sm:top-4 sm:max-w-[320px]">
       {activeKillLogs.map((ev, idx) => {
         const isKill = ev.type === "kill";
         const attackerName = ev.attackerName || ev.attacker || "환경 요인";
@@ -24,7 +25,7 @@ export default function ReplayKillFeed({ activeKillLogs, players }: ReplayKillFe
         return (
           <div
             key={`feed-${ev.relativeTimeMs}-${idx}`}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-md border text-xs font-semibold backdrop-blur-sm transition-all duration-300 ${
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md border text-[11px] sm:text-xs font-semibold backdrop-blur-sm transition-all duration-300 ${
               isOurSquadInvolved
                 ? "bg-[#ff9f0a]/15 border-[#ff9f0a]/40 text-[#ff9f0a] shadow-[0_0_8px_rgba(255,159,10,0.1)]"
                 : "bg-[#161b22]/85 border-[#30363d] text-[#e6edf3]"
@@ -33,14 +34,14 @@ export default function ReplayKillFeed({ activeKillLogs, players }: ReplayKillFe
             <span className={isAttackerTeam ? "text-[#ff9f0a]" : "text-[#8b949e]"}>
               {attackerName}
             </span>
-            <span className="text-[10px] text-gray-500 mx-1">
-              {isKill ? "☠️" : "💥"}
+            <span className="text-[#6e7681] mx-0.5 shrink-0">
+              {isKill ? <Skull className="w-3 h-3" /> : <Crosshair className="w-3 h-3" />}
             </span>
             <span className={isVictimTeam ? "text-[#ff9f0a]" : "text-[#ff4a4a]"}>
               {victimName}
             </span>
             {ev.weapon && (
-              <span className="text-[9px] text-[#8b949e] bg-[#21262d] px-1.5 py-0.5 rounded border border-[#30363d] ml-1">
+              <span className="hidden sm:inline text-[9px] text-[#8b949e] bg-[#21262d] px-1.5 py-0.5 rounded border border-[#30363d] ml-1">
                 {ev.weapon.replace("Weap", "").replace("_C", "")}
               </span>
             )}

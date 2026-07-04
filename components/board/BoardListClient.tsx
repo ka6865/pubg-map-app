@@ -12,6 +12,7 @@ import BoardPagination from "./BoardPagination";
 import { useAuth } from "@/components/AuthProvider";
 import { supabase } from "@/lib/supabase";
 import AdfitBanner from "@/components/ads/AdfitBanner";
+import AdSenseBanner from "@/components/ads/AdSenseBanner";
 
 const BOARD_CATEGORIES = ["배그 소식", "자유", "듀오/스쿼드 모집", "클랜홍보", "제보/문의"];
 const POSTS_PER_PAGE = 10;
@@ -227,6 +228,16 @@ export default function BoardListClient({
           </div>
         </div>
 
+        {/* 데스크톱 좌측 사이드바 광고 (구글 애드센스) — xl 이상에서만 표시, 본문 좌측 여백에 둥둥 뜨게 배치 */}
+        <aside className="hidden xl:block w-[160px] absolute right-[calc(100%+24px)] top-0 h-full">
+          <div className="sticky top-16">
+            <AdSenseBanner
+              client="ca-pub-3993032200487955"
+              slot="7728921550"
+            />
+          </div>
+        </aside>
+
         {/* 데스크톱 사이드바 광고 — xl 이상에서만 표시, 본문 정중앙 정렬 유지하며 우측 여백에 둥둥 뜨게 배치 */}
         <aside className="hidden xl:block w-[160px] absolute left-[calc(100%+24px)] top-0 h-full">
           <div className="sticky top-16">
@@ -237,7 +248,7 @@ export default function BoardListClient({
             />
           </div>
         </aside>
+      </div>
     </div>
-  </div>
   );
 }

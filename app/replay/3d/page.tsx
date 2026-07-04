@@ -1,21 +1,57 @@
 "use client";
 
-import React, { useEffect, useRef, useState, useMemo, Suspense } from "react";
+import React, { useCallback, useEffect, useRef, useState, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { Loader2, ChevronLeft, ChevronRight } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, Loader2, PanelLeftOpen, RefreshCw } from "lucide-react";
 
-// 공통 타입 및 격리 UI 컴포넌트 임포트
-import { Waypoint, PlayerTrajectory, ZoneState } from "@/types/replay3d";
+import { PlayerTrajectory, ZoneState } from "@/types/replay3d";
 import ReplayHUD from "@/components/replay/ReplayHUD";
 import ReplaySidebar from "@/components/replay/ReplaySidebar";
 import ReplayTimeline from "@/components/replay/ReplayTimeline";
 import ReplayKillFeed from "@/components/replay/ReplayKillFeed";
 
 // PUBG 맵 크기 상수 (cm)
-const MAP_SIZE_CM = 816000;
 const THREE_MAP_SIZE = 100; // Three.js 공간 상의 가로세로 크기
+const MOBILE_QUERY = "(max-width: 767px)";
+const MOBILE_TERRAIN_SEGMENTS = 128;
+const DESKTOP_TERRAIN_SEGMENTS = 256;
+const MOBILE_RENDER_FPS = 30;
+const DESKTOP_RENDER_FPS = 60;
+const UI_TIME_UPDATE_INTERVAL_MS = 120;
+
+type RenderProfile = {
+  terrainSegments: number;
+  maxPixelRatio: number;
+  antialias: boolean;
+  shadows: boolean;
+  textureAnisotropy: number;
+  targetFps: number;
+};
+
+const getRenderProfile = (): RenderProfile => {
+  if (typeof window === "undefined") {
+    return {
+      terrainSegments: DESKTOP_TERRAIN_SEGMENTS,
+      maxPixelRatio: 2,
+      antialias: true,
+      shadows: true,
+      textureAnisotropy: 8,
+      targetFps: DESKTOP_RENDER_FPS
+    };
+  }
+
+  const isMobile = window.matchMedia(MOBILE_QUERY).matches;
+  return {
+    terrainSegments: isMobile ? MOBILE_TERRAIN_SEGMENTS : DESKTOP_TERRAIN_SEGMENTS,
+    maxPixelRatio: isMobile ? 1.25 : 2,
+    antialias: !isMobile,
+    shadows: !isMobile,
+    textureAnisotropy: isMobile ? 2 : 8,
+    targetFps: isMobile ? MOBILE_RENDER_FPS : DESKTOP_RENDER_FPS
+  };
+};
 
 
 
@@ -72,16 +108,6 @@ const createNicknameSprite = (text: string, color: string): THREE.Sprite => {
   const sprite = new THREE.Sprite(material);
   sprite.scale.set(1.4, 0.35, 1.0); // 콤팩트한 텍스트 비율 조정
   return sprite;
-};
-
-// 맵별 고밀도 고도 오프셋/스케일 보정 테이블
-const MAP_ELEVATION_CONFIGS: Record<string, { minR: number; maxR: number; maxElevation: number }> = {
-  Erangel: { minR: 86, maxR: 253, maxElevation: 400 },
-  Miramar: { minR: 81, maxR: 255, maxElevation: 600 },
-  Rondo: { minR: 110, maxR: 250, maxElevation: 500 },
-  Vikendi: { minR: 66, maxR: 196, maxElevation: 450 },
-  Taego: { minR: 15, maxR: 219, maxElevation: 400 },
-  Deston: { minR: 43, maxR: 250, maxElevation: 450 }
 };
 
 /**
@@ -142,13 +168,13 @@ const MAP_FOLDER_NAMES: Record<string, "Erangel" | "Miramar" | "Rondo" | "Taego"
   "론도": "Rondo",
   "비켄디": "Vikendi",
   "Baltic_Main": "Erangel",
-  "Erangel_Main": "Erangel", // 🎯 에란겔 메인 맵 명칭 누락 보완
+  "Erangel_Main": "Erangel",
   "Desert_Main": "Miramar",
   "Tiger_Main": "Taego",
   "Kiki_Main": "Deston",
   "Neon_Main": "Rondo",
   "DihorOtok_Main": "Vikendi",
-  // 🎯 영문 정규화 명칭 1:1 패스스루 추가
+  // 영문 정규화 명칭 1:1 패스스루
   "Erangel": "Erangel",
   "Miramar": "Miramar",
   "Taego": "Taego",
@@ -236,13 +262,13 @@ function Replay3DContent() {
   const [showTrajectories, setShowTrajectories] = useState(true);
   const [isMapLoading, setIsMapLoading] = useState(false);
   const [altitudeScale, setAltitudeScale] = useState(0.015);
-  const [showEnemies, setShowEnemies] = useState(true);
+  const [showEnemies] = useState(true);
   // 플레이어별 개별 표시 토글 (이름 Set)
   const [hiddenPlayers, setHiddenPlayers] = useState<Set<string>>(new Set());
   // 현재 카메라가 고정 추적 중인 플레이어 닉네임
   const [trackingPlayer, setTrackingPlayer] = useState<string | null>(null);
   // 사이드바 접기/펼치기 (모바일 대응)
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [showNames, setShowNames] = useState(true);
 
   // Three.js 인스턴스 레퍼런스
@@ -257,7 +283,14 @@ function Replay3DContent() {
     width: number;
     height: number;
   } | null>(null);
-  const terrainGridRef = useRef<number[][] | null>(null);
+  const terrainGridRef = useRef<{ grid: number[][]; size: number } | null>(null);
+  const currentTimeRef = useRef(0);
+  const renderStateVersionRef = useRef(0);
+  const lastUiTimeSyncRef = useRef(0);
+  const isPlayingRef = useRef(false);
+  const playbackSpeedRef = useRef(playbackSpeed);
+  const maxTimeRef = useRef(maxTimeMs);
+  const updateReplaySceneRef = useRef<(frameTimeMs: number) => void>(() => {});
 
   // 마커 및 라인 씬 객체 캐시
   const playerMeshesRef = useRef<Record<string, THREE.Mesh>>({});
@@ -269,6 +302,34 @@ function Replay3DContent() {
   const tracerPoolRef = useRef<THREE.Mesh[]>([]);
   const impactPoolRef = useRef<THREE.Mesh[]>([]); // 탄착 지점 임팩트 구체 풀
   const carePackageMeshesRef = useRef<Record<number, THREE.Group>>({});
+
+  useEffect(() => {
+    const applyViewportMode = () => {
+      const isMobile = window.matchMedia(MOBILE_QUERY).matches;
+      setIsSidebarOpen((prev) => (isMobile ? false : prev));
+    };
+
+    applyViewportMode();
+    window.addEventListener("resize", applyViewportMode);
+    return () => window.removeEventListener("resize", applyViewportMode);
+  }, []);
+
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
+
+  useEffect(() => {
+    playbackSpeedRef.current = playbackSpeed;
+  }, [playbackSpeed]);
+
+  useEffect(() => {
+    maxTimeRef.current = maxTimeMs;
+  }, [maxTimeMs]);
+
+  useEffect(() => {
+    currentTimeRef.current = currentTimeMs;
+    renderStateVersionRef.current += 1;
+  }, [currentTimeMs, players, zones, showBluezone, showTrajectories, altitudeScale, showEnemies, damageEvents, carePackages, trackingPlayer, hiddenPlayers, showNames]);
 
   // 1. 실시간 텔레메트리 API 호출 및 파싱
   const fetchTelemetryData = async (targetMatchId: string, targetNickname: string) => {
@@ -300,7 +361,7 @@ function Replay3DContent() {
       const parsedPlayers: PlayerTrajectory[] = [];
       const lowerTeamNames = new Set((teamNames || []).map((n: string) => n.trim().toLowerCase()));
 
-      // 🎯 사망 및 블루칩 부활 이벤트를 분석하여 플레이어별 시간대 목록 매핑
+      // 사망 및 블루칩 부활 이벤트를 분석하여 플레이어별 시간대 목록 매핑
       const playerDeathTimes: Record<string, number[]> = {};
       const playerRedeployTimes: Record<string, number[]> = {};
       events.forEach((ev: any) => {
@@ -355,7 +416,7 @@ function Replay3DContent() {
               health: ev.health ?? ev.character?.health ?? 100
             };
           })
-          .filter((wp: any) => wp.x !== 0 || wp.y !== 0) // 🎯 좌상단(0,0) 더미 좌표 필터링 (대기섬/수송기 대기 상태)
+          .filter((wp: any) => wp.x !== 0 || wp.y !== 0)
           .sort((a: any, b: any) => a.t - b.t);
 
           if (waypoints.length > 0) {
@@ -442,7 +503,6 @@ function Replay3DContent() {
       setMaxTimeMs(finalMaxTime);
       
     } catch (err: any) {
-      console.error(err);
       setErrorMsg(err.message || "오류가 발생했습니다.");
     } finally {
       setIsLoading(false);
@@ -463,26 +523,27 @@ function Replay3DContent() {
 
   // 특정 X, Z 월드 좌표에서 하이트맵 고도 데이터를 기반으로 실제 지형 높이 Y를 계산하는 헬퍼 함수
   const getTerrainHeight = (threeX: number, threeZ: number): number => {
-    // 1) 3D 지형 메쉬와 동일한 256x256 이중 선형 보간(Bilinear Interpolation) 캐시가 있는 경우 우선 사용 (오차 0%)
+    // 1) 3D 지형 메쉬와 동일한 격자 기준의 이중 선형 보간 캐시가 있는 경우 우선 사용
     if (terrainGridRef.current) {
-      const grid = terrainGridRef.current;
+      const { grid, size } = terrainGridRef.current;
+      const maxIndex = size - 1;
       
       // threeX: -50 ~ 50, threeZ: -50 ~ 50 범위 매핑
       // PlaneGeometry의 Local X는 -50 ~ 50 이며, ix = 0 일 때 x = -50, ix = 255 일 때 x = 50
       const percentX = (threeX + THREE_MAP_SIZE / 2) / THREE_MAP_SIZE;
-      const ixFloat = percentX * 255;
+      const ixFloat = percentX * maxIndex;
       
       // 3D 지형의 X축 -90도 회전(Local Y -> World -Z)에 맞춘 세로축 Z축 반전 보정 해결
       const percentZ = (threeZ + THREE_MAP_SIZE / 2) / THREE_MAP_SIZE;
-      const iyFloat = percentZ * 255;
+      const iyFloat = percentZ * maxIndex;
 
       const ix = Math.floor(ixFloat);
       const iy = Math.floor(iyFloat);
 
-      const ix1 = Math.max(0, Math.min(255, ix));
-      const ix2 = Math.max(0, Math.min(255, ix + 1));
-      const iy1 = Math.max(0, Math.min(255, iy));
-      const iy2 = Math.max(0, Math.min(255, iy + 1));
+      const ix1 = Math.max(0, Math.min(maxIndex, ix));
+      const ix2 = Math.max(0, Math.min(maxIndex, ix + 1));
+      const iy1 = Math.max(0, Math.min(maxIndex, iy));
+      const iy2 = Math.max(0, Math.min(maxIndex, iy + 1));
 
       const fx = ixFloat - ix;
       const fy = iyFloat - iy;
@@ -594,13 +655,14 @@ function Replay3DContent() {
   useEffect(() => {
     if (!canvasRef.current || !containerRef.current) return;
 
+    const renderProfile = getRenderProfile();
     const width = containerRef.current.clientWidth;
     const height = containerRef.current.clientHeight;
 
     // [A] Scene 설정
     const scene = new THREE.Scene();
     scene.background = new THREE.Color("#05070c");
-    // 🎯 우주/전술 작전실 분위기의 안개(Fog) 추가
+    // 우주/전술 작전실 분위기의 안개(Fog) 추가
     scene.fog = new THREE.FogExp2("#05070c", 0.009);
     sceneRef.current = scene;
 
@@ -611,12 +673,12 @@ function Replay3DContent() {
     // [C] WebGLRenderer 설정
     const renderer = new THREE.WebGLRenderer({
       canvas: canvasRef.current,
-      antialias: true,
+      antialias: renderProfile.antialias,
       alpha: false
     });
     renderer.setSize(width, height);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    renderer.shadowMap.enabled = true;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, renderProfile.maxPixelRatio));
+    renderer.shadowMap.enabled = renderProfile.shadows;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     rendererRef.current = renderer;
 
@@ -635,7 +697,7 @@ function Replay3DContent() {
 
     const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
     dirLight.position.set(30, 80, 40);
-    dirLight.castShadow = true;
+    dirLight.castShadow = renderProfile.shadows;
     dirLight.shadow.mapSize.width = 1024;
     dirLight.shadow.mapSize.height = 1024;
     scene.add(dirLight);
@@ -657,8 +719,8 @@ function Replay3DContent() {
     }
     scene.add(gridHelper);
 
-    // [G] 🎯 지형 고도(Heightmap)를 반영한 입체 지형 메쉬 생성
-    const segments = 256;
+    // [G] 지형 고도(Heightmap)를 반영한 입체 지형 메쉬 생성
+    const segments = renderProfile.terrainSegments;
     const planeGeo = new THREE.PlaneGeometry(THREE_MAP_SIZE, THREE_MAP_SIZE, segments - 1, segments - 1);
 
     setIsMapLoading(true);
@@ -673,7 +735,7 @@ function Replay3DContent() {
         texture.image = canvas;
         // GPU가 지원하는 최대 이방성 필터링 적용 (경사 뷰에서 텍스처 선명도 유지)
         if (rendererRef.current) {
-          texture.anisotropy = rendererRef.current.capabilities.getMaxAnisotropy();
+          texture.anisotropy = Math.min(rendererRef.current.capabilities.getMaxAnisotropy(), renderProfile.textureAnisotropy);
         }
         texture.needsUpdate = true;
         setIsMapLoading(false);
@@ -740,10 +802,7 @@ function Replay3DContent() {
 
             const posAttr = planeGeo.attributes.position;
             const count = posAttr.count;
-            const config = MAP_ELEVATION_CONFIGS[selectedMap] || { minR: 0, maxR: 255, maxElevation: 800 };
-
-            // 256x256 격자 고도 데이터 생성
-            const grid: number[][] = Array.from({ length: 256 }, () => new Array(256).fill(0));
+            const grid: number[][] = Array.from({ length: segments }, () => new Array(segments).fill(0));
 
             // 전체 지형 중 최저 고도를 수집하기 위한 변수
             let minElevation = 0;
@@ -773,8 +832,8 @@ function Replay3DContent() {
                 posAttr.setZ(i, finalElevation);
               }
               
-              const ix = i % 256;
-              const iy = Math.floor(i / 256);
+              const ix = i % segments;
+              const iy = Math.floor(i / segments);
               grid[iy][ix] = finalElevation;
 
               // 최저 고도 최신화
@@ -782,24 +841,24 @@ function Replay3DContent() {
                 minElevation = finalElevation;
               }
             }
-            terrainGridRef.current = grid;
+            terrainGridRef.current = { grid, size: segments };
             posAttr.needsUpdate = true;
             planeGeo.computeVertexNormals();
 
             // 격자의 Y 위치를 지형의 최저 고도보다 아주 조금 더 아래(예: -0.05m)로 내려줍니다.
             // 이를 통해 격자가 지상의 특정 저지대(음수 고도 지역) 위로 뚫고 나오는 공중 붕뜸 현상을 종식합니다.
             gridHelper.position.y = minElevation - 0.05;
-          } catch (e) {
-            console.error("Failed to apply heightmap to 3D mesh vertices:", e);
+          } catch {
+            setIsMapLoading(false);
           }
         }
       };
       heightmapImg.onerror = () => {
-        console.warn(`Failed to load heightmap image for 3D terrain: ${selectedMap}`);
+        setIsMapLoading(false);
       };
     }
 
-    // 🎯 홀로그램 전술 보드판 테두리 네온 라인 추가
+    // 홀로그램 전술 보드판 테두리 네온 라인 추가
     const borderGeo = new THREE.BoxGeometry(THREE_MAP_SIZE, THREE_MAP_SIZE, 0.05);
     const edges = new THREE.EdgesGeometry(borderGeo);
     const borderMat = new THREE.LineBasicMaterial({
@@ -1118,7 +1177,7 @@ function Replay3DContent() {
       planeGroup.visible = false; // 기본값 숨김
       group.add(planeGroup);
 
-      // 1-4) 🎯 성능 과부하 및 Three.js 조명 제한 방지를 위해 포인트 라이트는 아군 스쿼드(isTeam)에만 부착
+      // 1-4) 성능 과부하 및 Three.js 조명 제한 방지를 위해 포인트 라이트는 아군 스쿼드(isTeam)에만 부착
       if (player.isTeam) {
         const pointLight = new THREE.PointLight(new THREE.Color(player.color), 4.5, 12, 0.45);
         pointLight.position.set(0, 0.8, 0);
@@ -1244,7 +1303,21 @@ function Replay3DContent() {
     window.addEventListener("resize", handleResize);
 
     // [K] 렌더 프레임 루프 기동
-    const animate = () => {
+    let lastRenderTime = 0;
+    const frameInterval = 1000 / renderProfile.targetFps;
+
+    const animate = (now: number) => {
+      animationFrameIdRef.current = requestAnimationFrame(animate);
+      if (now - lastRenderTime < frameInterval) {
+        return;
+      }
+      lastRenderTime = now;
+
+      if (isPlayingRef.current || renderStateVersionRef.current > 0) {
+        updateReplaySceneRef.current(currentTimeRef.current);
+        renderStateVersionRef.current = 0;
+      }
+
       controls.update();
 
       // 차량에 탄 캐릭터의 마커의 바퀴 회전 및 상하 바운싱 모션 부여 (SF 홀로그램 서스펜션 느낌)
@@ -1285,9 +1358,8 @@ function Replay3DContent() {
       });
 
       renderer.render(scene, camera);
-      animationFrameIdRef.current = requestAnimationFrame(animate);
     };
-    animate();
+    animationFrameIdRef.current = requestAnimationFrame(animate);
 
     // [L] 메모리 누수 방지 리소스 수소 폐기
     return () => {
@@ -1406,7 +1478,7 @@ function Replay3DContent() {
         }
       });
     };
-  }, [players, selectedMap, altitudeScale, showEnemies, carePackages]);
+  }, [players, selectedMap, altitudeScale, showEnemies, showTrajectories, carePackages]);
 
   // 5. 재생 시간 경과 틱 관리
   useEffect(() => {
@@ -1419,23 +1491,30 @@ function Replay3DContent() {
       const delta = now - lastTime;
       lastTime = now;
 
-      setCurrentTimeMs((prev) => {
-        const next = prev + delta * playbackSpeed;
-        if (next >= maxTimeMs) {
-          setIsPlaying(false);
-          return maxTimeMs;
-        }
-        return next;
-      });
+      const next = Math.min(currentTimeRef.current + delta * playbackSpeedRef.current, maxTimeRef.current);
+      currentTimeRef.current = next;
+
+      if (next >= maxTimeRef.current) {
+        setCurrentTimeMs(maxTimeRef.current);
+        setIsPlaying(false);
+        return;
+      }
+
+      if (now - lastUiTimeSyncRef.current >= UI_TIME_UPDATE_INTERVAL_MS) {
+        lastUiTimeSyncRef.current = now;
+        setCurrentTimeMs(next);
+      }
+
       animationId = requestAnimationFrame(tick);
     };
 
     animationId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(animationId);
-  }, [isPlaying, playbackSpeed, maxTimeMs]);
+  }, [isPlaying]);
 
   // 6. 시간에 따른 실시간 마커 및 자기장 위치 갱신 동기화
-  useEffect(() => {
+  const updateReplayScene = useCallback((frameTimeMs: number) => {
+    const currentTimeMs = frameTimeMs;
     // 1) 모든 플레이어의 현재 프레임 보간 상태 계산 및 vehicleId별 그룹핑
     const playerStates: Record<string, {
       position: THREE.Vector3;
@@ -1930,7 +2009,15 @@ function Replay3DContent() {
         controlsRef.current.update();
       }
     }
-  }, [currentTimeMs, players, zones, showBluezone, showTrajectories, altitudeScale, showEnemies, damageEvents, carePackages, trackingPlayer]);
+  }, [players, showBluezone, showTrajectories, altitudeScale, showEnemies, damageEvents, carePackages, trackingPlayer, hiddenPlayers, showNames, getInterpolatedZone, getTerrainHeight]);
+
+  useEffect(() => {
+    updateReplaySceneRef.current = updateReplayScene;
+  }, [updateReplayScene]);
+
+  useEffect(() => {
+    updateReplayScene(currentTimeMs);
+  }, [currentTimeMs, updateReplayScene]);
 
   // 재생 시간 포맷터 (분:초)
   const formatTime = (ms: number) => {
@@ -2085,6 +2172,17 @@ function Replay3DContent() {
           />
         )}
 
+        {!isLoading && players.length === 0 && (
+          <button
+            type="button"
+            onClick={() => setIsSidebarOpen(true)}
+            title="패널 열기"
+            className="absolute left-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-lg border border-[#30363d] bg-[#161b22]/95 text-[#8b949e] shadow-lg backdrop-blur transition-all hover:border-[#ff9f0a] hover:text-[#ff9f0a] md:hidden"
+          >
+            <PanelLeftOpen className="h-4 w-4" />
+          </button>
+        )}
+
         {/* 3. 실시간 킬로그 피드 */}
         {!isLoading && players.length > 0 && (
           <ReplayKillFeed
@@ -2107,6 +2205,36 @@ function Replay3DContent() {
                 </p>
                 <p className="text-[10px] text-[#8b949e] mt-1">PUBG API 데이터 처리</p>
               </div>
+            </div>
+          </div>
+        )}
+
+        {errorMsg && !isLoading && (
+          <div className="absolute inset-x-3 top-14 z-20 mx-auto max-w-sm rounded-lg border border-[#ff9f0a]/35 bg-[#161b22]/95 p-3 text-[#e6edf3] shadow-xl backdrop-blur sm:top-16">
+            <div className="flex items-start gap-2.5">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[#ff9f0a]" />
+              <div className="min-w-0 flex-1">
+                <p className="text-xs font-bold text-[#ff9f0a]">리플레이 데이터를 불러오지 못했습니다.</p>
+                <p className="mt-1 text-[11px] leading-relaxed text-[#8b949e]">{errorMsg}</p>
+              </div>
+            </div>
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                onClick={handleFetchTelemetry}
+                className="inline-flex min-h-9 flex-1 items-center justify-center gap-1.5 rounded-md border border-[#ff9f0a]/45 bg-[#ff9f0a]/10 px-3 text-[11px] font-bold text-[#ff9f0a] transition-colors hover:bg-[#ff9f0a] hover:text-[#0d1117]"
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                다시 시도
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsSidebarOpen(true)}
+                className="inline-flex min-h-9 items-center justify-center gap-1.5 rounded-md border border-[#30363d] bg-[#21262d] px-3 text-[11px] font-bold text-[#8b949e] transition-colors hover:border-[#ff9f0a] hover:text-[#ff9f0a]"
+              >
+                <PanelLeftOpen className="h-3.5 w-3.5" />
+                패널
+              </button>
             </div>
           </div>
         )}

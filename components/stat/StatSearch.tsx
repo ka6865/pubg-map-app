@@ -16,6 +16,7 @@ import type { UserProfile } from "@/types/map";
 import { useAuth } from "@/components/AuthProvider";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import type { MatchSummaryData } from "@/lib/pubg-analysis/matchSummary";
 
 const STATS_MOBILE_AD_UNIT = "DAN-tQGcqmddMC8tPpXA";
 const STATS_LEADERBOARD_AD_UNIT = "DAN-dPiCxgIGtXKjLPP3";
@@ -76,11 +77,13 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
     return () => clearInterval(interval);
   }, [result?.updatedAt]);
   const [error, setError] = useState("");
+  const [errorType, setErrorType] = useState<"not_found" | "rate_limit" | "server" | "">("");
   const [hasPrefilled, setHasPrefilled] = useState(false);
   const [suggestedUsers, setSuggestedUsers] = useState<{ nickname: string; platform: string }[]>([]);
   const [activeTab, setActiveTab] = useState<"overview" | "squad">("overview");
   const [matchTab, setMatchTab] = useState<"all" | "normal" | "ranked" | "tdm">("all");
   const [dynamicMatchModes, setDynamicMatchModes] = useState<Record<string, string>>({});
+  const [matchSummaries, setMatchSummaries] = useState<Record<string, MatchSummaryData>>({});
 
   useEffect(() => {
     if (result?.matchModes) {
@@ -89,6 +92,54 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
       setDynamicMatchModes({});
     }
   }, [result]);
+
+  useEffect(() => {
+    const matchIds = (result?.recentMatches || []).slice(0, 20);
+    if (!result?.nickname || !result?.platform || matchIds.length === 0) {
+      setMatchSummaries({});
+      return;
+    }
+
+    const controller = new AbortController();
+
+    const fetchSummaries = async () => {
+      try {
+        const response = await fetch("/api/pubg/matches-summary", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            matchIds,
+            nickname: result.nickname,
+            platform: result.platform
+          }),
+          signal: controller.signal
+        });
+
+        if (!response.ok) return;
+        const data = await response.json();
+        const summaries = data.summaries || {};
+        setMatchSummaries(summaries);
+
+        setDynamicMatchModes((prev) => {
+          let changed = false;
+          const next = { ...prev };
+          Object.entries(summaries).forEach(([matchId, summary]: [string, any]) => {
+            const mode = summary?.gameMode || summary?.matchInfo?.mode || "";
+            if (mode && next[matchId] !== mode) {
+              next[matchId] = mode;
+              changed = true;
+            }
+          });
+          return changed ? next : prev;
+        });
+      } catch (error: any) {
+        if (error.name !== "AbortError") setMatchSummaries({});
+      }
+    };
+
+    void fetchSummaries();
+    return () => controller.abort();
+  }, [result?.nickname, result?.platform, result?.recentMatches]);
 
   const handleModeDetected = useCallback((id: string, mode: string) => {
     setDynamicMatchModes((prev) => {
@@ -182,6 +233,7 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
       setResult(null);
     }
     setError("");
+    setErrorType("");
     setSuggestedUsers([]);
     setCooldown(true);
     setShowDropdown(false);
@@ -206,7 +258,16 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
         if (data?.suggestions) {
           setSuggestedUsers(data.suggestions);
         }
-        setError(data?.error || `서버 에러가 발생했습니다. (HTTP ${res.status})`);
+        if (res.status === 404 || data?.code === "PLAYER_NOT_FOUND") {
+          setErrorType("not_found");
+          setError(data?.error || "닉네임을 찾을 수 없습니다. 대소문자와 플랫폼을 확인해 올바르게 검색해 주세요.");
+        } else if (res.status === 429) {
+          setErrorType("rate_limit");
+          setError(data?.error || "PUBG API 호출 한도가 일시적으로 초과되었습니다. 약 1분 후 다시 시도해 주세요.");
+        } else {
+          setErrorType("server");
+          setError(data?.error || `전적 서버 응답이 지연되거나 실패했습니다. 잠시 후 다시 시도해 주세요. (HTTP ${res.status})`);
+        }
         trackEvent({
           name: "stats_searched",
           params: {
@@ -256,6 +317,7 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
       }
     } catch (err: any) {
       const isRateLimit = err.message?.includes("429") || err.message?.toLowerCase().includes("too many requests");
+      setErrorType(isRateLimit ? "rate_limit" : "server");
       setError(isRateLimit 
         ? "PUBG API 호출 한도가 일시적으로 초과되었습니다. 약 1분 후 다시 시도해 주세요."
         : err.message
@@ -290,6 +352,7 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
     // 실제로 다른 닉네임/플랫폼으로 바뀐 경우에만 결과 초기화
     if (nicknameChanged || platformChanged) {
       setError("");
+      setErrorType("");
       setResult(null);
     }
   }, [initialNickname, initialPlatform]);
@@ -342,8 +405,8 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
         const data = await res.json();
         // 현재 입력값과 결과가 일치하는지 확인 (Race Condition 방지)
         setSuggestions(data.suggestions || []);
-      } catch (err) {
-        console.error("[SUGGEST FETCH ERROR]", err);
+      } catch {
+        setSuggestions([]);
       } finally {
         setIsSuggesting(false);
       }
@@ -528,10 +591,29 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
       </div>
 
       {error && (
-        <div className="mb-5 p-4 rounded-xl text-center bg-red-500/10 border border-red-500/25 backdrop-blur-md shadow-lg shadow-red-950/20">
-          <div className="text-red-400 font-extrabold text-sm tracking-tight">{error}</div>
+        <div
+          className={`mb-5 rounded-xl border p-4 text-center backdrop-blur-md shadow-lg ${
+            errorType === "not_found"
+              ? "bg-amber-500/10 border-amber-500/25 shadow-amber-950/20"
+              : "bg-red-500/10 border-red-500/25 shadow-red-950/20"
+          }`}
+        >
+          <div className="mx-auto mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-black/25 border border-white/10">
+            <User size={18} className={errorType === "not_found" ? "text-amber-400" : "text-red-400"} />
+          </div>
+          <div className={`text-sm font-extrabold tracking-tight ${errorType === "not_found" ? "text-amber-300" : "text-red-400"}`}>
+            {errorType === "not_found" ? "플레이어를 찾을 수 없습니다" : "전적을 불러오지 못했습니다"}
+          </div>
+          <div className="mx-auto mt-1 max-w-xl text-xs leading-relaxed text-gray-400">
+            {error}
+          </div>
+          {errorType === "not_found" && (
+            <div className="mx-auto mt-3 max-w-xl rounded-lg border border-amber-500/15 bg-black/20 px-3 py-2 text-[11px] leading-relaxed text-amber-100/70">
+              PUBG 닉네임은 대소문자와 플랫폼이 다르면 검색되지 않을 수 있습니다. Steam/Kakao 선택과 닉네임 표기를 다시 확인해 주세요.
+            </div>
+          )}
           {suggestedUsers.length > 0 && (
-            <div className="mt-3 pt-3 border-t border-red-500/20">
+            <div className="mt-3 pt-3 border-t border-amber-500/20">
               <p className="text-xs text-gray-400 mb-2">혹시 이 플레이어를 찾으시나요?</p>
               <div className="flex justify-center gap-2 flex-wrap">
                 {suggestedUsers.map((user) => (
@@ -875,6 +957,7 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
                           platform={result.platform}
                           isMobile={isMobile}
                           index={index}
+                          initialMatchData={matchSummaries[matchId]}
                           onNicknameClick={(clickedName) => {
                             setNickname(clickedName);
                             handleSearch(selectedSeason, clickedName, platform);

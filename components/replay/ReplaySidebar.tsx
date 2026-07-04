@@ -1,5 +1,5 @@
 import React from "react";
-import { Compass, RefreshCw, Users, Crosshair, Loader2, Eye, EyeOff } from "lucide-react";
+import { Compass, RefreshCw, Users, Crosshair, Loader2, Eye, EyeOff, Radio, Skull } from "lucide-react";
 import { PlayerTrajectory } from "@/types/replay3d";
 
 interface ReplaySidebarProps {
@@ -81,8 +81,9 @@ export default function ReplaySidebar({
           <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: isHidden ? "#484f58" : p.color }} />
           <span className="truncate max-w-[110px] font-bold">{p.name}</span>
           {isTracking && (
-            <span className="text-[8px] bg-[#ff9f0a] text-[#0d1117] font-bold px-1 rounded animate-pulse shrink-0 scale-90">
-              🎥 REC
+            <span className="inline-flex items-center gap-0.5 text-[8px] bg-[#ff9f0a] text-[#0d1117] font-bold px-1 rounded animate-pulse shrink-0 scale-90">
+              <Radio className="w-2 h-2" />
+              REC
             </span>
           )}
         </div>
@@ -90,7 +91,7 @@ export default function ReplaySidebar({
           onClick={() => togglePlayer(p.name)}
           className="text-[9px] shrink-0 text-[#8b949e] hover:text-[#ff9f0a] ml-2 px-1 py-0.5 hover:bg-[#21262d] rounded transition-all cursor-pointer"
         >
-          {isDead ? "💀" : isHidden ? "숨김" : "표시"}
+          {isDead ? <Skull className="w-3 h-3" /> : isHidden ? "숨김" : "표시"}
         </button>
       </div>
     );
@@ -104,7 +105,7 @@ export default function ReplaySidebar({
 
   return (
     <div
-      className={`fixed md:relative top-0 bottom-0 left-0 z-40 w-72 bg-[#161b22]/98 backdrop-blur border-r border-[#30363d] flex flex-col p-4 gap-4 overflow-y-auto no-scrollbar shrink-0 select-none transition-transform duration-300 md:transform-none ${
+      className={`fixed md:relative top-0 bottom-0 left-0 z-40 w-[min(18rem,86vw)] bg-[#161b22]/98 backdrop-blur border-r border-[#30363d] flex flex-col p-4 gap-4 overflow-y-auto no-scrollbar shrink-0 select-none transition-transform duration-300 md:w-72 md:transform-none ${
         isOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
       }`}
       style={{ height: "100%" }}
