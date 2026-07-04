@@ -15,6 +15,8 @@ const Footer = () => {
         paddingTop: "32px",
         paddingBottom: "24px",
         marginTop: "auto",
+        position: "relative",
+        zIndex: 60,
       }}
     >
       <div

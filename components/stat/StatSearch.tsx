@@ -4,6 +4,7 @@ import { trackEvent } from "@/lib/analytics";
 
 import React, { useState, useEffect, useId, useCallback, useRef } from "react";
 import { MatchCard } from "./MatchCard";
+import AdSenseBanner from "../ads/AdSenseBanner";
 import { StatSummaryPanel } from "./StatSummaryPanel";
 import { RecentAISummary } from "./RecentAISummary";
 import SquadAnalysisPanel from "./SquadAnalysisPanel";
@@ -950,21 +951,32 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
                   return filteredMatches.length > 0 ? (
                     <div className="flex flex-col gap-1.5">
                       {filteredMatches.map((matchId: string, index: number) => (
-                        <MatchCard
-                          key={matchId}
-                          matchId={matchId}
-                          nickname={result.nickname}
-                          platform={result.platform}
-                          isMobile={isMobile}
-                          index={index}
-                          initialMatchData={matchSummaries[matchId]}
-                          onNicknameClick={(clickedName) => {
-                            setNickname(clickedName);
-                            handleSearch(selectedSeason, clickedName, platform);
-                            window.scrollTo({ top: 0, behavior: "smooth" });
-                          }}
-                          onModeDetected={handleModeDetected}
-                        />
+                        <React.Fragment key={matchId}>
+                          <MatchCard
+                            matchId={matchId}
+                            nickname={result.nickname}
+                            platform={result.platform}
+                            isMobile={isMobile}
+                            index={index}
+                            initialMatchData={matchSummaries[matchId]}
+                            onNicknameClick={(clickedName) => {
+                              setNickname(clickedName);
+                              handleSearch(selectedSeason, clickedName, platform);
+                              window.scrollTo({ top: 0, behavior: "smooth" });
+                            }}
+                            onModeDetected={handleModeDetected}
+                          />
+                          {(index === 4 || index === 14) && (
+                            <div className="my-2 bg-[#1a1a1a] rounded-3xl p-4 border border-white/5 overflow-hidden">
+                              <AdSenseBanner
+                                client="ca-pub-3993032200487955"
+                                slot="4661728917"
+                                format="fluid"
+                                layoutKey="-fb+5w+4e-db+86"
+                              />
+                            </div>
+                          )}
+                        </React.Fragment>
                       ))}
                     </div>
                   ) : (
@@ -985,6 +997,15 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
                 adUnit={STATS_DESKTOP_AD_UNIT}
                 adWidth={160}
                 adHeight={600}
+              />
+            </div>
+          </aside>
+
+          <aside className="hidden 2xl:block w-[160px] absolute right-[calc(100%+24px)] top-0 h-full" aria-label="광고">
+            <div className="sticky top-16">
+              <AdSenseBanner
+                client="ca-pub-3993032200487955"
+                slot="7728921550"
               />
             </div>
           </aside>
