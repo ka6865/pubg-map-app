@@ -843,6 +843,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, in
         }
       }
     } catch {
+      fullMatchFetchRef.current = false;
     } finally {
       setLoading(false);
     }

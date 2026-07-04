@@ -492,19 +492,28 @@ function BattleContent() {
       setSuggestions1([]);
       return;
     }
+    const controller = new AbortController();
+    const query = nick1;
     const timer = setTimeout(async () => {
       setIsSuggesting1(true);
       try {
-        const res = await fetch(`/api/pubg/suggest?q=${encodeURIComponent(nick1)}`);
+        const res = await fetch(`/api/pubg/suggest?q=${encodeURIComponent(query)}`, {
+          signal: controller.signal
+        });
         const data = await res.json();
         setSuggestions1(data.suggestions || []);
-      } catch {
+      } catch (error: any) {
+        if (error.name === "AbortError") return;
         setSuggestions1([]);
       } finally {
+        if (controller.signal.aborted) return;
         setIsSuggesting1(false);
       }
     }, 300);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [nick1]);
 
   // [V54.7] 자동완성 Fetch (Debounced) - Nick2
@@ -513,19 +522,28 @@ function BattleContent() {
       setSuggestions2([]);
       return;
     }
+    const controller = new AbortController();
+    const query = nick2;
     const timer = setTimeout(async () => {
       setIsSuggesting2(true);
       try {
-        const res = await fetch(`/api/pubg/suggest?q=${encodeURIComponent(nick2)}`);
+        const res = await fetch(`/api/pubg/suggest?q=${encodeURIComponent(query)}`, {
+          signal: controller.signal
+        });
         const data = await res.json();
         setSuggestions2(data.suggestions || []);
-      } catch {
+      } catch (error: any) {
+        if (error.name === "AbortError") return;
         setSuggestions2([]);
       } finally {
+        if (controller.signal.aborted) return;
         setIsSuggesting2(false);
       }
     }, 300);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [nick2]);
 
   return (
