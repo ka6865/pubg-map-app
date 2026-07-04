@@ -62,6 +62,7 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
 
   // 검색 진행 중 여부 ref - 이중 호출 방지 가드
   const isSearchingRef = useRef(false);
+  const cooldownTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // [V61.0] 1초마다 최근 업데이트 경과 시간을 실시간으로 갱신하고 쿨다운 상태를 판별하는 타이머
   useEffect(() => {
@@ -334,9 +335,16 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
     } finally {
       setLoading(false);
       isSearchingRef.current = false;
-      setTimeout(() => setCooldown(false), 3000);
+      if (cooldownTimeoutRef.current) clearTimeout(cooldownTimeoutRef.current);
+      cooldownTimeoutRef.current = setTimeout(() => setCooldown(false), 3000);
     }
   }, [nickname, platform, cooldown]);
+
+  useEffect(() => {
+    return () => {
+      if (cooldownTimeoutRef.current) clearTimeout(cooldownTimeoutRef.current);
+    };
+  }, []);
 
   // [V62.0] initialNickname/Platform props 변경 감지 - result를 의존성에서 제거하여 루프 차단
   // ref로 이전 값을 추적하고, 실제로 다른 닉네임으로 변경됐을 때만 결과를 초기화
@@ -394,21 +402,30 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
     // 이미 결과가 있거나 로딩 중이면 추천을 띄우지 않음 (선택 사항)
     // if (result || loading) return;
 
+    const controller = new AbortController();
+    const query = nickname;
+
     const timer = setTimeout(async () => {
       setIsSuggesting(true);
       try {
-        const res = await fetch(`/api/pubg/suggest?q=${encodeURIComponent(nickname)}`);
+        const res = await fetch(`/api/pubg/suggest?q=${encodeURIComponent(query)}`, {
+          signal: controller.signal
+        });
         const data = await res.json();
-        // 현재 입력값과 결과가 일치하는지 확인 (Race Condition 방지)
         setSuggestions(data.suggestions || []);
-      } catch {
+      } catch (error: any) {
+        if (error.name === "AbortError") return;
         setSuggestions([]);
       } finally {
+        if (controller.signal.aborted) return;
         setIsSuggesting(false);
       }
     }, 300);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [nickname]);
 
   const toggleFavorite = (name: string, e: React.MouseEvent) => {
