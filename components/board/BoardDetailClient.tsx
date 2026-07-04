@@ -508,7 +508,7 @@ export default function BoardDetailClient({
   const postImageUrl = toBoardImageProxyUrl(post.image_url);
 
   return (
-    <div className="w-full flex justify-center pb-20 overflow-x-hidden">
+    <div className="w-full flex justify-center pb-20">
       <div className="w-full max-w-[900px] px-4 relative">
         {/* 본문 영역 */}
         <div className="w-full min-w-0">
@@ -845,7 +845,7 @@ export default function BoardDetailClient({
       )}
       {/* 데스크톱 좌측 사이드바 광고 (구글 애드센스) — xl 이상에서만 표시, 본문 좌측 여백에 둥둥 뜨게 배치 */}
       <aside className="hidden xl:block w-[160px] absolute right-[calc(100%+24px)] top-0 h-full">
-        <div className="sticky top-16">
+        <div className="sticky top-20">
           <AdSenseBanner
             client="ca-pub-3993032200487955"
             slot="7728921550"
@@ -855,7 +855,7 @@ export default function BoardDetailClient({
 
       {/* 데스크톱 사이드바 광고 — xl 이상에서만 표시, 본문 정중앙 정렬 유지하며 우측 여백에 둥둥 뜨게 배치 */}
       <aside className="hidden xl:block w-[160px] absolute left-[calc(100%+24px)] top-0 h-full">
-        <div className="sticky top-16">
+        <div className="sticky top-20">
           <AdfitBanner
             adUnit="DAN-RjyosR2uf8eSsVIC"
             adWidth={160}
