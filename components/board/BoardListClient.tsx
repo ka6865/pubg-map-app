@@ -43,6 +43,30 @@ export default function BoardListClient({
   const [searchInput, setSearchInput] = useState(currentSearchQuery);
   const [searchOption, setSearchOption] = useState(currentSearchOption);
 
+  // 사이드바 배너 고정/절대 위치 스크롤 스위칭 로직 (푸터 침범 방지)
+  const [isAdAbsolute, setIsAdAbsolute] = useState(false);
+
+  useEffect(() => {
+    const handleAdScroll = () => {
+      const footerElement = document.querySelector("footer");
+      if (!footerElement) return;
+
+      const footerRect = footerElement.getBoundingClientRect();
+      
+      // 광고 배너 높이 600px + 상단 여백 80px = 680px
+      // 푸터 상단 경계선이 680px 이하로 좁혀지면 absolute로 전환하여 푸터 가림 방지
+      if (footerRect.top <= 700) {
+        setIsAdAbsolute(true);
+      } else {
+        setIsAdAbsolute(false);
+      }
+    };
+
+    window.addEventListener("scroll", handleAdScroll, { passive: true });
+    handleAdScroll();
+    return () => window.removeEventListener("scroll", handleAdScroll);
+  }, []);
+
   useEffect(() => {
     if (!user) {
       setIsAdmin(false);
@@ -228,22 +252,48 @@ export default function BoardListClient({
           </div>
         </div>
 
-        {/* 데스크톱 좌측 사이드바 광고 (구글 애드센스) — xl 이상에서만 표시 */}
-        <aside className="hidden xl:block w-[160px] fixed top-20 left-1/2 -translate-x-[630px] z-50">
-          <AdSenseBanner
-            client="ca-pub-3993032200487955"
-            slot="7728921550"
-          />
-        </aside>
-
         {/* 데스크톱 사이드바 광고 — xl 이상에서만 표시 */}
-        <aside className="hidden xl:block w-[160px] fixed top-20 right-1/2 translate-x-[630px] z-50">
-          <AdfitBanner
-            adUnit="DAN-RjyosR2uf8eSsVIC"
-            adWidth={160}
-            adHeight={600}
-          />
-        </aside>
+        {isAdAbsolute ? (
+          <>
+            <aside className="hidden xl:block w-[160px] absolute bottom-0 right-[calc(100%+20px)]">
+              <div className="h-[600px] w-[160px]">
+                <AdSenseBanner
+                  client="ca-pub-3993032200487955"
+                  slot="7728921550"
+                />
+              </div>
+            </aside>
+            <aside className="hidden xl:block w-[160px] absolute bottom-0 left-[calc(100%+20px)]">
+              <div className="h-[600px] w-[160px]">
+                <AdfitBanner
+                  adUnit="DAN-RjyosR2uf8eSsVIC"
+                  adWidth={160}
+                  adHeight={600}
+                />
+              </div>
+            </aside>
+          </>
+        ) : (
+          <>
+            <aside className="hidden xl:block w-[160px] fixed top-20 left-1/2 -translate-x-[630px] z-50">
+              <div className="h-[600px] w-[160px]">
+                <AdSenseBanner
+                  client="ca-pub-3993032200487955"
+                  slot="7728921550"
+                />
+              </div>
+            </aside>
+            <aside className="hidden xl:block w-[160px] fixed top-20 right-1/2 translate-x-[630px] z-50">
+              <div className="h-[600px] w-[160px]">
+                <AdfitBanner
+                  adUnit="DAN-RjyosR2uf8eSsVIC"
+                  adWidth={160}
+                  adHeight={600}
+                />
+              </div>
+            </aside>
+          </>
+        )}
       </div>
     </div>
   );

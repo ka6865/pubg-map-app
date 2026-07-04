@@ -28,6 +28,7 @@ import { getCraftableItems } from "../actions/crates";
 import { toast } from "sonner";
 import ConfirmModal from "@/components/common/ConfirmModal";
 import AdfitBanner from "@/components/ads/AdfitBanner";
+import AdSenseBanner from "@/components/ads/AdSenseBanner";
 
 interface CratesClientProps {
   initialCrates: CrateTemplate[];
@@ -209,6 +210,30 @@ export default function CratesClient({ initialCrates, exchangeRate = 1500 }: Cra
 
   const activeCrate = initialCrates.find((c) => c.id === selectedCrateId);
 
+  // 사이드바 배너 고정/절대 위치 스크롤 스위칭 로직 (푸터 침범 방지)
+  const [isAdAbsolute, setIsAdAbsolute] = useState(false);
+
+  useEffect(() => {
+    const handleAdScroll = () => {
+      const footerElement = document.querySelector("footer");
+      if (!footerElement) return;
+
+      const footerRect = footerElement.getBoundingClientRect();
+      
+      // 광고 배너 높이 600px + 상단 여백 80px = 680px
+      // 푸터 상단 경계선이 680px 이하로 좁혀지면 absolute로 전환하여 푸터 가림 방지
+      if (footerRect.top <= 700) {
+        setIsAdAbsolute(true);
+      } else {
+        setIsAdAbsolute(false);
+      }
+    };
+
+    window.addEventListener("scroll", handleAdScroll, { passive: true });
+    handleAdScroll();
+    return () => window.removeEventListener("scroll", handleAdScroll);
+  }, []);
+
   // ----------------------------------------------------
   // D-Day 실시간 타이머 구현
   // ----------------------------------------------------
@@ -351,7 +376,7 @@ export default function CratesClient({ initialCrates, exchangeRate = 1500 }: Cra
         }
       `}</style>
 
-      <div className="max-w-7xl mx-auto space-y-6 relative">
+      <div className="w-full max-w-[960px] 2xl:max-w-7xl mx-auto space-y-6 relative">
 
         {/* BETA 서비스 공지 배너 (접이식 details/summary 적용) */}
         <details className="bg-slate-900/60 border-2 border-amber-500/20 rounded-3xl p-5 text-slate-300 text-xs sm:text-sm backdrop-blur-[12px] shadow-2xl relative overflow-hidden group transition-all duration-300">
@@ -1164,8 +1189,8 @@ export default function CratesClient({ initialCrates, exchangeRate = 1500 }: Cra
 
         </div>
 
-        {/* 모바일/일반 화면 하단 광고 — 2xl 미만에서만 표시, 320x100 가로 배너 */}
-        <div className="my-6 flex justify-center 2xl:hidden">
+        {/* 모바일/일반 화면 하단 광고 — xl 미만에서만 표시, 320x100 가로 배너 */}
+        <div className="my-6 flex justify-center xl:hidden">
           <AdfitBanner
             adUnit="DAN-tQGcqmddMC8tPpXA"
             adWidth={320}
@@ -1173,16 +1198,48 @@ export default function CratesClient({ initialCrates, exchangeRate = 1500 }: Cra
           />
         </div>
 
-        {/* 데스크톱 사이드바 광고 — 2xl 이상에서만 표시, 본문 정중앙 정렬 유지하며 우측 여백에 둥둥 뜨게 배치 */}
-        <aside className="hidden 2xl:block w-[160px] absolute left-[calc(100%+24px)] top-0 h-full">
-          <div className="sticky top-16">
-            <AdfitBanner
-              adUnit="DAN-RjyosR2uf8eSsVIC"
-              adWidth={160}
-              adHeight={600}
-            />
-          </div>
-        </aside>
+        {/* 데스크톱 사이드바 광고 — xl 이상에서만 표시 */}
+        {isAdAbsolute ? (
+          <>
+            <aside className="hidden xl:block w-[160px] absolute bottom-0 left-[calc(100%+8px)] 2xl:left-[calc(100%+24px)]">
+              <div className="h-[600px] w-[160px]">
+                <AdfitBanner
+                  adUnit="DAN-RjyosR2uf8eSsVIC"
+                  adWidth={160}
+                  adHeight={600}
+                />
+              </div>
+            </aside>
+            <aside className="hidden xl:block w-[160px] absolute bottom-0 right-[calc(100%+8px)] 2xl:right-[calc(100%+24px)]">
+              <div className="h-[600px] w-[160px]">
+                <AdSenseBanner
+                  client="ca-pub-3993032200487955"
+                  slot="1650598365"
+                />
+              </div>
+            </aside>
+          </>
+        ) : (
+          <>
+            <aside className="hidden xl:block w-[160px] fixed top-20 right-1/2 translate-x-[648px] 2xl:translate-x-[824px] z-50">
+              <div className="h-[600px] w-[160px]">
+                <AdfitBanner
+                  adUnit="DAN-RjyosR2uf8eSsVIC"
+                  adWidth={160}
+                  adHeight={600}
+                />
+              </div>
+            </aside>
+            <aside className="hidden xl:block w-[160px] fixed top-20 left-1/2 -translate-x-[648px] 2xl:-translate-x-[824px] z-50">
+              <div className="h-[600px] w-[160px]">
+                <AdSenseBanner
+                  client="ca-pub-3993032200487955"
+                  slot="1650598365"
+                />
+              </div>
+            </aside>
+          </>
+        )}
 
       </div>
 
