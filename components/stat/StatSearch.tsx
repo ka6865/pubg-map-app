@@ -657,7 +657,7 @@ export default function StatSearch({ initialPlatform, initialNickname }: StatSea
       )}
 
       {result && (
-        <div className="relative" style={{ display: "flex", flexDirection: "column", gap: "30px" }}>
+        <div className="relative w-full" style={{ display: "flex", flexDirection: "column", gap: "30px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", borderBottom: "2px solid #333", paddingBottom: "15px", flexWrap: "wrap", gap: "15px" }}>
             <div className="flex flex-col gap-3">
               {/* 1행: 플랫폼/닉네임 + 클랜 배지 + 제재 확인 배지 */}
