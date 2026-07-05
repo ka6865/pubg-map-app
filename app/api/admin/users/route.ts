@@ -39,9 +39,23 @@ export async function GET() {
 
     if (pErr) throw pErr;
 
-    // B. Auth Users 전체 정보 조회
-    const { data: { users }, error: uErr } = await adminContext.supabaseAdmin.auth.admin.listUsers();
-    if (uErr) throw uErr;
+    // B. Auth Users 전체 정보 조회 (페이지네이션 제한 해결)
+    const users: any[] = [];
+    let page = 1;
+    const perPage = 1000;
+    while (true) {
+      const { data, error: uErr } = await adminContext.supabaseAdmin.auth.admin.listUsers({
+        page,
+        perPage,
+      });
+      if (uErr) throw uErr;
+      
+      const pageUsers = data?.users || [];
+      users.push(...pageUsers);
+      
+      if (pageUsers.length < perPage) break;
+      page++;
+    }
 
     // C. 두 정보 결합 (auth.users 기준으로 병합하여 프로필 누락 유저 식별)
     const authUserIds = new Set(users.map(authUser => authUser.id));

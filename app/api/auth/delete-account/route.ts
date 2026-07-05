@@ -1,24 +1,13 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { createServerClient } from '@supabase/ssr';
+import { headers } from 'next/headers';
 
 // Vercel envs 클린 유틸리티 (서버 전용)
 const clean = (val: string | undefined) => (val || '').replace(/['";\s]+/g, '').trim();
 
-export async function POST(req: NextRequest) {
+export async function POST() {
   try {
-    // 1. 현재 사용자 세션 확인
-    const supabase = await createClient();
-    const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: '인증되지 않았거나 잘못된 세션입니다. 다시 로그인해 주세요.' },
-        { status: 401 }
-      );
-    }
-
-    // 2. 어드민(Service Role) 권한을 가진 Supabase 클라이언트 생성
     const supabaseUrl = clean(process.env.NEXT_PUBLIC_SUPABASE_URL);
     const serviceRoleKey = clean(process.env.SUPABASE_SERVICE_ROLE_KEY);
 
@@ -40,6 +29,32 @@ export async function POST(req: NextRequest) {
       }
     );
 
+    // 1. 현재 사용자 세션 확인: 웹 쿠키 세션과 모바일 Bearer 토큰을 모두 지원합니다.
+    const headerStore = await headers();
+    const bearerToken = getBearerToken(headerStore.get('authorization'));
+    let user: { id: string } | null = null;
+    let supabase: Awaited<ReturnType<typeof createClient>> | null = null;
+
+    if (bearerToken) {
+      const { data, error } = await adminClient.auth.getUser(bearerToken);
+      if (!error && data.user) {
+        user = data.user;
+      }
+    } else {
+      supabase = await createClient();
+      const { data, error } = await supabase.auth.getUser();
+      if (!error && data.user) {
+        user = data.user;
+      }
+    }
+
+    if (!user) {
+      return NextResponse.json(
+        { error: '인증되지 않았거나 잘못된 세션입니다. 다시 로그인해 주세요.' },
+        { status: 401 }
+      );
+    }
+
     // 3. auth.users 테이블에서 사용자 삭제
     // ON DELETE CASCADE 제약조건에 의해 public.profiles는 자동 삭제되며,
     // posts와 comments 테이블의 user_id는 ON DELETE SET NULL에 의해 익명화 처리됩니다.
@@ -53,7 +68,9 @@ export async function POST(req: NextRequest) {
     }
 
     // 4. 로컬 세션 쿠키 정리 (Sign Out 호출)
-    await supabase.auth.signOut();
+    if (supabase) {
+      await supabase.auth.signOut();
+    }
 
     return NextResponse.json(
       { success: true, message: '회원탈퇴가 성공적으로 완료되었습니다. 데이터가 익명화 처리되었습니다.' },
@@ -65,4 +82,10 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+function getBearerToken(authorization: string | null) {
+  if (!authorization) return null;
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  return match?.[1]?.trim() || null;
 }
