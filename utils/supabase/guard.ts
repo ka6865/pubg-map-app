@@ -1,5 +1,5 @@
 import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
@@ -35,6 +35,23 @@ export type AuthGuardResult = AuthGuardSuccess | AuthGuardFailure;
 export async function withAuthGuard(): Promise<AuthGuardResult> {
   try {
     const cookieStore = await cookies();
+    const headerStore = await headers();
+    const bearerToken = getBearerToken(headerStore.get("authorization"));
+    const supabaseAdmin = createAdminClient<any>(
+      clean(process.env.NEXT_PUBLIC_SUPABASE_URL),
+      clean(process.env.SUPABASE_SERVICE_ROLE_KEY)
+    );
+
+    if (bearerToken) {
+      const {
+        data: { user },
+        error: bearerError,
+      } = await supabaseAdmin.auth.getUser(bearerToken);
+
+      if (!bearerError && user) {
+        return { user, supabaseAdmin };
+      }
+    }
 
     // 1. 쿠키 기반 Supabase SSR 클라이언트로 JWT 세션 복원
     const supabase = createServerClient(
@@ -73,12 +90,6 @@ export async function withAuthGuard(): Promise<AuthGuardResult> {
       };
     }
 
-    // 3. Service Role 클라이언트 생성 (DB 쓰기용, RLS 우회)
-    const supabaseAdmin = createAdminClient<any>(
-      clean(process.env.NEXT_PUBLIC_SUPABASE_URL),
-      clean(process.env.SUPABASE_SERVICE_ROLE_KEY)
-    );
-
     return { user, supabaseAdmin };
   } catch (err) {
     console.error("[withAuthGuard] 인증 처리 중 예외:", err);
@@ -89,6 +100,12 @@ export async function withAuthGuard(): Promise<AuthGuardResult> {
       ),
     };
   }
+}
+
+function getBearerToken(authorization: string | null) {
+  if (!authorization) return null;
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  return match?.[1]?.trim() || null;
 }
 
 // 비회원도 통과 가능한 선택적 인증 가드
