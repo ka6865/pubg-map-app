@@ -8,6 +8,7 @@ import imageCompression from "browser-image-compression";
 import { toast } from "sonner";
 import { ClanInfo } from "@/types/board"; // 🌟 추가
 import ConfirmModal from "@/components/common/ConfirmModal";
+import { getUnusedUploadedBoardImagePaths } from "@/lib/board-image-cleanup";
 
 const ReactQuill = dynamic(() => import("react-quill-new"), {
   ssr: false,
@@ -459,8 +460,10 @@ export default function BoardWrite({
     if (isLoading || isUploadingImage) return;
 
     try {
-      const unusedImages = uploadedImagesRef.current.filter(
-        (fileName) => !newContent.includes(fileName)
+      const unusedImages = getUnusedUploadedBoardImagePaths(
+        uploadedImagesRef.current,
+        newContent,
+        thumbnailUrl
       );
 
       if (unusedImages.length > 0) {
