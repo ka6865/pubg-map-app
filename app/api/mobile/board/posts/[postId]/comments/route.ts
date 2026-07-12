@@ -47,6 +47,23 @@ export async function POST(
     .maybeSingle();
   if (!post) return jsonError("게시글을 찾을 수 없습니다.", 404);
 
+  if (parentId !== null) {
+    if (!Number.isFinite(parentId)) {
+      return jsonError("부모 댓글 ID가 올바르지 않습니다.", 400);
+    }
+
+    const { data: parentComment } = await auth.supabaseAdmin
+      .from("comments")
+      .select("id")
+      .eq("id", parentId)
+      .eq("post_id", id)
+      .maybeSingle();
+
+    if (!parentComment) {
+      return jsonError("부모 댓글을 찾을 수 없습니다.", 400);
+    }
+  }
+
   const clientIp = extractClientIp(request);
   const isBlocked = await checkIpBlacklist(clientIp, auth.supabaseAdmin);
   if (isBlocked) return jsonError("차단된 IP입니다. 관리자에게 문의해주세요.", 403);

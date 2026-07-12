@@ -10,6 +10,12 @@ const supabaseUrl = clean(process.env.NEXT_PUBLIC_SUPABASE_URL);
 const supabaseServiceKey = clean(process.env.SUPABASE_SERVICE_ROLE_KEY);
 const validCategories = new Set(["free", "strategy", "question", "notice", "clan", "자유", "공략", "질문", "공지", "클랜"]);
 
+type BoardPostCursor = {
+  isNotice: boolean;
+  createdAt: string;
+  id: number;
+};
+
 function adminClient() {
   return createAdminClient<any>(supabaseUrl, supabaseServiceKey);
 }
@@ -24,6 +30,53 @@ function originOf(request: Request) {
 
 function hasImagePayload(content: string) {
   return /<img\b|data:image\/|!\[[^\]]*]\([^)]*\)/i.test(content);
+}
+
+function encodeCursor(row: any) {
+  const cursor: BoardPostCursor = {
+    isNotice: Boolean(row.is_notice),
+    createdAt: row.created_at,
+    id: Number(row.id),
+  };
+  return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
+}
+
+function decodeCursor(cursor: string | null): BoardPostCursor | null {
+  if (!cursor) return null;
+
+  try {
+    const parsed = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
+    if (
+      typeof parsed?.isNotice === "boolean" &&
+      typeof parsed?.createdAt === "string" &&
+      Number.isFinite(Number(parsed?.id))
+    ) {
+      return {
+        isNotice: parsed.isNotice,
+        createdAt: parsed.createdAt,
+        id: Number(parsed.id),
+      };
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
+function applyCursor(query: any, rawCursor: string | null) {
+  const cursor = decodeCursor(rawCursor);
+  if (!rawCursor) return query;
+  if (!cursor) return query.lt("created_at", rawCursor);
+
+  const sameNoticeOlderRows = `and(is_notice.eq.${cursor.isNotice},created_at.lt.${cursor.createdAt})`;
+  const sameNoticeSameTimeOlderRows = `and(is_notice.eq.${cursor.isNotice},created_at.eq.${cursor.createdAt},id.lt.${cursor.id})`;
+
+  if (cursor.isNotice) {
+    return query.or(`${sameNoticeOlderRows},${sameNoticeSameTimeOlderRows},is_notice.eq.false`);
+  }
+
+  return query.or(`${sameNoticeOlderRows},${sameNoticeSameTimeOlderRows}`);
 }
 
 function authorName(row: any) {
@@ -65,14 +118,16 @@ export async function GET(request: Request) {
     .eq("status", "published")
     .order("is_notice", { ascending: false })
     .order("created_at", { ascending: false })
-    .limit(limit + 1);
+    .order("id", { ascending: false });
 
-  if (cursor) query = query.lt("created_at", cursor);
+  query = applyCursor(query, cursor);
   if (category && category !== "all") query = query.eq("category", category);
   if (queryText) {
     const safeQuery = queryText.replace(/[%_]/g, "");
     if (safeQuery) query = query.or(`title.ilike.%${safeQuery}%,content.ilike.%${safeQuery}%`);
   }
+
+  query = query.limit(limit + 1);
 
   const { data, error } = await query;
   if (error) return jsonError("게시글 목록을 불러오지 못했습니다.", 500);
@@ -84,7 +139,7 @@ export async function GET(request: Request) {
   return NextResponse.json(
     {
       items,
-      nextCursor: hasMore ? rows[limit - 1]?.created_at ?? null : null,
+      nextCursor: hasMore ? encodeCursor(rows[limit - 1]) : null,
       hasMore,
     },
     {

@@ -2,6 +2,9 @@ import { NextResponse } from "next/server";
 import { createClient as createSupabaseAdminClient } from "@supabase/supabase-js";
 import { createClient } from "@/utils/supabase/server";
 
+const USERS_PAGE_SIZE = 1000;
+const PROFILES_PAGE_SIZE = 1000;
+
 // 관리자 권한 검증 및 Supabase Admin 클라이언트 반환
 async function verifyAdmin() {
   const supabaseServer = await createClient();
@@ -24,6 +27,49 @@ async function verifyAdmin() {
   return null;
 }
 
+async function listAllAuthUsers(supabaseAdmin: any) {
+  const users: any[] = [];
+  let page = 1;
+
+  while (true) {
+    const { data, error } = await supabaseAdmin.auth.admin.listUsers({
+      page,
+      perPage: USERS_PAGE_SIZE,
+    });
+    if (error) throw error;
+
+    const pageUsers = data?.users || [];
+    users.push(...pageUsers);
+
+    if (pageUsers.length < USERS_PAGE_SIZE) break;
+    page++;
+  }
+
+  return users;
+}
+
+async function listAllProfiles(supabaseAdmin: any) {
+  const profiles: any[] = [];
+  let from = 0;
+
+  while (true) {
+    const to = from + PROFILES_PAGE_SIZE - 1;
+    const { data, error } = await supabaseAdmin
+      .from("profiles")
+      .select("*")
+      .range(from, to);
+    if (error) throw error;
+
+    const pageProfiles = data || [];
+    profiles.push(...pageProfiles);
+
+    if (pageProfiles.length < PROFILES_PAGE_SIZE) break;
+    from += PROFILES_PAGE_SIZE;
+  }
+
+  return profiles;
+}
+
 // 1. GET: auth.users 기준으로 profiles 테이블 정보와 병합하여 전체 목록 반환 (누락 식별 플래그 포함)
 export async function GET() {
   const adminContext = await verifyAdmin();
@@ -33,34 +79,16 @@ export async function GET() {
 
   try {
     // A. Profiles 전체 정보 조회
-    const { data: profiles, error: pErr } = await adminContext.supabaseAdmin
-      .from("profiles")
-      .select("*");
-
-    if (pErr) throw pErr;
+    const profiles = await listAllProfiles(adminContext.supabaseAdmin);
 
     // B. Auth Users 전체 정보 조회 (페이지네이션 제한 해결)
-    const users: any[] = [];
-    let page = 1;
-    const perPage = 1000;
-    while (true) {
-      const { data, error: uErr } = await adminContext.supabaseAdmin.auth.admin.listUsers({
-        page,
-        perPage,
-      });
-      if (uErr) throw uErr;
-      
-      const pageUsers = data?.users || [];
-      users.push(...pageUsers);
-      
-      if (pageUsers.length < perPage) break;
-      page++;
-    }
+    const users = await listAllAuthUsers(adminContext.supabaseAdmin);
 
     // C. 두 정보 결합 (auth.users 기준으로 병합하여 프로필 누락 유저 식별)
     const authUserIds = new Set(users.map(authUser => authUser.id));
+    const profileById = new Map(profiles.map(profile => [profile.id, profile]));
     const mergedUsers = users.map(authUser => {
-      const profile = profiles?.find(p => p.id === authUser.id);
+      const profile = profileById.get(authUser.id);
       
       const provider = authUser.app_metadata?.provider || 
                        (authUser as any).raw_app_meta_data?.provider || 
@@ -103,7 +131,7 @@ export async function GET() {
       };
     });
 
-    const orphanProfiles = (profiles || [])
+    const orphanProfiles = profiles
       .filter(profile => !authUserIds.has(profile.id))
       .map(profile => ({
         ...profile,
@@ -148,8 +176,7 @@ export async function POST(request: Request) {
     // A. 일괄 복구 동기화(sync) 액션 처리
     if (action === "sync") {
       // 1) Auth Users 리스트 조회
-      const { data: { users }, error: uErr } = await adminContext.supabaseAdmin.auth.admin.listUsers();
-      if (uErr) throw uErr;
+      const users = await listAllAuthUsers(adminContext.supabaseAdmin);
 
       // 2) Profiles 테이블 조회
       const { data: profiles, error: pErr } = await adminContext.supabaseAdmin
@@ -257,8 +284,7 @@ export async function DELETE(request: Request) {
       .eq("id", id)
       .maybeSingle();
 
-    const { data: { users }, error: listErr } = await adminContext.supabaseAdmin.auth.admin.listUsers();
-    if (listErr) throw listErr;
+    const users = await listAllAuthUsers(adminContext.supabaseAdmin);
     const authUserExists = users.some(user => user.id === id);
 
     if (authUserExists) {

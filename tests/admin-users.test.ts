@@ -6,7 +6,8 @@ const {
   mockDeleteUser,
   mockListUsers,
   mockProfileMaybeSingle,
-  mockProfileDeleteEq
+  mockProfileDeleteEq,
+  mockProfilesRange
 } = vi.hoisted(() => {
   const serverProfileChain = {
     select: vi.fn().mockReturnThis(),
@@ -27,8 +28,10 @@ const {
   });
   const mockProfileMaybeSingle = vi.fn().mockResolvedValue({ data: { id: "target-user" }, error: null });
   const mockProfileDeleteEq = vi.fn().mockResolvedValue({ data: null, error: null });
+  const mockProfilesRange = vi.fn().mockResolvedValue({ data: [], error: null });
   const adminProfileSelectChain: any = {
-    maybeSingle: mockProfileMaybeSingle
+    maybeSingle: mockProfileMaybeSingle,
+    range: mockProfilesRange
   };
   adminProfileSelectChain.select = vi.fn(() => adminProfileSelectChain);
   adminProfileSelectChain.eq = vi.fn(() => adminProfileSelectChain);
@@ -55,7 +58,8 @@ const {
     mockDeleteUser,
     mockListUsers,
     mockProfileMaybeSingle,
-    mockProfileDeleteEq
+    mockProfileDeleteEq,
+    mockProfilesRange
   };
 });
 
@@ -67,7 +71,7 @@ vi.mock("@supabase/supabase-js", () => ({
   createClient: mockCreateSupabaseAdminClient
 }));
 
-import { DELETE } from "../app/api/admin/users/route";
+import { DELETE, GET } from "../app/api/admin/users/route";
 
 describe("admin users API", () => {
   beforeEach(() => {
@@ -81,6 +85,7 @@ describe("admin users API", () => {
     mockDeleteUser.mockResolvedValue({ error: null });
     mockProfileMaybeSingle.mockResolvedValue({ data: { id: "target-user" }, error: null });
     mockProfileDeleteEq.mockResolvedValue({ data: null, error: null });
+    mockProfilesRange.mockResolvedValue({ data: [], error: null });
   });
 
   it("Auth 유저 삭제 후 profiles 행도 명시적으로 삭제한다", async () => {
@@ -118,5 +123,48 @@ describe("admin users API", () => {
     expect(body.error).toContain("현재 로그인한 관리자 계정");
     expect(mockDeleteUser).not.toHaveBeenCalled();
     expect(mockProfileDeleteEq).not.toHaveBeenCalled();
+  });
+
+  it("삭제 대상 Auth 유저가 첫 페이지 뒤에 있어도 찾아서 삭제한다", async () => {
+    mockListUsers
+      .mockResolvedValueOnce({
+        data: { users: Array.from({ length: 1000 }, (_, index) => ({ id: `page-1-user-${index}` })) },
+        error: null
+      })
+      .mockResolvedValueOnce({
+        data: { users: [{ id: "target-user" }] },
+        error: null
+      });
+
+    const response = await DELETE(new Request("http://localhost/api/admin/users?id=target-user", { method: "DELETE" }));
+    const body = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(mockListUsers).toHaveBeenNthCalledWith(1, { page: 1, perPage: 1000 });
+    expect(mockListUsers).toHaveBeenNthCalledWith(2, { page: 2, perPage: 1000 });
+    expect(mockDeleteUser).toHaveBeenCalledWith("target-user");
+    expect(body.deletedAuthUser).toBe(true);
+  });
+
+  it("관리자 목록 조회 시 profiles도 페이지네이션으로 전체 조회한다", async () => {
+    mockProfilesRange
+      .mockResolvedValueOnce({
+        data: Array.from({ length: 1000 }, (_, index) => ({
+          id: `profile-${index}`,
+          nickname: `Profile ${index}`,
+          role: "user"
+        })),
+        error: null
+      })
+      .mockResolvedValueOnce({
+        data: [{ id: "target-user", nickname: "Target", role: "user" }],
+        error: null
+      });
+
+    const response = await GET();
+
+    expect(response.status).toBe(200);
+    expect(mockProfilesRange).toHaveBeenNthCalledWith(1, 0, 999);
+    expect(mockProfilesRange).toHaveBeenNthCalledWith(2, 1000, 1999);
   });
 });
