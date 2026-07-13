@@ -62,6 +62,8 @@ skills-lock.json
 scratch/
 tmp/
 .agents-drafts/
+.superpowers/
+docs/superpowers/
 
 # AI Guide (Private)
 /docs-private/
