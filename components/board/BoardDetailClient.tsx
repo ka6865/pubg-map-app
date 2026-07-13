@@ -56,6 +56,7 @@ export default function BoardDetailClient({
   const [displayName, setDisplayName] = useState("익명");
   const [isMobile, setIsMobile] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [postImageFailed, setPostImageFailed] = useState(false);
 
   // 비회원 댓글/게시글 작성용 상태
   const [guestNickname, setGuestNickname] = useState("");
@@ -173,6 +174,10 @@ export default function BoardDetailClient({
       }
     });
   }, [post.id, post.category]);
+
+  useEffect(() => {
+    setPostImageFailed(false);
+  }, [post.id, post.image_url]);
 
   useEffect(() => {
     setMounted(true);
@@ -518,10 +523,10 @@ export default function BoardDetailClient({
     let sanitizedContent = sanitizeHTML(post.content || "", mounted);
     sanitizedContent = rewriteBoardImageUrls(sanitizedContent);
     sanitizedContent = sanitizedContent
-      .replace(/<p>\s*<\/p>/g, '<p><br/></p>')
-      .replace(/<p><br><\/p>/g, '<p><br/></p>')
-      .replace(/<p>&nbsp;<\/p>/g, '<p><br/></p>')
-      .replace(/<div>\s*<\/div>/g, '<div><br/></div>');
+      .replace(/<p>\s*<\/p>/g, '<p class="board-empty-line"><br/></p>')
+      .replace(/<p><br><\/p>/g, '<p class="board-empty-line"><br/></p>')
+      .replace(/<p>&nbsp;<\/p>/g, '<p class="board-empty-line"><br/></p>')
+      .replace(/<div>\s*<\/div>/g, '<div class="board-empty-line"><br/></div>');
 
     return sanitizedContent.replace(
       /<img/gi,
@@ -632,21 +637,31 @@ export default function BoardDetailClient({
           </div>
 
           <div className="border-y border-[#333] py-[30px] min-h-[200px] text-[#e5e5e5]">
-            {post.image_url && !(post.content || "").includes(post.image_url) && (
-              <Image priority={true} src={postImageUrl} alt="기본 이미지" width={800} height={450} className="w-full h-auto mb-[20px] rounded-[8px]" />
+            {post.image_url && !postImageFailed && !(post.content || "").includes(post.image_url) && (
+              <Image
+                priority={true}
+                src={postImageUrl}
+                alt="기본 이미지"
+                width={800}
+                height={450}
+                className="w-full h-auto mb-[20px] rounded-[8px]"
+                onError={() => setPostImageFailed(true)}
+              />
             )}
             
             <style>{`
-              .board-content > * { margin-bottom: 1.75rem !important; line-height: 1.85 !important; }
-              .board-content p:empty::before, .board-content div:empty::before { content: "\\00a0" !important; display: inline-block !important; width: 100% !important; height: 1.2rem !important; }
-              .board-content ul, .board-content ol { padding-left: 1.5rem !important; list-style-position: outside !important; margin-bottom: 2rem !important; }
+              .board-content { white-space: normal !important; word-break: break-word !important; font-family: inherit !important; color: #e5e5e5 !important; letter-spacing: 0 !important; line-height: 1.7 !important; }
+              .board-content > * { margin-bottom: 0.95rem !important; line-height: inherit !important; }
+              .board-content .board-empty-line { height: 0.65rem !important; min-height: 0 !important; margin-bottom: 0.65rem !important; line-height: 0.65rem !important; }
+              .board-content .board-empty-line br { display: none !important; }
+              .board-content p:empty::before, .board-content div:empty::before { content: "\\00a0" !important; display: inline-block !important; width: 100% !important; height: 0.65rem !important; }
+              .board-content ul, .board-content ol { padding-left: 1.5rem !important; list-style-position: outside !important; margin-bottom: 1.1rem !important; }
               .board-content ul { list-style-type: disc !important; }
               .board-content ol { list-style-type: decimal !important; }
-              .board-content li { margin-bottom: 0.75rem !important; display: list-item !important; }
+              .board-content li { margin-bottom: 0.45rem !important; display: list-item !important; }
               .board-content strong { color: #F2A900 !important; font-weight: 800 !important; }
               .board-content a { color: #F2A900 !important; text-decoration: underline !important; text-underline-offset: 4px !important; transition: opacity 0.2s !important; }
               .board-content a:hover { opacity: 0.7 !important; }
-              .board-content { white-space: pre-wrap !important; word-break: break-word !important; font-family: inherit !important; color: #e5e5e5 !important; letter-spacing: -0.01em !important; }
               
               /* 패치노트 전용 AI 요약 영역 격리 리셋 */
               .board-content .patch-note-container { white-space: normal !important; }

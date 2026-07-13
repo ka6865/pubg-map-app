@@ -130,6 +130,7 @@ export default function BoardWrite({
 }: BoardWriteProps) {
   const quillRef = useRef<any>(null);
   const uploadedImagesRef = useRef<string[]>([]);
+  const preserveUploadedImagesOnUnmountRef = useRef(false);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [isCreatingRoom, setIsCreatingRoom] = useState(false); // 🌟 디스코드 방 생성 로딩 상태
   const [searchNickname, setSearchNickname] = useState(""); // 🌟 클랜 검색용 닉네임
@@ -258,7 +259,7 @@ export default function BoardWrite({
 
   useEffect(() => {
     return () => {
-      if (uploadedImagesRef.current.length > 0) {
+      if (!preserveUploadedImagesOnUnmountRef.current && uploadedImagesRef.current.length > 0) {
         supabase.storage.from("images").remove(uploadedImagesRef.current);
       }
     };
@@ -487,12 +488,16 @@ export default function BoardWrite({
         }
       }
 
+      preserveUploadedImagesOnUnmountRef.current = true;
       const saved = await handleSavePost();
       if (saved) {
         // 🌟 성공적으로 저장된 경우, 언마운트 시 자동 삭제되지 않도록 목록을 비워줍니다.
         uploadedImagesRef.current = [];
+      } else {
+        preserveUploadedImagesOnUnmountRef.current = false;
       }
     } catch (err) {
+      preserveUploadedImagesOnUnmountRef.current = false;
       console.error("onSaveClick fatal error:", err);
       toast.error("저장을 준비하는 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.");
     }
@@ -560,7 +565,7 @@ export default function BoardWrite({
           }
           return delta;
         }],
-        [Node.ELEMENT_NODE, (node: HTMLElement, delta: any) => {
+        [1, (node: HTMLElement, delta: any) => {
           // 외부에서 복사된 배경색(특히 흰색 배경) 및 스타일 제거
           delta.ops.forEach((op: any) => {
             if (op.attributes) {
@@ -597,7 +602,7 @@ export default function BoardWrite({
       </h2>
 
       {isGuest && !isEditing && (
-        <div style={{ display: "flex", gap: "10px", marginBottom: "10px" }}>
+        <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: "10px", marginBottom: "10px" }}>
           <input
             id="post-guest-nickname"
             name="guest_nickname"
