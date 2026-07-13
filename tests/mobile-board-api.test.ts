@@ -14,6 +14,7 @@ const {
   const mockCommentsEq = vi.fn();
   const mockCommentsGte = vi.fn();
   const mockCommentsLimit = vi.fn();
+  const mockCommentsOrder = vi.fn();
   const mockCommentsSelect = vi.fn();
   const mockPostsSelect = vi.fn();
   const mockPostsOrder = vi.fn();
@@ -42,12 +43,14 @@ const {
   const commentsSelectChain: any = {
     eq: mockCommentsEq,
     gte: mockCommentsGte,
+    order: mockCommentsOrder,
     limit: mockCommentsLimit,
     maybeSingle: mockCommentsMaybeSingle
   };
   mockCommentsSelect.mockReturnValue(commentsSelectChain);
   mockCommentsEq.mockReturnValue(commentsSelectChain);
   mockCommentsGte.mockReturnValue(commentsSelectChain);
+  mockCommentsOrder.mockReturnValue(commentsSelectChain);
   mockCommentsLimit.mockReturnValue(commentsSelectChain);
 
   const mockCommentsInsert = vi.fn(() => ({
@@ -116,6 +119,7 @@ vi.mock("@/lib/board/profanityFilter", () => ({
 }));
 
 import { GET as listPostsGET } from "../app/api/mobile/board/posts/route";
+import { GET as detailPostGET } from "../app/api/mobile/board/posts/[postId]/route";
 import { POST as createCommentPOST } from "../app/api/mobile/board/posts/[postId]/comments/route";
 
 describe("mobile board API", () => {
@@ -157,5 +161,67 @@ describe("mobile board API", () => {
       createdAt: "2026-01-02T00:00:00.000Z",
       id: 20
     });
+  });
+
+  it("모바일 게시글 목록은 60초 CDN 캐시 헤더를 반환한다", async () => {
+    const response = await listPostsGET(new Request("https://bgms.test/api/mobile/board/posts?limit=1"));
+
+    expect(response.headers.get("Cache-Control")).toBe("public, s-maxage=60, stale-while-revalidate=180");
+  });
+
+  it("모바일 게시글 상세는 짧은 CDN 캐시 헤더를 반환한다", async () => {
+    mockPostsMaybeSingle.mockResolvedValueOnce({
+      data: {
+        id: 10,
+        title: "테스트 글",
+        content: "본문",
+        author: "Tester",
+        user_id: "user-1",
+        category: "자유",
+        image_url: null,
+        is_notice: false,
+        created_at: "2026-01-01T00:00:00.000Z",
+        views: 1,
+        likes: 0,
+        status: "published",
+        profiles: { nickname: "Tester" }
+      },
+      error: null
+    });
+
+    const response = await detailPostGET(
+      new Request("https://bgms.test/api/mobile/board/posts/10"),
+      { params: Promise.resolve({ postId: "10" }) }
+    );
+
+    expect(response.headers.get("Cache-Control")).toBe("public, s-maxage=30, stale-while-revalidate=120");
+  });
+
+  it("refresh=1 상세 요청은 작성 직후 최신 조회를 위해 캐시하지 않는다", async () => {
+    mockPostsMaybeSingle.mockResolvedValueOnce({
+      data: {
+        id: 10,
+        title: "테스트 글",
+        content: "본문",
+        author: "Tester",
+        user_id: "user-1",
+        category: "자유",
+        image_url: null,
+        is_notice: false,
+        created_at: "2026-01-01T00:00:00.000Z",
+        views: 1,
+        likes: 0,
+        status: "published",
+        profiles: { nickname: "Tester" }
+      },
+      error: null
+    });
+
+    const response = await detailPostGET(
+      new Request("https://bgms.test/api/mobile/board/posts/10?refresh=1"),
+      { params: Promise.resolve({ postId: "10" }) }
+    );
+
+    expect(response.headers.get("Cache-Control")).toBe("no-store, max-age=0, must-revalidate");
   });
 });

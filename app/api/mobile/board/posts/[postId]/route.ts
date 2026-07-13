@@ -55,6 +55,15 @@ function mapComment(row: any) {
   };
 }
 
+function cacheControlForRequest(request: Request) {
+  const url = new URL(request.url);
+  if (url.searchParams.get("refresh") === "1") {
+    return "no-store, max-age=0, must-revalidate";
+  }
+
+  return "public, s-maxage=30, stale-while-revalidate=120";
+}
+
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ postId: string }> }
@@ -106,7 +115,7 @@ export async function GET(
     },
     {
       headers: {
-        "Cache-Control": "private, max-age=0, must-revalidate",
+        "Cache-Control": cacheControlForRequest(request),
       },
     }
   );
