@@ -12,6 +12,7 @@ import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/react";
 import PageViewTracker from "@/components/analytics/PageViewTracker";
 import Script from "next/script";
+import { isVercelSpeedInsightsEnabled } from "@/lib/vercel-usage-controls";
 
 // 브라우저 탭 제목, 설명, 파비콘 메타데이터 정의
 const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://bgms.kr";
@@ -122,7 +123,7 @@ export default function RootLayout({
           </div>
           <Toaster theme="dark" position="top-center" richColors />
           <Analytics />
-          <SpeedInsights />
+          {isVercelSpeedInsightsEnabled() && <SpeedInsights />}
         </AuthProvider>
         {/* 카카오 애드핏 전역 스크립트 — 페이지 로드 후 비동기 초기화 */}
         <Script
