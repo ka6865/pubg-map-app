@@ -196,10 +196,27 @@ async function readTelemetryEvents(
     && declaredLength > config.maxTelemetryCompressedBytes) {
     throw new Error("telemetry-compressed-limit");
   }
-  const bytes = Buffer.from(await response.arrayBuffer());
-  if (bytes.byteLength > config.maxTelemetryCompressedBytes) {
-    throw new Error("telemetry-compressed-limit");
+
+  const chunks: Uint8Array[] = [];
+  let compressedBytes = 0;
+  const reader = response.body?.getReader();
+  if (reader) {
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        compressedBytes += value.byteLength;
+        if (compressedBytes > config.maxTelemetryCompressedBytes) {
+          await reader.cancel().catch(() => undefined);
+          throw new Error("telemetry-compressed-limit");
+        }
+        chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
   }
+  const bytes = Buffer.concat(chunks, compressedBytes);
   const output = bytes[0] === 0x1f && bytes[1] === 0x8b
     ? (await import("node:zlib")).gunzipSync(bytes, {
         maxOutputLength: config.maxTelemetryDecompressedBytes,
@@ -311,7 +328,9 @@ async function collectMatchIds(
         continue;
       }
     }
-    return { ids: Array.from(ids), source: "leaderboard" };
+    if (ids.size > 0) {
+      return { ids: Array.from(ids), source: "leaderboard" };
+    }
   }
 
   const samples = await pubgFetch(

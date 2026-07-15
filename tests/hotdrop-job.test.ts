@@ -132,6 +132,64 @@ describe("Hotdrop 수집 작업", () => {
     );
   });
 
+  it("leaderboard player 조회가 모두 실패하면 samples로 fallback한다", async () => {
+    const db = createSupabaseMock();
+    const fetchFn = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        data: [{ id: "season-1", attributes: { isCurrentSeason: true } }],
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: { relationships: { players: { data: [{ id: "account-1" }] } } },
+      }))
+      .mockResolvedValueOnce(jsonResponse({ error: "player failed" }, { status: 500 }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: { relationships: { matches: { data: [] } } },
+      }));
+
+    const result = await runHotdropCollection("pubg-key", defaultConfig, {
+      fetchFn,
+      supabase: db.adapter,
+      sleep: vi.fn().mockResolvedValue(undefined),
+      now: () => "2026-07-15T00:00:00.000Z",
+    });
+
+    expect(result).toMatchObject({ source: "samples", processedMatches: 0 });
+    expect(fetchFn).toHaveBeenLastCalledWith(
+      expect.stringContaining("/samples"),
+      expect.any(Object),
+    );
+  });
+
+  it("leaderboard player에 유효한 match 관계가 없으면 samples로 fallback한다", async () => {
+    const db = createSupabaseMock();
+    const fetchFn = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({
+        data: [{ id: "season-1", attributes: { isCurrentSeason: true } }],
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: { relationships: { players: { data: [{ id: "account-1" }] } } },
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: { relationships: { matches: { data: [{ id: "   " }, {}] } } },
+      }))
+      .mockResolvedValueOnce(jsonResponse({
+        data: { relationships: { matches: { data: [] } } },
+      }));
+
+    const result = await runHotdropCollection("pubg-key", defaultConfig, {
+      fetchFn,
+      supabase: db.adapter,
+      sleep: vi.fn().mockResolvedValue(undefined),
+      now: () => "2026-07-15T00:00:00.000Z",
+    });
+
+    expect(result).toMatchObject({ source: "samples", processedMatches: 0 });
+    expect(fetchFn).toHaveBeenLastCalledWith(
+      expect.stringContaining("/samples"),
+      expect.any(Object),
+    );
+  });
+
   it("Content-Length가 compressed 상한을 넘으면 body를 읽지 않고 매치를 건너뛴다", async () => {
     const db = createSupabaseMock();
     const telemetry = jsonResponse([], {
@@ -150,6 +208,35 @@ describe("Hotdrop 수집 작업", () => {
 
     expect(result).toMatchObject({ processedMatches: 1, skippedMatches: 1 });
     expect(arrayBuffer).not.toHaveBeenCalled();
+    expect(db.rpc).not.toHaveBeenCalled();
+  });
+
+  it("Content-Length 없는 stream이 compressed 상한을 넘으면 즉시 취소한다", async () => {
+    const db = createSupabaseMock();
+    let pullCount = 0;
+    const cancel = vi.fn();
+    const telemetry = new Response(new ReadableStream<Uint8Array>({
+      pull(controller) {
+        pullCount += 1;
+        controller.enqueue(new Uint8Array([1, 2, 3, 4]));
+        if (pullCount === 6) controller.close();
+      },
+      cancel,
+    }, { highWaterMark: 0 }), { status: 200 });
+
+    const result = await runHotdropCollection("pubg-key", {
+      ...defaultConfig,
+      maxTelemetryCompressedBytes: 10,
+    }, {
+      fetchFn: createSuccessfulFetchSequence(telemetry),
+      supabase: db.adapter,
+      sleep: vi.fn().mockResolvedValue(undefined),
+      now: () => "2026-07-15T00:00:00.000Z",
+    });
+
+    expect(result).toMatchObject({ processedMatches: 1, skippedMatches: 1 });
+    expect(pullCount).toBe(3);
+    expect(cancel).toHaveBeenCalledTimes(1);
     expect(db.rpc).not.toHaveBeenCalled();
   });
 

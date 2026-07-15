@@ -15,19 +15,26 @@ describe("runHotdropScript", () => {
     };
     const createSupabase = vi.fn();
     const runJob = vi.fn();
+    const writeInfo = vi.fn();
+    const writeError = vi.fn();
     const exitCode = await runHotdropScript(env, {
       createSupabase,
       runJob,
-      writeInfo: vi.fn(),
-      writeError: vi.fn(),
+      writeInfo,
+      writeError,
     });
     expect(exitCode).toBe(1);
     expect(createSupabase).not.toHaveBeenCalled();
     expect(runJob).not.toHaveBeenCalled();
+    expect(writeError).toHaveBeenCalledTimes(1);
+    expect(writeError).toHaveBeenCalledWith("Hotdrop 수집 작업이 실패했습니다.");
+    expect(writeInfo).not.toHaveBeenCalled();
   });
 
   it("잘못된 처리량 설정을 client 생성 전에 거부한다", async () => {
     const createSupabase = vi.fn();
+    const writeInfo = vi.fn();
+    const writeError = vi.fn();
     const exitCode = await runHotdropScript({
       PUBG_API_KEY: "pubg-key",
       NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
@@ -36,11 +43,41 @@ describe("runHotdropScript", () => {
     }, {
       createSupabase,
       runJob: vi.fn(),
-      writeInfo: vi.fn(),
-      writeError: vi.fn(),
+      writeInfo,
+      writeError,
     });
     expect(exitCode).toBe(1);
     expect(createSupabase).not.toHaveBeenCalled();
+    expect(writeError).toHaveBeenCalledTimes(1);
+    expect(writeError).toHaveBeenCalledWith("Hotdrop 수집 작업이 실패했습니다.");
+    expect(writeInfo).not.toHaveBeenCalled();
+  });
+
+  it("runJob 예외의 secret과 URL과 match ID를 버리고 고정 오류만 한 번 출력한다", async () => {
+    const writeInfo = vi.fn();
+    const writeError = vi.fn();
+    const sensitiveError = [
+      "service-role-secret",
+      "pubg-secret",
+      "https://telemetry.example/match-123",
+      "match-123",
+    ].join(" ");
+
+    const exitCode = await runHotdropScript({
+      PUBG_API_KEY: "pubg-secret",
+      NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
+      SUPABASE_SERVICE_ROLE_KEY: "service-role-secret",
+    }, {
+      createSupabase: vi.fn().mockReturnValue({}),
+      runJob: vi.fn().mockRejectedValue(new Error(sensitiveError)),
+      writeInfo,
+      writeError,
+    });
+
+    expect(exitCode).toBe(1);
+    expect(writeError).toHaveBeenCalledTimes(1);
+    expect(writeError).toHaveBeenCalledWith("Hotdrop 수집 작업이 실패했습니다.");
+    expect(writeInfo).not.toHaveBeenCalled();
   });
 
   it("성공 결과의 안전한 요약만 출력하고 0을 반환한다", async () => {
