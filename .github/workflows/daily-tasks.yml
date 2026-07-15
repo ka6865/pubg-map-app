@@ -124,3 +124,10 @@ jobs:
           fi
           curl -fsS "$APP_URL/api/admin/agent/rollout" \
             -H "Authorization: Bearer $SECRET"
+
+      - name: Run Hotdrop Collection
+        env:
+          PUBG_API_KEY: ${{ secrets.PUBG_API_KEY }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+        run: npx tsx scripts/run_hotdrop.ts

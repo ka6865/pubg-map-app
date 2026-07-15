@@ -1,8 +1,0 @@
-{
-  "crons": [
-    {
-      "path": "/api/cron/hotdrop",
-      "schedule": "0 18 * * *"
-    }
-  ]
-}
