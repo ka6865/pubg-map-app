@@ -22,7 +22,7 @@
 | `npm run verify:core` | 통과: ESLint 오류 0·기존 경고 70, TypeScript 오류 0 |
 | `npm run verify:analysis` | 통과: 10개 파일, 112개 테스트 |
 | `npm run verify:admin` | 통과: 5개 파일, 90개 테스트 |
-| `npm test -- --runInBand` | 통과: Jest 1개 suite, 2개 테스트 |
+| `npm test -- --runInBand` | 통과: Jest 2개 suite, 4개 테스트 |
 | `env DOTENV_CONFIG_PATH=.env.local node --require ./node_modules/dotenv/config node_modules/vitest/vitest.mjs run` | 통과: 26개 파일 통과·1개 스킵, 265개 테스트 통과·6개 스킵 |
 | `npm audit --omit=dev` | 이번 조치에서 재실행하지 않음. 최초 리뷰 결과는 10건(High 3, Moderate 5, Low 2) |
 
