@@ -9,24 +9,26 @@
 
 ## 1. 결론
 
-최초 리뷰에서 P0 1건, P1 12건, P2 15건을 확인했다. P0은 공개 `/api/pubg/ingest` route를 제거하고 `/api/pubg/match`가 검증된 PUBG 분석 결과를 서버 저장 함수에 직접 전달하도록 전환해 해결했다. 최종 리뷰에서 확인한 `source=scraper`와 `force=true` 위조 경로도 서로 독립된 timing-safe header 인증으로 차단했다. P1 12건과 P2 15건의 우선순위는 유지한다.
+최초 리뷰에서 P0 1건, P1 12건, P2 15건을 확인했다. P0은 공개 `/api/pubg/ingest` route를 제거하고 `/api/pubg/match`가 검증된 PUBG 분석 결과를 서버 저장 함수에 직접 전달하도록 전환해 해결했다. 최종 리뷰에서 확인한 `source=scraper`와 `force=true` 위조 경로도 서로 독립된 timing-safe header 인증으로 차단했다. P1은 Hotdrop 1건을 해결해 실제 미해결 항목이 11건이며, P2 15건의 우선순위는 유지한다.
 
 그다음 우선순위는 텔레메트리 계약 통합이다. 현재 presigned URL 응답 계약, 플레이어·플랫폼 캐시 identity, 2D/3D 소비자 구현이 서로 어긋나 리플레이 실패와 다른 팀 관점 데이터 혼선이 동시에 발생할 수 있다.
 
-보안 측면에서는 Storage 객체 삭제 BOLA, 승인 작업 중복 실행, cron 인증 fail-open, CAPTCHA 우회, 공개 analytics 오염, 제보 알림 임계값 우회가 즉시 수정 대상이다.
+보안 측면에서는 Storage 객체 삭제 BOLA, 승인 작업 중복 실행, CAPTCHA 우회, 공개 analytics 오염, 제보 알림 임계값 우회가 즉시 수정 대상이다.
 
 ## 2. 검증 결과
 
 | 검증 | 결과 |
 |---|---|
-| `npm run verify:core` | 병합된 `develop`에서 통과: ESLint 오류 0·기존 경고 70, TypeScript 오류 0 |
-| `npm run verify:analysis` | 통과: 7개 파일, 88개 테스트 |
+| `npm run verify:core` | 통과: ESLint 오류 0·기존 경고 70, TypeScript 오류 0 |
+| `npm run verify:analysis` | 통과: 10개 파일, 112개 테스트 |
 | `npm run verify:admin` | 통과: 5개 파일, 90개 테스트 |
-| `npm test -- --runInBand` | 병합된 `develop`에서 통과: Jest 2개 suite, 4개 테스트 |
-| `npm run test:unit` | 기존 `.env.local`을 로드해 통과: 23개 파일 통과·1개 스킵, 241개 테스트 통과·6개 스킵 |
+| `npm test -- --runInBand` | 통과: Jest 1개 suite, 2개 테스트 |
+| `env DOTENV_CONFIG_PATH=.env.local node --require ./node_modules/dotenv/config node_modules/vitest/vitest.mjs run` | 통과: 26개 파일 통과·1개 스킵, 265개 테스트 통과·6개 스킵 |
 | `npm audit --omit=dev` | 이번 조치에서 재실행하지 않음. 최초 리뷰 결과는 10건(High 3, Moderate 5, Low 2) |
 
-`tests/security.test.ts`는 현재 `withOptionalAuth` 계약과 Shadow Draft의 `parent_id` 삭제 조건으로 복구해 `verify:admin`에 포함했다. worktree에 `.env.local`이 없는 상태의 최초 `test:unit` 실행은 `suggest-players` 2건이 Supabase 환경변수 초기화에서 실패했으며, primary checkout의 기존 로컬 환경을 로드한 재실행에서는 전체 통과했다.
+`tests/security.test.ts`는 현재 `withOptionalAuth` 계약과 Shadow Draft의 `parent_id` 삭제 조건으로 복구해 `verify:admin`에 포함했다. 전체 Vitest 명령의 최초 실행은 worktree에 `node_modules/dotenv`, `node_modules/vitest`, `.env.local`이 배치되지 않아 테스트 실행 전 종료 코드 1로 종료됐다. 기본 checkout의 기존 파일을 worktree의 추적되지 않는 경로에 심볼릭 링크한 후 같은 명령을 재실행해 전체 통과했다.
+
+`verify:core`의 기존 ESLint 경고 70개는 다음 34개 파일에서 발생했다: `app/admin/dashboard/page.tsx`, `app/api/bluezone/route.ts`, `app/api/board/posts/route.ts`, `app/api/cron/patch-notes/route.ts`, `app/api/pubg/telemetry/route.ts`, `app/crates/CrateModals.tsx`, `app/crates/CratesClient.tsx`, `app/crates/useCratesState.ts`, `app/replay/3d/page.tsx`, `app/test-coordinate/page.tsx`, `components/admin/AdminAgentChat.tsx`, `components/board/BoardListClient.tsx`, `components/board/BoardWriteClient.tsx`, `components/board/PostItem.tsx`, `components/common/PromptModal.tsx`, `components/map/HotDropLayer.tsx`, `components/map/MapShell.tsx`, `components/map/MapView.tsx`, `components/map/MobileBottomSheet.tsx`, `components/map/ReportForm.tsx`, `components/map/SimulatorPanel.tsx`, `components/map/telemetry/TelemetryCanvasLayer.tsx`, `components/map/telemetry/TelemetrySidebar.tsx`, `components/mypage/MyPage.tsx`, `components/stat/MatchTimeline.tsx`, `components/stat/StatSummaryCard.tsx`, `lib/pubg-analysis/handlers/CombatHandler.ts`, `lib/pubg-analysis/handlers/MapReplayHandler.ts`, `lib/pubg-analysis/handlers/PositionHandler.ts`, `lib/pubg-analysis/handlers/ZoneHandler.ts`, `scripts/cleanup_failed_sync.ts`, `scripts/extract_bluezone.ts`, `scripts/sync_all_db_assets.ts`, `scripts/test_gemini_posts.js`.
 
 ## 3. P0 — 즉시 차단
 
@@ -105,6 +107,17 @@
 
 #### 8) hotdrop cron 인증 fail-open
 
+> 조치 상태: 해결됨
+>
+> - 공개 `/api/cron/hotdrop` route와 Vercel Cron 제거
+> - GitHub Actions daily workflow의 직접 script 실행으로 전환
+> - 시즌 확인 실패 시 cleanup 금지
+> - 처리량·telemetry byte 상한과 DB fallback 오류 검증 추가
+> - compressed telemetry를 stream chunk 단위로 읽고 상한 초과 즉시 reader 취소
+> - leaderboard player 조회에서 유효한 match ID가 0개이면 samples로 fallback
+> - env·config·runJob 실패 시 고정 오류 문구 1회만 출력하는 보안 회귀 테스트 추가
+> - workflow의 마지막 step, 실패 전파, 정확한 secret 3개, schedule·수동 trigger를 YAML 구조 테스트로 고정
+
 - 근거: `app/api/cron/hotdrop/route.ts:308-316,323-339`
 - 영향: `CRON_SECRET` 누락 시 누구나 외부 PUBG 호출과 service-role 기반 시즌 정리를 반복 실행할 수 있다.
 - 조치: secret 누락 시 503으로 fail-closed하고 Authorization을 필수화한다.
@@ -176,7 +189,7 @@
 ### 즉시 핫픽스
 
 1. [x] `/api/pubg/ingest` 공개 route 제거 및 `/api/pubg/match` 서버 내부 직접 저장 전환
-2. `CRON_SECRET` fail-closed
+2. [x] Hotdrop 실행 경계를 GitHub Actions로 이전
 3. Turnstile을 guest write에 서버 결합
 4. Storage 삭제 소유권 검증
 5. 제보 notify 최신 임계값·원자성 검증
