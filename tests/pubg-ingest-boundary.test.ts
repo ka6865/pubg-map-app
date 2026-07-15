@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { NextRequest } from "next/server";
 import ts from "typescript";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { PersistMatchAnalysisResult } from "@/lib/pubg-analysis/persistMatchAnalysis";
 
 const {
   mockCreateClient,
@@ -35,7 +36,7 @@ const {
     mockCreateClient: vi.fn(() => mockSupabase),
     mockEngineRun,
     mockFrom,
-    mockPersistMatchAnalysis: vi.fn(),
+    mockPersistMatchAnalysis: vi.fn<(...args: unknown[]) => Promise<PersistMatchAnalysisResult>>(),
     mockProcessedTelemetryUpsert,
     mockReportPubgApiError: vi.fn().mockResolvedValue(undefined),
     mockSupabase,
@@ -262,7 +263,7 @@ describe("PUBG match persistence behavior", () => {
   it.each([
     ["returned failures", () => mockPersistMatchAnalysis.mockResolvedValue({
       succeeded: [],
-      failures: [{ taskName: "rawStats", message: "secret payload PlayerOne match-behavior-1 db-message" }],
+      failures: [{ taskName: "match_stats_raw", message: "secret payload PlayerOne match-behavior-1 db-message" }],
     })],
     ["Promise reject", () => mockPersistMatchAnalysis.mockRejectedValue(
       new Error("secret payload PlayerOne match-behavior-1 rejected-message"),
@@ -290,7 +291,7 @@ describe("PUBG match persistence behavior", () => {
     ]) {
       expect(serializedLog).not.toContain(sensitiveValue);
     }
-    expect(serializedLog).toMatch(/rawStats|파생 통계 저장 중 예외 발생/);
+    expect(serializedLog).toMatch(/match_stats_raw|파생 통계 저장 중 예외 발생/);
     consoleError.mockRestore();
   });
 
