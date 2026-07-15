@@ -9,7 +9,7 @@
 
 ## 1. 결론
 
-최초 리뷰에서 P0 1건, P1 12건, P2 15건을 확인했다. P0은 공개 `/api/pubg/ingest` route를 제거하고 `/api/pubg/match`가 검증된 PUBG 분석 결과를 서버 저장 함수에 직접 전달하도록 전환해 해결했다. P1 12건과 P2 15건의 우선순위는 유지한다.
+최초 리뷰에서 P0 1건, P1 12건, P2 15건을 확인했다. P0은 공개 `/api/pubg/ingest` route를 제거하고 `/api/pubg/match`가 검증된 PUBG 분석 결과를 서버 저장 함수에 직접 전달하도록 전환해 해결했다. 최종 리뷰에서 확인한 `source=scraper`와 `force=true` 위조 경로도 서로 독립된 timing-safe header 인증으로 차단했다. P1 12건과 P2 15건의 우선순위는 유지한다.
 
 그다음 우선순위는 텔레메트리 계약 통합이다. 현재 presigned URL 응답 계약, 플레이어·플랫폼 캐시 identity, 2D/3D 소비자 구현이 서로 어긋나 리플레이 실패와 다른 팀 관점 데이터 혼선이 동시에 발생할 수 있다.
 
@@ -20,7 +20,7 @@
 | 검증 | 결과 |
 |---|---|
 | `npm run verify:core` | worktree 로컬 ESLint 설치 불완전으로 명령 시작 실패. 동일 config의 전체 ESLint는 오류 0·경고 70, TypeScript는 오류 0 |
-| `npm run verify:analysis` | 통과: 7개 파일, 72개 테스트 |
+| `npm run verify:analysis` | 통과: 7개 파일, 88개 테스트 |
 | `npm run verify:admin` | 통과: 5개 파일, 90개 테스트 |
 | `npm test -- --runInBand` | 통과: Jest 1개 suite, 2개 테스트 |
 | `npm run test:unit` | 기존 `.env.local`을 로드해 통과: 23개 파일 통과·1개 스킵, 225개 테스트 통과·6개 스킵 |
@@ -36,6 +36,12 @@
 > - `/api/pubg/match`의 서버 전용 `persistMatchAnalysis` 직접 호출로 전환
 > - `processed_match_telemetry`는 `/api/pubg/match`에서 `match_id,platform,player_id` identity로 단일 upsert 유지
 > - 무인증 HTTP 경계 제거와 저장 계약·실패 격리 회귀 테스트 추가
+> - `source=scraper`는 non-empty `PUBG_SCRAPER_INTERNAL_TOKEN` + `Authorization: Bearer` timing-safe 검증으로 provenance 보호
+> - `force=true`는 non-empty `ADMIN_REVALIDATE_TOKEN` + `X-BGMS-Admin-Token` timing-safe 검증으로 분리하고 query `secret` 제거
+> - 내부 인증 실패를 Supabase/PUBG API 진입 전 503/403으로 차단하는 행위 테스트 추가
+> - route 운영 보고와 scraper 로그에서 token, Authorization, player, match, 외부 error 원문 제거
+
+> 배포 요구: `scripts/scrape_elite.ts`를 실행하는 환경과 `/api/pubg/match` 배포 환경에 `PUBG_SCRAPER_INTERNAL_TOKEN`, `ADMIN_REVALIDATE_TOKEN`을 빈 값이 아닌 서로 다른 값으로 동기화해야 한다. 일반 `source=user` 요청은 이 두 환경변수가 없어도 정상 처리된다.
 
 ### [보안·데이터 무결성] 공개 ingest가 service-role DB 쓰기 프록시로 동작
 

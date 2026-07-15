@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { unstable_cache } from "next/cache"; // [ISR V1.0] Next.js 16 캐싱 API
@@ -78,6 +79,25 @@ const MAP_IDS: Record<string, string> = {
   "Kiki_Main": "deston", "Neon_Main": "rondo", "DihorOtok_Main": "vikendi"
 };
 
+function getConfiguredToken(name: "PUBG_SCRAPER_INTERNAL_TOKEN" | "ADMIN_REVALIDATE_TOKEN") {
+  const token = process.env[name];
+  return token && token.trim().length > 0 ? token : null;
+}
+
+function matchesToken(providedToken: string | null, expectedToken: string): boolean {
+  if (!providedToken) return false;
+
+  const providedDigest = createHash("sha256").update(providedToken).digest();
+  const expectedDigest = createHash("sha256").update(expectedToken).digest();
+  return timingSafeEqual(providedDigest, expectedDigest);
+}
+
+function getBearerToken(request: NextRequest): string | null {
+  const authorization = request.headers.get("Authorization");
+  if (!authorization?.startsWith("Bearer ")) return null;
+  return authorization.slice("Bearer ".length) || null;
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const matchId = searchParams.get("matchId");
@@ -85,7 +105,6 @@ export async function GET(request: NextRequest) {
   const platformParam = normalizePlatform(searchParams.get("platform") || "steam");
   const lowerNickname = normalizeName(nickname || "");
   const force = searchParams.get("force") === "true";
-  const secret = searchParams.get("secret");
   const sourceParam = searchParams.get("source") || "user";
 
   if (platformParam !== "steam" && platformParam !== "kakao") {
@@ -97,6 +116,26 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Invalid source" }, { status: 400 });
   }
   const source: AnalysisSource = sourceParam;
+
+  if (source === "scraper") {
+    const scraperToken = getConfiguredToken("PUBG_SCRAPER_INTERNAL_TOKEN");
+    if (!scraperToken) {
+      return NextResponse.json({ error: "Scraper authentication unavailable" }, { status: 503 });
+    }
+    if (!matchesToken(getBearerToken(request), scraperToken)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+  }
+
+  if (force) {
+    const adminToken = getConfiguredToken("ADMIN_REVALIDATE_TOKEN");
+    if (!adminToken) {
+      return NextResponse.json({ error: "Admin authentication unavailable" }, { status: 503 });
+    }
+    if (!matchesToken(request.headers.get("X-BGMS-Admin-Token"), adminToken)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
+  }
 
   // [MOCK] 로컬 DB 장애 및 시뮬레이션을 위한 골드 매치 모킹
   if (matchId === "match-gold-simulation-1234") {
@@ -117,8 +156,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const isAdmin = secret === process.env.ADMIN_REVALIDATE_TOKEN;
-    const shouldForce = force && isAdmin;
+    const shouldForce = force;
 
     if (!shouldForce) {
       const cachedData = await getCachedMatchTelemetry(matchId, lowerNickname, platform) as any;
@@ -238,7 +276,12 @@ export async function GET(request: NextRequest) {
       : err.message;
 
     // [MONITORING] PUBG API 에러 감지 및 기록
-    await reportPubgApiError("/api/pubg/match", status, errorMsg, err.stack || err.message);
+    await reportPubgApiError(
+      "/api/pubg/match",
+      status,
+      isRateLimit ? "PUBG API rate limited" : "PUBG match request failed",
+      "Sanitized route error",
+    );
 
     return NextResponse.json({ error: errorMsg }, { status });
   }

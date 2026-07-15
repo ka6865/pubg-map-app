@@ -13,14 +13,22 @@ dotenv.config();
 const PUBG_API_KEY = process.env.PUBG_API_KEY;
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const PUBG_SCRAPER_INTERNAL_TOKEN = process.env.PUBG_SCRAPER_INTERNAL_TOKEN;
+const ADMIN_REVALIDATE_TOKEN = process.env.ADMIN_REVALIDATE_TOKEN;
 
 const BASE_URL = "https://api.pubg.com/shards/steam";
 const PLATFORM = "steam";
 const APP_URL = process.env.APP_URL || "http://localhost:3000";
 const MATCH_API_URL = `${APP_URL}/api/pubg/match`;
 
-if (!PUBG_API_KEY || !SUPABASE_URL || !SUPABASE_KEY) {
-  console.error("🚨 환경변수(PUBG_API_KEY, SUPABASE_URL, KEY)가 설정되어 있지 않습니다.");
+if (
+  !PUBG_API_KEY?.trim()
+  || !SUPABASE_URL?.trim()
+  || !SUPABASE_KEY?.trim()
+  || !PUBG_SCRAPER_INTERNAL_TOKEN?.trim()
+  || !ADMIN_REVALIDATE_TOKEN?.trim()
+) {
+  console.error("필수 환경변수가 설정되어 있지 않습니다.");
   process.exit(1);
 }
 
@@ -29,6 +37,10 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 const HEADERS = {
   Authorization: `Bearer ${PUBG_API_KEY}`,
   Accept: "application/vnd.api+json",
+};
+
+const MATCH_API_HEADERS = {
+  Authorization: `Bearer ${PUBG_SCRAPER_INTERNAL_TOKEN}`,
 };
 
 // [설정] 실행 모드에 따른 제한값 (기본값은 데이터 정밀도를 위해 샘플링 활성화)
@@ -78,7 +90,7 @@ async function scrapeEliteData() {
     console.log(`🎯 총 ${playerPool.size}명의 타겟 플레이어 확보.`);
 
     for (const [accountId, nickname] of playerPool.entries()) {
-      console.log(`\n🔍 [${nickname}] 매치 스캔 중...`);
+      console.log("\n플레이어 매치 스캔 중...");
       await sleep(3000); // 플레이어 간 간격
 
       let matchIds: string[] = [];
@@ -102,7 +114,7 @@ async function scrapeEliteData() {
 
         // 구버전 캐시 → 무조건 재분석
         if (existingFullResult && (existingFullResult.v || 0) < RESULT_VERSION) {
-          console.log(`   - MatchID(${matchId}): 구버전 발견(${existingFullResult.v || "unknown"}) -> V${RESULT_VERSION} 재분석 시작...`);
+          console.log(`   - 구버전 캐시 발견 -> V${RESULT_VERSION} 재분석 시작...`);
         } else if (existingFullResult) {
           // [Step 2] 최신 캐시가 있는 경우 → global_benchmarks 교차 검증
           // (벤치마크 초기화 이후 스킵 방지)
@@ -116,25 +128,31 @@ async function scrapeEliteData() {
 
           if (benchmark) {
             // 캐시도 있고 벤치마크도 있으면 완전히 Skip
-            console.log(`   - MatchID(${matchId}): 최신 캐시 + 벤치마크 존재 (Skip)`);
+            console.log("   - 최신 캐시 + 벤치마크 존재 (Skip)");
             continue;
           } else {
             // 캐시는 있지만 벤치마크가 비어있음 → force 재분석 필요
-            console.log(`   - MatchID(${matchId}): 캐시 OK, 벤치마크 누락 → 강제 재분석(force=true) 요청`);
+            console.log("   - 캐시 OK, 벤치마크 누락 → 강제 재분석(force=true) 요청");
           }
         } else {
-          console.log(`   - MatchID(${matchId}): 신규 수집 시작...`);
+          console.log("   - 신규 수집 시작...");
         }
 
         // 벤치마크 누락 여부에 따라 force 파라미터 결정
         const hasCacheButNoBenchmark = existingFullResult && (existingFullResult.v || 0) >= RESULT_VERSION;
         const forceParam = hasCacheButNoBenchmark
-          ? `&force=true&secret=${encodeURIComponent(process.env.ADMIN_REVALIDATE_TOKEN || '')}`
+          ? '&force=true'
           : '';
+        const matchApiHeaders = hasCacheButNoBenchmark
+          ? { ...MATCH_API_HEADERS, 'X-BGMS-Admin-Token': ADMIN_REVALIDATE_TOKEN }
+          : MATCH_API_HEADERS;
 
         try {
           // [Step 3] 로컬/원격 서버 API 호출 (동기적으로 대기)
-          const res = await axios.get(`${MATCH_API_URL}?matchId=${matchId}&nickname=${encodeURIComponent(nickname.trim())}&platform=steam&source=scraper${forceParam}`);
+          const res = await axios.get(
+            `${MATCH_API_URL}?matchId=${matchId}&nickname=${encodeURIComponent(nickname.trim())}&platform=steam&source=scraper${forceParam}`,
+            { headers: matchApiHeaders },
+          );
           
           if (res.status === 200) {
             const d = res.data;
@@ -145,27 +163,30 @@ async function scrapeEliteData() {
 
             if (ENABLE_SAMPLING && samples.length > 0) {
               for (const sampleName of samples) {
-                console.log(`       -> [샘플링] ${sampleName} 분석 요청 중...`);
+                console.log("       -> 샘플링 분석 요청 중...");
                 try {
                   await sleep(5000); // 샘플 참가자 분석 시 매치당 sleep 적용
-                  await axios.get(`${MATCH_API_URL}?matchId=${matchId}&nickname=${encodeURIComponent(sampleName)}&platform=steam`);
+                  await axios.get(
+                    `${MATCH_API_URL}?matchId=${matchId}&nickname=${encodeURIComponent(sampleName)}&platform=steam&source=scraper`,
+                    { headers: MATCH_API_HEADERS },
+                  );
                   console.log(`         ✅ 샘플링 완료`);
-                } catch (apiErr: any) {
-                  console.log(`         ℹ️ 스킵: ${apiErr.response?.data?.error || "처리 불가"}`);
+                } catch {
+                  console.log("         샘플링 처리 스킵");
                 }
               }
             }
           }
-        } catch (apiErr: any) {
-          console.log(`     ℹ️ 스킵: ${apiErr.response?.data?.error || "처리 불가"}`);
+        } catch {
+          console.log("     매치 처리 스킵");
         }
         
         // [최적화 3] DB 부하 분산을 위한 확실한 휴식 (매치당 5초)
         await sleep(5000);
       }
     }
-  } catch (error: any) {
-    console.error("🚨 중단:", error.message);
+  } catch {
+    console.error("스크래퍼 작업 중단");
   }
 
   console.log("\n✨ 모든 작업이 완료되었습니다.");
