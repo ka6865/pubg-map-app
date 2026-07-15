@@ -23,10 +23,12 @@
 | `npm run verify:analysis` | 통과: 10개 파일, 108개 테스트 |
 | `npm run verify:admin` | 통과: 5개 파일, 90개 테스트 |
 | `npm test -- --runInBand` | 통과: Jest 1개 suite, 2개 테스트 |
-| `npm run test:unit` | 기존 `.env.local`을 로드해 통과: 26개 파일 통과·1개 스킵, 261개 테스트 통과·6개 스킵 |
+| `env DOTENV_CONFIG_PATH=.env.local node --require ./node_modules/dotenv/config node_modules/vitest/vitest.mjs run` | 통과: 26개 파일 통과·1개 스킵, 261개 테스트 통과·6개 스킵 |
 | `npm audit --omit=dev` | 이번 조치에서 재실행하지 않음. 최초 리뷰 결과는 10건(High 3, Moderate 5, Low 2) |
 
-`tests/security.test.ts`는 현재 `withOptionalAuth` 계약과 Shadow Draft의 `parent_id` 삭제 조건으로 복구해 `verify:admin`에 포함했다. worktree에 `.env.local`이 없는 상태의 최초 `test:unit` 실행은 `suggest-players` 2건이 Supabase 환경변수 초기화에서 실패했으며, primary checkout의 기존 로컬 환경을 로드한 재실행에서는 전체 통과했다.
+`tests/security.test.ts`는 현재 `withOptionalAuth` 계약과 Shadow Draft의 `parent_id` 삭제 조건으로 복구해 `verify:admin`에 포함했다. 전체 Vitest 명령의 최초 실행은 worktree에 `node_modules/dotenv`, `node_modules/vitest`, `.env.local`이 배치되지 않아 테스트 실행 전 종료 코드 1로 종료됐다. 기본 checkout의 기존 파일을 worktree의 추적되지 않는 경로에 심볼릭 링크한 후 같은 명령을 재실행해 전체 통과했다.
+
+`verify:core`의 기존 ESLint 경고 70개는 다음 34개 파일에서 발생했다: `app/admin/dashboard/page.tsx`, `app/api/bluezone/route.ts`, `app/api/board/posts/route.ts`, `app/api/cron/patch-notes/route.ts`, `app/api/pubg/telemetry/route.ts`, `app/crates/CrateModals.tsx`, `app/crates/CratesClient.tsx`, `app/crates/useCratesState.ts`, `app/replay/3d/page.tsx`, `app/test-coordinate/page.tsx`, `components/admin/AdminAgentChat.tsx`, `components/board/BoardListClient.tsx`, `components/board/BoardWriteClient.tsx`, `components/board/PostItem.tsx`, `components/common/PromptModal.tsx`, `components/map/HotDropLayer.tsx`, `components/map/MapShell.tsx`, `components/map/MapView.tsx`, `components/map/MobileBottomSheet.tsx`, `components/map/ReportForm.tsx`, `components/map/SimulatorPanel.tsx`, `components/map/telemetry/TelemetryCanvasLayer.tsx`, `components/map/telemetry/TelemetrySidebar.tsx`, `components/mypage/MyPage.tsx`, `components/stat/MatchTimeline.tsx`, `components/stat/StatSummaryCard.tsx`, `lib/pubg-analysis/handlers/CombatHandler.ts`, `lib/pubg-analysis/handlers/MapReplayHandler.ts`, `lib/pubg-analysis/handlers/PositionHandler.ts`, `lib/pubg-analysis/handlers/ZoneHandler.ts`, `scripts/cleanup_failed_sync.ts`, `scripts/extract_bluezone.ts`, `scripts/sync_all_db_assets.ts`, `scripts/test_gemini_posts.js`.
 
 ## 3. P0 — 즉시 차단
 
