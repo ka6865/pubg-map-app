@@ -431,19 +431,29 @@ async function reanalyzeAndSave(
     }, { onConflict: 'match_id' })
   ]);
 
+  const ingestSecret = process.env.PUBG_INGEST_INTERNAL_SECRET;
+  if (!ingestSecret) {
+    throw new Error("PUBG_INGEST_INTERNAL_SECRET 환경변수가 누락되었습니다.");
+  }
+
   fetch(`${new URL(requestUrl).origin}/api/pubg/ingest`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ 
-      matchId, 
-      playerNickname: lowerNickname, 
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${ingestSecret}`,
+    },
+    body: JSON.stringify({
+      matchId,
+      playerNickname: lowerNickname,
       finalResult: tacticalResult,
       platform,
       matchAttr,
       rawParticipants: participants,
-      source  // 'user' | 'scraper' — global_benchmarks 출처 구분
-    })
-  }).catch(() => undefined);
+      source,
+    }),
+  }).catch((error) => {
+    console.error("[MATCH] 인증된 ingest 요청 실패:", error instanceof Error ? error.message : String(error));
+  });
 
   const allParticipantNames = participants
     .filter((p: any) => !p.attributes.stats.playerId?.startsWith("ai."))

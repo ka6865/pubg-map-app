@@ -1,12 +1,79 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { timingSafeEqual } from "node:crypto";
 import { normalizeName } from "@/lib/pubg-analysis/utils";
 import { buildProcessedTelemetryUpsert, normalizePlatform } from "@/lib/pubg-analysis/cacheIdentity";
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const MAX_INGEST_BODY_BYTES = 512 * 1024;
+const MAX_PARTICIPANTS = 128;
+const ALLOWED_PLATFORMS = new Set(["steam", "kakao"]);
+const ALLOWED_SOURCES = new Set(["user", "scraper"]);
+
+type IngestRouteBody = Record<string, any> & {
+  matchId: string;
+  playerNickname: string;
+  platform: string;
+  finalResult: Record<string, any>;
+  source: string;
+};
+
+type ValidatedIngestRequest =
+  | { body: IngestRouteBody }
+  | { response: NextResponse };
+
+function hasValidBearerToken(request: Request, secret: string): boolean {
+  const authorization = request.headers.get("authorization") || "";
+  const expected = `Bearer ${secret}`;
+  const actualBuffer = Buffer.from(authorization);
+  const expectedBuffer = Buffer.from(expected);
+
+  return actualBuffer.length === expectedBuffer.length
+    && timingSafeEqual(actualBuffer, expectedBuffer);
+}
+
+async function readValidatedBody(request: Request): Promise<ValidatedIngestRequest> {
+  const rawBody = await request.text();
+  if (Buffer.byteLength(rawBody, "utf8") > MAX_INGEST_BODY_BYTES) {
+    return { response: NextResponse.json({ error: "Payload too large" }, { status: 413 }) };
+  }
+
+  let body: IngestRouteBody;
+  try {
+    body = JSON.parse(rawBody) as IngestRouteBody;
+  } catch {
+    return { response: NextResponse.json({ error: "Invalid JSON" }, { status: 400 }) };
+  }
+
+  if (!body || typeof body !== "object" || !body.matchId || !body.playerNickname || !body.finalResult) {
+    return { response: NextResponse.json({ error: "Missing required data" }, { status: 400 }) };
+  }
+  if (!ALLOWED_PLATFORMS.has(String(body.platform || "").toLowerCase())) {
+    return { response: NextResponse.json({ error: "Invalid platform" }, { status: 400 }) };
+  }
+  if (!ALLOWED_SOURCES.has(String(body.source || ""))) {
+    return { response: NextResponse.json({ error: "Invalid source" }, { status: 400 }) };
+  }
+  if (body.forceBenchmark === true) {
+    return { response: NextResponse.json({ error: "forceBenchmark is not allowed" }, { status: 400 }) };
+  }
+  if (Array.isArray(body.rawParticipants) && body.rawParticipants.length > MAX_PARTICIPANTS) {
+    return { response: NextResponse.json({ error: "Too many participants" }, { status: 413 }) };
+  }
+
+  return { body };
+}
+
+export async function validateIngestRequest(request: Request): Promise<ValidatedIngestRequest> {
+  const secret = process.env.PUBG_INGEST_INTERNAL_SECRET;
+  if (!secret) {
+    return { response: NextResponse.json({ error: "Ingest is unavailable" }, { status: 503 }) };
+  }
+  if (!hasValidBearerToken(request, secret)) {
+    return { response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }) };
+  }
+
+  return readValidatedBody(request);
+}
 
 function safeNumber(value: unknown, fallback = 0): number {
   const numberValue = Number(value);
@@ -18,13 +85,19 @@ function safeInteger(value: unknown, fallback = 0): number {
 }
 
 export async function POST(request: Request) {
-  try {
-    const body = await request.json();
-    const { matchId, playerNickname, finalResult, matchAttr, rawParticipants, source } = body;
+  const validated = await validateIngestRequest(request);
+  if ("response" in validated) {
+    return validated.response;
+  }
 
-    if (!matchId || !playerNickname || !finalResult) {
-      return NextResponse.json({ error: "Missing required data" }, { status: 400 });
-    }
+  const body = validated.body;
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  );
+
+  try {
+    const { matchId, playerNickname, finalResult, matchAttr, rawParticipants, source } = body;
 
     const lowerNickname = normalizeName(playerNickname);
     const platform = normalizePlatform(body.platform || finalResult.platform || matchAttr?.platformId);
@@ -92,7 +165,7 @@ export async function POST(request: Request) {
     const isStandardBR = (matchTypeLower === 'official' || matchTypeLower === 'competitive') && 
                          (gameModeLower !== 'tdm' && gameModeLower !== 'trainingroom');
 
-    if ((finalResult.isValidBenchmark || body.forceBenchmark) && isStandardBR) {
+    if (finalResult.isValidBenchmark && isStandardBR) {
       const stats = finalResult.stats;
       backgroundTasks.push({
         name: "global_benchmarks",
