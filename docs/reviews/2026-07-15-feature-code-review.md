@@ -19,11 +19,11 @@
 
 | 검증 | 결과 |
 |---|---|
-| `npm run verify:core` | worktree 로컬 ESLint 설치 불완전으로 명령 시작 실패. 동일 config의 전체 ESLint는 오류 0·경고 70, TypeScript는 오류 0 |
+| `npm run verify:core` | 병합된 `develop`에서 통과: ESLint 오류 0·기존 경고 70, TypeScript 오류 0 |
 | `npm run verify:analysis` | 통과: 7개 파일, 88개 테스트 |
 | `npm run verify:admin` | 통과: 5개 파일, 90개 테스트 |
-| `npm test -- --runInBand` | 통과: Jest 1개 suite, 2개 테스트 |
-| `npm run test:unit` | 기존 `.env.local`을 로드해 통과: 23개 파일 통과·1개 스킵, 225개 테스트 통과·6개 스킵 |
+| `npm test -- --runInBand` | 병합된 `develop`에서 통과: Jest 2개 suite, 4개 테스트 |
+| `npm run test:unit` | 기존 `.env.local`을 로드해 통과: 23개 파일 통과·1개 스킵, 241개 테스트 통과·6개 스킵 |
 | `npm audit --omit=dev` | 이번 조치에서 재실행하지 않음. 최초 리뷰 결과는 10건(High 3, Moderate 5, Low 2) |
 
 `tests/security.test.ts`는 현재 `withOptionalAuth` 계약과 Shadow Draft의 `parent_id` 삭제 조건으로 복구해 `verify:admin`에 포함했다. worktree에 `.env.local`이 없는 상태의 최초 `test:unit` 실행은 `suggest-players` 2건이 Supabase 환경변수 초기화에서 실패했으며, primary checkout의 기존 로컬 환경을 로드한 재실행에서는 전체 통과했다.
@@ -188,7 +188,7 @@
 3. AI squad 실패 계약 교체
 4. 승인 작업 원자적 claim
 5. PUBG refresh, telemetry, analytics rate limit
-6. 깨진 보안 테스트 복구 후 필수 게이트 편입
+6. [x] 깨진 보안 테스트 복구 후 필수 게이트 편입
 
 ### 다음 스프린트
 
