@@ -6,15 +6,21 @@ import { buildProcessedTelemetryUpsert, normalizePlatform } from "@/lib/pubg-ana
 
 const MAX_INGEST_BODY_BYTES = 512 * 1024;
 const MAX_PARTICIPANTS = 128;
+const MAX_MATCH_ID_LENGTH = 128;
+const MAX_PLAYER_NICKNAME_LENGTH = 32;
 const ALLOWED_PLATFORMS = new Set(["steam", "kakao"]);
 const ALLOWED_SOURCES = new Set(["user", "scraper"]);
 
-type IngestRouteBody = Record<string, any> & {
+type JsonObject = Record<string, unknown>;
+
+type IngestRouteBody = JsonObject & {
   matchId: string;
   playerNickname: string;
-  platform: string;
-  finalResult: Record<string, any>;
-  source: string;
+  platform: "steam" | "kakao";
+  finalResult: JsonObject;
+  source: "user" | "scraper";
+  rawParticipants?: unknown[];
+  matchAttr?: JsonObject;
 };
 
 type ValidatedIngestRequest =
@@ -31,36 +37,110 @@ function hasValidBearerToken(request: Request, secret: string): boolean {
     && timingSafeEqual(actualBuffer, expectedBuffer);
 }
 
-async function readValidatedBody(request: Request): Promise<ValidatedIngestRequest> {
-  const rawBody = await request.text();
-  if (Buffer.byteLength(rawBody, "utf8") > MAX_INGEST_BODY_BYTES) {
-    return { response: NextResponse.json({ error: "Payload too large" }, { status: 413 }) };
+function payloadTooLargeResponse(): NextResponse {
+  return NextResponse.json({ error: "Payload too large" }, { status: 413 });
+}
+
+async function readBodyWithinLimit(request: Request): Promise<
+  | { rawBody: string }
+  | { response: NextResponse }
+> {
+  const contentLengthHeader = request.headers.get("content-length");
+  if (contentLengthHeader !== null) {
+    const contentLength = Number(contentLengthHeader);
+    if (Number.isFinite(contentLength) && contentLength > MAX_INGEST_BODY_BYTES) {
+      return { response: payloadTooLargeResponse() };
+    }
   }
 
-  let body: IngestRouteBody;
+  if (!request.body) {
+    return { rawBody: "" };
+  }
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    totalBytes += value.byteLength;
+    if (totalBytes > MAX_INGEST_BODY_BYTES) {
+      await reader.cancel();
+      return { response: payloadTooLargeResponse() };
+    }
+    chunks.push(value);
+  }
+
+  const bodyBytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bodyBytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  return { rawBody: new TextDecoder().decode(bodyBytes) };
+}
+
+function isPlainObject(value: unknown): value is JsonObject {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function isNonEmptyString(value: unknown, maxLength: number): value is string {
+  return typeof value === "string"
+    && value.trim().length > 0
+    && value.length <= maxLength;
+}
+
+async function readValidatedBody(request: Request): Promise<ValidatedIngestRequest> {
+  const readResult = await readBodyWithinLimit(request);
+  if ("response" in readResult) return readResult;
+
+  let parsedBody: unknown;
   try {
-    body = JSON.parse(rawBody) as IngestRouteBody;
+    parsedBody = JSON.parse(readResult.rawBody) as unknown;
   } catch {
     return { response: NextResponse.json({ error: "Invalid JSON" }, { status: 400 }) };
   }
 
-  if (!body || typeof body !== "object" || !body.matchId || !body.playerNickname || !body.finalResult) {
-    return { response: NextResponse.json({ error: "Missing required data" }, { status: 400 }) };
+  if (!isPlainObject(parsedBody)) {
+    return { response: NextResponse.json({ error: "Invalid body" }, { status: 400 }) };
   }
-  if (!ALLOWED_PLATFORMS.has(String(body.platform || "").toLowerCase())) {
+  if (!isNonEmptyString(parsedBody.matchId, MAX_MATCH_ID_LENGTH)) {
+    return { response: NextResponse.json({ error: "Invalid matchId" }, { status: 400 }) };
+  }
+  if (!isNonEmptyString(parsedBody.playerNickname, MAX_PLAYER_NICKNAME_LENGTH)) {
+    return { response: NextResponse.json({ error: "Invalid playerNickname" }, { status: 400 }) };
+  }
+  if (!isPlainObject(parsedBody.finalResult)) {
+    return { response: NextResponse.json({ error: "Invalid finalResult" }, { status: 400 }) };
+  }
+  if (typeof parsedBody.platform !== "string" || !ALLOWED_PLATFORMS.has(parsedBody.platform)) {
     return { response: NextResponse.json({ error: "Invalid platform" }, { status: 400 }) };
   }
-  if (!ALLOWED_SOURCES.has(String(body.source || ""))) {
+  if (typeof parsedBody.source !== "string" || !ALLOWED_SOURCES.has(parsedBody.source)) {
     return { response: NextResponse.json({ error: "Invalid source" }, { status: 400 }) };
   }
-  if (body.forceBenchmark === true) {
+  if (parsedBody.forceBenchmark === true) {
     return { response: NextResponse.json({ error: "forceBenchmark is not allowed" }, { status: 400 }) };
   }
-  if (Array.isArray(body.rawParticipants) && body.rawParticipants.length > MAX_PARTICIPANTS) {
+  if (parsedBody.rawParticipants !== undefined && !Array.isArray(parsedBody.rawParticipants)) {
+    return { response: NextResponse.json({ error: "Invalid rawParticipants" }, { status: 400 }) };
+  }
+  if (Array.isArray(parsedBody.rawParticipants) && parsedBody.rawParticipants.length > MAX_PARTICIPANTS) {
     return { response: NextResponse.json({ error: "Too many participants" }, { status: 413 }) };
   }
+  if (parsedBody.matchAttr !== undefined && !isPlainObject(parsedBody.matchAttr)) {
+    return { response: NextResponse.json({ error: "Invalid matchAttr" }, { status: 400 }) };
+  }
 
-  return { body };
+  return { body: parsedBody as IngestRouteBody };
 }
 
 export async function validateIngestRequest(request: Request): Promise<ValidatedIngestRequest> {
@@ -97,10 +177,13 @@ export async function POST(request: Request) {
   );
 
   try {
-    const { matchId, playerNickname, finalResult, matchAttr, rawParticipants, source } = body;
+    const { matchId, playerNickname, source } = body;
+    const finalResult = body.finalResult as Record<string, any>;
+    const matchAttr = body.matchAttr as Record<string, any> | undefined;
+    const rawParticipants = body.rawParticipants as any[] | undefined;
 
     const lowerNickname = normalizeName(playerNickname);
-    const platform = normalizePlatform(body.platform || finalResult.platform || matchAttr?.platformId);
+    const platform = normalizePlatform(body.platform);
     const backgroundTasks: Array<{ name: string; task: PromiseLike<any> }> = [];
     const teammateKnocks = Math.max(1, finalResult.tradeStats?.teammateKnocks || 0);
     const totalKillContribution = Math.max(

@@ -73,6 +73,59 @@ const MAP_IDS: Record<string, string> = {
   "Kiki_Main": "deston", "Neon_Main": "rondo", "DihorOtok_Main": "vikendi"
 };
 
+type IngestDispatchPayload = {
+  matchId: string;
+  playerNickname: string;
+  finalResult: Record<string, unknown>;
+  platform: string;
+  matchAttr?: unknown;
+  rawParticipants?: unknown[];
+  source: string;
+};
+
+function getConfiguredIngestOrigin(): string | null {
+  const configuredOrigin = process.env.PUBG_INGEST_INTERNAL_ORIGIN;
+  if (!configuredOrigin) return null;
+
+  try {
+    const parsed = new URL(configuredOrigin);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return null;
+    }
+    return parsed.origin;
+  } catch {
+    return null;
+  }
+}
+
+export function dispatchIngestRequest(
+  payload: IngestDispatchPayload,
+  fetchImplementation: typeof fetch = fetch,
+): boolean {
+  const ingestSecret = process.env.PUBG_INGEST_INTERNAL_SECRET;
+  const ingestOrigin = getConfiguredIngestOrigin();
+  if (!ingestSecret || !ingestOrigin) {
+    return false;
+  }
+
+  void fetchImplementation(`${ingestOrigin}/api/pubg/ingest`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${ingestSecret}`,
+    },
+    body: JSON.stringify(payload),
+  }).then((response) => {
+    if (!response.ok) {
+      console.error("[MATCH] 인증된 ingest HTTP 실패:", response.status);
+    }
+  }).catch(() => {
+    console.error("[MATCH] 인증된 ingest 네트워크 실패");
+  });
+
+  return true;
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const matchId = searchParams.get("matchId");
@@ -180,7 +233,7 @@ export async function GET(request: NextRequest) {
         if (cachedVersion < RESULT_VERSION) {
           const reanalyzePromise = reanalyzeAndSave(
             matchId, nickname, platform, lowerNickname, matchData, teamNames, teamAccountIds,
-            myRosterId, myParticipant, teamStats, rankPct, matchAttr, rosters, participants, request.url,
+            myRosterId, myParticipant, teamStats, rankPct, matchAttr, rosters, participants,
             true, source
           ).catch(() => undefined);
 
@@ -209,7 +262,7 @@ export async function GET(request: NextRequest) {
     // 캐시가 없거나 강제 업데이트가 필요한 경우 동기식 분석 실행
     const finalResponse = await reanalyzeAndSave(
       matchId, nickname, platform, lowerNickname, matchData, teamNames, teamAccountIds,
-      myRosterId, myParticipant, teamStats, rankPct, matchAttr, rosters, participants, request.url,
+      myRosterId, myParticipant, teamStats, rankPct, matchAttr, rosters, participants,
       shouldForce, source
     );
 
@@ -247,7 +300,6 @@ async function reanalyzeAndSave(
   matchAttr: any,
   rosters: any[],
   participants: any[],
-  requestUrl: string,
   force: boolean = false,
   source: string = 'user'  // 'user' | 'scraper'
 ) {
@@ -431,28 +483,14 @@ async function reanalyzeAndSave(
     }, { onConflict: 'match_id' })
   ]);
 
-  const ingestSecret = process.env.PUBG_INGEST_INTERNAL_SECRET;
-  if (!ingestSecret) {
-    throw new Error("PUBG_INGEST_INTERNAL_SECRET 환경변수가 누락되었습니다.");
-  }
-
-  fetch(`${new URL(requestUrl).origin}/api/pubg/ingest`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${ingestSecret}`,
-    },
-    body: JSON.stringify({
-      matchId,
-      playerNickname: lowerNickname,
-      finalResult: tacticalResult,
-      platform,
-      matchAttr,
-      rawParticipants: participants,
-      source,
-    }),
-  }).catch((error) => {
-    console.error("[MATCH] 인증된 ingest 요청 실패:", error instanceof Error ? error.message : String(error));
+  dispatchIngestRequest({
+    matchId,
+    playerNickname: lowerNickname,
+    finalResult: tacticalResult,
+    platform,
+    matchAttr,
+    rawParticipants: participants,
+    source,
   });
 
   const allParticipantNames = participants
