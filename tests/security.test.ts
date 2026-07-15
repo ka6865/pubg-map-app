@@ -1,12 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { POST as postsWritePOST } from "../app/api/posts/write/route";
 import { POST as postsPromotePOST } from "../app/api/posts/promote/route";
-import { withAuthGuard } from "../utils/supabase/guard";
+import { withAuthGuard, withOptionalAuth } from "../utils/supabase/guard";
 import { NextResponse } from "next/server";
 
-// withAuthGuard 모듈 mock
+// 인증 가드 모듈 mock
 vi.mock("../utils/supabase/guard", () => ({
   withAuthGuard: vi.fn(),
+  withOptionalAuth: vi.fn(),
 }));
 
 describe("🔒 BGMS API Route Security Guard Tests", () => {
@@ -84,34 +85,31 @@ describe("🔒 BGMS API Route Security Guard Tests", () => {
   });
 
   describe("📝 게시글 작성/수정 API (/api/posts/write)", () => {
-    it("1. 비로그인 유저가 접근할 경우 401 Unauthorized 에러를 반환해야 함", async () => {
-      // withAuthGuard가 401 NextResponse를 리턴하도록 mock 설정
-      (withAuthGuard as any).mockResolvedValue({
-        error: NextResponse.json(
-          { error: "로그인이 필요합니다. 로그인 후 다시 시도해주세요." },
-          { status: 401 }
-        ),
+    it("1. 비회원 신규 작성에서 닉네임과 비밀번호가 누락되면 400을 반환해야 함", async () => {
+      (withOptionalAuth as any).mockResolvedValue({
+        user: null,
+        supabaseAdmin: mockSupabaseAdmin,
       });
 
-      const mockRequest = new Request("http://localhost:3000/api/posts/write", {
+      const request = new Request("http://localhost:3000/api/posts/write", {
         method: "POST",
         body: JSON.stringify({
           title: "Test Title",
           content: "Test Content",
-          user_id: "any-user",
+          category: "자유",
         }),
       });
 
-      const response = await postsWritePOST(mockRequest);
-      expect(response.status).toBe(401);
-
+      const response = await postsWritePOST(request);
       const json = await response.json();
-      expect(json.error).toContain("로그인이 필요합니다");
+
+      expect(response.status).toBe(400);
+      expect(json.error).toContain("닉네임과 비밀번호");
     });
 
     it("2. 로그인 상태에서 타인의 user_id를 사칭하여 글을 쓰려고 시도할 경우 403 Forbidden을 반환해야 함 (일반 사용자)", async () => {
       // 로그인된 사용자 id = "user-A"
-      (withAuthGuard as any).mockResolvedValue({
+      (withOptionalAuth as any).mockResolvedValue({
         user: { id: "user-A", email: "userA@test.com" },
         supabaseAdmin: mockSupabaseAdmin,
       });
@@ -141,7 +139,7 @@ describe("🔒 BGMS API Route Security Guard Tests", () => {
 
     it("3. 본인의 user_id로 글을 작성할 경우 정상적으로 처리가 통과되어야 함", async () => {
       // 로그인된 사용자 id = "user-A"
-      (withAuthGuard as any).mockResolvedValue({
+      (withOptionalAuth as any).mockResolvedValue({
         user: { id: "user-A", email: "userA@test.com" },
         supabaseAdmin: mockSupabaseAdmin,
       });
@@ -181,7 +179,7 @@ describe("🔒 BGMS API Route Security Guard Tests", () => {
 
     it("4. 관리자(role = admin)는 타인의 user_id로 글을 작성하거나 대리 수정하는 것이 허용되어야 함", async () => {
       // 로그인된 사용자 id = "admin-user"
-      (withAuthGuard as any).mockResolvedValue({
+      (withOptionalAuth as any).mockResolvedValue({
         user: { id: "admin-user", email: "admin@test.com" },
         supabaseAdmin: mockSupabaseAdmin,
       });
@@ -444,7 +442,7 @@ describe("🔒 BGMS API Route Security Guard Tests", () => {
       // storage에서 old.png가 올바르게 삭제 요청되었는지 검증
       expect(mockRemove).toHaveBeenCalledWith(["old.png"]);
       // 초안 삭제가 이루어졌는지 검증
-      expect(mockDeleteEq).toHaveBeenCalledWith("id", "shadow-draft-id");
+      expect(mockDeleteEq).toHaveBeenCalledWith("parent_id", "original-id");
     });
   });
 });
