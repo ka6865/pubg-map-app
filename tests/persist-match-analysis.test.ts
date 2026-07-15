@@ -74,6 +74,21 @@ function setSuccessfulUpsert(table: string): UpsertMock {
   return upsert;
 }
 
+function createParticipants(count: number) {
+  return Array.from({ length: count }, (_, index) => ({
+    id: `participant-${index}`,
+    attributes: {
+      stats: {
+        playerId: `account-${index}`,
+        name: `Player${index}`,
+        damageDealt: index,
+        kills: 0,
+        winPlace: index + 1,
+      },
+    },
+  }));
+}
+
 describe("persistMatchAnalysis", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -200,24 +215,115 @@ describe("persistMatchAnalysis", () => {
   });
 
   it("player cache를 25개 단위로 나눠 저장한다", async () => {
-    const rawParticipants = Array.from({ length: 26 }, (_, index) => ({
-      id: `participant-${index}`,
-      attributes: {
-        stats: {
-          playerId: `account-${index}`,
-          name: `Player${index}`,
-          damageDealt: index,
-          kills: 0,
-          winPlace: index + 1,
-        },
-      },
-    }));
-
-    await persistMatchAnalysis(supabase, { ...input, rawParticipants });
+    await persistMatchAnalysis(supabase, { ...input, rawParticipants: createParticipants(26) });
 
     expect(upserts.get("pubg_player_cache")).toHaveBeenCalledTimes(2);
     expect(upserts.get("pubg_player_cache")?.mock.calls[0]?.[0]).toHaveLength(25);
     expect(upserts.get("pubg_player_cache")?.mock.calls[1]?.[0]).toHaveLength(1);
+  });
+
+  it.each([
+    {
+      label: "error 반환",
+      failSecondBatch: (upsert: UpsertMock) => upsert
+        .mockResolvedValueOnce({ error: null })
+        .mockResolvedValueOnce({ error: { message: "second batch failed" } }),
+    },
+    {
+      label: "Promise reject",
+      failSecondBatch: (upsert: UpsertMock) => upsert
+        .mockResolvedValueOnce({ error: null })
+        .mockRejectedValueOnce(new Error("second batch failed")),
+    },
+  ])("player cache 2번째 batch $label 시 3번째를 중단하고 독립 저장은 완료한다", async ({ failSecondBatch }) => {
+    const cacheUpsert = upserts.get("pubg_player_cache");
+    expect(cacheUpsert).toBeDefined();
+    failSecondBatch(cacheUpsert!);
+
+    const result = await persistMatchAnalysis(supabase, {
+      ...input,
+      rawParticipants: createParticipants(51),
+    });
+
+    expect(cacheUpsert).toHaveBeenCalledTimes(2);
+    expect(result.failures.filter(({ taskName }) => taskName === "pubg_player_cache")).toEqual([
+      { taskName: "pubg_player_cache", message: "second batch failed" },
+    ]);
+    expect(result.succeeded).not.toContain("pubg_player_cache");
+    expect(result.succeeded).toEqual(expect.arrayContaining(["match_stats_raw", "global_benchmarks"]));
+    expect(upserts.get("match_stats_raw")).toHaveBeenCalledTimes(1);
+    expect(upserts.get("global_benchmarks")).toHaveBeenCalledTimes(1);
+  });
+
+  it("benchmark 선택 값이 없으면 현재 route와 같은 안전 기본값을 저장한다", async () => {
+    await persistMatchAnalysis(supabase, {
+      ...input,
+      finalResult: {
+        matchType: "official",
+        gameMode: "squad-fpp",
+        isValidBenchmark: true,
+        stats: {},
+      },
+    });
+
+    expect(upserts.get("global_benchmarks")).toHaveBeenCalledWith(expect.objectContaining({
+      damage: 0,
+      kills: 0,
+      win_place: 100,
+      counter_latency_ms: 0,
+      initiative_rate: 0,
+      revive_rate: 0,
+      is_crossfire: false,
+      utility_count: 0,
+      smoke_count: 0,
+      frag_count: 0,
+      pressure_index: 0,
+      enemy_death_distance: 0,
+      survival_time: 0,
+      isolation_index: 0,
+      min_dist: 0,
+      height_diff: 0,
+      smoke_rate: 0,
+      trade_rate: 0,
+      solo_kill_rate: 0,
+      reversal_rate: 0,
+      duel_win_rate: 0,
+      trade_latency_ms: 0,
+      lethal_throw_count: 0,
+      tier: "C",
+      score: 0,
+      combat_score: 0,
+      tactical_score: 0,
+      survival_score: 0,
+      supp_count: 0,
+      team_wipes: 0,
+      death_phase: 0,
+      filter_version: 8,
+    }), { onConflict: "match_id,platform,player_id" });
+  });
+
+  it("trusted internal forceBenchmark는 유효하지 않은 표준 BR benchmark를 허용한다", async () => {
+    await persistMatchAnalysis(supabase, {
+      ...input,
+      forceBenchmark: true,
+      finalResult: { ...input.finalResult, isValidBenchmark: false },
+    });
+
+    expect(upserts.get("global_benchmarks")).toHaveBeenCalledTimes(1);
+  });
+
+  it("trusted internal forceBenchmark도 비표준 모드 benchmark는 허용하지 않는다", async () => {
+    await persistMatchAnalysis(supabase, {
+      ...input,
+      forceBenchmark: true,
+      finalResult: {
+        ...input.finalResult,
+        gameMode: "tdm",
+        isValidBenchmark: false,
+      },
+    });
+
+    expect(upserts.get("global_benchmarks")).not.toHaveBeenCalled();
   });
 
   it.each([
