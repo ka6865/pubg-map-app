@@ -9,11 +9,12 @@ import { fetchTierBenchmarkStats } from "@/lib/pubg-analysis/benchmarkLookup";
 import { buildProcessedTelemetryUpsert, getValidFullResult, normalizePlatform } from "@/lib/pubg-analysis/cacheIdentity";
 import { uploadToR2, downloadFromR2 } from "@/lib/pubg-analysis/r2Service";
 import { trackPubgRateLimit } from "@/lib/pubg-analysis/pubgApiTracker";
+import {
+  persistMatchAnalysis,
+  type AnalysisSource,
+  type PubgPlatform,
+} from "@/lib/pubg-analysis/persistMatchAnalysis";
 import { reportPubgApiError } from "@/lib/pubg/apiHelper";
-import type {
-  IngestPlatform,
-  IngestSource,
-} from "../ingest/route";
 
 // [ISR V1.0] force-dynamic 유지: PUBG API 호출, R2 업로드, DB Upsert 등 부수효과 보호
 // unstable_cache는 DB 읽기(캐시 조회) 전용 프록시로만 사용
@@ -77,59 +78,6 @@ const MAP_IDS: Record<string, string> = {
   "Kiki_Main": "deston", "Neon_Main": "rondo", "DihorOtok_Main": "vikendi"
 };
 
-type IngestDispatchPayload = {
-  matchId: string;
-  playerNickname: string;
-  platform: IngestPlatform;
-  finalResult: object;
-  source: IngestSource;
-  matchAttr?: object;
-  rawParticipants?: object[];
-};
-
-function getConfiguredIngestOrigin(): string | null {
-  const configuredOrigin = process.env.PUBG_INGEST_INTERNAL_ORIGIN;
-  if (!configuredOrigin) return null;
-
-  try {
-    const parsed = new URL(configuredOrigin);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      return null;
-    }
-    return parsed.origin;
-  } catch {
-    return null;
-  }
-}
-
-export function dispatchIngestRequest(
-  payload: IngestDispatchPayload,
-  fetchImplementation: typeof fetch = fetch,
-): boolean {
-  const ingestSecret = process.env.PUBG_INGEST_INTERNAL_SECRET;
-  const ingestOrigin = getConfiguredIngestOrigin();
-  if (!ingestSecret || !ingestOrigin) {
-    return false;
-  }
-
-  void fetchImplementation(`${ingestOrigin}/api/pubg/ingest`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${ingestSecret}`,
-    },
-    body: JSON.stringify(payload),
-  }).then((response) => {
-    if (!response.ok) {
-      console.error("[MATCH] 인증된 ingest HTTP 실패:", response.status);
-    }
-  }).catch(() => {
-    console.error("[MATCH] 인증된 ingest 네트워크 실패");
-  });
-
-  return true;
-}
-
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const matchId = searchParams.get("matchId");
@@ -143,12 +91,12 @@ export async function GET(request: NextRequest) {
   if (platformParam !== "steam" && platformParam !== "kakao") {
     return NextResponse.json({ error: "Invalid platform" }, { status: 400 });
   }
-  const platform: IngestPlatform = platformParam;
+  const platform: PubgPlatform = platformParam;
 
   if (sourceParam !== "user" && sourceParam !== "scraper") {
     return NextResponse.json({ error: "Invalid source" }, { status: 400 });
   }
-  const source: IngestSource = sourceParam;
+  const source: AnalysisSource = sourceParam;
 
   // [MOCK] 로컬 DB 장애 및 시뮬레이션을 위한 골드 매치 모킹
   if (matchId === "match-gold-simulation-1234") {
@@ -302,7 +250,7 @@ export async function GET(request: NextRequest) {
 async function reanalyzeAndSave(
   matchId: string,
   nickname: string,
-  platform: IngestPlatform,
+  platform: PubgPlatform,
   lowerNickname: string,
   matchData: any,
   teamNames: Set<string>,
@@ -315,7 +263,7 @@ async function reanalyzeAndSave(
   rosters: any[],
   participants: any[],
   force: boolean = false,
-  source: IngestSource = 'user'
+  source: AnalysisSource = 'user'
 ) {
   const telemetryAsset = matchData.included.find((it: any) => it.type === "asset");
   let telData: any[] = [];
@@ -497,15 +445,46 @@ async function reanalyzeAndSave(
     }, { onConflict: 'match_id' })
   ]);
 
-  dispatchIngestRequest({
-    matchId,
-    playerNickname: lowerNickname,
-    finalResult: tacticalResult,
-    platform,
-    matchAttr,
-    rawParticipants: participants,
-    source,
-  });
+  try {
+    const persistenceResult = await persistMatchAnalysis(supabase, {
+      matchId,
+      playerNickname: lowerNickname,
+      platform: platform === "kakao" ? "kakao" : "steam",
+      finalResult: {
+        ...tacticalResult,
+        stats: { ...tacticalResult.stats },
+        tradeStats: { ...tacticalResult.tradeStats },
+        killContribution: { ...tacticalResult.killContribution },
+        isolationData: { ...tacticalResult.isolationData },
+        combatPressure: {
+          ...tacticalResult.combatPressure,
+          utilityStats: { ...tacticalResult.combatPressure.utilityStats },
+        },
+        itemUseSummary: { ...tacticalResult.itemUseSummary },
+        duelStats: { ...tacticalResult.duelStats },
+        itemUseStats: { ...tacticalResult.itemUseStats },
+        benchmark: tacticalResult.benchmark
+          ? {
+              ...tacticalResult.benchmark,
+              breakdown: { ...tacticalResult.benchmark.breakdown },
+            }
+          : undefined,
+      },
+      matchAttr,
+      rawParticipants: participants,
+      source: source === "scraper" ? "scraper" : "user",
+      forceBenchmark: false,
+    });
+
+    if (persistenceResult.failures.length > 0) {
+      console.error(
+        "[MATCH] 파생 통계 저장 실패:",
+        persistenceResult.failures.map(({ taskName }) => taskName),
+      );
+    }
+  } catch {
+    console.error("[MATCH] 파생 통계 저장 중 예외 발생");
+  }
 
   const allParticipantNames = participants
     .filter((p: any) => !p.attributes.stats.playerId?.startsWith("ai."))
