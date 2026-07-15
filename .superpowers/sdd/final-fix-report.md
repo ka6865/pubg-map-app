@@ -89,3 +89,14 @@ git diff --check
 ## 잔여 우려
 
 - `js-yaml`은 프로젝트의 ESLint 전이 의존성으로 lockfile에 고정되어 있다. 추가 dependency 변경은 없지만, 향후 ESLint 의존성 구조가 바뀌면 테스트의 YAML 파서 공급 방식을 재검토해야 한다.
+
+## 통합 최종 fresh 검증
+
+최종 통합 상태에서 재실행한 검증 결과는 다음과 같다.
+
+- `npm run verify:analysis`: exit 0, 10개 파일, 112개 테스트 통과
+- `npm run verify:admin`: exit 0, 5개 파일, 90개 테스트 통과
+- 전체 Vitest: exit 0, 26개 파일 통과·1개 스킵, 265개 테스트 통과·6개 스킵
+- Jest: exit 0, 1개 suite, 2개 테스트 통과
+- `npm run verify:core`: exit 0, ESLint 오류 0, 기존 경고 70개/34개 파일, TypeScript 오류 0
+- Hotdrop 변경 범위 ESLint: exit 0, 오류·경고 0

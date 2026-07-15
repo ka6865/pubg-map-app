@@ -20,10 +20,10 @@
 | 검증 | 결과 |
 |---|---|
 | `npm run verify:core` | 통과: ESLint 오류 0·기존 경고 70, TypeScript 오류 0 |
-| `npm run verify:analysis` | 통과: 10개 파일, 108개 테스트 |
+| `npm run verify:analysis` | 통과: 10개 파일, 112개 테스트 |
 | `npm run verify:admin` | 통과: 5개 파일, 90개 테스트 |
 | `npm test -- --runInBand` | 통과: Jest 1개 suite, 2개 테스트 |
-| `env DOTENV_CONFIG_PATH=.env.local node --require ./node_modules/dotenv/config node_modules/vitest/vitest.mjs run` | 통과: 26개 파일 통과·1개 스킵, 261개 테스트 통과·6개 스킵 |
+| `env DOTENV_CONFIG_PATH=.env.local node --require ./node_modules/dotenv/config node_modules/vitest/vitest.mjs run` | 통과: 26개 파일 통과·1개 스킵, 265개 테스트 통과·6개 스킵 |
 | `npm audit --omit=dev` | 이번 조치에서 재실행하지 않음. 최초 리뷰 결과는 10건(High 3, Moderate 5, Low 2) |
 
 `tests/security.test.ts`는 현재 `withOptionalAuth` 계약과 Shadow Draft의 `parent_id` 삭제 조건으로 복구해 `verify:admin`에 포함했다. 전체 Vitest 명령의 최초 실행은 worktree에 `node_modules/dotenv`, `node_modules/vitest`, `.env.local`이 배치되지 않아 테스트 실행 전 종료 코드 1로 종료됐다. 기본 checkout의 기존 파일을 worktree의 추적되지 않는 경로에 심볼릭 링크한 후 같은 명령을 재실행해 전체 통과했다.
@@ -113,6 +113,10 @@
 > - GitHub Actions daily workflow의 직접 script 실행으로 전환
 > - 시즌 확인 실패 시 cleanup 금지
 > - 처리량·telemetry byte 상한과 DB fallback 오류 검증 추가
+> - compressed telemetry를 stream chunk 단위로 읽고 상한 초과 즉시 reader 취소
+> - leaderboard player 조회에서 유효한 match ID가 0개이면 samples로 fallback
+> - env·config·runJob 실패 시 고정 오류 문구 1회만 출력하는 보안 회귀 테스트 추가
+> - workflow의 마지막 step, 실패 전파, 정확한 secret 3개, schedule·수동 trigger를 YAML 구조 테스트로 고정
 
 - 근거: `app/api/cron/hotdrop/route.ts:308-316,323-339`
 - 영향: `CRON_SECRET` 누락 시 누구나 외부 PUBG 호출과 service-role 기반 시즌 정리를 반복 실행할 수 있다.
