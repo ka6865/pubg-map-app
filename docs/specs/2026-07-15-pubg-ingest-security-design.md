@@ -15,7 +15,7 @@
 - `/api/pubg/match` 내부 HTTP 자기 호출 제거
 - `match_stats_raw`, `pubg_player_cache`, `global_benchmarks` 저장 계약 검증
 - 중복 `processed_match_telemetry` upsert 제거
-- platform, source, forceBenchmark, participant 배열 검증
+- match route의 platform, source, force 권한 검증
 - 저장 단계별 오류 처리와 회귀 테스트
 - 현재 깨진 게시글 보안 테스트 mock 복구 및 보안 게이트 편입
 
@@ -45,13 +45,13 @@
 
 신규 파일 `lib/pubg-analysis/persistMatchAnalysis.ts`는 다음 책임만 가진다.
 
-- 입력 identity와 enum 검증
+- match route가 생성한 typed identity와 enum 사용
 - 참가자 원시 통계 정규화
 - 플레이어 자동완성 캐시 batch upsert
 - 유효 benchmark row 생성 및 upsert
 - 각 저장 작업의 성공·실패 결과 반환
 
-모듈은 `server-only` 경계에서 동작하며 Supabase client를 함수 인자로 주입받는다. 전역 service-role client를 생성하지 않아 단위 테스트에서 DB adapter를 대체할 수 있게 한다.
+모듈은 서버 route에서만 사용하며 Supabase client를 함수 인자로 주입받는다. 전역 service-role client를 생성하지 않아 단위 테스트에서 DB adapter를 대체할 수 있게 한다. 현재 서버 경계는 package sentinel import가 아니라 TypeScript AST 기반 경계 테스트로 보장하며, 제품 코드의 `persistMatchAnalysis` consumer를 `app/api/pubg/match/route.ts` 하나로 제한한다.
 
 권장 인터페이스는 다음과 같다.
 
@@ -100,23 +100,15 @@ export async function persistMatchAnalysis(
 
 기존 `/api/pubg/ingest` fetch 대신 이 데이터를 `persistMatchAnalysis()`에 직접 전달한다. `processed_match_telemetry`는 기존 match route의 저장을 기준 경로로 유지하고 신규 모듈에서는 다시 저장하지 않는다.
 
-저장 작업은 사용자 응답 전에 완료를 확인한다. 실패를 무시하지 않고 작업 이름과 실패 원인을 구조화해 서버 로그에 남긴다. `processed_match_telemetry`와 R2 저장이 성공했지만 파생 통계 저장 일부가 실패한 경우에는 분석 응답 자체를 폐기하지 않고, 운영 모니터링 가능한 경고로 분리한다.
+공개 raw ingest body는 최종 구조에서 삭제되었다. match route는 인증과 공식 PUBG API 응답 처리 후 typed input을 생성하고, 저장 모듈은 이 내부 입력을 신뢰한다. platform, source, force query 권한은 match route에서 검증한다. 현재 모듈은 identity 길이, participant 객체 구조, participant 수 상한을 별도의 runtime schema로 재검증하지 않는다.
+
+저장 작업은 사용자 응답 전에 완료를 확인한다. 저장 모듈은 작업 이름과 실패 원인을 구조화한 결과에 보존하고, match route는 민감한 원문 대신 실패한 작업 이름만 서버 로그에 남긴다. `processed_match_telemetry`와 R2 저장이 성공했지만 파생 통계 저장 일부가 실패한 경우에는 분석 응답 자체를 폐기하지 않고, 운영 모니터링 가능한 경고로 분리한다.
 
 외부 query의 `source=scraper`는 서버가 검증한 내부 스크래퍼에게만 허용한다. `PUBG_SCRAPER_INTERNAL_TOKEN`이 빈 값이 아니고 `Authorization: Bearer <token>`이 timing-safe 비교를 통과해야 `source=scraper`로 저장한다. `force=true`는 별도 권한으로 분리해 `ADMIN_REVALIDATE_TOKEN`과 `X-BGMS-Admin-Token`이 모두 유효할 때만 캐시를 우회한다. `scraper+force`는 두 header를 모두 요구하며 query string secret은 읽지 않는다. 인증은 Supabase 조회, PUBG API 호출, 저장 진입 전에 완료한다.
 
 ### 4.3 레거시 ingest route
 
-전환 전 첫 커밋에서는 다음 정책을 적용한다.
-
-- `PUBG_INGEST_INTERNAL_SECRET`이 없으면 503
-- `Authorization: Bearer <secret>`이 없거나 다르면 401
-- 인증 전에 body를 파싱하거나 DB client를 사용하지 않음
-- platform은 `steam`, `kakao`만 허용
-- source는 `user`, `scraper`만 허용
-- body 크기와 `rawParticipants` 길이에 상한 적용
-- 외부 요청의 `forceBenchmark=true` 거부
-
-직접 함수 호출 전환 검증 후 route 파일을 제거한다. 비밀키는 전환 과정에서만 사용하므로 최종 배포 환경에 영구적으로 남기지 않는다.
+중간 전환 단계에서는 레거시 route를 fail-closed로 잠시 보호했다. 최종 구조에서는 직접 함수 호출 전환 후 route 파일을 제거했으므로, 공개 raw ingest body와 전환용 `PUBG_INGEST_INTERNAL_SECRET`은 더 이상 runtime 계약이 아니다.
 
 ## 5. 데이터 흐름
 
@@ -126,7 +118,7 @@ export async function persistMatchAnalysis(
   -> PUBG match/telemetry 조회 및 AnalysisEngine 실행
   -> R2 mapData 저장
   -> processed_match_telemetry 저장
-  -> persistMatchAnalysis(server-only)
+  -> persistMatchAnalysis(단일 server route consumer)
        -> match_stats_raw
        -> pubg_player_cache
        -> global_benchmarks
@@ -137,10 +129,9 @@ export async function persistMatchAnalysis(
 
 ## 6. 입력 및 데이터 무결성 규칙
 
-- platform은 `normalizePlatform()` 처리 후에도 `steam` 또는 `kakao`가 아니면 거부한다.
-- matchId와 nickname은 빈 문자열과 과도한 길이를 거부한다.
-- participant는 객체 구조와 `attributes.stats` 존재 여부를 확인한 row만 저장한다.
-- participant 수는 PUBG 한 경기의 합리적 상한을 넘으면 전체 요청을 거부한다.
+- platform은 match route에서 `normalizePlatform()` 처리 후 `steam` 또는 `kakao`로 정규화한다.
+- matchId, nickname, match attributes, participants는 인증 및 공식 PUBG API 응답 처리를 마친 match route가 typed input으로 생성한다.
+- 저장 모듈은 내부 typed input을 신뢰하며 identity 길이, participant 구조, participant 수 상한을 runtime에서 재검증하지 않는다.
 - `pubg_player_cache.id`와 nickname은 원본 participant에서만 생성한다.
 - AI player ID는 기존 정책대로 자동완성 캐시에서 제외한다.
 - benchmark 저장은 표준 BR 필터와 기존 `isValidBenchmark` 조건을 유지한다.
@@ -152,11 +143,9 @@ export async function persistMatchAnalysis(
 
 ### 인증·입력 오류
 
-- 비밀키 누락: 503
 - 내부 scraper 또는 admin token 환경변수 누락·공백: 503
 - 내부 header 누락·불일치: 403
-- JSON 또는 schema 오류: 400
-- body/배열 상한 초과: 413
+- match query 누락 또는 platform 오류: 400
 
 ### 저장 오류
 
@@ -170,12 +159,12 @@ export async function persistMatchAnalysis(
 
 ### route 보안 테스트
 
-- 환경변수 누락 시 503
-- Authorization 누락·불일치 시 401
-- 인증 실패 요청에서 Supabase 쓰기 0회
+- scraper/admin token 환경변수 누락·공백 시 503
+- 내부 header 누락·불일치 시 403
+- 인증 실패 요청에서 Supabase 조회, PUBG API 호출, 저장 진입 0회
 - 허용되지 않은 platform/source 거부
-- 외부 `forceBenchmark=true` 거부
-- 과도한 body와 participant 배열 거부
+- 인증되지 않은 `force=true` 거부
+- TypeScript AST 기반으로 저장 모듈의 제품 consumer를 match API route 하나로 제한
 
 ### 저장 모듈 테스트
 
@@ -201,17 +190,22 @@ export async function persistMatchAnalysis(
 
 ### 배포 순서
 
-1. fail-closed route와 보안 테스트 배포
-2. 인증 실패 로그와 정상 내부 ingest 성공 확인
-3. 서버 전용 저장 모듈과 match 직접 호출 배포
-4. 파생 통계 저장 성공률 확인
-5. 레거시 ingest route 제거
-6. `PUBG_SCRAPER_INTERNAL_TOKEN`과 `ADMIN_REVALIDATE_TOKEN`을 빈 값이 아닌 서로 다른 값으로 배포 환경과 스크래퍼에 설정
+1. `PUBG_SCRAPER_INTERNAL_TOKEN`과 `ADMIN_REVALIDATE_TOKEN`을 빈 값이 아닌 서로 다른 값으로 생성한다.
+2. API 배포 환경과 스크래퍼 실행 환경 양쪽에 두 token을 먼저 provisioning하되, 각 token의 대응하는 값은 양쪽에서 일치시킨다.
+3. token 인증 코드와 스크래퍼 스크립트를 같은 배포 창에서 배포한다.
+4. 보안·분석 gate를 실행하고 user/scraper 요청, force 재검증, 파생 통계 저장 성공률을 모니터링한다.
+
+token provisioning 전에 인증 코드를 먼저 배포하여 503 중단을 유발하지 않는다.
+
+### 잔여 defense-in-depth 개선
+
+- 현재 AST 기반 consumer 제한에 더해, 향후 `server-only` 의존성을 추가하면 build-time sentinel로 서버 전용 경계를 강화할 수 있다.
+- 저장 모듈에 identity 길이, participant 객체 구조, participant 수 상한 runtime schema 검증을 추가하여 내부 호출자 계약에 대한 방어를 강화할 수 있다.
 
 ### 롤백
 
-- 첫 배포 문제 시 route 인증 커밋만 되돌리되, 외부 무인증 상태로 복귀하지 않는다.
-- 직접 호출 문제 시 인증된 레거시 route로 일시 복귀한다.
+- API 인증 또는 스크래퍼 호환성 문제 시 두 배포를 같은 창에서 이전의 보안된 호환 버전으로 롤백한다.
+- 직접 저장 호출 문제 시에도 공개 레거시 ingest route를 복원하지 않고, 외부 무인증 service-role 쓰기 차단을 유지한다.
 - DB schema를 변경하지 않으므로 migration rollback은 필요하지 않다.
 - 운영 데이터를 삭제하지 않으므로 데이터 복원 절차는 필요하지 않다.
 
