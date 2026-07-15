@@ -17,7 +17,7 @@
     "test:ai:audit": "tsx scripts/write_ai_coaching_report_summary.ts --require-default-suite --require-raw-quality",
     "test:ai:audit:real": "tsx scripts/write_ai_coaching_report_summary.ts --file tmp/ai-coaching-real-data-report.json --output tmp/ai-coaching-real-data-audit.md --require-real-suite --require-raw-quality",
     "verify:core": "eslint && tsc --noEmit --pretty false",
-    "verify:analysis": "vitest run tests/analysis-engine.test.ts tests/pubg-analysis-stability.test.ts tests/squad-recovery-stats.test.ts tests/squad-cause-scenes.test.ts tests/ai-cache-routes.test.ts",
+    "verify:analysis": "vitest run tests/analysis-engine.test.ts tests/pubg-analysis-stability.test.ts tests/squad-recovery-stats.test.ts tests/squad-cause-scenes.test.ts tests/ai-cache-routes.test.ts tests/persist-match-analysis.test.ts tests/pubg-ingest-boundary.test.ts",
     "verify:admin": "vitest run tests/admin-agent-api.test.ts tests/admin-agent-data-quality.test.ts tests/analytics-event.test.ts tests/admin-agent-user-metrics.test.ts tests/security.test.ts",
     "build:app": "bash scripts/build-app.sh",
     "db:cleanup": "tsx scripts/cleanup_telemetry.ts",
