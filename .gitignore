@@ -64,6 +64,7 @@ tmp/
 .agents-drafts/
 .superpowers/
 docs/superpowers/
+.worktrees/
 
 # AI Guide (Private)
 /docs-private/
