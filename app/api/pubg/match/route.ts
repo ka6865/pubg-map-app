@@ -10,6 +10,10 @@ import { buildProcessedTelemetryUpsert, getValidFullResult, normalizePlatform } 
 import { uploadToR2, downloadFromR2 } from "@/lib/pubg-analysis/r2Service";
 import { trackPubgRateLimit } from "@/lib/pubg-analysis/pubgApiTracker";
 import { reportPubgApiError } from "@/lib/pubg/apiHelper";
+import type {
+  IngestPlatform,
+  IngestSource,
+} from "../ingest/route";
 
 // [ISR V1.0] force-dynamic 유지: PUBG API 호출, R2 업로드, DB Upsert 등 부수효과 보호
 // unstable_cache는 DB 읽기(캐시 조회) 전용 프록시로만 사용
@@ -76,11 +80,11 @@ const MAP_IDS: Record<string, string> = {
 type IngestDispatchPayload = {
   matchId: string;
   playerNickname: string;
-  finalResult: Record<string, unknown>;
-  platform: string;
-  matchAttr?: unknown;
-  rawParticipants?: unknown[];
-  source: string;
+  platform: IngestPlatform;
+  finalResult: object;
+  source: IngestSource;
+  matchAttr?: object;
+  rawParticipants?: object[];
 };
 
 function getConfiguredIngestOrigin(): string | null {
@@ -130,11 +134,21 @@ export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const matchId = searchParams.get("matchId");
   const nickname = searchParams.get("nickname");
-  const platform = normalizePlatform(searchParams.get("platform") || "steam");
+  const platformParam = normalizePlatform(searchParams.get("platform") || "steam");
   const lowerNickname = normalizeName(nickname || "");
   const force = searchParams.get("force") === "true";
   const secret = searchParams.get("secret");
-  const source = searchParams.get("source") || "user"; // 'user' | 'scraper'
+  const sourceParam = searchParams.get("source") || "user";
+
+  if (platformParam !== "steam" && platformParam !== "kakao") {
+    return NextResponse.json({ error: "Invalid platform" }, { status: 400 });
+  }
+  const platform: IngestPlatform = platformParam;
+
+  if (sourceParam !== "user" && sourceParam !== "scraper") {
+    return NextResponse.json({ error: "Invalid source" }, { status: 400 });
+  }
+  const source: IngestSource = sourceParam;
 
   // [MOCK] 로컬 DB 장애 및 시뮬레이션을 위한 골드 매치 모킹
   if (matchId === "match-gold-simulation-1234") {
@@ -288,7 +302,7 @@ export async function GET(request: NextRequest) {
 async function reanalyzeAndSave(
   matchId: string,
   nickname: string,
-  platform: string,
+  platform: IngestPlatform,
   lowerNickname: string,
   matchData: any,
   teamNames: Set<string>,
@@ -301,7 +315,7 @@ async function reanalyzeAndSave(
   rosters: any[],
   participants: any[],
   force: boolean = false,
-  source: string = 'user'  // 'user' | 'scraper'
+  source: IngestSource = 'user'
 ) {
   const telemetryAsset = matchData.included.find((it: any) => it.type === "asset");
   let telData: any[] = [];

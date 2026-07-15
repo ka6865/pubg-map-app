@@ -13,14 +13,94 @@ const ALLOWED_SOURCES = new Set(["user", "scraper"]);
 
 type JsonObject = Record<string, unknown>;
 
-type IngestRouteBody = JsonObject & {
+export type IngestPlatform = "steam" | "kakao";
+export type IngestSource = "user" | "scraper";
+
+type ParticipantStats = JsonObject & {
+  name: string;
+  playerId?: string;
+  damageDealt: number;
+  kills: number;
+  winPlace: number;
+};
+
+type RawParticipant = JsonObject & {
+  id?: string;
+  attributes: JsonObject & { stats: ParticipantStats };
+};
+
+type MatchAttributes = JsonObject & {
+  gameMode?: string;
+  mapName?: string;
+};
+
+type FinalResultStats = JsonObject & {
+  damageDealt?: number;
+  kills?: number;
+  winPlace?: number;
+  timeSurvived?: number;
+};
+
+type TradeStats = JsonObject & {
+  teammateKnocks?: number;
+  counterLatencyMs?: number;
+  revCount?: number;
+  smokeRescues?: number;
+  tradeKills?: number;
+  tradeLatencyMs?: number;
+  suppCount?: number;
+  enemyTeamWipes?: number;
+};
+
+type KillContribution = JsonObject & {
+  solo?: number;
+  assist?: number;
+  cleanup?: number;
+};
+
+type FinalResult = JsonObject & {
+  matchType: string;
+  gameMode: string;
+  isValidBenchmark: boolean;
+  stats: FinalResultStats;
+  mapName?: string;
+  tradeStats?: TradeStats;
+  killContribution?: KillContribution;
+  initiative_rate?: number;
+  isolationData?: JsonObject & {
+    isCrossfire?: boolean;
+    isolationIndex?: number;
+    minDist?: number;
+    heightDiff?: number;
+  };
+  combatPressure?: JsonObject & {
+    pressureIndex?: number;
+    utilityStats?: JsonObject & { throwCount?: number };
+  };
+  itemUseSummary?: JsonObject & { smokes?: number; frags?: number };
+  deathDistance?: number;
+  duelStats?: JsonObject & { reversalRate?: number; duelWinRate?: number };
+  itemUseStats?: JsonObject & { lethalThrowCount?: number };
+  benchmark?: JsonObject & {
+    tier?: string | null;
+    score?: number;
+    breakdown?: JsonObject & {
+      combat?: number;
+      tactical?: number;
+      survival?: number;
+    };
+  };
+  deathPhase?: number;
+};
+
+export type IngestRouteBody = JsonObject & {
   matchId: string;
   playerNickname: string;
-  platform: "steam" | "kakao";
-  finalResult: JsonObject;
-  source: "user" | "scraper";
-  rawParticipants?: unknown[];
-  matchAttr?: JsonObject;
+  platform: IngestPlatform;
+  finalResult: FinalResult;
+  source: IngestSource;
+  rawParticipants?: RawParticipant[];
+  matchAttr?: MatchAttributes;
 };
 
 type ValidatedIngestRequest =
@@ -67,7 +147,7 @@ async function readBodyWithinLimit(request: Request): Promise<
 
     totalBytes += value.byteLength;
     if (totalBytes > MAX_INGEST_BODY_BYTES) {
-      await reader.cancel();
+      await reader.cancel().catch(() => undefined);
       return { response: payloadTooLargeResponse() };
     }
     chunks.push(value);
@@ -98,6 +178,107 @@ function isNonEmptyString(value: unknown, maxLength: number): value is string {
     && value.length <= maxLength;
 }
 
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function hasOptionalNumberFields(value: unknown, fields: readonly string[]): boolean {
+  if (value === undefined) return true;
+  if (!isPlainObject(value)) return false;
+
+  return fields.every((field) => value[field] === undefined || isFiniteNumber(value[field]));
+}
+
+function isValidRawParticipant(value: unknown): value is RawParticipant {
+  if (!isPlainObject(value) || !isPlainObject(value.attributes)) return false;
+
+  const stats = value.attributes.stats;
+  if (!isPlainObject(stats)) return false;
+  if (!isNonEmptyString(stats.name, MAX_PLAYER_NICKNAME_LENGTH)) return false;
+  if (stats.playerId !== undefined && !isNonEmptyString(stats.playerId, MAX_MATCH_ID_LENGTH)) return false;
+  if (!isFiniteNumber(stats.damageDealt) || !isFiniteNumber(stats.kills) || !isFiniteNumber(stats.winPlace)) {
+    return false;
+  }
+
+  return stats.playerId !== undefined || isNonEmptyString(value.id, MAX_MATCH_ID_LENGTH);
+}
+
+function isValidBenchmarkFields(finalResult: JsonObject): boolean {
+  const stats = finalResult.stats;
+  if (!isPlainObject(stats)
+    || !isFiniteNumber(stats.damageDealt)
+    || !isFiniteNumber(stats.kills)
+    || !isFiniteNumber(stats.winPlace)
+    || (stats.timeSurvived !== undefined && !isFiniteNumber(stats.timeSurvived))) {
+    return false;
+  }
+  if (finalResult.mapName !== undefined && !isNonEmptyString(finalResult.mapName, 128)) {
+    return false;
+  }
+  if (!hasOptionalNumberFields(finalResult, ["initiative_rate", "deathDistance", "deathPhase"])) {
+    return false;
+  }
+  if (!hasOptionalNumberFields(finalResult.tradeStats, [
+    "teammateKnocks",
+    "counterLatencyMs",
+    "revCount",
+    "smokeRescues",
+    "tradeKills",
+    "tradeLatencyMs",
+    "suppCount",
+    "enemyTeamWipes",
+  ])) {
+    return false;
+  }
+  if (!hasOptionalNumberFields(finalResult.killContribution, ["solo", "assist", "cleanup"])) {
+    return false;
+  }
+  if (!hasOptionalNumberFields(finalResult.itemUseSummary, ["smokes", "frags"])) return false;
+  if (!hasOptionalNumberFields(finalResult.duelStats, ["reversalRate", "duelWinRate"])) return false;
+  if (!hasOptionalNumberFields(finalResult.itemUseStats, ["lethalThrowCount"])) return false;
+
+  const isolationData = finalResult.isolationData;
+  if (!hasOptionalNumberFields(isolationData, ["isolationIndex", "minDist", "heightDiff"])) return false;
+  if (isPlainObject(isolationData)
+    && isolationData.isCrossfire !== undefined
+    && typeof isolationData.isCrossfire !== "boolean") {
+    return false;
+  }
+
+  const combatPressure = finalResult.combatPressure;
+  if (!hasOptionalNumberFields(combatPressure, ["pressureIndex"])) return false;
+  if (isPlainObject(combatPressure)) {
+    if (!hasOptionalNumberFields(combatPressure.utilityStats, ["throwCount"])) return false;
+  }
+
+  const benchmark = finalResult.benchmark;
+  if (benchmark !== undefined) {
+    if (!isPlainObject(benchmark)) return false;
+    if (benchmark.tier !== undefined
+      && benchmark.tier !== null
+      && !isNonEmptyString(benchmark.tier, 16)) {
+      return false;
+    }
+    if (benchmark.score !== undefined && !isFiniteNumber(benchmark.score)) return false;
+    if (!hasOptionalNumberFields(benchmark.breakdown, ["combat", "tactical", "survival"])) return false;
+  }
+
+  return true;
+}
+
+function isValidFinalResult(value: unknown): value is FinalResult {
+  if (!isPlainObject(value)) return false;
+  if (!isNonEmptyString(value.matchType, 64) || !isNonEmptyString(value.gameMode, 64)) {
+    return false;
+  }
+  if (typeof value.isValidBenchmark !== "boolean" || !isPlainObject(value.stats)) {
+    return false;
+  }
+  if (!hasOptionalNumberFields(value.tradeStats, ["teammateKnocks"])) return false;
+  if (!hasOptionalNumberFields(value.killContribution, ["solo", "assist", "cleanup"])) return false;
+  return isValidBenchmarkFields(value);
+}
+
 async function readValidatedBody(request: Request): Promise<ValidatedIngestRequest> {
   const readResult = await readBodyWithinLimit(request);
   if ("response" in readResult) return readResult;
@@ -118,7 +299,7 @@ async function readValidatedBody(request: Request): Promise<ValidatedIngestReque
   if (!isNonEmptyString(parsedBody.playerNickname, MAX_PLAYER_NICKNAME_LENGTH)) {
     return { response: NextResponse.json({ error: "Invalid playerNickname" }, { status: 400 }) };
   }
-  if (!isPlainObject(parsedBody.finalResult)) {
+  if (!isValidFinalResult(parsedBody.finalResult)) {
     return { response: NextResponse.json({ error: "Invalid finalResult" }, { status: 400 }) };
   }
   if (typeof parsedBody.platform !== "string" || !ALLOWED_PLATFORMS.has(parsedBody.platform)) {
@@ -136,7 +317,18 @@ async function readValidatedBody(request: Request): Promise<ValidatedIngestReque
   if (Array.isArray(parsedBody.rawParticipants) && parsedBody.rawParticipants.length > MAX_PARTICIPANTS) {
     return { response: NextResponse.json({ error: "Too many participants" }, { status: 413 }) };
   }
+  if (Array.isArray(parsedBody.rawParticipants)
+    && !parsedBody.rawParticipants.every(isValidRawParticipant)) {
+    return { response: NextResponse.json({ error: "Invalid rawParticipants" }, { status: 400 }) };
+  }
   if (parsedBody.matchAttr !== undefined && !isPlainObject(parsedBody.matchAttr)) {
+    return { response: NextResponse.json({ error: "Invalid matchAttr" }, { status: 400 }) };
+  }
+  if (Array.isArray(parsedBody.rawParticipants)
+    && parsedBody.rawParticipants.length > 0
+    && (!isPlainObject(parsedBody.matchAttr)
+      || !isNonEmptyString(parsedBody.matchAttr.gameMode, 64)
+      || !isNonEmptyString(parsedBody.matchAttr.mapName, 128))) {
     return { response: NextResponse.json({ error: "Invalid matchAttr" }, { status: 400 }) };
   }
 
@@ -164,75 +356,143 @@ function safeInteger(value: unknown, fallback = 0): number {
   return Math.round(safeNumber(value, fallback));
 }
 
+function buildPersistencePlan(body: IngestRouteBody) {
+  const { matchId, playerNickname, finalResult, matchAttr, rawParticipants, source } = body;
+  const lowerNickname = normalizeName(playerNickname);
+  const platform = normalizePlatform(body.platform);
+  const teammateKnocks = Math.max(1, finalResult.tradeStats?.teammateKnocks || 0);
+  const totalKillContribution = Math.max(
+    1,
+    (finalResult.killContribution?.solo || 0)
+      + (finalResult.killContribution?.assist || 0)
+      + (finalResult.killContribution?.cleanup || 0),
+  );
+
+  const rawInserts = rawParticipants && matchAttr
+    ? rawParticipants.map((participant) => ({
+      match_id: matchId,
+      platform,
+      player_id: normalizeName(participant.attributes.stats.name),
+      damage: Math.floor(participant.attributes.stats.damageDealt),
+      kills: participant.attributes.stats.kills,
+      win_place: participant.attributes.stats.winPlace,
+      game_mode: matchAttr.gameMode,
+      map_name: matchAttr.mapName,
+    }))
+    : null;
+
+  const playerCacheInserts = rawParticipants && matchAttr
+    ? rawParticipants
+      .filter((participant) => !participant.attributes.stats.playerId?.startsWith("ai."))
+      .map((participant) => ({
+        id: participant.attributes.stats.playerId || participant.id,
+        platform,
+        nickname: participant.attributes.stats.name,
+        lower_nickname: participant.attributes.stats.name.toLowerCase(),
+        updated_at: new Date().toISOString(),
+      }))
+    : [];
+  const playerCacheBatches: typeof playerCacheInserts[] = [];
+  const playerCacheBatchSize = 25;
+  for (let index = 0; index < playerCacheInserts.length; index += playerCacheBatchSize) {
+    playerCacheBatches.push(playerCacheInserts.slice(index, index + playerCacheBatchSize));
+  }
+
+  const matchTypeLower = finalResult.matchType.toLowerCase();
+  const gameModeLower = finalResult.gameMode.toLowerCase();
+  const isStandardBattleRoyale = (matchTypeLower === "official" || matchTypeLower === "competitive")
+    && gameModeLower !== "tdm"
+    && gameModeLower !== "trainingroom";
+  const stats = finalResult.stats;
+  const globalBenchmarkInsert = finalResult.isValidBenchmark && isStandardBattleRoyale
+    ? {
+      match_id: matchId,
+      platform,
+      player_id: lowerNickname,
+      damage: Math.floor(safeNumber(stats.damageDealt)),
+      kills: safeInteger(stats.kills),
+      win_place: safeInteger(stats.winPlace, 100),
+      game_mode: finalResult.gameMode,
+      map_name: finalResult.mapName,
+      counter_latency_ms: safeInteger(finalResult.tradeStats?.counterLatencyMs),
+      initiative_rate: safeInteger(finalResult.initiative_rate),
+      revive_rate: Math.round(((finalResult.tradeStats?.revCount || 0) / teammateKnocks) * 100),
+      is_crossfire: finalResult.isolationData?.isCrossfire || false,
+      utility_count: safeInteger(finalResult.combatPressure?.utilityStats?.throwCount),
+      smoke_count: safeInteger(finalResult.itemUseSummary?.smokes),
+      frag_count: safeInteger(finalResult.itemUseSummary?.frags),
+      pressure_index: safeInteger(finalResult.combatPressure?.pressureIndex),
+      enemy_death_distance: safeInteger(finalResult.deathDistance),
+      survival_time: safeInteger(stats.timeSurvived),
+      isolation_index: safeInteger(finalResult.isolationData?.isolationIndex),
+      min_dist: safeInteger(finalResult.isolationData?.minDist),
+      height_diff: safeInteger(finalResult.isolationData?.heightDiff),
+      smoke_rate: Math.round(((finalResult.tradeStats?.smokeRescues || 0) / teammateKnocks) * 100),
+      trade_rate: Math.round((Math.min(
+        finalResult.tradeStats?.teammateKnocks || 0,
+        finalResult.tradeStats?.tradeKills || 0,
+      ) / teammateKnocks) * 100),
+      solo_kill_rate: Math.round(((finalResult.killContribution?.solo || 0) / totalKillContribution) * 100),
+      reversal_rate: Math.round(finalResult.duelStats?.reversalRate || 0),
+      duel_win_rate: Math.round(finalResult.duelStats?.duelWinRate || 0),
+      trade_latency_ms: safeInteger(finalResult.tradeStats?.tradeLatencyMs),
+      lethal_throw_count: safeInteger(finalResult.itemUseStats?.lethalThrowCount),
+      tier: finalResult.benchmark?.tier || "C",
+      score: safeNumber(finalResult.benchmark?.score),
+      combat_score: safeNumber(finalResult.benchmark?.breakdown?.combat),
+      tactical_score: safeNumber(finalResult.benchmark?.breakdown?.tactical),
+      survival_score: safeNumber(finalResult.benchmark?.breakdown?.survival),
+      supp_count: safeInteger(finalResult.tradeStats?.suppCount),
+      team_wipes: safeInteger(finalResult.tradeStats?.enemyTeamWipes),
+      match_type: matchTypeLower,
+      death_phase: safeInteger(finalResult.deathPhase),
+      filter_version: 8,
+      source,
+    }
+    : null;
+
+  return {
+    matchId,
+    lowerNickname,
+    platform,
+    rawInserts,
+    playerCacheBatches,
+    globalBenchmarkInsert,
+    processedTelemetryRecord: buildProcessedTelemetryUpsert(
+      matchId,
+      lowerNickname,
+      platform,
+      finalResult,
+    ),
+  };
+}
+
 export async function POST(request: Request) {
   const validated = await validateIngestRequest(request);
   if ("response" in validated) {
     return validated.response;
   }
 
-  const body = validated.body;
+  const persistencePlan = buildPersistencePlan(validated.body);
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
   try {
-    const { matchId, playerNickname, source } = body;
-    const finalResult = body.finalResult as Record<string, any>;
-    const matchAttr = body.matchAttr as Record<string, any> | undefined;
-    const rawParticipants = body.rawParticipants as any[] | undefined;
-
-    const lowerNickname = normalizeName(playerNickname);
-    const platform = normalizePlatform(body.platform);
     const backgroundTasks: Array<{ name: string; task: PromiseLike<any> }> = [];
-    const teammateKnocks = Math.max(1, finalResult.tradeStats?.teammateKnocks || 0);
-    const totalKillContribution = Math.max(
-      1,
-      (finalResult.killContribution?.solo || 0) +
-      (finalResult.killContribution?.assist || 0) +
-      (finalResult.killContribution?.cleanup || 0)
-    );
 
-    // 1. match_master_telemetry 저장은 match route에서 처리하므로 중복 방지를 위해 제거 (성능 최적화)
-
-    // 2. match_stats_raw 저장
-    if (rawParticipants && matchAttr) {
-      const rawInserts = rawParticipants.map((p: any) => ({
-        match_id: matchId,
-        platform,
-        player_id: normalizeName(p.attributes.stats.name),
-        damage: Math.floor(p.attributes.stats.damageDealt),
-        kills: p.attributes.stats.kills,
-        win_place: p.attributes.stats.winPlace,
-        game_mode: matchAttr.gameMode,
-        map_name: matchAttr.mapName
-      }));
+    if (persistencePlan.rawInserts) {
       backgroundTasks.push({
         name: "match_stats_raw",
-        task: supabase.from("match_stats_raw").upsert(rawInserts, { onConflict: 'match_id,platform,player_id' })
+        task: supabase.from("match_stats_raw").upsert(
+          persistencePlan.rawInserts,
+          { onConflict: "match_id,platform,player_id" },
+        ),
       });
 
-      // [V55.0] 자동완성 데이터베이스 확장: 모든 참여자를 캐시에 등록 (데드락 방지를 위해 Ingest에서만 수행)
-      const playerCacheInserts = rawParticipants
-        .filter((p: any) => !p.attributes.stats.playerId?.startsWith("ai."))
-        .map((p: any) => ({
-          id: p.attributes.stats.playerId || p.id,
-          platform,
-          nickname: p.attributes.stats.name,
-          lower_nickname: p.attributes.stats.name.toLowerCase(),
-          updated_at: new Date().toISOString()
-        }));
-
-      // [V55.1] 25개 배치로 분할하여 Supabase statement_timeout 방지
-      // (한번에 100개 upsert → DB timeout 간헐적 발생)
-      const BATCH_SIZE = 25;
-      const batches: typeof playerCacheInserts[] = [];
-      for (let i = 0; i < playerCacheInserts.length; i += BATCH_SIZE) {
-        batches.push(playerCacheInserts.slice(i, i + BATCH_SIZE));
-      }
-      // fire-and-forget — 실패해도 메인 로직 영향 없음
       (async () => {
-        for (const batch of batches) {
+        for (const batch of persistencePlan.playerCacheBatches) {
           const { error } = await supabase
             .from("pubg_player_cache")
             .upsert(batch, { onConflict: "id" });
@@ -241,68 +501,22 @@ export async function POST(request: Request) {
       })();
     }
 
-    // 3. global_benchmarks 저장 (고성과자 지표)
-    // [V55.2] 아케이드/TDM/훈련장 데이터 오염 방지 필터 (대소문자 무시)
-    const matchTypeLower = (finalResult.matchType || "").toLowerCase();
-    const gameModeLower = (finalResult.gameMode || "").toLowerCase();
-    const isStandardBR = (matchTypeLower === 'official' || matchTypeLower === 'competitive') && 
-                         (gameModeLower !== 'tdm' && gameModeLower !== 'trainingroom');
-
-    if (finalResult.isValidBenchmark && isStandardBR) {
-      const stats = finalResult.stats;
+    if (persistencePlan.globalBenchmarkInsert) {
       backgroundTasks.push({
         name: "global_benchmarks",
-        task: supabase.from("global_benchmarks").upsert({
-          match_id: matchId,
-          platform,
-          player_id: lowerNickname,
-          damage: Math.floor(safeNumber(stats.damageDealt)),
-          kills: safeInteger(stats.kills),
-          win_place: safeInteger(stats.winPlace, 100),
-          game_mode: finalResult.gameMode,
-          map_name: finalResult.mapName,
-          counter_latency_ms: safeInteger(finalResult.tradeStats?.counterLatencyMs),
-          initiative_rate: safeInteger(finalResult.initiative_rate),
-          revive_rate: Math.round(((finalResult.tradeStats?.revCount || 0) / teammateKnocks) * 100),
-          is_crossfire: finalResult.isolationData?.isCrossfire || false,
-          utility_count: safeInteger(finalResult.combatPressure?.utilityStats?.throwCount),
-          smoke_count: safeInteger(finalResult.itemUseSummary?.smokes),
-          frag_count: safeInteger(finalResult.itemUseSummary?.frags),
-          pressure_index: safeInteger(finalResult.combatPressure?.pressureIndex),
-          enemy_death_distance: safeInteger(finalResult.deathDistance),
-          survival_time: safeInteger(stats.timeSurvived),
-          isolation_index: safeInteger(finalResult.isolationData?.isolationIndex),
-          min_dist: safeInteger(finalResult.isolationData?.minDist),
-          height_diff: safeInteger(finalResult.isolationData?.heightDiff),
-          smoke_rate: Math.round(((finalResult.tradeStats?.smokeRescues || 0) / teammateKnocks) * 100),
-          trade_rate: Math.round((Math.min(finalResult.tradeStats?.teammateKnocks || 0, finalResult.tradeStats?.tradeKills || 0) / teammateKnocks) * 100),
-          solo_kill_rate: Math.round(((finalResult.killContribution?.solo || 0) / totalKillContribution) * 100),
-          reversal_rate: Math.round(finalResult.duelStats?.reversalRate || 0),
-          duel_win_rate: Math.round(finalResult.duelStats?.duelWinRate || 0),
-          trade_latency_ms: safeInteger(finalResult.tradeStats?.tradeLatencyMs),
-          lethal_throw_count: safeInteger(finalResult.itemUseStats?.lethalThrowCount),
-          tier: finalResult.benchmark?.tier || 'C',
-          score: safeNumber(finalResult.benchmark?.score),
-          combat_score: safeNumber(finalResult.benchmark?.breakdown?.combat),
-          tactical_score: safeNumber(finalResult.benchmark?.breakdown?.tactical),
-          survival_score: safeNumber(finalResult.benchmark?.breakdown?.survival),
-          supp_count: safeInteger(finalResult.tradeStats?.suppCount),
-          team_wipes: safeInteger(finalResult.tradeStats?.enemyTeamWipes),
-          match_type: (finalResult.matchType || 'official').toLowerCase(),
-          death_phase: safeInteger(finalResult.deathPhase),
-          filter_version: 8,
-          source: source || 'user'   // 'user' | 'scraper' — 출처 구분
-        }, { onConflict: 'match_id,platform,player_id' })
+        task: supabase.from("global_benchmarks").upsert(
+          persistencePlan.globalBenchmarkInsert,
+          { onConflict: "match_id,platform,player_id" },
+        ),
       });
     }
 
-    // 4. processed_match_telemetry 저장 (최종 결과)
     backgroundTasks.push({
       name: "processed_match_telemetry",
       task: supabase.from("processed_match_telemetry").upsert(
-        buildProcessedTelemetryUpsert(matchId, lowerNickname, platform, finalResult),
-        { onConflict: 'match_id,platform,player_id' }
-      )
+        persistencePlan.processedTelemetryRecord,
+        { onConflict: "match_id,platform,player_id" },
+      ),
     });
 
     const settled = await Promise.allSettled(backgroundTasks.map(({ task }) => task));
@@ -318,7 +532,12 @@ export async function POST(request: Request) {
     });
 
     if (failures.length > 0) {
-      console.error("[INGEST-API] Persistence failures:", { matchId, platform, player: lowerNickname, failures });
+      console.error("[INGEST-API] Persistence failures:", {
+        matchId: persistencePlan.matchId,
+        platform: persistencePlan.platform,
+        player: persistencePlan.lowerNickname,
+        failures,
+      });
       return NextResponse.json({ error: "Ingest persistence failed", failures }, { status: 500 });
     }
 

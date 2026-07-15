@@ -1,16 +1,22 @@
+import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockCreateClient, mockFrom } = vi.hoisted(() => ({
+const { mockCreateClient, mockFrom, mockReportPubgApiError } = vi.hoisted(() => ({
   mockCreateClient: vi.fn(),
   mockFrom: vi.fn(),
+  mockReportPubgApiError: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@supabase/supabase-js", () => ({
   createClient: mockCreateClient,
 }));
 
+vi.mock("@/lib/pubg/apiHelper", () => ({
+  reportPubgApiError: mockReportPubgApiError,
+}));
+
 import { POST, validateIngestRequest } from "../app/api/pubg/ingest/route";
-import { dispatchIngestRequest } from "../app/api/pubg/match/route";
+import { GET, dispatchIngestRequest } from "../app/api/pubg/match/route";
 
 type IngestDispatchPayload = Parameters<typeof dispatchIngestRequest>[0];
 
@@ -143,12 +149,13 @@ describe("PUBG match route ingest origin security", () => {
   const payload: IngestDispatchPayload = {
     matchId: "match-1",
     playerNickname: "PlayerOne",
-    finalResult: {},
+    finalResult: validBody.finalResult,
     platform: "steam",
     source: "user",
   };
 
   beforeEach(() => {
+    vi.clearAllMocks();
     process.env.PUBG_INGEST_INTERNAL_SECRET = "internal-secret";
     delete process.env.PUBG_INGEST_INTERNAL_ORIGIN;
   });
@@ -192,6 +199,51 @@ describe("PUBG match route ingest origin security", () => {
 
     expect(dispatchIngestRequest(payload, mockFetch)).toBe(false);
     expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  it("dispatch가 생성한 body를 ingest consumer가 동일 계약으로 승인한다", async () => {
+    process.env.PUBG_INGEST_INTERNAL_ORIGIN = "https://ingest.internal";
+    const contractPayload: IngestDispatchPayload = {
+      ...payload,
+      matchAttr: { gameMode: "squad-fpp", mapName: "Erangel" },
+      rawParticipants: [{
+        id: "participant-1",
+        attributes: {
+          stats: {
+            name: "PlayerOne",
+            playerId: "account-1",
+            damageDealt: 100,
+            kills: 1,
+            winPlace: 10,
+          },
+        },
+      }],
+    };
+    let dispatchedInit: RequestInit | undefined;
+    const mockFetch = vi.fn<typeof fetch>().mockImplementation(async (_input, init) => {
+      dispatchedInit = init;
+      return new Response(null, { status: 204 });
+    });
+
+    expect(dispatchIngestRequest(contractPayload, mockFetch)).toBe(true);
+    expect(dispatchedInit).toBeDefined();
+    const consumerRequest = new Request("http://localhost/api/pubg/ingest", {
+      method: "POST",
+      headers: dispatchedInit?.headers,
+      body: dispatchedInit?.body,
+    });
+
+    const validated = await validateIngestRequest(consumerRequest);
+    expect("body" in validated).toBe(true);
+  });
+
+  it("GET query의 임의 source를 저장 처리 전에 거부한다", async () => {
+    const response = await GET(new NextRequest(
+      "http://localhost/api/pubg/match?matchId=match-1&nickname=PlayerOne&source=external",
+    ));
+
+    expect(response.status).toBe(400);
+    expect(mockReportPubgApiError).not.toHaveBeenCalled();
   });
 });
 
@@ -247,6 +299,24 @@ describe("PUBG ingest route streaming body limit", () => {
       expect(cancel).toHaveBeenCalledTimes(1);
     },
   );
+
+  it("stream 취소가 실패해도 상한 초과 응답은 413을 유지한다", async () => {
+    const cancel = vi.fn().mockRejectedValue(new Error("cancel failed"));
+    const read = vi.fn()
+      .mockResolvedValueOnce({ done: false, value: new Uint8Array(300 * 1024) })
+      .mockResolvedValueOnce({ done: false, value: new Uint8Array(300 * 1024) });
+    const request = {
+      headers: new Headers({ Authorization: "Bearer internal-secret" }),
+      body: { getReader: () => ({ read, cancel }) },
+    } as unknown as Request;
+
+    const validationPromise = validateIngestRequest(request);
+    await expect(validationPromise).resolves.toBeDefined();
+    const result = await validationPromise;
+
+    expect("response" in result && result.response.status).toBe(413);
+    expect(cancel).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("PUBG ingest route runtime structure validation", () => {
@@ -279,13 +349,63 @@ describe("PUBG ingest route runtime structure validation", () => {
     expect(response.status).toBe(400);
     expect(mockCreateClient).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ["empty finalResult", { ...validBody, finalResult: {} }],
+    ["object matchType", {
+      ...validBody,
+      finalResult: { ...validBody.finalResult, matchType: {} },
+    }],
+    ["incomplete raw participant and matchAttr", {
+      ...validBody,
+      rawParticipants: [{}],
+      matchAttr: {},
+    }],
+    ["invalid raw participant stats", {
+      ...validBody,
+      rawParticipants: [{
+        id: "participant-1",
+        attributes: {
+          stats: {
+            name: "PlayerOne",
+            playerId: 1,
+            damageDealt: "100",
+            kills: 1,
+            winPlace: 10,
+          },
+        },
+      }],
+      matchAttr: { gameMode: "squad-fpp", mapName: "Erangel" },
+    }],
+    ["invalid trade stats", {
+      ...validBody,
+      finalResult: {
+        ...validBody.finalResult,
+        isValidBenchmark: true,
+        tradeStats: { teammateKnocks: "1" },
+      },
+    }],
+    ["invalid benchmark branch", {
+      ...validBody,
+      finalResult: {
+        ...validBody.finalResult,
+        isValidBenchmark: true,
+        benchmark: { breakdown: { combat: "invalid" } },
+      },
+    }],
+  ])("잘못된 중첩 저장 계약을 DB client 생성 전에 거부한다: %s", async (_label, body) => {
+    const response = await POST(buildRequest(body, "Bearer internal-secret"));
+
+    expect(response.status).toBe(400);
+    expect(mockCreateClient).not.toHaveBeenCalled();
+  });
 });
 
 describe("PUBG match route ingest fetch result handling", () => {
   const payload: IngestDispatchPayload = {
     matchId: "match-1",
     playerNickname: "PlayerOne",
-    finalResult: {},
+    finalResult: validBody.finalResult,
     platform: "steam",
     source: "user",
   };
