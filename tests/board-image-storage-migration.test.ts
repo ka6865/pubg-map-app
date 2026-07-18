@@ -128,4 +128,16 @@ describe("게시판 이미지 Storage 소유권 마이그레이션", () => {
     expect(script).toContain("legacy-retained-detach");
     expect(script).toContain("fixture-cleanup");
   });
+
+  it("검증 fixture는 성공 revision과 실제 경쟁 결과를 보존하고 finally에서 정리한다", () => {
+    const script = readFileSync(resolve(process.cwd(), "scripts/verify_board_image_storage_migration.ts"), "utf8");
+
+    expect(script).toContain("let currentRevision");
+    expect(script).toContain("other-owner-pending");
+    expect(script).toContain("legacy-backfill");
+    expect(script).toContain("finally");
+    expect(script).toContain("workerOneIds");
+    expect(script).toContain("workerTwoIds");
+    expect(script).toContain("attach-vs-detach-result");
+  });
 });
