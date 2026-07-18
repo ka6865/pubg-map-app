@@ -116,7 +116,10 @@ async function verifyAclAndOwnership(): Promise<void> {
     await rejected("SET ROLE anon; SELECT * FROM public.board_image_objects", "anon-table-denied");
     await rejected("SET ROLE authenticated; SELECT * FROM public.board_post_image_refs", "authenticated-table-denied");
     const signatures = ["public.reserve_board_image_upload(uuid,text,bigint)", "public.complete_board_image_upload(uuid,uuid)", "public.write_board_post_with_images(bigint,uuid,bigint,text,text,text,text,boolean,text,uuid,text,text,text,text,jsonb,uuid[],uuid)", "public.claim_board_image_deletions(integer,timestamptz,integer)", "public.finalize_board_image_deletion(uuid,uuid,boolean)"];
-    for (const signature of signatures) for (const [role, label] of [["PUBLIC", "public-rpc-denied"], ["anon", "anon-rpc-denied"], ["authenticated", "authenticated-rpc-denied"]] as const) {
+    for (const signature of signatures) {
+      equal(await scalar(`SELECT count(*)::text FROM pg_proc AS function_row CROSS JOIN LATERAL aclexplode(COALESCE(function_row.proacl, acldefault('f', function_row.proowner))) AS acl_row WHERE function_row.oid = to_regprocedure(${quote(signature)}) AND acl_row.grantee = 0 AND acl_row.privilege_type = 'EXECUTE'`, "public-rpc-denied"), "0", "public-rpc-denied");
+    }
+    for (const signature of signatures) for (const [role, label] of [["anon", "anon-rpc-denied"], ["authenticated", "authenticated-rpc-denied"]] as const) {
       equal(await scalar(`SELECT has_function_privilege(${quote(role)}, ${quote(signature)}, 'EXECUTE')::text`, label), "false", label);
     }
     for (const signature of signatures) equal(await scalar(`SELECT has_function_privilege('service_role', ${quote(signature)}, 'EXECUTE')::text`, "service-role-execute"), "true", "service-role-execute");

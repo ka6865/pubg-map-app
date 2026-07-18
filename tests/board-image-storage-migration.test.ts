@@ -221,4 +221,14 @@ describe("게시판 이미지 Storage 소유권 마이그레이션", () => {
     expect(legacyScenario).toContain("legacy-retained-claim-count");
     expect(legacyScenario).not.toContain("DELETE FROM public.board_post_image_refs");
   });
+
+  it("PUBLIC RPC 권한은 pseudo-role 조회 대신 ACL grantee 0으로 검사한다", () => {
+    const script = readFileSync(resolve(process.cwd(), "scripts/verify_board_image_storage_migration.ts"), "utf8");
+
+    expect(script).toContain("aclexplode(COALESCE(function_row.proacl, acldefault('f', function_row.proowner)))");
+    expect(script).toContain("acl_row.grantee = 0");
+    expect(script).toContain("to_regprocedure(${quote(signature)})");
+    expect(script).not.toContain('has_function_privilege(${quote("PUBLIC")}');
+    expect(script).not.toContain('["PUBLIC", "public-rpc-denied"]');
+  });
 });
