@@ -154,7 +154,9 @@ RLS를 활성화하고 공개 정책을 만들지 않는다. `anon`, `authentica
 
 ### 4.6 cleanup 정합성
 
-`scripts/cleanup_telemetry.ts`는 master와 registry를 모두 페이지 조회해 master 없는 registry-only row도 만료 후보에 포함한다. DB row를 지우기 전에 최대 50개 batch의 object inventory를 정렬하고 SHA-256 결정적 key의 R2 manifest 한 개로 보관한다. manifest upload가 실패하면 cleanup RPC를 호출하지 않으며 같은 입력 재시도는 같은 manifest key를 사용한다. R2 object 자체는 삭제하지 않는다.
+`scripts/cleanup_telemetry.ts`는 master와 registry를 모두 페이지 조회해 master 없는 registry-only row도 만료 후보에 포함한다. cleanup은 최대 50개 match ID를 한 batch로 처리하고, 해당 match 후보에 속한 registry object path 전체를 정렬해 SHA-256 결정적 key의 R2 manifest 한 개로 DB RPC 전에 업로드한다. match 하나에 여러 player·platform·mode·version row가 있을 수 있으므로 manifest의 object path 수는 50개를 넘을 수 있다. manifest upload가 실패하면 cleanup RPC를 호출하지 않으며 같은 입력 재시도는 같은 manifest key를 사용한다. R2 object 자체는 삭제하지 않는다.
+
+`inventoryManifestCount`는 R2에 성공적으로 업로드한 후보 inventory manifest 수이며 실제 DB row 또는 R2 object 삭제 수가 아니다. `archivedObjectCount`는 업로드된 후보 inventory 중 cleanup RPC가 정리 완료 match ID로 반환한 match에 속한 registry object path 수다. 이 값도 R2 object 삭제 수를 의미하지 않으며, RPC 재검증으로 제외된 match의 path는 이미 manifest에 포함됐더라도 `archivedObjectCount`에서 제외된다.
 
 매치 master row를 만료 처리할 때 해당 `match_id`의 registry 상태를 트랜잭션 내에서 재검증한다. cleanup 시작에 한 번 캡처한 기준시각을 앱 후보 필터와 RPC `p_now`에 동일하게 사용한다. 따라서 기준시각에 active였던 pending lease가 manifest upload 중 만료해도 해당 run에서는 삭제하지 않는다. cleanup RPC는 registry 테이블에 `SHARE ROW EXCLUSIVE` lock을 적용해 신규 writer를 잠시 대기시키고, 최근 `ready` row나 기준시각에 만료되지 않은 `pending` lease가 없는 match만 정리한다. `pending` row는 `updated_at`과 무관하게 lease가 없거나 기준시각 이전에 만료했으면 정리 대상이다. finalize와 cleanup은 모두 `registry → match_master_telemetry → processed_match_telemetry` 순서로 lock·write를 진행해 교착 실행 사이클을 만들지 않는다. 삭제 후 eligible master·registry가 하나라도 남으면 RPC가 예외를 발생시켜 stats·processed 삭제까지 전체 rollback한다. writer가 먼저 reserve하면 cleanup에서 제외되고, cleanup이 먼저 끝나면 writer가 processed·master·ready registry 전체를 finalize RPC로 재구축한다.
 

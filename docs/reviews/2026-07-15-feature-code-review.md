@@ -243,7 +243,7 @@
 
 - 기준 문서로 기록된 `docs-private/.project_context.md`와 `docs-private/.pubg-telemetry-guide.md`는 현재 checkout과 Git 추적 목록에 존재하지 않아 이번 작업에서 갱신하지 못했다. 현재 캐시 계약은 공개 설계·구현 계획·본 리뷰 문서에 동기화했다.
 - `telemetry_map_cache_entries`와 cleanup RPC migration은 운영 Supabase에 적용하지 않았고, 운영 R2 cleanup도 실행하지 않았다.
-- R2 object 자동 삭제는 deterministic key 재업로드 TOCTOU 방지를 위해 비활성화했다. registry row 삭제 전 최대 50개 object path를 결정적 inventory manifest 1개로 보관하며, 무료 R2 저장량을 모니터링하고 immutable generation key 또는 Cloudflare가 공식 보장하는 conditional delete 도입 후 자동 정리를 재개해야 한다.
+- R2 object 자동 삭제는 deterministic key 재업로드 TOCTOU 방지를 위해 비활성화했다. cleanup은 최대 50개 match ID를 한 batch로 처리하고, 해당 후보 match의 registry object path 전체를 결정적 inventory manifest 1개로 DB RPC 전에 보관한다. match당 registry row가 여러 개일 수 있어 manifest path는 50개를 넘을 수 있다. `inventoryManifestCount`는 성공적으로 업로드한 후보 manifest 수이고, `archivedObjectCount`는 그 후보 inventory 중 RPC가 정리 완료로 반환한 match에 속한 path 수다. 두 값 모두 R2 object 실제 삭제 수를 의미하지 않는다. 무료 R2 저장량을 모니터링하고 immutable generation key 또는 Cloudflare가 공식 보장하는 conditional delete 도입 후 자동 정리를 재개해야 한다.
 - 실제 Chrome에서 `/stats`, Steam `KangHeeSung_` 검색, `/maps/erangel` 렌더는 통과했지만 최근 match 20건은 모두 HTTP 500으로 실패했다. sanitized 오류만 확인해 정확한 실패 단계는 미확정이며, 무료 PUBG API 예산과 Discord 중복 알림을 막기 위해 실데이터 재시도를 중단했다.
 - 2026-07-18 최종 로컬 Chrome 회귀에서 `/stats`, `/maps/erangel`, 불완전 query의 `/replay/3d?matchId=qa-no-external-call`은 모두 HTTP 200으로 렌더됐고 브라우저 console error는 0건이었다. 불완전 3D query는 외부 telemetry 요청 없이 `3D 리플레이 query가 누락되었거나 지원되지 않습니다.` 오류로 fail-closed 처리됐다.
 - migration 선적용·애플리케이션 배포 후 Steam/Kakao 2D·3D 실데이터 회귀 QA가 남아 있다.
