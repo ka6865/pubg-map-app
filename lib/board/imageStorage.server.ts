@@ -1,5 +1,6 @@
 import {
   BOARD_IMAGE_BUCKET,
+  BOARD_IMAGE_MAX_BYTES,
   type BoardImageMimeType,
   isUuid,
 } from "./imageStorageContract";
@@ -54,7 +55,7 @@ export async function reserveBoardImageUpload(input: {
     reservation = await input.supabaseAdmin.rpc("reserve_board_image_upload", {
       p_owner_user_id: input.ownerUserId,
       p_expected_mime_type: input.mimeType,
-      p_max_bytes: input.byteSize,
+      p_max_bytes: BOARD_IMAGE_MAX_BYTES,
     });
   } catch {
     return { ok: false, status: 503 };

@@ -71,7 +71,7 @@ DECLARE
   v_active_bytes bigint;
 BEGIN
   IF p_owner_user_id IS NULL OR p_expected_mime_type NOT IN ('image/png', 'image/jpeg', 'image/webp')
-    OR p_max_bytes IS NULL OR p_max_bytes <= 0 OR p_max_bytes > 1572864 THEN
+    OR p_max_bytes IS DISTINCT FROM 1572864 THEN
     RAISE EXCEPTION 'invalid_board_image_reservation';
   END IF;
 
@@ -101,7 +101,7 @@ BEGIN
     AND image_row.status IN ('pending', 'ready', 'delete_pending', 'deleting');
 
   -- Supabase Free 1 GB의 사용자별 5% 안전 한도로 50 MiB를 hard cap 한다.
-  IF v_active_count >= 40 OR v_active_bytes + p_max_bytes > 52428800 THEN
+  IF v_active_count >= 40 OR v_active_bytes + 1572864 > 52428800 THEN
     RETURN QUERY SELECT 'quota_exceeded'::text, NULL::uuid, NULL::text, NULL::text;
     RETURN;
   END IF;
@@ -119,7 +119,7 @@ BEGIN
     id, bucket_id, storage_key, owner_user_id, status, expected_mime_type, max_bytes, expires_at
   ) VALUES (
     v_image_id, 'board-images-v2', v_image_id::text, p_owner_user_id, 'pending',
-    p_expected_mime_type, p_max_bytes, now() + interval '24 hours'
+    p_expected_mime_type, 1572864, now() + interval '24 hours'
   );
   RETURN QUERY SELECT 'ok'::text, v_image_id, 'board-images-v2'::text, v_image_id::text;
 END;

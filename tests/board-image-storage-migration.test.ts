@@ -38,6 +38,18 @@ describe("게시판 이미지 Storage 소유권 마이그레이션", () => {
     expect(sql).not.toMatch(/GRANT .* TO (anon|authenticated)/);
   });
 
+  it("reserve는 클라이언트 신고 크기를 신뢰하지 않고 최대 이미지 크기로만 쿼터를 예약한다", () => {
+    const sql = readMigrationSql();
+    const script = readFileSync(resolve(process.cwd(), "scripts/verify_board_image_storage_migration.ts"), "utf8");
+
+    expect(sql).toContain("p_max_bytes IS DISTINCT FROM 1572864");
+    expect(sql).toContain("v_active_bytes + 1572864 > 52428800");
+    expect(sql).toContain("p_expected_mime_type, 1572864, now() + interval '24 hours'");
+    expect(script).toContain("reservation-client-byte-size-rejected");
+    expect(script).toContain("reservation-full-max-bytes");
+    expect(script).toContain("reservation-worst-case-bytes");
+  });
+
   it("레거시와 삭제 lease 상태를 보존한다", () => {
     const sql = readMigrationSql();
 

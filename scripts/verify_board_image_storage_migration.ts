@@ -88,8 +88,8 @@ async function withFixture(name: string, scenario: (fixture: Fixture) => Promise
   }
 }
 
-async function reserve(fixture: Fixture, suffix: string, mime = "image/png", maxBytes = 100): Promise<{ imageId: string; key: string }> {
-  const reservation = await scalar(`SET ROLE service_role; SELECT result.result_code || ':' || result.image_id::text FROM public.reserve_board_image_upload(${quote(ownerId)}, ${quote(mime)}, ${maxBytes}) AS result`, "reserve-ready");
+async function reserve(fixture: Fixture, suffix: string, mime = "image/png"): Promise<{ imageId: string; key: string }> {
+  const reservation = await scalar(`SET ROLE service_role; SELECT result.result_code || ':' || result.image_id::text FROM public.reserve_board_image_upload(${quote(ownerId)}, ${quote(mime)}, 1572864) AS result`, "reserve-ready");
   const [resultCode, imageId] = reservation.split(":");
   equal(resultCode, "ok", "reserve-ready-result-code");
   if (!imageId) throw new Error("reserve-ready-image-id-missing");
@@ -146,26 +146,28 @@ async function verifyAclAndOwnership(): Promise<void> {
 async function verifyReservationQuota(): Promise<void> {
   await withFixture("reservation-quota", async (fixture) => {
     await sql(`SET ROLE service_role; DELETE FROM public.board_image_reservation_rate_limits WHERE owner_user_id = ${quote(ownerId)}::uuid;`);
-    const reservations = await sql(`SET ROLE service_role; SELECT result.result_code || ':' || coalesce(result.image_id::text, 'null') || ':' || coalesce(result.bucket_id, 'null') || ':' || coalesce(result.storage_key, 'null') FROM public.reserve_board_image_upload(${quote(ownerId)}::uuid, 'image/png', 100) AS result;`);
+    await rejected(`SET ROLE service_role; SELECT * FROM public.reserve_board_image_upload(${quote(ownerId)}::uuid, 'image/png', 1)`, "reservation-client-byte-size-rejected");
+    const reservations = await sql(`SET ROLE service_role; SELECT result.result_code || ':' || coalesce(result.image_id::text, 'null') || ':' || coalesce(result.bucket_id, 'null') || ':' || coalesce(result.storage_key, 'null') FROM public.reserve_board_image_upload(${quote(ownerId)}::uuid, 'image/png', 1572864) AS result;`);
     equal((reservations.split(/\r?\n/).at(-1) ?? "").split(":")[0], "ok", "reservation-result-code-prefix");
+    equal(await scalar(`SET ROLE service_role; SELECT image_row.max_bytes::text FROM public.board_image_objects AS image_row WHERE image_row.owner_user_id = ${quote(ownerId)}::uuid ORDER BY image_row.created_at DESC LIMIT 1`, "reservation-full-max-bytes"), "1572864", "reservation-full-max-bytes");
 
     await sql(`SET ROLE service_role; DELETE FROM public.board_image_objects WHERE owner_user_id = ${quote(ownerId)}::uuid AND status = 'pending'; DELETE FROM public.board_image_reservation_rate_limits WHERE owner_user_id = ${quote(ownerId)}::uuid;`);
     for (let index = 0; index < 10; index += 1) {
-      const result = await scalar(`SET ROLE service_role; SELECT result.result_code || ':' || result.image_id::text FROM public.reserve_board_image_upload(${quote(ownerId)}::uuid, 'image/png', 100) AS result`, `reservation-rate-${index}`);
+      const result = await scalar(`SET ROLE service_role; SELECT result.result_code || ':' || result.image_id::text FROM public.reserve_board_image_upload(${quote(ownerId)}::uuid, 'image/png', 1572864) AS result`, `reservation-rate-${index}`);
       equal(result.split(":")[0], "ok", `reservation-rate-${index}`);
       fixture.imageIds.push(result.split(":")[1]);
     }
     const beforeEleventh = await scalar(`SET ROLE service_role; SELECT count(*)::text FROM public.board_image_objects WHERE owner_user_id = ${quote(ownerId)}::uuid`, "reservation-rate-eleventh-before-count");
-    equal(await scalar(`SET ROLE service_role; SELECT result.result_code || ':' || coalesce(result.image_id::text, 'null') || ':' || coalesce(result.bucket_id, 'null') || ':' || coalesce(result.storage_key, 'null') FROM public.reserve_board_image_upload(${quote(ownerId)}::uuid, 'image/png', 100) AS result`, "reservation-rate-eleventh"), "quota_exceeded:null:null:null", "reservation-rate-eleventh");
+    equal(await scalar(`SET ROLE service_role; SELECT result.result_code || ':' || coalesce(result.image_id::text, 'null') || ':' || coalesce(result.bucket_id, 'null') || ':' || coalesce(result.storage_key, 'null') FROM public.reserve_board_image_upload(${quote(ownerId)}::uuid, 'image/png', 1572864) AS result`, "reservation-rate-eleventh"), "quota_exceeded:null:null:null", "reservation-rate-eleventh");
     equal(await scalar(`SET ROLE service_role; SELECT count(*)::text FROM public.board_image_objects WHERE owner_user_id = ${quote(ownerId)}::uuid`, "reservation-rate-eleventh-after-count"), beforeEleventh, "reservation-rate-eleventh-no-insert");
     await sql(`SET ROLE service_role; DELETE FROM public.board_image_objects WHERE owner_user_id = ${quote(ownerId)}::uuid; DELETE FROM public.board_image_reservation_rate_limits WHERE owner_user_id = ${quote(ownerId)}::uuid;`);
 
     await sql(`SET ROLE service_role; INSERT INTO public.board_image_objects (bucket_id, storage_key, owner_user_id, status, max_bytes) SELECT 'board-images-v2', ${quote(`${fixture.runId}-count-`)} || generate_series::text, ${quote(ownerId)}::uuid, 'ready', 1 FROM generate_series(1, 40);`);
-    equal(await scalar(`SET ROLE service_role; SELECT result.result_code || ':' || coalesce(result.image_id::text, 'null') FROM public.reserve_board_image_upload(${quote(ownerId)}::uuid, 'image/png', 1) AS result`, "reservation-active-count"), "quota_exceeded:null", "reservation-active-count");
+    equal(await scalar(`SET ROLE service_role; SELECT result.result_code || ':' || coalesce(result.image_id::text, 'null') FROM public.reserve_board_image_upload(${quote(ownerId)}::uuid, 'image/png', 1572864) AS result`, "reservation-active-count"), "quota_exceeded:null", "reservation-active-count");
     await sql(`SET ROLE service_role; DELETE FROM public.board_image_objects WHERE owner_user_id = ${quote(ownerId)}::uuid;`);
 
-    await sql(`SET ROLE service_role; INSERT INTO public.board_image_objects (bucket_id, storage_key, owner_user_id, status, max_bytes) SELECT 'board-images-v2', ${quote(`${fixture.runId}-bytes-`)} || generate_series::text, ${quote(ownerId)}::uuid, 'ready', 1572864 FROM generate_series(1, 34);`);
-    equal(await scalar(`SET ROLE service_role; SELECT result.result_code || ':' || coalesce(result.image_id::text, 'null') FROM public.reserve_board_image_upload(${quote(ownerId)}::uuid, 'image/png', 1) AS result`, "reservation-active-bytes"), "quota_exceeded:null", "reservation-active-bytes");
+    await sql(`SET ROLE service_role; INSERT INTO public.board_image_objects (bucket_id, storage_key, owner_user_id, status, max_bytes) SELECT 'board-images-v2', ${quote(`${fixture.runId}-bytes-`)} || generate_series::text, ${quote(ownerId)}::uuid, 'ready', 1572864 FROM generate_series(1, 33);`);
+    equal(await scalar(`SET ROLE service_role; SELECT result.result_code || ':' || coalesce(result.image_id::text, 'null') FROM public.reserve_board_image_upload(${quote(ownerId)}::uuid, 'image/png', 1572864) AS result`, "reservation-worst-case-bytes"), "quota_exceeded:null", "reservation-worst-case-bytes");
   });
 }
 
@@ -175,7 +177,7 @@ async function verifyUploadValidationAndReferences(): Promise<void> {
     await sql(`SET ROLE service_role; INSERT INTO storage.objects (bucket_id, name, owner, metadata) VALUES ('board-images-v2', ${quote(mime.key)}, ${quote(ownerId)}::uuid, '{"mimetype":"image/jpeg","size":100}'::jsonb);`);
     equal(await scalar(`SET ROLE service_role; SELECT public.complete_board_image_upload(${quote(mime.imageId)}::uuid, ${quote(ownerId)}::uuid)::text`, "mime-violation"), "false", "mime-violation");
     const size = await reserve(fixture, "size");
-    await sql(`SET ROLE service_role; INSERT INTO storage.objects (bucket_id, name, owner, metadata) VALUES ('board-images-v2', ${quote(size.key)}, ${quote(ownerId)}::uuid, '{"mimetype":"image/png","size":101}'::jsonb);`);
+    await sql(`SET ROLE service_role; INSERT INTO storage.objects (bucket_id, name, owner, metadata) VALUES ('board-images-v2', ${quote(size.key)}, ${quote(ownerId)}::uuid, '{"mimetype":"image/png","size":1572865}'::jsonb);`);
     equal(await scalar(`SET ROLE service_role; SELECT public.complete_board_image_upload(${quote(size.imageId)}::uuid, ${quote(ownerId)}::uuid)::text`, "size-violation"), "false", "size-violation");
     const shared = await reserveReady(fixture, "shared");
     const contentThumbnail = await writePost(fixture, [shared], shared);
@@ -324,7 +326,7 @@ async function verifyLegacyBackfill(): Promise<void> {
       fixture.postIds.push(postId);
     }
     await sql(readFileSync(resolve(process.cwd(), "supabase/migrations/20260718203104_board_image_storage_ownership.sql"), "utf8"));
-    const reservation = await scalar(`SET ROLE service_role; SELECT result.result_code || ':' || result.image_id::text FROM public.reserve_board_image_upload(${quote(ownerId)}::uuid, 'image/png', 100) AS result`, "migration-reapply-reserve-contract");
+    const reservation = await scalar(`SET ROLE service_role; SELECT result.result_code || ':' || result.image_id::text FROM public.reserve_board_image_upload(${quote(ownerId)}::uuid, 'image/png', 1572864) AS result`, "migration-reapply-reserve-contract");
     const [resultCode, imageId] = reservation.split(":");
     equal(resultCode, "ok", "migration-reapply-reserve-contract");
     if (!imageId) throw new Error("migration-reapply-reserve-image-id-missing");

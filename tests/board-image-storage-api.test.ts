@@ -95,9 +95,14 @@ describe("게시판 이미지 signed upload API", () => {
     const admin = createAdmin();
     mocks.withAuthGuard.mockResolvedValue({ user: { id: USER_ID }, supabaseAdmin: admin.supabaseAdmin });
 
-    const response = await reservePOST(request("/api/board/images/reserve", { mimeType: "image/png", byteSize: 10 }));
+    const response = await reservePOST(request("/api/board/images/reserve", { mimeType: "image/png", byteSize: 1 }));
 
     expect(response.status).toBe(200);
+    expect(admin.rpc).toHaveBeenCalledWith("reserve_board_image_upload", {
+      p_owner_user_id: USER_ID,
+      p_expected_mime_type: "image/png",
+      p_max_bytes: 1_572_864,
+    });
     expect(admin.from).toHaveBeenCalledWith("board-images-v2");
     expect(admin.createSignedUploadUrl).toHaveBeenCalledWith(IMAGE_ID, { upsert: false });
     expect(await response.json()).toEqual({
