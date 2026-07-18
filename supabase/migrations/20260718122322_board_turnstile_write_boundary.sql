@@ -103,11 +103,13 @@ BEGIN
     WHERE window_started_at < p_cutoff
     ORDER BY window_started_at, scope, actor_hash
     LIMIT p_max_rows
+    FOR UPDATE SKIP LOCKED
   )
   DELETE FROM public.board_write_rate_limits AS target
   USING expired
   WHERE target.scope = expired.scope
-    AND target.actor_hash = expired.actor_hash;
+    AND target.actor_hash = expired.actor_hash
+    AND target.window_started_at < p_cutoff;
 
   GET DIAGNOSTICS v_deleted_rows = ROW_COUNT;
   RETURN v_deleted_rows;

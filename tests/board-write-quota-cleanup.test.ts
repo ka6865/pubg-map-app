@@ -33,6 +33,15 @@ describe("board write quota bounded cleanup migration", () => {
     );
   });
 
+  it("동시 consume이 갱신한 active quota를 cleanup이 삭제하지 않도록 잠금과 postcondition을 고정한다", () => {
+    expect(migration).toMatch(
+      /WITH expired AS MATERIALIZED[\s\S]+WHERE window_started_at < p_cutoff[\s\S]+ORDER BY window_started_at, scope, actor_hash[\s\S]+LIMIT p_max_rows[\s\S]+FOR UPDATE SKIP LOCKED/i,
+    );
+    expect(migration).toMatch(
+      /DELETE FROM public\.board_write_rate_limits AS target[\s\S]+USING expired[\s\S]+target\.scope = expired\.scope[\s\S]+target\.actor_hash = expired\.actor_hash[\s\S]+target\.window_started_at < p_cutoff/i,
+    );
+  });
+
   it("cleanup RPC는 invoker·빈 search_path·service_role 전용이다", () => {
     expect(migration).toMatch(
       /cleanup_board_write_rate_limits[\s\S]+SECURITY INVOKER[\s\S]+SET search_path = ''/i,
@@ -95,7 +104,8 @@ describe("board write quota cleanup job", () => {
     const maintenance = parsed.jobs.maintenance;
     expect(isRecord(maintenance)).toBe(true);
     if (!isRecord(maintenance) || !Array.isArray(maintenance.steps)) return;
-    const cleanupSteps = maintenance.steps.filter((step) => (
+    const steps = maintenance.steps;
+    const cleanupSteps = steps.filter((step) => (
       isRecord(step) && step.run === "npx tsx scripts/cleanup_board_write_rate_limits.ts"
     ));
 
@@ -108,5 +118,21 @@ describe("board write quota cleanup job", () => {
       NEXT_PUBLIC_SUPABASE_URL: "${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}",
       SUPABASE_SERVICE_ROLE_KEY: "${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}",
     });
+
+    const installIndex = steps.findIndex((step) => (
+      isRecord(step) && step.run === "npm ci"
+    ));
+    const cleanupIndex = steps.indexOf(cleanupStep);
+    const externalMaintenanceIndexes = [
+      "npx tsx scripts/monitor_storage.ts --label \"BEFORE\"",
+      "npx tsx scripts/cleanup_telemetry.ts",
+      "npx tsx scripts/cleanup_ai_cache.ts",
+    ].map((command) => steps.findIndex((step) => (
+      isRecord(step) && step.run === command
+    )));
+
+    expect(installIndex).toBeGreaterThanOrEqual(0);
+    expect(cleanupIndex).toBe(installIndex + 1);
+    expect(externalMaintenanceIndexes.every((index) => cleanupIndex < index)).toBe(true);
   });
 });
