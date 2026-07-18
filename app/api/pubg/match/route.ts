@@ -1,5 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { unstable_cache } from "next/cache"; // [ISR V1.0] Next.js 16 캐싱 API
 import { AnalysisEngine } from "@/lib/pubg-analysis/AnalysisEngine";
@@ -140,6 +140,12 @@ async function reportBackgroundReanalysisFailure(): Promise<void> {
   }
 }
 
+function createTacticalResponse(result: any) {
+  const tacticalResult = { ...result };
+  delete tacticalResult.mapData;
+  return pseudonymizeTelemetryAccountIds(tacticalResult);
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const matchId = searchParams.get("matchId");
@@ -203,13 +209,24 @@ export async function GET(request: NextRequest) {
 
   try {
     const shouldForce = force;
+    let cachedFullResult: any = null;
 
     if (!shouldForce) {
       const cachedData = await getCachedMatchTelemetry(matchId, lowerNickname, platform) as any;
-      const cachedFullResult = getValidFullResult(cachedData, lowerNickname, platform);
-      if (cachedFullResult && (cachedFullResult.v || 0) >= RESULT_VERSION) {
-        return NextResponse.json(cachedFullResult);
+      cachedFullResult = getValidFullResult(cachedData, lowerNickname, platform);
+      if (cachedFullResult && (
+        (cachedFullResult.v || 0) >= RESULT_VERSION
+        || !isR2Configured()
+      )) {
+        return NextResponse.json(createTacticalResponse(cachedFullResult));
       }
+    }
+
+    if (!isR2Configured()) {
+      return NextResponse.json(
+        { error: "텔레메트리 캐시 저장소를 사용할 수 없습니다." },
+        { status: 503 },
+      );
     }
 
     const apiKey = (process.env.PUBG_API_KEY || "").split(" ")[0];
@@ -271,42 +288,37 @@ export async function GET(request: NextRequest) {
     const myDamageRank = sortedByDamage.findIndex((s: any) => normalizeName(s.name) === lowerNickname) + 1;
     const rankPct = humanParticipants.length > 0 ? myDamageRank / humanParticipants.length : 1;
 
-    // [ISR V1.0] unstable_cache 프록시를 통한 DB 캐시 조회
-    let cachedData = null;
-    if (!shouldForce) {
-      cachedData = await getCachedMatchTelemetry(matchId, lowerNickname, platform) as any;
-      const cachedFullResult = getValidFullResult(cachedData, lowerNickname, platform);
-      if (cachedFullResult) {
-        const cachedVersion = cachedFullResult.v || 0;
+    if (!shouldForce && cachedFullResult) {
+      const cachedVersion = cachedFullResult.v || 0;
         
-        // [Stale-While-Revalidate] 캐시 데이터 버전이 낮으면 백그라운드 재분석 기동
-        if (cachedVersion < RESULT_VERSION) {
-          const reanalyzePromise = reanalyzeAndSave(
-            matchId, canonicalNickname, platform, lowerNickname, matchData, teamNames, teamAccountIds,
-            myRosterId, myParticipant, myAccountId, teamStats, rankPct, matchAttr, rosters, participants,
-            true, source
-          ).catch(reportBackgroundReanalysisFailure);
-
-          // Next.js request.waitUntil 이 지원되면 백그라운드 작업 생명주기 관리
-          if (typeof (request as any).waitUntil === 'function') {
-            (request as any).waitUntil(reanalyzePromise);
+      // [Stale-While-Revalidate] 캐시 데이터 버전이 낮으면 백그라운드 재분석 기동
+      if (cachedVersion < RESULT_VERSION) {
+        after(async () => {
+          try {
+            await reanalyzeAndSave(
+              matchId, canonicalNickname, platform, lowerNickname, matchData, teamNames, teamAccountIds,
+              myRosterId, myParticipant, myAccountId, teamStats, rankPct, matchAttr, rosters, participants,
+              true, source,
+            );
+          } catch {
+            await reportBackgroundReanalysisFailure();
           }
-        }
-
-        // 샘플 참가자 추출 (기존 response 형식 호환)
-        const allParticipantNames = participants
-          .filter((p: any) => !p.attributes.stats.playerId?.startsWith("ai."))
-          .map((p: any) => p.attributes.stats.name)
-          .filter((name: string) => normalizeName(name) !== lowerNickname);
-        const sampleParticipants = allParticipantNames
-          .sort(() => 0.5 - Math.random())
-          .slice(0, 5);
-
-        return NextResponse.json({
-          ...cachedFullResult,
-          sampleParticipants
         });
       }
+
+      // 샘플 참가자 추출 (기존 response 형식 호환)
+      const allParticipantNames = participants
+        .filter((p: any) => !p.attributes.stats.playerId?.startsWith("ai."))
+        .map((p: any) => p.attributes.stats.name)
+        .filter((name: string) => normalizeName(name) !== lowerNickname);
+      const sampleParticipants = allParticipantNames
+        .sort(() => 0.5 - Math.random())
+        .slice(0, 5);
+
+      return NextResponse.json({
+        ...createTacticalResponse(cachedFullResult),
+        sampleParticipants
+      });
     }
 
     // 캐시가 없거나 강제 업데이트가 필요한 경우 동기식 분석 실행
@@ -618,7 +630,7 @@ async function reanalyzeAndSave(
     .slice(0, 5);
 
   return {
-    ...fullResult,
+    ...createTacticalResponse(tacticalResult),
     sampleParticipants
   };
 }

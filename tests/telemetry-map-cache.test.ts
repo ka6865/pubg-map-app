@@ -147,6 +147,14 @@ describe("telemetry map cache", () => {
     expect(publicValue).toMatchObject({ name: "Canonical Player" });
   });
 
+  it("32자리 hex raw accountId도 공개 키로 다시 해시한다", () => {
+    const rawAccountId = "a".repeat(32);
+    const publicValue = pseudonymizeTelemetryAccountIds({ accountId: rawAccountId });
+
+    expect(publicValue.accountId).toBe(buildTelemetryPlayerKey(rawAccountId));
+    expect(publicValue.accountId).not.toBe(rawAccountId);
+  });
+
   it("match와 telemetry route는 legacy map key 문자열을 만들지 않는다", () => {
     const routePaths = ["app/api/pubg/telemetry/route.ts", "app/api/pubg/match/route.ts"];
 
@@ -156,6 +164,16 @@ describe("telemetry map cache", () => {
       expect(source).not.toContain("_v${TELEMETRY_VERSION}_map");
       expect(source).not.toMatch(/platform\s*\|\|\s*["']steam["']/);
     }
+  });
+
+  it("private analyze 캐시를 signed URL이나 API 응답으로 연결하지 않는다", () => {
+    const source = fs.readFileSync(path.resolve("app/api/pubg/match/route.ts"), "utf8");
+
+    expect(source).toContain("_analyze.json");
+    expect(source).toContain("downloadFromR2(analyzePath)");
+    expect(source).toContain("uploadToR2(analyzePath");
+    expect(source).not.toMatch(/getPresignedUrlFromR2\s*\(\s*analyzePath/);
+    expect(source).not.toMatch(/NextResponse[^\n]*analyzePath/);
   });
 
   it("telemetry route는 platform과 mode 누락·미지원 값을 400으로 거부한다", () => {

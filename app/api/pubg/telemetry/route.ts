@@ -77,6 +77,13 @@ export async function GET(request: Request) {
     return invalidRequest("지원하지 않는 telemetry platform 또는 mode입니다.");
   }
 
+  if (!isR2Configured()) {
+    return NextResponse.json(
+      { error: "텔레메트리 캐시 저장소를 사용할 수 없습니다." },
+      { status: 503 },
+    );
+  }
+
   const lowerNickname = normalizeName(nickname);
   const apiKey = (process.env.PUBG_API_KEY || "").split(" ")[0];
   const headers = {

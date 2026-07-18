@@ -12,11 +12,10 @@ export function buildTelemetryPlayerKey(playerId: string): string {
 }
 
 const ACCOUNT_ID_FIELD = /(?:account|player)ids?$/i;
-const PUBLIC_PLAYER_KEY = /^[a-f0-9]{32}$/;
 
 function pseudonymizeTelemetryValue(value: unknown, fieldName?: string): unknown {
   if (typeof value === "string" && fieldName && ACCOUNT_ID_FIELD.test(fieldName)) {
-    return PUBLIC_PLAYER_KEY.test(value) ? value : buildTelemetryPlayerKey(value);
+    return buildTelemetryPlayerKey(value);
   }
   if (Array.isArray(value)) {
     return value.map((item) => pseudonymizeTelemetryValue(item, fieldName));
@@ -38,7 +37,7 @@ export function pseudonymizeTelemetryTeammates(teammates: unknown[]): string[] {
     if (typeof playerId !== "string" || playerId.length === 0) {
       throw new Error("유효하지 않은 telemetry teammate accountId입니다.");
     }
-    return PUBLIC_PLAYER_KEY.test(playerId) ? playerId : buildTelemetryPlayerKey(playerId);
+    return buildTelemetryPlayerKey(playerId);
   });
 }
 
