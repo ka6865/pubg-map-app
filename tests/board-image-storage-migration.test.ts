@@ -211,4 +211,14 @@ describe("게시판 이미지 Storage 소유권 마이그레이션", () => {
     expect(script).toContain("authenticated-rpc-denied");
     expect(script).toContain("service-role-execute");
   });
+
+  it("legacy retained 참조는 직접 삭제하지 않고 게시글 RPC detach로 제거한다", () => {
+    const script = readFileSync(resolve(process.cwd(), "scripts/verify_board_image_storage_migration.ts"), "utf8");
+    const legacyScenario = script.slice(script.indexOf("legacy-retained-create"), script.indexOf("legacy-retained-claim-count") + "legacy-retained-claim-count".length);
+
+    expect(legacyScenario).toContain('updatePost(legacyPost.postId, legacyPost.revision, [], null, "legacy-retained-detach")');
+    expect(legacyScenario).toContain("legacy-retained-ref-count");
+    expect(legacyScenario).toContain("legacy-retained-claim-count");
+    expect(legacyScenario).not.toContain("DELETE FROM public.board_post_image_refs");
+  });
 });

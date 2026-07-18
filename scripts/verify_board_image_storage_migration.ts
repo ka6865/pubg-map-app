@@ -148,8 +148,12 @@ async function verifyUploadValidationAndReferences(): Promise<void> {
     fixture.storageKeys.push(legacyKey);
     const legacyId = await scalar(`SET ROLE service_role; INSERT INTO public.board_image_objects (bucket_id, storage_key, status) VALUES ('images', ${quote(legacyKey)}, 'legacy_retained') RETURNING id`, "legacy-retained-create");
     fixture.imageIds.push(legacyId);
-    await sql(`SET ROLE service_role; INSERT INTO public.board_post_image_refs (post_id, image_id, usage) VALUES (${twoPosts.postId}, ${quote(legacyId)}::uuid, 'content'); DELETE FROM public.board_post_image_refs WHERE post_id = ${twoPosts.postId} AND image_id = ${quote(legacyId)}::uuid;`);
+    const legacyPost = await writePost(fixture, []);
+    await sql(`SET ROLE service_role; INSERT INTO public.board_post_image_refs (post_id, image_id, usage) VALUES (${legacyPost.postId}, ${quote(legacyId)}::uuid, 'content');`);
+    equal((await updatePost(legacyPost.postId, legacyPost.revision, [], null, "legacy-retained-detach")).split(":")[0], "ok", "legacy-retained-detach");
+    equal(await scalar(`SELECT count(*)::text FROM public.board_post_image_refs AS ref_row WHERE ref_row.post_id = ${legacyPost.postId} AND ref_row.image_id = ${quote(legacyId)}::uuid`, "legacy-retained-ref-count"), "0", "legacy-retained-ref-count");
     equal(await imageStatus(legacyId, "legacy-retained-preserved"), "legacy_retained", "legacy-retained-preserved");
+    equal(await scalar(`SET ROLE service_role; SELECT count(*)::text FROM public.claim_board_image_deletions(20, now(), 300) AS result WHERE result.image_id = ${quote(legacyId)}::uuid`, "legacy-retained-claim-count"), "0", "legacy-retained-claim-count");
   });
 }
 
