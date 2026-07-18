@@ -225,10 +225,14 @@ fetchTelemetryPayload(
 - 닫기 동작은 `playback`, `nickname`, `platform`, `mode`를 함께 제거한다.
 - 3D와 Squad 2D는 기존 prop/query의 platform을 공용 fetch 함수에 전달한다.
 - platform 누락 또는 미지원 값은 `steam`으로 조용히 보정하지 않고 사용자 오류로 처리한다.
+- `/replay/3d` 완전 무쿼리 접근만 명시적인 Steam 기본 데모를 허용하고, matchId/nickname/platform 일부만 전달된 요청은 fail-closed한다.
+- 3D 자동 query 요청과 수동 재시도는 같은 request controller/ref를 사용해 새 요청 전에 이전 요청을 abort한다.
+- identity 전환·누락·검증 실패 시 이전 players, zones, events, timeline 상태를 즉시 비운다.
 
 ## 8. 오류와 보안 경계
 
 - `matchId`, `nickname`, `platform`, `mode`는 서버와 클라이언트 양쪽에서 검증한다.
+- 선택적 `mapName`도 길이와 제어문자를 fetch 전에 검증한다.
 - nickname은 정규화 비교하지만 payload에는 PUBG API의 canonical name을 사용한다.
 - accountId 원문은 R2 key, signed URL, API envelope, 브라우저 전달용 R2 지도 payload에 넣지 않는다.
 - private `_analyze.json`은 서버 분석 전용이며 공개 URL과 API 응답 계약에서 제외한다.

@@ -688,9 +688,12 @@ export async function fetchTelemetryPayload(
 - `fetchTelemetry`은 mode에 맞춰 공용 함수를 호출하고 기존 state 조립만 유지한다.
 - effect cleanup은 controller를 abort하고 animation 상태를 정리한다.
 - 3D는 query platform을 `parseTelemetryPlatform`으로 검증하고 `mode: "full"` 공용 fetch를 사용한다.
+- 3D 자동·수동 요청은 같은 request controller/ref를 사용해 새 요청이 이전 요청을 취소하며, 전환·invalid 시 이전 replay state를 즉시 초기화한다.
+- `/replay/3d` 완전 무쿼리 접근만 명시적 Steam 데모를 허용하고 일부 query만 전달되면 fail-closed한다.
 - Squad 2D는 prop platform과 `mode: "full"` 공용 fetch를 사용하며 effect cleanup에서 abort한다.
 - 세 소비자에서 직접 `/api/pubg/telemetry` fetch와 `downloadUrl` 분기를 삭제한다.
 - 브라우저 catch에서 외부 Error 객체를 `console.error`로 출력하지 않는다.
+- 공용 fetcher는 선택적 `mapName`의 길이와 제어문자를 fetch 전에 검증한다.
 
 - [ ] **Step 6: MatchCard·MapShell platform 동기화**
 
