@@ -84,13 +84,22 @@ describe("게시판 이미지 Storage 소유권 마이그레이션", () => {
     expect(sql).toContain("LIMIT LEAST(p_limit, 20)");
   });
 
+  it("참조가 생긴 이미지는 후보와 상태 전이 단계 모두에서 claim하지 않는다", () => {
+    const sql = readMigrationSql();
+
+    expect(sql).toMatch(/WHERE[\s\S]*object_row\.status = 'delete_pending'[\s\S]*NOT EXISTS \([\s\S]*ref_row\.image_id = object_row\.id/g);
+    expect(sql).toMatch(/FROM candidates AS candidate_row[\s\S]*AND NOT EXISTS \([\s\S]*ref_row\.image_id = object_row\.id/g);
+  });
+
   it("실제 images 객체와 정규 Supabase URL만 legacy ref로 backfill한다", () => {
     const sql = readMigrationSql();
 
     expect(sql).toContain("FROM storage.objects AS storage_object");
     expect(sql).toContain("storage_object.bucket_id = 'images'");
     expect(sql).toContain("https://%.supabase.co/storage/v1/object/public/images/%");
-    expect(sql).toContain("legacy_url.image_url NOT LIKE '%\\\\%%'");
+    expect(sql).toContain("position('%' in legacy_url.image_url) = 0");
+    expect(sql).toContain("[.]supabase[.]co");
+    expect(sql).not.toContain("\\\\.supabase\\\\.co");
     expect(sql).not.toContain("owner_user_id = storage_object.owner");
   });
 
@@ -112,5 +121,11 @@ describe("게시판 이미지 Storage 소유권 마이그레이션", () => {
     expect(script).toContain("duplicate-claim");
     expect(script).toContain("expired-lease-reclaim");
     expect(script).toContain("finalize-retry");
+    expect(script).toContain("anon-table-denied");
+    expect(script).toContain("authenticated-table-denied");
+    expect(script).toContain("attach-vs-detach");
+    expect(script).toContain("concurrent-worker-claim");
+    expect(script).toContain("legacy-retained-detach");
+    expect(script).toContain("fixture-cleanup");
   });
 });

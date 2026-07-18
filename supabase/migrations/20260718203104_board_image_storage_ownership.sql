@@ -226,11 +226,13 @@ BEGIN
   WITH candidates AS (
     SELECT object_row.id
     FROM public.board_image_objects AS object_row
-    WHERE (object_row.status = 'delete_pending' AND object_row.delete_after <= p_now)
+    WHERE ((object_row.status = 'delete_pending' AND object_row.delete_after <= p_now)
       OR (object_row.status = 'deleting' AND object_row.delete_lease_until <= p_now)
-      OR (object_row.status = 'pending' AND object_row.expires_at <= p_now AND NOT EXISTS (
-        SELECT 1 FROM public.board_post_image_refs AS ref_row WHERE ref_row.image_id = object_row.id
-      ))
+      OR (object_row.status = 'pending' AND object_row.expires_at <= p_now))
+      AND NOT EXISTS (
+        SELECT 1 FROM public.board_post_image_refs AS ref_row
+        WHERE ref_row.image_id = object_row.id
+      )
     ORDER BY object_row.id
     FOR UPDATE SKIP LOCKED
     LIMIT LEAST(p_limit, 20)
@@ -239,7 +241,12 @@ BEGIN
     SET status = 'deleting', delete_lease_token = gen_random_uuid(),
         delete_lease_until = p_now + interval '5 minutes', delete_attempts = object_row.delete_attempts + 1,
         updated_at = p_now
-    FROM candidates AS candidate_row WHERE object_row.id = candidate_row.id
+    FROM candidates AS candidate_row
+    WHERE object_row.id = candidate_row.id
+      AND NOT EXISTS (
+        SELECT 1 FROM public.board_post_image_refs AS ref_row
+        WHERE ref_row.image_id = object_row.id
+      )
     RETURNING object_row.id, object_row.bucket_id, object_row.storage_key, object_row.delete_lease_token
   ) SELECT claimed.id, claimed.bucket_id, claimed.storage_key, claimed.delete_lease_token FROM claimed;
 END;
@@ -285,9 +292,9 @@ BEGIN
   JOIN public.board_image_objects AS image_row
     ON image_row.bucket_id = storage_object.bucket_id AND image_row.storage_key = storage_object.name
   WHERE legacy_url.image_url LIKE 'https://%.supabase.co/storage/v1/object/public/images/%'
-    AND legacy_url.image_url NOT LIKE '%\\%%'
+    AND position('%' in legacy_url.image_url) = 0
     AND regexp_replace(legacy_url.image_url,
-      '^https://[a-z0-9-]+\\.supabase\\.co/storage/v1/object/public/images/', '') = storage_object.name
+      '^https://[a-z0-9-]+[.]supabase[.]co/storage/v1/object/public/images/', '') = storage_object.name
   ON CONFLICT DO NOTHING;
 END;
 $$;

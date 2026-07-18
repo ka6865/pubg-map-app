@@ -35,6 +35,15 @@ function assertEqual(actual: string, expected: string, label: string): void {
   if (actual !== expected) throw new Error(`${label}: expected=${expected}, actual=${actual}`);
 }
 
+async function assertRejected(sql: string, label: string): Promise<void> {
+  try {
+    await executeSql(sql);
+  } catch {
+    return;
+  }
+  throw new Error(`${label}: expected-rejection`);
+}
+
 async function scalar(sql: string, label: string): Promise<string> {
   const value = (await executeSql(sql)).split(/\r?\n/).filter(Boolean).at(-1) ?? "";
   if (!value) throw new Error(`${label}: empty-result`);
@@ -49,6 +58,7 @@ async function main(): Promise<void> {
     USING public.board_image_objects AS image_row
     WHERE ref_row.image_id = image_row.id AND image_row.storage_key LIKE '${prefix}%';
     DELETE FROM public.board_image_objects AS image_row WHERE image_row.storage_key LIKE '${prefix}%';
+    DELETE FROM storage.objects AS storage_object WHERE storage_object.bucket_id = 'board-images-v2' AND storage_object.name LIKE '${prefix}%';
   `);
 
   assertEqual(await scalar(`
@@ -61,6 +71,15 @@ async function main(): Promise<void> {
     WHERE privilege_row.routine_schema = 'public' AND privilege_row.grantee IN ('anon', 'authenticated')
       AND privilege_row.routine_name IN ('reserve_board_image_upload', 'complete_board_image_upload', 'write_board_post_with_images', 'claim_board_image_deletions', 'finalize_board_image_deletion')
   `, "public-rpc-execute"), "0", "public-rpc-execute");
+  assertEqual(await scalar(`
+    SELECT count(*) FROM pg_policies AS policy_row
+    WHERE policy_row.schemaname = 'public' AND policy_row.tablename IN ('board_image_objects', 'board_post_image_refs')
+  `, "public-policy-count"), "0", "public-policy-count");
+  assertEqual(await scalar(`
+    SELECT has_function_privilege('service_role', 'public.reserve_board_image_upload(uuid,text,bigint)', 'EXECUTE')::text
+  `, "service-role-execute"), "true", "service-role-execute");
+  await assertRejected("SET ROLE anon; SELECT * FROM public.board_image_objects", "anon-table-denied");
+  await assertRejected("SET ROLE authenticated; SELECT * FROM public.board_post_image_refs", "authenticated-table-denied");
 
   const reserveId = await scalar(`
     SET ROLE service_role;
@@ -81,6 +100,10 @@ async function main(): Promise<void> {
   assertEqual(await scalar(`
     SELECT image_row.status FROM public.board_image_objects AS image_row WHERE image_row.id = '${reserveId}'::uuid
   `, "reserve-complete-status"), "ready", "reserve-complete-status");
+  assertEqual(await scalar(`
+    SET ROLE service_role;
+    SELECT public.complete_board_image_upload('${reserveId}'::uuid, '00000000-0000-0000-0000-000000000002'::uuid)::text
+  `, "other-owner-complete-denied"), "false", "other-owner-complete-denied");
 
   const invalidId = await scalar(`
     SET ROLE service_role;
@@ -124,6 +147,28 @@ async function main(): Promise<void> {
     SELECT count(*)::text FROM public.board_image_objects AS image_row
     WHERE image_row.id = '${reserveId}'::uuid AND image_row.status = 'ready'
   `, "multi-ref-detach"), "1", "multi-ref-detach");
+  await executeSql(`
+    SET ROLE service_role;
+    SELECT * FROM public.write_board_post_with_images('${postId}'::bigint, '${ownerId}'::uuid, ${revision}, '${prefix} post', 'content', 'free', NULL,
+      false, 'fixture', '${ownerId}'::uuid, NULL, NULL, NULL, NULL, NULL, ARRAY[]::uuid[], NULL);
+  `);
+  assertEqual(await scalar(`
+    SELECT image_row.status FROM public.board_image_objects AS image_row WHERE image_row.id = '${reserveId}'::uuid
+  `, "last-ref-delete-pending"), "delete_pending", "last-ref-delete-pending");
+  await executeSql(`
+    SET ROLE service_role;
+    INSERT INTO public.board_image_objects (bucket_id, storage_key, status)
+    VALUES ('images', '${prefix}legacy.png', 'legacy_retained');
+    INSERT INTO public.board_post_image_refs (post_id, image_id, usage)
+    SELECT '${postId}'::bigint, image_row.id, 'content' FROM public.board_image_objects AS image_row
+    WHERE image_row.bucket_id = 'images' AND image_row.storage_key = '${prefix}legacy.png';
+    DELETE FROM public.board_post_image_refs AS ref_row
+    USING public.board_image_objects AS image_row
+    WHERE ref_row.image_id = image_row.id AND image_row.storage_key = '${prefix}legacy.png';
+  `);
+  assertEqual(await scalar(`
+    SELECT image_row.status FROM public.board_image_objects AS image_row WHERE image_row.storage_key = '${prefix}legacy.png'
+  `, "legacy-retained-detach"), "legacy_retained", "legacy-retained-detach");
 
   await executeSql(`
     SET ROLE service_role;
@@ -157,6 +202,38 @@ async function main(): Promise<void> {
     SET ROLE service_role;
     SELECT public.finalize_board_image_deletion('${claimOne}'::uuid, '${leaseToken}'::uuid, false)::text
   `, "finalize-retry"), "true", "finalize-retry");
+
+  await executeSql(`
+    SET ROLE service_role;
+    INSERT INTO public.board_image_objects (bucket_id, storage_key, owner_user_id, status, delete_after)
+    VALUES ('board-images-v2', '${prefix}concurrent.png', '${ownerId}'::uuid, 'delete_pending', now() - interval '1 minute');
+  `);
+  const workerSql = `SET ROLE service_role; SELECT count(*) FROM public.claim_board_image_deletions(20, now(), 300)`;
+  await Promise.all([executeSql(workerSql), executeSql(workerSql)]);
+  assertEqual(await scalar(`
+    SELECT count(*)::text FROM public.board_image_objects AS image_row
+    WHERE image_row.storage_key = '${prefix}concurrent.png' AND image_row.status = 'deleting'
+  `, "concurrent-worker-claim"), "1", "concurrent-worker-claim");
+  const attachVsDetach = [
+    executeSql(`SET ROLE service_role; BEGIN; SELECT * FROM public.board_image_objects AS image_row WHERE image_row.id = '${reserveId}'::uuid FOR UPDATE; SELECT pg_sleep(0.2); COMMIT;`),
+    executeSql(`SET ROLE service_role; BEGIN; SELECT * FROM public.board_image_objects AS image_row WHERE image_row.id = '${reserveId}'::uuid FOR UPDATE; COMMIT;`),
+  ];
+  await Promise.all(attachVsDetach);
+  assertEqual(await scalar(`
+    SELECT (image_row.status IN ('ready', 'delete_pending'))::text FROM public.board_image_objects AS image_row WHERE image_row.id = '${reserveId}'::uuid
+  `, "attach-vs-detach"), "true", "attach-vs-detach");
+
+  await executeSql(`
+    SET ROLE service_role;
+    DELETE FROM public.board_post_image_refs AS ref_row
+    USING public.board_image_objects AS image_row
+    WHERE ref_row.image_id = image_row.id AND image_row.storage_key LIKE '${prefix}%';
+    DELETE FROM public.board_image_objects AS image_row WHERE image_row.storage_key LIKE '${prefix}%';
+    DELETE FROM storage.objects AS storage_object WHERE storage_object.bucket_id = 'board-images-v2' AND storage_object.name LIKE '${prefix}%';
+  `);
+  assertEqual(await scalar(`
+    SELECT count(*)::text FROM public.board_image_objects AS image_row WHERE image_row.storage_key LIKE '${prefix}%'
+  `, "fixture-cleanup"), "0", "fixture-cleanup");
   assertEqual(await scalar(`
     SELECT (image_row.status = 'delete_pending' AND image_row.delete_after >= now() + interval '23 hours')::text
     FROM public.board_image_objects AS image_row WHERE image_row.id = '${claimOne}'::uuid
