@@ -3,11 +3,15 @@ import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   createTelemetryIdentity,
+  createTelemetryPublicIdentity,
   parseTelemetryMode,
   parseTelemetryPlatform,
-  telemetryIdentityEquals,
+  telemetryPublicIdentityEquals,
 } from "../lib/pubg-analysis/telemetryIdentity";
-import { buildTelemetryCacheKey } from "../lib/pubg-analysis/telemetryCacheKey.server";
+import {
+  buildTelemetryCacheKey,
+  buildTelemetryPlayerKey,
+} from "../lib/pubg-analysis/telemetryCacheKey.server";
 import {
   createTelemetryPayload,
   parseTelemetryEnvelope,
@@ -22,6 +26,13 @@ const identity = createTelemetryIdentity({
   playerId: "account.player-1",
   mode: "full",
   telemetryVersion: 60,
+});
+const publicIdentity = createTelemetryPublicIdentity({
+  matchId: identity.matchId,
+  platform: identity.platform,
+  playerKey: buildTelemetryPlayerKey(identity.playerId),
+  mode: identity.mode,
+  telemetryVersion: identity.telemetryVersion,
 });
 
 describe("telemetry identity", () => {
@@ -45,9 +56,9 @@ describe("telemetry identity", () => {
     expect(new Set([first, otherPlayer, otherPlatform, otherMode]).size).toBe(4);
   });
 
-  it("payload와 envelope identity를 완전 검증한다", () => {
+  it("payload와 envelope에는 공개 identity만 남기고 accountId를 제거한다", () => {
     const payload = createTelemetryPayload({
-      identity,
+      identity: publicIdentity,
       startTime: "2026-07-18T00:00:00.000Z",
       teammates: [],
       teamNames: ["Player"],
@@ -55,14 +66,35 @@ describe("telemetry identity", () => {
       zoneEvents: [],
       mapName: "Desert_Main",
     });
-    expect(parseTelemetryPayload(payload, identity)).toEqual(payload);
-    expect(telemetryIdentityEquals(payload.identity, identity)).toBe(true);
-    expect(() => parseTelemetryPayload({ ...payload, identity: undefined }, identity)).toThrow();
-    expect(() => parseTelemetryPayload(payload, { ...identity, playerId: "other" })).toThrow();
-    expect(parseTelemetryEnvelope({
+    expect(parseTelemetryPayload(payload, publicIdentity)).toEqual(payload);
+    expect(telemetryPublicIdentityEquals(payload.identity, publicIdentity)).toBe(true);
+    expect(() => parseTelemetryPayload({ ...payload, identity: undefined }, publicIdentity)).toThrow();
+    expect(() => parseTelemetryPayload(payload, { ...publicIdentity, playerKey: "0".repeat(32) })).toThrow();
+    const envelope = parseTelemetryEnvelope({
       downloadUrl: "https://r2.example/signed",
-      identity,
-    }).identity).toEqual(identity);
+      identity: publicIdentity,
+    });
+    expect(envelope.identity).toEqual(publicIdentity);
+
+    const serializedPayload = JSON.stringify(payload);
+    const serializedEnvelope = JSON.stringify(envelope);
+    for (const serialized of [serializedPayload, serializedEnvelope]) {
+      expect(serialized).not.toContain(identity.playerId);
+      expect(serialized).not.toContain("playerId");
+      expect(serialized).toContain(publicIdentity.playerKey);
+    }
+  });
+
+  it("payload 본문의 accountId 원문을 거부한다", () => {
+    expect(() => createTelemetryPayload({
+      identity: publicIdentity,
+      startTime: "2026-07-18T00:00:00.000Z",
+      teammates: [identity.playerId],
+      teamNames: ["Player"],
+      events: [{ attackerAccountId: identity.playerId }],
+      zoneEvents: [],
+      mapName: "Desert_Main",
+    })).toThrow("accountId");
   });
 
   it("registry migration은 RLS와 service-role 전용 계약을 고정한다", () => {

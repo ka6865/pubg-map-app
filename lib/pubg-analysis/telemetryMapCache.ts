@@ -1,5 +1,8 @@
 import "server-only";
-import { buildTelemetryCacheKey } from "./telemetryCacheKey.server";
+import {
+  buildTelemetryCacheKey,
+  buildTelemetryPublicIdentity,
+} from "./telemetryCacheKey.server";
 import {
   parseTelemetryPayload,
   type TelemetryPayload,
@@ -7,6 +10,7 @@ import {
 import type { TelemetryIdentity } from "./telemetryIdentity";
 
 export type TelemetryMapCacheDependencies = {
+  isConfigured: () => boolean;
   download: (key: string) => Promise<string | null>;
   upload: (key: string, body: string, contentType: string) => Promise<void>;
   sign: (key: string, expiresInSeconds: number) => Promise<string>;
@@ -36,16 +40,18 @@ export async function readTelemetryMapCache(
   const body = await deps.download(storagePath);
   if (!body) return null;
 
+  let payload: TelemetryPayload;
   try {
-    const payload = parseTelemetryPayload(JSON.parse(body), identity);
-    return {
-      payload,
-      downloadUrl: await deps.sign(storagePath, 1800),
-      storagePath,
-    };
+    payload = parseTelemetryPayload(JSON.parse(body), buildTelemetryPublicIdentity(identity));
   } catch {
     return null;
   }
+
+  return {
+    payload,
+    downloadUrl: await deps.sign(storagePath, 1800),
+    storagePath,
+  };
 }
 
 export async function writeTelemetryMapCache(
@@ -53,7 +59,11 @@ export async function writeTelemetryMapCache(
   value: TelemetryPayload,
   deps: TelemetryMapCacheDependencies,
 ): Promise<TelemetryCacheHit> {
-  const payload = parseTelemetryPayload(value, identity);
+  if (!deps.isConfigured()) {
+    throw new Error("텔레메트리 캐시 저장소가 설정되지 않았습니다.");
+  }
+
+  const payload = parseTelemetryPayload(value, buildTelemetryPublicIdentity(identity));
   const storagePath = buildTelemetryCacheKey(identity);
   await deps.upload(storagePath, JSON.stringify(payload), "application/json");
   await deps.register({

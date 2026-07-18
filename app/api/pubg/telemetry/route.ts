@@ -5,8 +5,14 @@ import { normalizeName } from "@/lib/pubg-analysis/utils";
 import {
   downloadFromR2,
   getPresignedUrlFromR2,
+  isR2Configured,
   uploadToR2,
 } from "@/lib/pubg-analysis/r2Service";
+import {
+  buildTelemetryPublicIdentity,
+  pseudonymizeTelemetryAccountIds,
+  pseudonymizeTelemetryTeammates,
+} from "@/lib/pubg-analysis/telemetryCacheKey.server";
 import {
   readTelemetryMapCache,
   writeTelemetryMapCache,
@@ -117,6 +123,7 @@ export async function GET(request: Request) {
       telemetryVersion: TELEMETRY_VERSION,
     });
     const deps = {
+      isConfigured: isR2Configured,
       download: downloadFromR2,
       upload: uploadToR2,
       sign: getPresignedUrlFromR2,
@@ -126,7 +133,7 @@ export async function GET(request: Request) {
     const cached = await readTelemetryMapCache(identity, deps);
     if (cached) {
       return NextResponse.json(
-        { downloadUrl: cached.downloadUrl, identity },
+        { downloadUrl: cached.downloadUrl, identity: cached.payload.identity },
         { headers: { "Cache-Control": "no-store" } },
       );
     }
@@ -156,18 +163,18 @@ export async function GET(request: Request) {
       { avg_damage: 200 },
     );
     const payload = createTelemetryPayload({
-      identity,
+      identity: buildTelemetryPublicIdentity(identity),
       startTime: matchData.data.attributes.createdAt,
-      teammates: result.mapData?.teammates || [],
+      teammates: pseudonymizeTelemetryTeammates(result.mapData?.teammates || []),
       teamNames: result.mapData?.teamNames || [canonicalNickname],
-      events: result.mapData?.events || [],
-      zoneEvents: result.mapData?.zoneEvents || [],
+      events: pseudonymizeTelemetryAccountIds(result.mapData?.events || []),
+      zoneEvents: pseudonymizeTelemetryAccountIds(result.mapData?.zoneEvents || []),
       mapName: result.mapName || matchData.data.attributes.mapName || mapName,
     });
     const cachedResult = await writeTelemetryMapCache(identity, payload, deps);
 
     return NextResponse.json(
-      { downloadUrl: cachedResult.downloadUrl, identity },
+      { downloadUrl: cachedResult.downloadUrl, identity: cachedResult.payload.identity },
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch {

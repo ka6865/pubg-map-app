@@ -1,14 +1,14 @@
 import {
-  createTelemetryIdentity,
-  telemetryIdentityEquals,
-  type TelemetryIdentity,
+  createTelemetryPublicIdentity,
+  telemetryPublicIdentityEquals,
+  type TelemetryPublicIdentity,
 } from "./telemetryIdentity";
 
 export type TelemetryPayload = {
-  identity: TelemetryIdentity;
+  identity: TelemetryPublicIdentity;
   startTime: string;
-  teammates: unknown[];
-  teamNames: unknown[];
+  teammates: string[];
+  teamNames: string[];
   events: unknown[];
   zoneEvents: unknown[];
   mapName: string;
@@ -16,7 +16,7 @@ export type TelemetryPayload = {
 
 export type TelemetryEnvelope = {
   downloadUrl: string;
-  identity: TelemetryIdentity;
+  identity: TelemetryPublicIdentity;
 };
 
 function requireRecord(value: unknown, label: string): Record<string, unknown> {
@@ -26,13 +26,13 @@ function requireRecord(value: unknown, label: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
-function parsePayloadIdentity(value: unknown): TelemetryIdentity {
+function parsePayloadIdentity(value: unknown): TelemetryPublicIdentity {
   const identity = requireRecord(value, "identity");
-  return createTelemetryIdentity({
+  return createTelemetryPublicIdentity({
     matchId: identity.matchId as string,
-    platform: identity.platform as TelemetryIdentity["platform"],
-    playerId: identity.playerId as string,
-    mode: identity.mode as TelemetryIdentity["mode"],
+    platform: identity.platform as TelemetryPublicIdentity["platform"],
+    playerKey: identity.playerKey as string,
+    mode: identity.mode as TelemetryPublicIdentity["mode"],
     telemetryVersion: identity.telemetryVersion as number,
   });
 }
@@ -56,27 +56,66 @@ function parseArray(value: unknown, label: string): unknown[] {
   return value;
 }
 
+const PUBLIC_PLAYER_KEY = /^[a-f0-9]{32}$/;
+const ACCOUNT_ID_FIELD = /(?:account|player)ids?$/i;
+
+function assertPublicAccountIds(value: unknown, fieldName?: string): void {
+  if (typeof value === "string" && fieldName && ACCOUNT_ID_FIELD.test(fieldName)) {
+    if (!PUBLIC_PLAYER_KEY.test(value)) {
+      throw new Error("텔레메트리 accountId는 공개 키여야 합니다.");
+    }
+    return;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item) => assertPublicAccountIds(item, fieldName));
+    return;
+  }
+  if (typeof value === "object" && value !== null) {
+    Object.entries(value).forEach(([key, item]) => assertPublicAccountIds(item, key));
+  }
+}
+
+function parseStringArray(value: unknown, label: string): string[] {
+  const items = parseArray(value, label);
+  if (!items.every((item) => typeof item === "string")) {
+    throw new Error(`유효하지 않은 telemetry ${label}입니다.`);
+  }
+  return items;
+}
+
 export function createTelemetryPayload(input: TelemetryPayload): TelemetryPayload {
   return parseTelemetryPayload(input);
 }
 
 export function parseTelemetryPayload(
   value: unknown,
-  expectedIdentity?: TelemetryIdentity,
+  expectedIdentity?: TelemetryPublicIdentity,
 ): TelemetryPayload {
   const payload = requireRecord(value, "payload");
   const identity = parsePayloadIdentity(payload.identity);
-  if (expectedIdentity && !telemetryIdentityEquals(identity, createTelemetryIdentity(expectedIdentity))) {
+  if (expectedIdentity && !telemetryPublicIdentityEquals(
+    identity,
+    createTelemetryPublicIdentity(expectedIdentity),
+  )) {
     throw new Error("telemetry identity가 요청과 일치하지 않습니다.");
   }
+
+  const teammates = parseStringArray(payload.teammates, "teammates");
+  if (!teammates.every((playerKey) => PUBLIC_PLAYER_KEY.test(playerKey))) {
+    throw new Error("텔레메트리 teammate accountId는 공개 키여야 합니다.");
+  }
+  const events = parseArray(payload.events, "events");
+  const zoneEvents = parseArray(payload.zoneEvents, "zoneEvents");
+  assertPublicAccountIds(events);
+  assertPublicAccountIds(zoneEvents);
 
   return {
     identity,
     startTime: parseDateTime(payload.startTime),
-    teammates: parseArray(payload.teammates, "teammates"),
-    teamNames: parseArray(payload.teamNames, "teamNames"),
-    events: parseArray(payload.events, "events"),
-    zoneEvents: parseArray(payload.zoneEvents, "zoneEvents"),
+    teammates,
+    teamNames: parseStringArray(payload.teamNames, "teamNames"),
+    events,
+    zoneEvents,
     mapName: parseMapName(payload.mapName),
   };
 }

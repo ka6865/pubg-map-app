@@ -11,10 +11,16 @@ import { buildProcessedTelemetryUpsert, getValidFullResult, normalizePlatform } 
 import {
   downloadFromR2,
   getPresignedUrlFromR2,
+  isR2Configured,
   uploadToR2,
 } from "@/lib/pubg-analysis/r2Service";
 import { writeTelemetryMapCache } from "@/lib/pubg-analysis/telemetryMapCache";
 import { createTelemetryIdentity } from "@/lib/pubg-analysis/telemetryIdentity";
+import {
+  buildTelemetryPublicIdentity,
+  pseudonymizeTelemetryAccountIds,
+  pseudonymizeTelemetryTeammates,
+} from "@/lib/pubg-analysis/telemetryCacheKey.server";
 import { createTelemetryPayload } from "@/lib/pubg-analysis/telemetryPayload";
 import { trackPubgRateLimit } from "@/lib/pubg-analysis/pubgApiTracker";
 import {
@@ -121,6 +127,19 @@ function getBearerToken(request: NextRequest): string | null {
   return authorization.slice("Bearer ".length) || null;
 }
 
+async function reportBackgroundReanalysisFailure(): Promise<void> {
+  try {
+    await reportPubgApiError(
+      "/api/pubg/match/revalidate",
+      500,
+      "Background match reanalysis failed",
+      "Sanitized background error",
+    );
+  } catch {
+    console.error("[MATCH] 백그라운드 오류 기록 실패");
+  }
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const matchId = searchParams.get("matchId");
@@ -223,6 +242,7 @@ export async function GET(request: NextRequest) {
     if (!myAccountId) {
       return NextResponse.json({ error: "Player account identifier is unavailable" }, { status: 404 });
     }
+    const canonicalNickname = myParticipant.attributes.stats.name;
 
     // [V55.0] 닉네임 캐시 최적화: 분석 대상 플레이어 1명만 즉시 업데이트 (데드락 방지)
     const myCacheEntry = {
@@ -262,10 +282,10 @@ export async function GET(request: NextRequest) {
         // [Stale-While-Revalidate] 캐시 데이터 버전이 낮으면 백그라운드 재분석 기동
         if (cachedVersion < RESULT_VERSION) {
           const reanalyzePromise = reanalyzeAndSave(
-            matchId, nickname, platform, lowerNickname, matchData, teamNames, teamAccountIds,
+            matchId, canonicalNickname, platform, lowerNickname, matchData, teamNames, teamAccountIds,
             myRosterId, myParticipant, myAccountId, teamStats, rankPct, matchAttr, rosters, participants,
             true, source
-          ).catch(() => undefined);
+          ).catch(reportBackgroundReanalysisFailure);
 
           // Next.js request.waitUntil 이 지원되면 백그라운드 작업 생명주기 관리
           if (typeof (request as any).waitUntil === 'function') {
@@ -291,7 +311,7 @@ export async function GET(request: NextRequest) {
 
     // 캐시가 없거나 강제 업데이트가 필요한 경우 동기식 분석 실행
     const finalResponse = await reanalyzeAndSave(
-      matchId, nickname, platform, lowerNickname, matchData, teamNames, teamAccountIds,
+      matchId, canonicalNickname, platform, lowerNickname, matchData, teamNames, teamAccountIds,
       myRosterId, myParticipant, myAccountId, teamStats, rankPct, matchAttr, rosters, participants,
       shouldForce, source
     );
@@ -303,7 +323,7 @@ export async function GET(request: NextRequest) {
     const status = isRateLimit ? 429 : 500;
     const errorMsg = isRateLimit
       ? "PUBG API 호출 한도가 일시적으로 초과되었습니다. 약 1분 후 다시 시도해 주세요."
-      : err.message;
+      : "매치 데이터를 처리할 수 없습니다.";
 
     // [MONITORING] PUBG API 에러 감지 및 기록
     await reportPubgApiError(
@@ -322,7 +342,7 @@ export async function GET(request: NextRequest) {
  */
 async function reanalyzeAndSave(
   matchId: string,
-  nickname: string,
+  canonicalNickname: string,
   platform: PubgPlatform,
   lowerNickname: string,
   matchData: any,
@@ -452,7 +472,7 @@ async function reanalyzeAndSave(
   const bench = adaptBenchmark(tierStats);
 
   const engine = new AnalysisEngine(
-    nickname, myAccountId, teamNames, teamAccountIds,
+    canonicalNickname, myAccountId, teamNames, teamAccountIds,
     new Set<string>(), new Set<string>(),
     myRosterId
   );
@@ -503,15 +523,16 @@ async function reanalyzeAndSave(
     telemetryVersion: TELEMETRY_VERSION,
   });
   const telemetryPayload = createTelemetryPayload({
-    identity: telemetryIdentity,
+    identity: buildTelemetryPublicIdentity(telemetryIdentity),
     startTime: matchAttr.createdAt,
-    teammates: mapData?.teammates || [],
+    teammates: pseudonymizeTelemetryTeammates(mapData?.teammates || []),
     teamNames: mapData?.teamNames || [myParticipant.attributes.stats.name],
-    events: mapData?.events || [],
-    zoneEvents: mapData?.zoneEvents || [],
+    events: pseudonymizeTelemetryAccountIds(mapData?.events || []),
+    zoneEvents: pseudonymizeTelemetryAccountIds(mapData?.zoneEvents || []),
     mapName: result.mapName || matchAttr.mapName || matchAttr.mapId,
   });
   const telemetryCache = await writeTelemetryMapCache(telemetryIdentity, telemetryPayload, {
+    isConfigured: isR2Configured,
     download: downloadFromR2,
     upload: uploadToR2,
     sign: getPresignedUrlFromR2,

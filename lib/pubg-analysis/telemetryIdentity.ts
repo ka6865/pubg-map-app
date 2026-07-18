@@ -9,8 +9,17 @@ export type TelemetryIdentity = {
   telemetryVersion: number;
 };
 
+export type TelemetryPublicIdentity = {
+  matchId: string;
+  platform: TelemetryPlatform;
+  playerKey: string;
+  mode: TelemetryMode;
+  telemetryVersion: number;
+};
+
 const MATCH_ID = /^[A-Za-z0-9._-]{1,160}$/;
 const PLAYER_ID = /^[A-Za-z0-9._:-]{1,200}$/;
+const PLAYER_KEY = /^[a-f0-9]{32}$/;
 
 export function parseTelemetryPlatform(value: unknown): TelemetryPlatform {
   if (value === "steam" || value === "kakao") return value;
@@ -38,10 +47,31 @@ export function createTelemetryIdentity(input: TelemetryIdentity): TelemetryIden
   };
 }
 
-export function telemetryIdentityEquals(left: TelemetryIdentity, right: TelemetryIdentity): boolean {
+export function createTelemetryPublicIdentity(
+  input: TelemetryPublicIdentity,
+): TelemetryPublicIdentity {
+  if (!MATCH_ID.test(input.matchId)) throw new Error("유효하지 않은 matchId입니다.");
+  if (!PLAYER_KEY.test(input.playerKey)) throw new Error("유효하지 않은 playerKey입니다.");
+  if (!Number.isFinite(input.telemetryVersion) || input.telemetryVersion <= 0) {
+    throw new Error("유효하지 않은 telemetryVersion입니다.");
+  }
+
+  return {
+    matchId: input.matchId,
+    platform: parseTelemetryPlatform(input.platform),
+    playerKey: input.playerKey,
+    mode: parseTelemetryMode(input.mode),
+    telemetryVersion: input.telemetryVersion,
+  };
+}
+
+export function telemetryPublicIdentityEquals(
+  left: TelemetryPublicIdentity,
+  right: TelemetryPublicIdentity,
+): boolean {
   return left.matchId === right.matchId &&
     left.platform === right.platform &&
-    left.playerId === right.playerId &&
+    left.playerKey === right.playerKey &&
     left.mode === right.mode &&
     left.telemetryVersion === right.telemetryVersion;
 }

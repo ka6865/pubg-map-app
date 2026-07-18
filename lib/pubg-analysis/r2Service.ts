@@ -37,6 +37,14 @@ function getBucketName(): string {
   return cleanEnv(process.env.CLOUDFLARE_R2_BUCKET_NAME) || 'telemetry';
 }
 
+export function isR2Configured(): boolean {
+  return Boolean(
+    cleanEnv(process.env.CLOUDFLARE_R2_ENDPOINT)
+      && cleanEnv(process.env.CLOUDFLARE_R2_ACCESS_KEY_ID)
+      && cleanEnv(process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY),
+  );
+}
+
 /**
  * Uploads a text/binary buffer file to Cloudflare R2 Bucket
  * @param key The destination path or filename in the bucket
@@ -330,4 +338,3 @@ export async function checkObjectExists(key: string): Promise<boolean> {
     return false;
   }
 }
-
