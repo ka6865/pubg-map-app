@@ -239,4 +239,35 @@ describe("게시판 이미지 Storage 소유권 마이그레이션", () => {
     expect(script).not.toContain('"-At"');
     expect(script).not.toMatch(/filter\([^)]*INSERT|filter\([^)]*UPDATE/);
   });
+
+  it("owner 범위 삭제 claim RPC는 입력·소유권·상태·참조·lock 계약을 고정한다", () => {
+    const sql = readMigrationSql();
+
+    expect(sql).toContain("CREATE OR REPLACE FUNCTION public.claim_board_image_deletions_for_owner(");
+    expect(sql).toContain("p_owner_user_id uuid, p_image_ids uuid[], p_now timestamptz, p_lease_seconds integer");
+    expect(sql).toContain("RETURNS TABLE(image_id uuid, bucket_id text, storage_key text, lease_token uuid)");
+    expect(sql).toContain("cardinality(p_image_ids) < 1 OR cardinality(p_image_ids) > 20");
+    expect(sql).toContain("array_position(p_image_ids, NULL) IS NOT NULL");
+    expect(sql).toContain("object_row.owner_user_id = p_owner_user_id");
+    expect(sql).toContain("requested_ids AS");
+    expect(sql).toContain("SELECT DISTINCT requested_item.requested_id");
+    expect(sql).toContain("object_row.status IN ('pending', 'ready', 'delete_pending')");
+    expect(sql).toContain("object_row.status = 'deleting' AND object_row.delete_lease_until <= p_now");
+    expect(sql).toContain("ORDER BY object_row.id");
+    expect(sql).toContain("FOR UPDATE SKIP LOCKED");
+    expect(sql).toMatch(/claim_board_image_deletions_for_owner[\s\S]*NOT EXISTS \([\s\S]*ref_row\.image_id = object_row\.id[\s\S]*UPDATE public\.board_image_objects AS object_row[\s\S]*NOT EXISTS \(/);
+  });
+
+  it("owner 범위 삭제 claim RPC 권한과 실제 검증 시나리오를 포함한다", () => {
+    const sql = readMigrationSql();
+    const script = readFileSync(resolve(process.cwd(), "scripts/verify_board_image_storage_migration.ts"), "utf8");
+
+    expect(sql).toContain("REVOKE ALL ON FUNCTION public.claim_board_image_deletions_for_owner(uuid, uuid[], timestamptz, integer) FROM PUBLIC, anon, authenticated");
+    expect(sql).toContain("GRANT EXECUTE ON FUNCTION public.claim_board_image_deletions_for_owner(uuid, uuid[], timestamptz, integer) TO service_role");
+    expect(script).toContain("public.claim_board_image_deletions_for_owner(uuid,uuid[],timestamptz,integer)");
+    expect(script).toContain("verifyOwnerScopedReleaseClaims");
+    for (const label of ["owner-release-own-ready", "owner-release-own-pending", "owner-release-other-owner", "owner-release-referenced", "owner-release-unrequested", "owner-release-active-deleting", "owner-release-expired-deleting", "owner-release-duplicate-once", "owner-release-empty-rejected", "owner-release-null-rejected", "owner-release-21-rejected"]) {
+      expect(script).toContain(label);
+    }
+  });
 });

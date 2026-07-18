@@ -252,6 +252,59 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.claim_board_image_deletions_for_owner(
+  p_owner_user_id uuid, p_image_ids uuid[], p_now timestamptz, p_lease_seconds integer
+)
+RETURNS TABLE(image_id uuid, bucket_id text, storage_key text, lease_token uuid)
+LANGUAGE plpgsql SECURITY INVOKER SET search_path = ''
+AS $$
+BEGIN
+  IF p_owner_user_id IS NULL OR p_image_ids IS NULL OR p_now IS NULL
+    OR cardinality(p_image_ids) < 1 OR cardinality(p_image_ids) > 20
+    OR array_position(p_image_ids, NULL) IS NOT NULL
+    OR p_lease_seconds IS NULL OR p_lease_seconds <> 300 THEN
+    RAISE EXCEPTION 'invalid_owner_board_image_deletion_claim';
+  END IF;
+
+  RETURN QUERY
+  WITH requested_ids AS (
+    SELECT DISTINCT requested_item.requested_id
+    FROM unnest(p_image_ids) AS requested_item(requested_id)
+  ), candidates AS (
+    SELECT object_row.id
+    FROM public.board_image_objects AS object_row
+    JOIN requested_ids AS requested_row ON requested_row.requested_id = object_row.id
+    WHERE object_row.owner_user_id = p_owner_user_id
+      AND (object_row.status IN ('pending', 'ready', 'delete_pending')
+        OR (object_row.status = 'deleting' AND object_row.delete_lease_until <= p_now))
+      AND NOT EXISTS (
+        SELECT 1 FROM public.board_post_image_refs AS ref_row
+        WHERE ref_row.image_id = object_row.id
+      )
+    ORDER BY object_row.id
+    FOR UPDATE SKIP LOCKED
+    LIMIT 20
+  ), claimed AS (
+    UPDATE public.board_image_objects AS object_row
+    SET status = 'deleting', delete_lease_token = gen_random_uuid(),
+        delete_lease_until = p_now + interval '5 minutes',
+        delete_attempts = object_row.delete_attempts + 1, updated_at = p_now
+    FROM candidates AS candidate_row
+    WHERE object_row.id = candidate_row.id
+      AND object_row.owner_user_id = p_owner_user_id
+      AND (object_row.status IN ('pending', 'ready', 'delete_pending')
+        OR (object_row.status = 'deleting' AND object_row.delete_lease_until <= p_now))
+      AND NOT EXISTS (
+        SELECT 1 FROM public.board_post_image_refs AS ref_row
+        WHERE ref_row.image_id = object_row.id
+      )
+    RETURNING object_row.id, object_row.bucket_id, object_row.storage_key, object_row.delete_lease_token
+  )
+  SELECT claimed.id, claimed.bucket_id, claimed.storage_key, claimed.delete_lease_token
+  FROM claimed;
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION public.finalize_board_image_deletion(
   p_image_id uuid, p_lease_token uuid, p_deleted boolean
 )
@@ -303,9 +356,11 @@ REVOKE ALL ON FUNCTION public.reserve_board_image_upload(uuid, text, bigint) FRO
 REVOKE ALL ON FUNCTION public.complete_board_image_upload(uuid, uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.write_board_post_with_images(bigint, uuid, bigint, text, text, text, text, boolean, text, uuid, text, text, text, text, jsonb, uuid[], uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.claim_board_image_deletions(integer, timestamptz, integer) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.claim_board_image_deletions_for_owner(uuid, uuid[], timestamptz, integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.finalize_board_image_deletion(uuid, uuid, boolean) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.reserve_board_image_upload(uuid, text, bigint) TO service_role;
 GRANT EXECUTE ON FUNCTION public.complete_board_image_upload(uuid, uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.write_board_post_with_images(bigint, uuid, bigint, text, text, text, text, boolean, text, uuid, text, text, text, text, jsonb, uuid[], uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.claim_board_image_deletions(integer, timestamptz, integer) TO service_role;
+GRANT EXECUTE ON FUNCTION public.claim_board_image_deletions_for_owner(uuid, uuid[], timestamptz, integer) TO service_role;
 GRANT EXECUTE ON FUNCTION public.finalize_board_image_deletion(uuid, uuid, boolean) TO service_role;

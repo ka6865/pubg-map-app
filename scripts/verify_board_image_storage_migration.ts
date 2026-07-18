@@ -115,7 +115,7 @@ async function verifyAclAndOwnership(): Promise<void> {
     equal(await scalar("SELECT count(*)::text FROM pg_policies AS policy_row WHERE policy_row.schemaname = 'public' AND policy_row.tablename IN ('board_image_objects', 'board_post_image_refs')", "public-policy-count"), "0", "public-policy-count");
     await rejected("SET ROLE anon; SELECT * FROM public.board_image_objects", "anon-table-denied");
     await rejected("SET ROLE authenticated; SELECT * FROM public.board_post_image_refs", "authenticated-table-denied");
-    const signatures = ["public.reserve_board_image_upload(uuid,text,bigint)", "public.complete_board_image_upload(uuid,uuid)", "public.write_board_post_with_images(bigint,uuid,bigint,text,text,text,text,boolean,text,uuid,text,text,text,text,jsonb,uuid[],uuid)", "public.claim_board_image_deletions(integer,timestamptz,integer)", "public.finalize_board_image_deletion(uuid,uuid,boolean)"];
+    const signatures = ["public.reserve_board_image_upload(uuid,text,bigint)", "public.complete_board_image_upload(uuid,uuid)", "public.write_board_post_with_images(bigint,uuid,bigint,text,text,text,text,boolean,text,uuid,text,text,text,text,jsonb,uuid[],uuid)", "public.claim_board_image_deletions(integer,timestamptz,integer)", "public.claim_board_image_deletions_for_owner(uuid,uuid[],timestamptz,integer)", "public.finalize_board_image_deletion(uuid,uuid,boolean)"];
     for (const signature of signatures) {
       equal(await scalar(`SELECT count(*)::text FROM pg_proc AS function_row CROSS JOIN LATERAL aclexplode(COALESCE(function_row.proacl, acldefault('f', function_row.proowner))) AS acl_row WHERE function_row.oid = to_regprocedure(${quote(signature)}) AND acl_row.grantee = 0 AND acl_row.privilege_type = 'EXECUTE'`, "public-rpc-denied"), "0", "public-rpc-denied");
     }
@@ -188,6 +188,39 @@ async function verifyRevisionAndAttachDetachRace(): Promise<void> {
   });
 }
 
+async function verifyOwnerScopedReleaseClaims(): Promise<void> {
+  await withFixture("owner-release", async (fixture) => {
+    const ownReady = await reserveReady(fixture, "own-ready");
+    const ownPending = (await reserve(fixture, "own-pending")).imageId;
+    const referenced = await reserveReady(fixture, "referenced");
+    await writePost(fixture, [referenced]);
+    const unrequested = await reserveReady(fixture, "unrequested");
+    const createRegistry = async (suffix: string, ownerSql: string, status: string, leaseSql = "NULL"): Promise<string> => {
+      const key = `${fixture.runId}-${suffix}.png`;
+      fixture.storageKeys.push(key);
+      const imageId = await scalar(`SET ROLE service_role; INSERT INTO public.board_image_objects (bucket_id, storage_key, owner_user_id, status, delete_lease_until) VALUES ('board-images-v2', ${quote(key)}, ${ownerSql}, ${quote(status)}, ${leaseSql}) RETURNING id`, suffix);
+      fixture.imageIds.push(imageId);
+      return imageId;
+    };
+    const otherOwner = await createRegistry("other-owner", "NULL", "ready");
+    const activeDeleting = await createRegistry("active-deleting", `${quote(ownerId)}::uuid`, "deleting", "now() + interval '5 minutes'");
+    const expiredDeleting = await createRegistry("expired-deleting", `${quote(ownerId)}::uuid`, "deleting", "now() - interval '1 minute'");
+    const requested = [ownReady, ownPending, otherOwner, referenced, activeDeleting, expiredDeleting, ownReady];
+    const claimed = (await sql(`SET ROLE service_role; SELECT result.image_id::text FROM public.claim_board_image_deletions_for_owner(${quote(ownerId)}::uuid, ${uuidArray(requested)}, now(), 300) AS result ORDER BY result.image_id`)).split(/\r?\n/).filter(Boolean);
+    equal(String(claimed.includes(ownReady)), "true", "owner-release-own-ready");
+    equal(String(claimed.includes(ownPending)), "true", "owner-release-own-pending");
+    equal(String(claimed.includes(otherOwner)), "false", "owner-release-other-owner");
+    equal(String(claimed.includes(referenced)), "false", "owner-release-referenced");
+    equal(String(claimed.includes(unrequested)), "false", "owner-release-unrequested");
+    equal(String(claimed.includes(activeDeleting)), "false", "owner-release-active-deleting");
+    equal(String(claimed.includes(expiredDeleting)), "true", "owner-release-expired-deleting");
+    equal(String(claimed.filter((id) => id === ownReady).length), "1", "owner-release-duplicate-once");
+    await rejected(`SET ROLE service_role; SELECT * FROM public.claim_board_image_deletions_for_owner(${quote(ownerId)}::uuid, ARRAY[]::uuid[], now(), 300)`, "owner-release-empty-rejected");
+    await rejected(`SET ROLE service_role; SELECT * FROM public.claim_board_image_deletions_for_owner(${quote(ownerId)}::uuid, ARRAY[NULL]::uuid[], now(), 300)`, "owner-release-null-rejected");
+    await rejected(`SET ROLE service_role; SELECT * FROM public.claim_board_image_deletions_for_owner(${quote(ownerId)}::uuid, ${uuidArray(Array.from({ length: 21 }, () => ownReady))}, now(), 300)`, "owner-release-21-rejected");
+  });
+}
+
 async function verifyClaimsAndRecovery(): Promise<void> {
   await withFixture("claims", async (fixture) => {
     const makeCandidate = async (suffix: string, status: "pending" | "delete_pending" | "deleting"): Promise<string> => {
@@ -239,6 +272,7 @@ async function runAllScenarios(): Promise<void> {
   await verifyAclAndOwnership();
   await verifyUploadValidationAndReferences();
   await verifyRevisionAndAttachDetachRace();
+  await verifyOwnerScopedReleaseClaims();
   await verifyClaimsAndRecovery();
   await verifyLegacyBackfill();
 }
