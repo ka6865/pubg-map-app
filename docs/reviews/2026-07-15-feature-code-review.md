@@ -27,7 +27,7 @@
 | `npm run verify:analysis` | 통과: 17개 파일, 182개 테스트 |
 | `npm run verify:admin` | 통과: 게시판·모바일 보안 회귀 7개 파일 편입 후 12개 파일, 242개 테스트 |
 | `npx vitest run tests/board-*.test.ts` 집중 범위 | 통과: 7개 파일, 144개 테스트 |
-| `npm test -- --runInBand` | 통과: Jest 1개 suite, 2개 테스트 |
+| `npm test -- --runInBand` | 통과: Jest 2개 suites, 4개 테스트 |
 | `env DOTENV_CONFIG_PATH=../../.env.local node --require ../../node_modules/dotenv/config ../../node_modules/vitest/vitest.mjs run` | 통과: 38개 파일 통과·1개 스킵, 468개 테스트 통과·6개 스킵 |
 | 게시판 migration fresh PostgreSQL 15.18 | 통과: RLS 활성·공개 policy 0건, anon/authenticated table·RPC 접근 거부, service-role 최소 권한, 첫 요청 true·같은 window false·정확한 window 경계 true·invalid false, 동시 요청 true/false·최종 count 1, bounded cleanup·양방향 cleanup/consume 경쟁 통과 |
 | 로컬 브라우저 `/board`, `/board/write` | 통과: HTTP 200, 의미 있는 본문, 오류 overlay 0, fresh console error 0, 글쓰기 링크·비회원 보안 인증 region·등록 버튼 렌더. 로컬 Turnstile 값이 비어 있어 실제 widget/Siteverify·저장은 미실행 |
