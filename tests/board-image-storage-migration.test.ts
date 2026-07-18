@@ -73,13 +73,13 @@ describe("게시판 이미지 Storage 소유권 마이그레이션", () => {
     expect(sql).toContain("image_row.status = 'ready'");
   });
 
-  it("만료 pending과 deleting lease를 bounded claim으로 회수한다", () => {
+  it("만료 pending·미참조 ready와 deleting lease를 bounded claim으로 회수한다", () => {
     const sql = readMigrationSql();
 
     expect(sql).toContain("now() + interval '24 hours'");
     expect(sql).toContain("object_row.status = 'delete_pending' AND object_row.delete_after <= p_now");
     expect(sql).toContain("object_row.status = 'deleting' AND object_row.delete_lease_until <= p_now");
-    expect(sql).toContain("object_row.status = 'pending' AND object_row.expires_at <= p_now");
+    expect(sql).toContain("object_row.status IN ('pending', 'ready') AND object_row.expires_at <= p_now");
     expect(sql).toContain("ORDER BY object_row.id");
     expect(sql).toContain("LIMIT LEAST(p_limit, 20)");
   });
