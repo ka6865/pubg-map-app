@@ -33,6 +33,7 @@ export type TelemetryCleanupDependencies = {
     matchIds: string[],
     cutoff: Date,
     targetVersion: number,
+    now: Date,
   ): Promise<string[]>;
   now(): Date;
 };
@@ -188,6 +189,7 @@ export async function runTelemetryStorageCleanup(
       matchIds,
       config.cutoff,
       config.targetVersion,
+      now,
     );
     const validatedMatchIds = validateCleanedMatchIds(matchIds, cleanedMatchIds);
     const cleanedMatchIdSet = new Set(validatedMatchIds);
@@ -259,13 +261,14 @@ function createTelemetryCleanupDependencies(
       };
     }),
     archiveObjectInventory: archiveTelemetryObjectInventory,
-    cleanupExpiredMatches: async (matchIds, cutoff, targetVersion) => {
+    cleanupExpiredMatches: async (matchIds, cutoff, targetVersion, now) => {
       const { data, error } = await supabase.rpc(
         "cleanup_expired_telemetry_matches",
         {
           p_match_ids: matchIds,
           p_cutoff: cutoff.toISOString(),
           p_target_version: targetVersion,
+          p_now: now.toISOString(),
         },
       );
       if (error) throw new Error("telemetry-cleanup-expired-rpc-failed");

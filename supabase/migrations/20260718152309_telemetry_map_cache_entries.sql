@@ -177,10 +177,15 @@ grant execute on function public.finalize_telemetry_cache_write(
   timestamptz, text, text, jsonb, timestamptz
 ) to service_role;
 
+drop function if exists public.cleanup_expired_telemetry_matches(
+  text[], timestamptz, numeric
+);
+
 create or replace function public.cleanup_expired_telemetry_matches(
   p_match_ids text[],
   p_cutoff timestamptz,
-  p_target_version numeric
+  p_target_version numeric,
+  p_now timestamptz
 )
 returns table(match_id text)
 language plpgsql
@@ -193,6 +198,7 @@ begin
   if p_match_ids is null
     or p_cutoff is null
     or p_target_version is null
+    or p_now is null
     or cardinality(p_match_ids) > 50
   then
     raise exception 'telemetry-cleanup-invalid-rpc-input' using errcode = '22023';
@@ -244,7 +250,7 @@ begin
                 orphan_cache.status = 'pending'
                 and (
                   orphan_cache.lease_expires_at is null
-                  or orphan_cache.lease_expires_at < statement_timestamp()
+                  or orphan_cache.lease_expires_at < p_now
                 )
               )
             )
@@ -259,7 +265,7 @@ begin
           (cache.status = 'ready' and cache.updated_at >= p_cutoff)
           or (
             cache.status = 'pending'
-            and cache.lease_expires_at >= statement_timestamp()
+            and cache.lease_expires_at >= p_now
           )
         )
     );
@@ -282,7 +288,7 @@ begin
         cache.status = 'pending'
         and (
           cache.lease_expires_at is null
-          or cache.lease_expires_at < statement_timestamp()
+          or cache.lease_expires_at < p_now
         )
       )
     );
@@ -319,7 +325,7 @@ begin
 end;
 $$;
 
-revoke all on function public.cleanup_expired_telemetry_matches(text[], timestamptz, numeric)
+revoke all on function public.cleanup_expired_telemetry_matches(text[], timestamptz, numeric, timestamptz)
   from public, anon, authenticated;
-grant execute on function public.cleanup_expired_telemetry_matches(text[], timestamptz, numeric)
+grant execute on function public.cleanup_expired_telemetry_matches(text[], timestamptz, numeric, timestamptz)
   to service_role;

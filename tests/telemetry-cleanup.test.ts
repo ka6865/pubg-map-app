@@ -88,7 +88,12 @@ describe("telemetry cleanup registry", () => {
       targetVersion: 59,
     }, dependencies);
 
-    expect(cleanupExpiredMatches).toHaveBeenCalledWith(["m1"], cutoff, 59);
+    expect(cleanupExpiredMatches).toHaveBeenCalledWith(
+      ["m1"],
+      cutoff,
+      59,
+      new Date("2026-07-18T00:00:00.000Z"),
+    );
     expect(result).toEqual({
       deletedMatchCount: 1,
       archivedObjectCount: 0,
@@ -122,6 +127,7 @@ describe("telemetry cleanup registry", () => {
       ["registry-only"],
       new Date("2026-07-17T00:00:00.000Z"),
       59,
+      new Date("2026-07-18T00:00:00.000Z"),
     );
     expect(archiveObjectInventory.mock.invocationCallOrder[0])
       .toBeLessThan(cleanupExpiredMatches.mock.invocationCallOrder[0]);
@@ -229,6 +235,43 @@ describe("telemetry cleanup registry", () => {
     expect(archiveObjectInventory).toHaveBeenCalledWith([registryRow]);
     expect(cleanupExpiredMatches).toHaveBeenCalledOnce();
     expect(result.archivedObjectCount).toBe(1);
+  });
+
+  it("스냅샷 시점에 active인 pending lease는 manifest 업로드 후에 만료해도 같은 기준시각으로 보호한다", async () => {
+    const snapshotNow = new Date("2026-07-18T00:00:00.000Z");
+    const registryRow: TelemetryCleanupRegistryRow = {
+      match_id: "lease-boundary",
+      storage_path: "telemetry-map/lease-boundary.json",
+      status: "pending",
+      lease_expires_at: "2026-07-18T00:00:00.500Z",
+      updated_at: "2026-07-18T00:00:00.000Z",
+    };
+    const archiveObjectInventory = vi.fn().mockResolvedValue(undefined);
+    const cleanupExpiredMatches = vi.fn().mockResolvedValue([]);
+
+    await runTelemetryStorageCleanup({
+      cutoff: new Date("2026-07-17T00:00:00.000Z"),
+      targetVersion: 59,
+    }, createDependencies({
+      now: () => snapshotNow,
+      listMasterRows: vi.fn().mockResolvedValue([{
+        match_id: "lease-boundary",
+        storage_path: "old/master.json",
+        telemetry_version: 58,
+        created_at: "2026-07-01T00:00:00.000Z",
+      }]),
+      listRegistryRows: vi.fn().mockResolvedValue([registryRow]),
+      archiveObjectInventory,
+      cleanupExpiredMatches,
+    }));
+
+    expect(archiveObjectInventory).not.toHaveBeenCalled();
+    expect(cleanupExpiredMatches).toHaveBeenCalledWith(
+      ["lease-boundary"],
+      new Date("2026-07-17T00:00:00.000Z"),
+      59,
+      snapshotNow,
+    );
   });
 
   it("archive 후보가 많아도 실제 cleanup 완료 match의 object만 완료 counter에 포함한다", async () => {
@@ -343,8 +386,16 @@ describe("telemetry cleanup registry", () => {
     expect(migration).toContain("in share row exclusive mode");
     expect(migration).toContain("cache.updated_at >= p_cutoff");
     expect(migration).toContain("cache.updated_at < p_cutoff");
-    expect(migration).toContain("lease_expires_at >= statement_timestamp()");
-    expect(migration).toContain("lease_expires_at < statement_timestamp()");
+    expect(migration).toContain("p_now timestamptz");
+    expect(migration).toContain(
+      "cleanup_expired_telemetry_matches(text[], timestamptz, numeric, timestamptz)",
+    );
+    expect(migration).toContain(
+      "drop function if exists public.cleanup_expired_telemetry_matches",
+    );
+    expect(migration).toContain("lease_expires_at >= p_now");
+    expect(migration).toContain("lease_expires_at < p_now");
+    expect(migration).not.toContain("statement_timestamp()");
     expect(migration).toContain("telemetry-cleanup-postcondition-failed");
     expect(migration).toContain("master.match_id is null");
     expect(migration).toContain("not exists");
@@ -364,5 +415,6 @@ describe("telemetry cleanup registry", () => {
     expect(source).not.toMatch(/process\.exit\(/);
     expect(source).not.toContain("deleteMultipleFromR2");
     expect(source).not.toContain("listR2Files");
+    expect(source).toContain("p_now: now.toISOString()");
   });
 });
