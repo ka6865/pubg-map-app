@@ -20,3 +20,82 @@ create index if not exists telemetry_map_cache_entries_updated_at_idx
 alter table public.telemetry_map_cache_entries enable row level security;
 revoke all on table public.telemetry_map_cache_entries from anon, authenticated;
 grant select, insert, update, delete on table public.telemetry_map_cache_entries to service_role;
+
+create or replace function public.cleanup_expired_telemetry_matches(
+  p_match_ids text[],
+  p_cutoff timestamptz,
+  p_target_version numeric
+)
+returns table(match_id text)
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  if p_match_ids is null
+    or p_cutoff is null
+    or p_target_version is null
+    or cardinality(p_match_ids) > 50
+  then
+    raise exception 'telemetry-cleanup-invalid-rpc-input' using errcode = '22023';
+  end if;
+
+  perform 1
+  from public.match_master_telemetry as master
+  where master.match_id = any(p_match_ids)
+  order by master.match_id
+  for update;
+
+  perform 1
+  from public.telemetry_map_cache_entries as cache
+  where cache.match_id = any(p_match_ids)
+  order by cache.id
+  for update;
+
+  return query
+  with eligible as materialized (
+    select master.match_id
+    from public.match_master_telemetry as master
+    where master.match_id = any(p_match_ids)
+      and (
+        master.telemetry_version < p_target_version
+        or master.created_at < p_cutoff
+      )
+      and not exists (
+        select 1
+        from public.telemetry_map_cache_entries as cache
+        where cache.match_id = master.match_id
+          and cache.updated_at >= p_cutoff
+      )
+  ),
+  deleted_match_stats as (
+    delete from public.match_stats_raw as stats
+    using eligible
+    where stats.match_id = eligible.match_id
+  ),
+  deleted_processed as (
+    delete from public.processed_match_telemetry as processed
+    using eligible
+    where processed.match_id = eligible.match_id
+  ),
+  deleted_cache as (
+    delete from public.telemetry_map_cache_entries as cache
+    using eligible
+    where cache.match_id = eligible.match_id
+  ),
+  deleted_master as (
+    delete from public.match_master_telemetry as master
+    using eligible
+    where master.match_id = eligible.match_id
+    returning master.match_id
+  )
+  select deleted_master.match_id
+  from deleted_master
+  order by deleted_master.match_id;
+end;
+$$;
+
+revoke all on function public.cleanup_expired_telemetry_matches(text[], timestamptz, numeric)
+  from public, anon, authenticated;
+grant execute on function public.cleanup_expired_telemetry_matches(text[], timestamptz, numeric)
+  to service_role;

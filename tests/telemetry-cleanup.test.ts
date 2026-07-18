@@ -20,7 +20,7 @@ function createDependencies(
     listCacheRows: vi.fn().mockResolvedValue([]),
     listR2Files: vi.fn().mockResolvedValue([]),
     deleteR2Paths: vi.fn().mockResolvedValue(undefined),
-    deleteMatchRows: vi.fn().mockResolvedValue(undefined),
+    cleanupExpiredMatches: vi.fn(async (matchIds: string[]) => matchIds),
     ...overrides,
   };
 }
@@ -73,11 +73,11 @@ describe("telemetry cleanup registry", () => {
 
   it("registry 전체 조회가 실패하면 어떤 삭제도 시작하지 않는다", async () => {
     const deleteR2Paths = vi.fn().mockResolvedValue(undefined);
-    const deleteMatchRows = vi.fn().mockResolvedValue(undefined);
+    const cleanupExpiredMatches = vi.fn().mockResolvedValue([]);
     const dependencies = createDependencies({
       listCacheRows: vi.fn().mockRejectedValue(new Error("registry-unavailable")),
       deleteR2Paths,
-      deleteMatchRows,
+      cleanupExpiredMatches,
     });
 
     await expect(runTelemetryStorageCleanup({
@@ -87,7 +87,7 @@ describe("telemetry cleanup registry", () => {
     }, dependencies)).rejects.toThrow("registry-unavailable");
 
     expect(deleteR2Paths).not.toHaveBeenCalled();
-    expect(deleteMatchRows).not.toHaveBeenCalled();
+    expect(cleanupExpiredMatches).not.toHaveBeenCalled();
   });
 
   it("R2 필수 설정이 없으면 모든 조회와 삭제 전에 fail-closed한다", async () => {
@@ -105,17 +105,13 @@ describe("telemetry cleanup registry", () => {
     expect(dependencies.listCacheRows).not.toHaveBeenCalled();
     expect(dependencies.listR2Files).not.toHaveBeenCalled();
     expect(dependencies.deleteR2Paths).not.toHaveBeenCalled();
-    expect(dependencies.deleteMatchRows).not.toHaveBeenCalled();
+    expect(dependencies.cleanupExpiredMatches).not.toHaveBeenCalled();
   });
 
-  it("만료 match의 master와 모든 registry R2 경로를 지운 뒤 DB source-of-truth를 지운다", async () => {
-    const calls: string[] = [];
-    const deleteR2Paths = vi.fn(async (storagePaths: string[]) => {
-      calls.push(`r2:${storagePaths.join(",")}`);
-    });
-    const deleteMatchRows = vi.fn(async (table: string) => {
-      calls.push(`db:${table}`);
-    });
+  it("만료 match DB는 원자적 RPC로 정리하고 R2는 다음 orphan 주기까지 보존한다", async () => {
+    const deleteR2Paths = vi.fn().mockResolvedValue(undefined);
+    const cleanupExpiredMatches = vi.fn().mockResolvedValue(["m1"]);
+    const cutoff = new Date("2026-07-17T00:00:00.000Z");
     const dependencies = createDependencies({
       listMasterRows: vi.fn().mockResolvedValue([
         {
@@ -144,37 +140,23 @@ describe("telemetry cleanup registry", () => {
         { key: "map/m2/player-c/lite.json", size: 10, lastModified: new Date("2026-07-01T00:00:00.000Z") },
       ]),
       deleteR2Paths,
-      deleteMatchRows,
+      cleanupExpiredMatches,
     });
 
     const result = await runTelemetryStorageCleanup({
-      cutoff: new Date("2026-07-17T00:00:00.000Z"),
+      cutoff,
       targetVersion: 59,
       r2ScanLimit: 1_000,
     }, dependencies);
 
-    expect(deleteR2Paths).toHaveBeenCalledWith([
-      "master/m1.json",
-      "map/m1/player-a/lite.json",
-      "map/m1/player-b/full.json",
-    ]);
-    expect(deleteMatchRows).toHaveBeenNthCalledWith(1, "match_stats_raw", ["m1"]);
-    expect(deleteMatchRows).toHaveBeenNthCalledWith(2, "processed_match_telemetry", ["m1"]);
-    expect(deleteMatchRows).toHaveBeenNthCalledWith(3, "telemetry_map_cache_entries", ["m1"]);
-    expect(deleteMatchRows).toHaveBeenNthCalledWith(4, "match_master_telemetry", ["m1"]);
-    expect(calls).toEqual([
-      "r2:master/m1.json,map/m1/player-a/lite.json,map/m1/player-b/full.json",
-      "db:match_stats_raw",
-      "db:processed_match_telemetry",
-      "db:telemetry_map_cache_entries",
-      "db:match_master_telemetry",
-    ]);
+    expect(cleanupExpiredMatches).toHaveBeenCalledWith(["m1"], cutoff, 59);
+    expect(deleteR2Paths).not.toHaveBeenCalled();
     expect(result.deletedMatchCount).toBe(1);
-    expect(result.deletedR2PathCount).toBe(3);
+    expect(result.deletedR2PathCount).toBe(0);
   });
 
-  it("R2 삭제가 실패하면 registry와 master row를 보존한다", async () => {
-    const deleteMatchRows = vi.fn().mockResolvedValue(undefined);
+  it("만료 cleanup RPC가 실패하면 orphan R2 삭제도 시작하지 않는다", async () => {
+    const deleteR2Paths = vi.fn().mockResolvedValue(undefined);
     const dependencies = createDependencies({
       listMasterRows: vi.fn().mockResolvedValue([{
         match_id: "m1",
@@ -185,25 +167,26 @@ describe("telemetry cleanup registry", () => {
       listCacheRows: vi.fn().mockResolvedValue([
         { match_id: "m1", storage_path: "map/m1/player-a/lite.json" },
       ]),
-      deleteR2Paths: vi.fn().mockRejectedValue(new Error("r2-partial-failure")),
-      deleteMatchRows,
+      listR2Files: vi.fn().mockResolvedValue([{
+        key: "old-orphan.json",
+        size: 10,
+        lastModified: new Date("2026-07-01T00:00:00.000Z"),
+      }]),
+      deleteR2Paths,
+      cleanupExpiredMatches: vi.fn().mockRejectedValue(new Error("cleanup-rpc-failure")),
     });
 
     await expect(runTelemetryStorageCleanup({
       cutoff: new Date("2026-07-17T00:00:00.000Z"),
       targetVersion: 59,
       r2ScanLimit: 1_000,
-    }, dependencies)).rejects.toThrow("r2-partial-failure");
+    }, dependencies)).rejects.toThrow("cleanup-rpc-failure");
 
-    expect(deleteMatchRows).not.toHaveBeenCalled();
+    expect(deleteR2Paths).not.toHaveBeenCalled();
   });
 
-  it("registry row 삭제가 실패하면 master row를 지우지 않는다", async () => {
-    const deleteMatchRows = vi.fn(async (table: string) => {
-      if (table === "telemetry_map_cache_entries") {
-        throw new Error("registry-delete-failure");
-      }
-    });
+  it("RPC가 최근 registry writer를 확인해 제외한 match는 삭제 카운트에 포함하지 않는다", async () => {
+    const cleanupExpiredMatches = vi.fn().mockResolvedValue([]);
     const dependencies = createDependencies({
       listMasterRows: vi.fn().mockResolvedValue([{
         match_id: "m1",
@@ -212,16 +195,17 @@ describe("telemetry cleanup registry", () => {
         created_at: "2026-07-01T00:00:00.000Z",
       }]),
       listCacheRows: vi.fn().mockResolvedValue([]),
-      deleteMatchRows,
+      cleanupExpiredMatches,
     });
 
-    await expect(runTelemetryStorageCleanup({
+    const result = await runTelemetryStorageCleanup({
       cutoff: new Date("2026-07-17T00:00:00.000Z"),
       targetVersion: 59,
       r2ScanLimit: 1_000,
-    }, dependencies)).rejects.toThrow("registry-delete-failure");
+    }, dependencies);
 
-    expect(deleteMatchRows).not.toHaveBeenCalledWith("match_master_telemetry", ["m1"]);
+    expect(cleanupExpiredMatches).toHaveBeenCalledTimes(1);
+    expect(result.deletedMatchCount).toBe(0);
   });
 
   it("orphan 스캔은 master와 registry 활성 경로를 모두 보존하고 R2를 한 번만 조회한다", async () => {
@@ -291,6 +275,42 @@ describe("telemetry cleanup registry", () => {
 
     expect(deleteR2Paths).toHaveBeenCalledTimes(1);
     expect(deleteR2Paths).toHaveBeenCalledWith(["orphan/old.json"]);
+  });
+
+  it("cleanup RPC가 요청하지 않은 match를 반환하면 계약 오류로 중단한다", async () => {
+    const dependencies = createDependencies({
+      listMasterRows: vi.fn().mockResolvedValue([{
+        match_id: "m1",
+        storage_path: "master/m1.json",
+        telemetry_version: 58,
+        created_at: "2026-07-01T00:00:00.000Z",
+      }]),
+      cleanupExpiredMatches: vi.fn().mockResolvedValue(["m2"]),
+    });
+
+    await expect(runTelemetryStorageCleanup({
+      cutoff: new Date("2026-07-17T00:00:00.000Z"),
+      targetVersion: 59,
+      r2ScanLimit: 1_000,
+    }, dependencies)).rejects.toThrow("telemetry-cleanup-invalid-rpc-result");
+  });
+
+  it("마이그레이션이 writer 동시성을 잠금·cutoff 재검증과 트랜잭션 삭제로 보호한다", () => {
+    const migration = fs.readFileSync(path.resolve(
+      "supabase/migrations/20260718152309_telemetry_map_cache_entries.sql",
+    ), "utf8");
+
+    expect(migration).toContain("cleanup_expired_telemetry_matches");
+    expect(migration).toContain("security invoker");
+    expect(migration).toContain("set search_path = ''");
+    expect(migration).toContain("for update");
+    expect(migration).toContain("cache.updated_at >= p_cutoff");
+    expect(migration).toContain("delete from public.match_stats_raw");
+    expect(migration).toContain("delete from public.processed_match_telemetry");
+    expect(migration).toContain("delete from public.telemetry_map_cache_entries");
+    expect(migration).toContain("delete from public.match_master_telemetry");
+    expect(migration).toContain("from public, anon, authenticated");
+    expect(migration).toContain("to service_role");
   });
 
   it("cleanup script는 import 시 실행하지 않고 direct-run guard만 사용한다", () => {

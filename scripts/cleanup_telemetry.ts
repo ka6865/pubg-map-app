@@ -5,7 +5,6 @@ import dotenv from "dotenv";
 import { TELEMETRY_VERSION } from "../lib/pubg-analysis/constants";
 import {
   mergeActiveTelemetryPaths,
-  selectTelemetryCachePathsForMatches,
 } from "../lib/pubg-analysis/telemetryCleanup";
 import {
   deleteMultipleFromR2,
@@ -42,7 +41,11 @@ export type TelemetryCleanupDependencies = {
   listCacheRows(): Promise<TelemetryCleanupCacheRow[]>;
   listR2Files(limit: number): Promise<R2File[]>;
   deleteR2Paths(storagePaths: string[]): Promise<void>;
-  deleteMatchRows(table: string, matchIds: string[]): Promise<void>;
+  cleanupExpiredMatches(
+    matchIds: string[],
+    cutoff: Date,
+    targetVersion: number,
+  ): Promise<string[]>;
 };
 
 export type TelemetryCleanupConfig = {
@@ -134,6 +137,21 @@ function isPastCleanupGrace(file: R2File, cutoff: Date): boolean {
     && file.lastModified.getTime() < cutoff.getTime();
 }
 
+function validateCleanedMatchIds(
+  requestedMatchIds: string[],
+  cleanedMatchIds: string[],
+): string[] {
+  const requested = new Set(requestedMatchIds);
+  const unique = uniqueValues(cleanedMatchIds);
+  if (
+    unique.length !== cleanedMatchIds.length
+    || unique.some((matchId) => !requested.has(matchId))
+  ) {
+    throw new Error("telemetry-cleanup-invalid-rpc-result");
+  }
+  return unique;
+}
+
 export async function runTelemetryStorageCleanup(
   config: TelemetryCleanupConfig,
   dependencies: TelemetryCleanupDependencies,
@@ -156,24 +174,12 @@ export async function runTelemetryStorageCleanup(
   let deletedR2PathCount = 0;
 
   for (const matchIds of chunkValues(expiredMatchIds, DELETE_BATCH_SIZE)) {
-    const targetSet = new Set(matchIds);
-    const masterPaths = expiredRows
-      .filter((row) => targetSet.has(row.match_id))
-      .map((row) => row.storage_path)
-      .filter((storagePath): storagePath is string => Boolean(storagePath));
-    const cachePaths = selectTelemetryCachePathsForMatches(cacheRows, matchIds);
-    const targetPaths = uniqueValues([...masterPaths, ...cachePaths]);
-
-    if (targetPaths.length > 0) {
-      await dependencies.deleteR2Paths(targetPaths);
-      deletedR2PathCount += targetPaths.length;
-    }
-
-    await dependencies.deleteMatchRows("match_stats_raw", matchIds);
-    await dependencies.deleteMatchRows("processed_match_telemetry", matchIds);
-    await dependencies.deleteMatchRows("telemetry_map_cache_entries", matchIds);
-    await dependencies.deleteMatchRows("match_master_telemetry", matchIds);
-    deletedMatchCount += matchIds.length;
+    const cleanedMatchIds = await dependencies.cleanupExpiredMatches(
+      matchIds,
+      config.cutoff,
+      config.targetVersion,
+    );
+    deletedMatchCount += validateCleanedMatchIds(matchIds, cleanedMatchIds).length;
   }
 
   const orphanedPaths = uniqueValues(
@@ -228,12 +234,30 @@ function createTelemetryCleanupDependencies(
     }),
     listR2Files,
     deleteR2Paths: deleteMultipleFromR2,
-    deleteMatchRows: async (table, matchIds) => {
-      const { error } = await supabase
-        .from(table)
-        .delete()
-        .in("match_id", matchIds);
-      if (error) throw new Error(`telemetry-cleanup-delete-${table}-failed`);
+    cleanupExpiredMatches: async (matchIds, cutoff, targetVersion) => {
+      const { data, error } = await supabase.rpc(
+        "cleanup_expired_telemetry_matches",
+        {
+          p_match_ids: matchIds,
+          p_cutoff: cutoff.toISOString(),
+          p_target_version: targetVersion,
+        },
+      );
+      if (error) throw new Error("telemetry-cleanup-expired-rpc-failed");
+      if (!Array.isArray(data)) {
+        throw new Error("telemetry-cleanup-invalid-rpc-result");
+      }
+
+      return data.map((row: unknown) => {
+        if (
+          typeof row !== "object"
+          || row === null
+          || typeof (row as { match_id?: unknown }).match_id !== "string"
+        ) {
+          throw new Error("telemetry-cleanup-invalid-rpc-result");
+        }
+        return (row as { match_id: string }).match_id;
+      });
     },
   };
 }
