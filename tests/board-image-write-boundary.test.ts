@@ -33,6 +33,19 @@ describe("게시글 이미지 원자 저장 경계", () => {
     expect(writeSource).not.toMatch(/useEffect\(\(\) => \{[\s\S]{0,400}releaseBoardImages/);
   });
 
+  it("본문 이미지 분류 실패 시 release와 게시글 저장보다 먼저 중단한다", () => {
+    const classifyAt = writeSource.indexOf("const imageClassification = classifyUploadedBoardImages(");
+    const failureReturnAt = writeSource.indexOf("if (!imageClassification.ok)");
+    const releaseAt = writeSource.indexOf("await releaseBoardImages(imageClassification.unusedImageIds)");
+    const saveAt = writeSource.indexOf("await handleSavePost({ contentImageIds, thumbnailImageId })");
+
+    expect(classifyAt).toBeGreaterThan(-1);
+    expect(failureReturnAt).toBeGreaterThan(classifyAt);
+    expect(writeSource.indexOf("toast.error(\"본문 이미지 정보를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.\")", failureReturnAt)).toBeGreaterThan(failureReturnAt);
+    expect(releaseAt).toBeGreaterThan(failureReturnAt);
+    expect(saveAt).toBeGreaterThan(releaseAt);
+  });
+
   it("클라이언트 body는 revision과 image ID 참조를 전달한다", () => {
     expect(clientSource).toContain("expectedRevision");
     expect(clientSource).toContain("contentImageIds");

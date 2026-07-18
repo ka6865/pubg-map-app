@@ -8,7 +8,7 @@ import imageCompression from "browser-image-compression";
 import { toast } from "sonner";
 import { ClanInfo } from "@/types/board"; // 🌟 추가
 import ConfirmModal from "@/components/common/ConfirmModal";
-import { getContentUploadedBoardImageIds, getUnusedUploadedBoardImageIds, type UploadedBoardImage } from "@/lib/board-image-cleanup";
+import { classifyUploadedBoardImages, type UploadedBoardImage } from "@/lib/board-image-cleanup";
 
 const ReactQuill = dynamic(() => import("react-quill-new"), {
   ssr: false,
@@ -507,17 +507,21 @@ export default function BoardWrite({
     if (isLoading || isUploadingImage) return;
 
     try {
-      const unusedImageIds = getUnusedUploadedBoardImageIds(
+      const imageClassification = classifyUploadedBoardImages(
         uploadedImagesRef.current,
         newContent,
         thumbnailUrl
       );
+      if (!imageClassification.ok) {
+        toast.error("본문 이미지 정보를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+        return;
+      }
 
-      if (unusedImageIds.length > 0) {
+      if (imageClassification.unusedImageIds.length > 0) {
         try {
-          await releaseBoardImages(unusedImageIds);
+          await releaseBoardImages(imageClassification.unusedImageIds);
           uploadedImagesRef.current = uploadedImagesRef.current.filter(
-            (image) => !unusedImageIds.includes(image.imageId)
+            (image) => !imageClassification.unusedImageIds.includes(image.imageId)
           );
         } catch {
           toast.error("미사용 이미지 정리를 요청하지 못했습니다.");
@@ -533,7 +537,7 @@ export default function BoardWrite({
         }
       }
 
-      const contentImageIds = getContentUploadedBoardImageIds(uploadedImagesRef.current, newContent);
+      const contentImageIds = imageClassification.contentImageIds;
       const thumbnailImageId = uploadedImagesRef.current.find(
         (image) => image.publicUrl === thumbnailUrl,
       )?.imageId ?? null;
