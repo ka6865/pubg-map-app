@@ -15,6 +15,7 @@ function createDependencies(
   overrides: Partial<TelemetryCleanupDependencies> = {},
 ): TelemetryCleanupDependencies {
   return {
+    isR2Configured: vi.fn().mockReturnValue(true),
     listMasterRows: vi.fn().mockResolvedValue([]),
     listCacheRows: vi.fn().mockResolvedValue([]),
     listR2Files: vi.fn().mockResolvedValue([]),
@@ -80,6 +81,24 @@ describe("telemetry cleanup registry", () => {
 
     expect(deleteR2Paths).not.toHaveBeenCalled();
     expect(deleteMatchRows).not.toHaveBeenCalled();
+  });
+
+  it("R2 필수 설정이 없으면 모든 조회와 삭제 전에 fail-closed한다", async () => {
+    const dependencies = createDependencies({
+      isR2Configured: vi.fn().mockReturnValue(false),
+    });
+
+    await expect(runTelemetryStorageCleanup({
+      cutoff: new Date("2026-07-17T00:00:00.000Z"),
+      targetVersion: 59,
+      r2ScanLimit: 1_000,
+    }, dependencies)).rejects.toThrow("telemetry-cleanup-r2-not-configured");
+
+    expect(dependencies.listMasterRows).not.toHaveBeenCalled();
+    expect(dependencies.listCacheRows).not.toHaveBeenCalled();
+    expect(dependencies.listR2Files).not.toHaveBeenCalled();
+    expect(dependencies.deleteR2Paths).not.toHaveBeenCalled();
+    expect(dependencies.deleteMatchRows).not.toHaveBeenCalled();
   });
 
   it("만료 match의 master와 모든 registry R2 경로를 지운 뒤 DB source-of-truth를 지운다", async () => {

@@ -9,6 +9,7 @@ import {
 } from "../lib/pubg-analysis/telemetryCleanup";
 import {
   deleteMultipleFromR2,
+  isR2Configured,
   listR2Files,
 } from "../lib/pubg-analysis/r2Service";
 
@@ -35,6 +36,7 @@ type RangePage<T> = {
 };
 
 export type TelemetryCleanupDependencies = {
+  isR2Configured(): boolean;
   listMasterRows(): Promise<TelemetryCleanupMasterRow[]>;
   listCacheRows(): Promise<TelemetryCleanupCacheRow[]>;
   listR2Files(limit: number): Promise<R2File[]>;
@@ -127,6 +129,9 @@ export async function runTelemetryStorageCleanup(
   dependencies: TelemetryCleanupDependencies,
 ): Promise<TelemetryCleanupResult> {
   validateConfig(config);
+  if (!dependencies.isR2Configured()) {
+    throw new Error("telemetry-cleanup-r2-not-configured");
+  }
 
   const [masterRows, cacheRows] = await Promise.all([
     dependencies.listMasterRows(),
@@ -187,6 +192,7 @@ function createTelemetryCleanupDependencies(
   supabase: SupabaseClient,
 ): TelemetryCleanupDependencies {
   return {
+    isR2Configured,
     listMasterRows: () => fetchAllRowsByRange(async (from, to) => {
       const { data, error } = await supabase
         .from("match_master_telemetry")
