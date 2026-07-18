@@ -114,19 +114,13 @@ describe("게시판 이미지 Storage 소유권 마이그레이션", () => {
     const script = readFileSync(resolve(process.cwd(), "scripts/verify_board_image_storage_migration.ts"), "utf8");
 
     expect(script).toContain("unsafe-board-image-storage-test-database-url");
-    expect(script).toContain("reserve-complete");
-    expect(script).toContain("mime-size-rejection");
-    expect(script).toContain("revision-conflict-immutable");
-    expect(script).toContain("multi-ref-detach");
-    expect(script).toContain("duplicate-claim");
-    expect(script).toContain("expired-lease-reclaim");
-    expect(script).toContain("finalize-retry");
+    expect(script).toContain("reserve-ready");
+    expect(script).toContain("last-ref-delete-pending");
     expect(script).toContain("anon-table-denied");
     expect(script).toContain("authenticated-table-denied");
-    expect(script).toContain("attach-vs-detach");
+    expect(script).toContain("attach-vs-detach-result");
     expect(script).toContain("concurrent-worker-claim");
-    expect(script).toContain("legacy-retained-detach");
-    expect(script).toContain("fixture-cleanup");
+    expect(script).toContain("legacy-backfill");
   });
 
   it("검증 fixture는 성공 revision과 실제 경쟁 결과를 보존하고 finally에서 정리한다", () => {
@@ -139,5 +133,21 @@ describe("게시판 이미지 Storage 소유권 마이그레이션", () => {
     expect(script).toContain("workerOneIds");
     expect(script).toContain("workerTwoIds");
     expect(script).toContain("attach-vs-detach-result");
+  });
+
+  it("검증 script는 시나리오별 fresh fixture를 소유하고 재사용하지 않는다", () => {
+    const script = readFileSync(resolve(process.cwd(), "scripts/verify_board_image_storage_migration.ts"), "utf8");
+
+    expect(script).toContain("verifyAclAndOwnership");
+    expect(script).toContain("verifyReferenceTransitions");
+    expect(script).toContain("verifyAttachDetachRace");
+    expect(script).toContain("verifyConcurrentClaims");
+    expect(script).toContain("verifyLegacyBackfill");
+    expect(script).toContain("verifyLeaseRecovery");
+    expect(script).toContain("createFixture");
+    expect(script).toContain("fixture.cleanup()");
+    expect(script).toContain("runAllScenarios");
+    expect(script).toContain("runId");
+    expect(script).not.toContain('const prefix = "verify-board-image-storage-"');
   });
 });
