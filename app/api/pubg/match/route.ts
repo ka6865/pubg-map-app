@@ -8,7 +8,14 @@ import { normalizeName } from "@/lib/pubg-analysis/utils";
 import { adaptBenchmark } from "@/lib/pubg-analysis/benchmarkAdapter";
 import { fetchTierBenchmarkStats } from "@/lib/pubg-analysis/benchmarkLookup";
 import { buildProcessedTelemetryUpsert, getValidFullResult, normalizePlatform } from "@/lib/pubg-analysis/cacheIdentity";
-import { uploadToR2, downloadFromR2 } from "@/lib/pubg-analysis/r2Service";
+import {
+  downloadFromR2,
+  getPresignedUrlFromR2,
+  uploadToR2,
+} from "@/lib/pubg-analysis/r2Service";
+import { writeTelemetryMapCache } from "@/lib/pubg-analysis/telemetryMapCache";
+import { createTelemetryIdentity } from "@/lib/pubg-analysis/telemetryIdentity";
+import { createTelemetryPayload } from "@/lib/pubg-analysis/telemetryPayload";
 import { trackPubgRateLimit } from "@/lib/pubg-analysis/pubgApiTracker";
 import {
   persistMatchAnalysis,
@@ -26,6 +33,22 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
+
+async function registerTelemetryMapCache(row: {
+  match_id: string;
+  platform: string;
+  player_id: string;
+  mode: string;
+  telemetry_version: number;
+  storage_path: string;
+  updated_at: string;
+}): Promise<void> {
+  const { error } = await supabase
+    .from("telemetry_map_cache_entries")
+    .upsert(row, { onConflict: "match_id,platform,player_id,mode,telemetry_version" });
+
+  if (error) throw new Error("텔레메트리 캐시 레지스트리 저장에 실패했습니다.");
+}
 
 async function safeJsonParse(res: Response): Promise<any> {
   const contentType = res.headers.get("content-type") || "";
@@ -102,7 +125,11 @@ export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const matchId = searchParams.get("matchId");
   const nickname = searchParams.get("nickname");
-  const platformParam = normalizePlatform(searchParams.get("platform") || "steam");
+  const platformValue = searchParams.get("platform");
+  if (!platformValue) {
+    return NextResponse.json({ error: "Invalid platform" }, { status: 400 });
+  }
+  const platformParam = normalizePlatform(platformValue);
   const lowerNickname = normalizeName(nickname || "");
   const force = searchParams.get("force") === "true";
   const sourceParam = searchParams.get("source") || "user";
@@ -193,6 +220,9 @@ export async function GET(request: NextRequest) {
     if (!myParticipant) throw new Error(`Player ${nickname} not found in match participants`);
 
     const myAccountId = myParticipant.attributes.stats.playerId || myParticipant.attributes.accountId;
+    if (!myAccountId) {
+      return NextResponse.json({ error: "Player account identifier is unavailable" }, { status: 404 });
+    }
 
     // [V55.0] 닉네임 캐시 최적화: 분석 대상 플레이어 1명만 즉시 업데이트 (데드락 방지)
     const myCacheEntry = {
@@ -233,7 +263,7 @@ export async function GET(request: NextRequest) {
         if (cachedVersion < RESULT_VERSION) {
           const reanalyzePromise = reanalyzeAndSave(
             matchId, nickname, platform, lowerNickname, matchData, teamNames, teamAccountIds,
-            myRosterId, myParticipant, teamStats, rankPct, matchAttr, rosters, participants,
+            myRosterId, myParticipant, myAccountId, teamStats, rankPct, matchAttr, rosters, participants,
             true, source
           ).catch(() => undefined);
 
@@ -262,7 +292,7 @@ export async function GET(request: NextRequest) {
     // 캐시가 없거나 강제 업데이트가 필요한 경우 동기식 분석 실행
     const finalResponse = await reanalyzeAndSave(
       matchId, nickname, platform, lowerNickname, matchData, teamNames, teamAccountIds,
-      myRosterId, myParticipant, teamStats, rankPct, matchAttr, rosters, participants,
+      myRosterId, myParticipant, myAccountId, teamStats, rankPct, matchAttr, rosters, participants,
       shouldForce, source
     );
 
@@ -300,6 +330,7 @@ async function reanalyzeAndSave(
   teamAccountIds: Set<string>,
   myRosterId: string,
   myParticipant: any,
+  myAccountId: string,
   teamStats: any[],
   rankPct: number,
   matchAttr: any,
@@ -421,7 +452,7 @@ async function reanalyzeAndSave(
   const bench = adaptBenchmark(tierStats);
 
   const engine = new AnalysisEngine(
-    nickname, myParticipant.attributes.stats.playerId || myParticipant.attributes.accountId, teamNames, teamAccountIds,
+    nickname, myAccountId, teamNames, teamAccountIds,
     new Set<string>(), new Set<string>(),
     myRosterId
   );
@@ -464,7 +495,29 @@ async function reanalyzeAndSave(
   };
 
   const { mapData, ...tacticalResult } = fullResult;
-  const mapCachePath = `${matchId}_v${TELEMETRY_VERSION}_map.json`;
+  const telemetryIdentity = createTelemetryIdentity({
+    matchId,
+    platform,
+    playerId: myAccountId,
+    mode: "lite",
+    telemetryVersion: TELEMETRY_VERSION,
+  });
+  const telemetryPayload = createTelemetryPayload({
+    identity: telemetryIdentity,
+    startTime: matchAttr.createdAt,
+    teammates: mapData?.teammates || [],
+    teamNames: mapData?.teamNames || [myParticipant.attributes.stats.name],
+    events: mapData?.events || [],
+    zoneEvents: mapData?.zoneEvents || [],
+    mapName: result.mapName || matchAttr.mapName || matchAttr.mapId,
+  });
+  const telemetryCache = await writeTelemetryMapCache(telemetryIdentity, telemetryPayload, {
+    download: downloadFromR2,
+    upload: uploadToR2,
+    sign: getPresignedUrlFromR2,
+    register: registerTelemetryMapCache,
+    now: () => new Date(),
+  });
 
   const processedTelemetryRecord = buildProcessedTelemetryUpsert(
     matchId,
@@ -473,20 +526,25 @@ async function reanalyzeAndSave(
     tacticalResult
   );
 
-  await Promise.all([
-    uploadToR2(mapCachePath, JSON.stringify(mapData), 'application/json'),
-    supabase.from("processed_match_telemetry").upsert(
-      processedTelemetryRecord,
-      { onConflict: "match_id,platform,player_id" }
-    ),
-    supabase.from("match_master_telemetry").upsert({
+  const { error: processedTelemetryError } = await supabase
+    .from("processed_match_telemetry")
+    .upsert(processedTelemetryRecord, { onConflict: "match_id,platform,player_id" });
+  if (processedTelemetryError) {
+    throw new Error("분석 텔레메트리 저장에 실패했습니다.");
+  }
+
+  const { error: masterTelemetryError } = await supabase
+    .from("match_master_telemetry")
+    .upsert({
       match_id: matchId,
       map_name: matchAttr.mapId,
       game_mode: matchAttr.gameMode,
       telemetry_version: Math.floor(TELEMETRY_VERSION),
-      storage_path: mapCachePath
-    }, { onConflict: 'match_id' })
-  ]);
+      storage_path: telemetryCache.storagePath,
+    }, { onConflict: "match_id" });
+  if (masterTelemetryError) {
+    throw new Error("매치 텔레메트리 메타데이터 저장에 실패했습니다.");
+  }
 
   try {
     const persistenceResult = await persistMatchAnalysis(supabase, {

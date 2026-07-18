@@ -70,8 +70,11 @@ vi.mock("@/lib/pubg-analysis/benchmarkLookup", () => ({
 
 vi.mock("@/lib/pubg-analysis/r2Service", () => ({
   downloadFromR2: vi.fn().mockResolvedValue(null),
+  getPresignedUrlFromR2: vi.fn().mockResolvedValue("https://r2.example/signed"),
   uploadToR2: vi.fn().mockResolvedValue(undefined),
 }));
+
+vi.mock("server-only", () => ({}));
 
 vi.mock("@/lib/pubg-analysis/pubgApiTracker", () => ({
   trackPubgRateLimit: vi.fn(),
