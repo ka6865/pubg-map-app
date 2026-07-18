@@ -10,6 +10,9 @@
 
 ## Global Constraints
 
+- Vercel, Supabase, Cloudflare R2 무료 플랜 범위에서 동작해야 하며 유료 기능이나 상시 실행 worker를 전제하지 않는다.
+- 요청당 DB·R2 왕복과 저장 중복을 최소화하고 대량 migration·전체 R2 반복 스캔을 수행하지 않는다.
+- 변동 가능한 무료 한도 수치를 코드에 하드코딩하지 않는다.
 - 기존 `matchId + mode` 및 `matchId` 단일 R2 키는 읽지 않는다.
 - 기존 R2 객체를 복사·일괄 삭제하지 않고 현재 보존 정책에 맡긴다.
 - 신규 R2 key는 `telemetry-map/v{TELEMETRY_VERSION}/{platform}/{matchId}/{playerHash}/{mode}.json` 형식을 사용한다.
