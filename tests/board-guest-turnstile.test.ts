@@ -320,6 +320,44 @@ describe("Cloudflare Turnstile 위젯", () => {
     expect(latestCallback).toHaveBeenCalledWith("fresh-token");
   });
 
+  it("토큰이 만료되면 부모 token을 지운 후 widget을 reset한다", () => {
+    const renderTurnstile = vi.fn().mockReturnValue("widget-a");
+    const callbackOrder: string[] = [];
+    const resetTurnstile = vi.fn(() => {
+      callbackOrder.push("reset");
+    });
+    window.turnstile = {
+      render: renderTurnstile,
+      reset: resetTurnstile,
+      remove: vi.fn(),
+    };
+    let parentToken: string | null = null;
+
+    render(createElement(TurnstileWidget, {
+      action: TURNSTILE_ACTIONS.post,
+      onVerify: (token) => {
+        parentToken = token;
+      },
+      onError: () => {
+        parentToken = null;
+        callbackOrder.push("clear");
+      },
+    }));
+
+    const options = renderTurnstile.mock.calls[0][1] as {
+      callback: (token: string) => void;
+      "expired-callback": () => void;
+    };
+    options.callback("stale-token");
+    expect(parentToken).toBe("stale-token");
+
+    options["expired-callback"]();
+
+    expect(parentToken).toBeNull();
+    expect(resetTurnstile).toHaveBeenCalledWith("widget-a");
+    expect(callbackOrder).toEqual(["clear", "reset"]);
+  });
+
   it("site key가 비어 있으면 render 없이 onError를 호출한다", () => {
     process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY = " ";
     const renderTurnstile = vi.fn().mockReturnValue("widget-a");

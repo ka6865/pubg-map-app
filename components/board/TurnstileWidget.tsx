@@ -51,6 +51,11 @@ export default function TurnstileWidget({ action, onVerify, onError }: Turnstile
     }
   }, []);
 
+  const handleExpired = useCallback(() => {
+    onErrorRef.current?.();
+    resetCurrentWidget();
+  }, [resetCurrentWidget]);
+
   const renderWidget = useCallback(() => {
     if (!containerRef.current || !window.turnstile) return;
     const sitekey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY?.trim();
@@ -66,11 +71,11 @@ export default function TurnstileWidget({ action, onVerify, onError }: Turnstile
       action,
       callback: (token) => onVerifyRef.current(token),
       "error-callback": () => onErrorRef.current?.(),
-      "expired-callback": resetCurrentWidget,
+      "expired-callback": handleExpired,
       theme: "dark",
       language: "ko",
     });
-  }, [action, resetCurrentWidget]);
+  }, [action, handleExpired]);
 
   useEffect(() => {
     // 스크립트가 이미 로드된 경우 바로 렌더링

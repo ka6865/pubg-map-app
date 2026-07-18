@@ -169,6 +169,31 @@ describe("게시글 쓰기 Turnstile 저장 경계", () => {
     expect(mocks.consumeQuota).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["카테고리 누락", { category: " " }],
+    ["제목 50자 초과", { title: "제".repeat(51) }],
+    ["본문 타입 오류", { content: 1234 }],
+    ["디스코드 URL 타입 오류", { discord_url: 1234 }],
+    ["디스코드 URL 길이 초과", { discord_url: `https://discord.gg/${"a".repeat(2049)}` }],
+    ["수정 ID 문자열", { editingPostId: "41" }],
+    ["수정 ID 0", { editingPostId: 0 }],
+    ["비회원 닉네임 길이 초과", { author: "닉".repeat(21) }],
+    ["비회원 비밀번호 공백", { password: "    " }],
+    ["비회원 비밀번호 길이 초과", { password: "p".repeat(21) }],
+  ])("%s payload는 인증·quota·Siteverify·bcrypt·DB 전에 400으로 거부한다", async (_caseName, overrides) => {
+    const admin = createWriteAdmin();
+    mocks.withOptionalAuth.mockResolvedValue({ user: null, supabaseAdmin: admin.supabaseAdmin });
+
+    const response = await postsWritePOST(makePostRequest(overrides));
+
+    expect(response.status).toBe(400);
+    expect(mocks.withOptionalAuth).not.toHaveBeenCalled();
+    expect(mocks.consumeQuota).not.toHaveBeenCalled();
+    expect(mocks.verifyTurnstile).not.toHaveBeenCalled();
+    expect(mocks.hash).not.toHaveBeenCalled();
+    expect(admin.insert).not.toHaveBeenCalled();
+  });
+
   it("비회원 신규 글은 token 없이 quota, bcrypt, insert에 도달하지 않는다", async () => {
     const admin = createWriteAdmin();
     mocks.withOptionalAuth.mockResolvedValue({ user: null, supabaseAdmin: admin.supabaseAdmin });
@@ -387,6 +412,7 @@ describe("BoardWrite Turnstile client 계약", () => {
     expect(source).toContain("turnstileToken: user || editPostId ? null : turnstileToken");
     expect(source).not.toContain("turnstile_verified");
     expect(source).not.toContain("/api/board/turnstile");
+    expect(source).toContain("onError={() => setTurnstileToken(null)}");
   });
 
   it("비회원 submit 시도 후 성공과 실패 모두 token과 widget을 초기화한다", () => {

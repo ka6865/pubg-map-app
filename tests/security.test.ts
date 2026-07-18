@@ -134,6 +134,7 @@ describe("🔒 BGMS API Route Security Guard Tests", () => {
         body: JSON.stringify({
           title: "Spoofed Title",
           content: "Spoofed Content",
+          category: "자유",
           user_id: "user-B", // 사칭 시도
         }),
       });

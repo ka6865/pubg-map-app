@@ -14,6 +14,11 @@ import bcrypt from "bcryptjs";
 
 const ALLOWED_GUILD_ID = "1486899870928470121";
 const TURNSTILE_TOKEN_MAX_LENGTH = 2048;
+const TITLE_MAX_LENGTH = 50;
+const GUEST_AUTHOR_MAX_LENGTH = 20;
+const GUEST_PASSWORD_MIN_LENGTH = 4;
+const GUEST_PASSWORD_MAX_LENGTH = 20;
+const DISCORD_URL_MAX_LENGTH = 2048;
 
 async function validateDiscordUrl(url: string): Promise<boolean> {
   if (!url) return true;
@@ -68,7 +73,15 @@ export async function POST(request: Request) {
       turnstileToken,
     } = body;
 
-    if (typeof title !== "string" || !title.trim() || typeof content !== "string" || !content.trim()) {
+    if (
+      typeof title !== "string"
+      || !title.trim()
+      || title.trim().length > TITLE_MAX_LENGTH
+      || typeof content !== "string"
+      || !content.trim()
+      || typeof category !== "string"
+      || !category.trim()
+    ) {
       return NextResponse.json(
         { error: "필수 입력 데이터가 누락되었습니다." },
         { status: 400 }
@@ -81,8 +94,44 @@ export async function POST(request: Request) {
         { status: 413 }
       );
     }
-    if (discord_url != null && typeof discord_url !== "string") {
+    if (
+      discord_url != null
+      && (typeof discord_url !== "string" || discord_url.length > DISCORD_URL_MAX_LENGTH)
+    ) {
       return NextResponse.json({ error: "디스코드 링크가 올바르지 않습니다." }, { status: 400 });
+    }
+    if (
+      editingPostId != null
+      && (
+        typeof editingPostId !== "number"
+        || !Number.isInteger(editingPostId)
+        || editingPostId <= 0
+      )
+    ) {
+      return NextResponse.json({ error: "수정할 게시글 ID가 올바르지 않습니다." }, { status: 400 });
+    }
+    if (author != null && typeof author !== "string") {
+      return NextResponse.json({ error: "작성자 정보가 올바르지 않습니다." }, { status: 400 });
+    }
+    if (
+      password != null
+      && (
+        typeof password !== "string"
+        || password.trim().length < GUEST_PASSWORD_MIN_LENGTH
+        || password.length > GUEST_PASSWORD_MAX_LENGTH
+      )
+    ) {
+      return NextResponse.json({ error: "비밀번호는 4~20자로 입력해주세요." }, { status: 400 });
+    }
+    if (
+      typeof password === "string"
+      && (
+        typeof author !== "string"
+        || !author.trim()
+        || author.trim().length > GUEST_AUTHOR_MAX_LENGTH
+      )
+    ) {
+      return NextResponse.json({ error: "닉네임은 20자 이하로 입력해주세요." }, { status: 400 });
     }
     const discordUrl = typeof discord_url === "string" ? discord_url : "";
     const guestPassword = typeof password === "string" ? password : "";
@@ -114,7 +163,7 @@ export async function POST(request: Request) {
       }
     } else {
       if (!editingPostId) {
-        if (typeof author !== "string" || !author.trim() || typeof password !== "string" || !password) {
+        if (typeof author !== "string" || typeof password !== "string") {
           return NextResponse.json(
             { error: "닉네임과 비밀번호를 입력해 주세요." },
             { status: 400 }
