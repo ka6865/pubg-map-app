@@ -8,8 +8,11 @@ CREATE TABLE IF NOT EXISTS public.board_write_rate_limits (
 
 ALTER TABLE public.board_write_rate_limits ENABLE ROW LEVEL SECURITY;
 
+CREATE INDEX IF NOT EXISTS board_write_rate_limits_cleanup_idx
+  ON public.board_write_rate_limits (window_started_at, scope, actor_hash);
+
 REVOKE ALL ON TABLE public.board_write_rate_limits FROM PUBLIC, anon, authenticated;
-GRANT SELECT, INSERT, UPDATE ON TABLE public.board_write_rate_limits TO service_role;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.board_write_rate_limits TO service_role;
 
 CREATE OR REPLACE FUNCTION public.consume_board_write_quota(
   p_scope text,
@@ -73,4 +76,45 @@ $$;
 REVOKE ALL ON FUNCTION public.consume_board_write_quota(text, text, integer, integer)
   FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.consume_board_write_quota(text, text, integer, integer)
+  TO service_role;
+
+CREATE OR REPLACE FUNCTION public.cleanup_board_write_rate_limits(
+  p_cutoff timestamptz,
+  p_max_rows integer
+)
+RETURNS integer
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+DECLARE
+  v_deleted_rows integer;
+BEGIN
+  IF p_cutoff IS NULL
+     OR p_max_rows IS NULL
+     OR p_max_rows NOT BETWEEN 1 AND 5000
+     OR p_cutoff > statement_timestamp() - interval '1 hour' THEN
+    RETURN 0;
+  END IF;
+
+  WITH expired AS MATERIALIZED (
+    SELECT scope, actor_hash
+    FROM public.board_write_rate_limits
+    WHERE window_started_at < p_cutoff
+    ORDER BY window_started_at, scope, actor_hash
+    LIMIT p_max_rows
+  )
+  DELETE FROM public.board_write_rate_limits AS target
+  USING expired
+  WHERE target.scope = expired.scope
+    AND target.actor_hash = expired.actor_hash;
+
+  GET DIAGNOSTICS v_deleted_rows = ROW_COUNT;
+  RETURN v_deleted_rows;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.cleanup_board_write_rate_limits(timestamptz, integer)
+  FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.cleanup_board_write_rate_limits(timestamptz, integer)
   TO service_role;

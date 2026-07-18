@@ -134,7 +134,7 @@ describe("board write quota migration", () => {
       /REVOKE ALL ON TABLE public\.board_write_rate_limits FROM PUBLIC, anon, authenticated/i,
     );
     expect(migration).toMatch(
-      /GRANT SELECT, INSERT, UPDATE ON TABLE public\.board_write_rate_limits TO service_role/i,
+      /GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public\.board_write_rate_limits TO service_role/i,
     );
     expect(migration).toMatch(
       /REVOKE ALL ON FUNCTION public\.consume_board_write_quota\(text, text, integer, integer\)[\s\S]+FROM PUBLIC, anon, authenticated/i,
@@ -142,7 +142,9 @@ describe("board write quota migration", () => {
     expect(migration).toMatch(
       /GRANT EXECUTE ON FUNCTION public\.consume_board_write_quota\(text, text, integer, integer\)[\s\S]+TO service_role/i,
     );
-    expect(migration).not.toMatch(/GRANT\s+DELETE/i);
+    expect(migration).toMatch(
+      /REVOKE ALL ON FUNCTION public\.cleanup_board_write_rate_limits\(timestamptz, integer\)[\s\S]+FROM PUBLIC, anon, authenticated/i,
+    );
   });
 
   it("함수는 invoker·빈 search_path·완전 한정 relation을 사용한다", () => {

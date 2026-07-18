@@ -208,6 +208,7 @@ describe("게시글 쓰기 Turnstile 저장 경계", () => {
 
   it.each([
     ["카테고리 누락", { category: " " }],
+    ["카테고리 50자 초과", { category: "카".repeat(51) }],
     ["제목 50자 초과", { title: "제".repeat(51) }],
     ["본문 타입 오류", { content: 1234 }],
     ["디스코드 URL 타입 오류", { discord_url: 1234 }],
@@ -451,6 +452,58 @@ describe("게시글 쓰기 Turnstile 저장 경계", () => {
     expect(response.status).toBe(400);
     expect(mocks.withOptionalAuth).not.toHaveBeenCalled();
     expect(mocks.consumeQuota).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["제목 50자 초과", { title: "제".repeat(51) }],
+    ["카테고리 50자 초과", { category: "카".repeat(51) }],
+  ])("호환 guest route는 %s payload를 인증·quota·Siteverify·DB 전에 400으로 거부한다", async (_caseName, overrides) => {
+    const admin = createGuestCompatibilityAdmin();
+    mocks.withOptionalAuth.mockResolvedValue({ user: null, supabaseAdmin: admin.supabaseAdmin });
+
+    const response = await guestPostsPOST(makeCompatibilityRequest(overrides));
+
+    expect(response.status).toBe(400);
+    expect(mocks.withOptionalAuth).not.toHaveBeenCalled();
+    expect(mocks.consumeQuota).not.toHaveBeenCalled();
+    expect(mocks.verifyTurnstile).not.toHaveBeenCalled();
+    expect(admin.insert).not.toHaveBeenCalled();
+  });
+
+  it("두 게시글 route는 제목·카테고리를 trim해 저장한다", async () => {
+    const writeAdmin = createWriteAdmin();
+    mocks.withOptionalAuth.mockResolvedValueOnce({
+      user: { id: "user-a" },
+      supabaseAdmin: writeAdmin.supabaseAdmin,
+    });
+
+    const writeResponse = await postsWritePOST(makePostRequest({
+      title: "  회원 글  ",
+      category: "  자유  ",
+      author: "회원",
+      password: null,
+      user_id: "user-a",
+    }));
+
+    const compatibilityAdmin = createGuestCompatibilityAdmin();
+    mocks.withOptionalAuth.mockResolvedValueOnce({
+      user: null,
+      supabaseAdmin: compatibilityAdmin.supabaseAdmin,
+    });
+    const compatibilityResponse = await guestPostsPOST(makeCompatibilityRequest({
+      title: "  호환 글  ",
+      category: "  자유  ",
+      turnstileToken: "token",
+    }));
+
+    expect(writeResponse.status).toBe(200);
+    expect(writeAdmin.insert).toHaveBeenCalledWith([
+      expect.objectContaining({ title: "회원 글", category: "자유" }),
+    ]);
+    expect(compatibilityResponse.status).toBe(200);
+    expect(compatibilityAdmin.insert).toHaveBeenCalledWith([
+      expect.objectContaining({ title: "호환 글", category: "자유" }),
+    ]);
   });
 
   it("호환 guest route는 quota 거부 시 Siteverify와 저장을 호출하지 않는다", async () => {

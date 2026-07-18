@@ -14,6 +14,8 @@ import { TURNSTILE_ACTIONS } from "@/lib/board/turnstileContract";
  */
 
 const TURNSTILE_TOKEN_MAX_LENGTH = 2048;
+const TITLE_MAX_LENGTH = 50;
+const CATEGORY_MAX_LENGTH = 50;
 
 export async function POST(request: Request) {
   try {
@@ -47,6 +49,15 @@ export async function POST(request: Request) {
     if (content.length > 300000) {
       return NextResponse.json({ error: "게시글 용량이 너무 큽니다." }, { status: 413 });
     }
+    if (title.trim().length > TITLE_MAX_LENGTH) {
+      return NextResponse.json({ error: "제목은 50자 이하로 입력해주세요." }, { status: 400 });
+    }
+    if (category.trim().length > CATEGORY_MAX_LENGTH) {
+      return NextResponse.json({ error: "카테고리는 50자 이하로 입력해주세요." }, { status: 400 });
+    }
+    const safeTitle = title.trim();
+    const safeContent = content.trim();
+    const safeCategory = category.trim();
     const token = typeof turnstileToken === "string" ? turnstileToken.trim() : "";
     if (!token || token.length > TURNSTILE_TOKEN_MAX_LENGTH) {
       return NextResponse.json(
@@ -83,11 +94,11 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: turnstile.error }, { status: turnstile.status });
     }
 
-    const titleCheck = checkProfanity(title);
+    const titleCheck = checkProfanity(safeTitle);
     if (titleCheck.blocked) {
       return NextResponse.json({ error: "제목에 부적절한 표현이 포함되어 있습니다." }, { status: 400 });
     }
-    const contentCheck = checkProfanity(content);
+    const contentCheck = checkProfanity(safeContent);
     if (contentCheck.blocked) {
       return NextResponse.json({ error: "본문에 부적절한 표현이 포함되어 있습니다." }, { status: 400 });
     }
@@ -101,11 +112,11 @@ export async function POST(request: Request) {
     const { data, error } = await supabaseAdmin
       .from("posts")
       .insert([{
-        title: title.trim(),
-        content: content.trim(),
+        title: safeTitle,
+        content: safeContent,
         author: author.trim(),
         user_id: null,
-        category,
+        category: safeCategory,
         status: "published",
         password_hash: passwordHash,
         ip_address: clientIp,

@@ -16,6 +16,7 @@ import bcrypt from "bcryptjs";
 const ALLOWED_GUILD_ID = "1486899870928470121";
 const TURNSTILE_TOKEN_MAX_LENGTH = 2048;
 const TITLE_MAX_LENGTH = 50;
+const CATEGORY_MAX_LENGTH = 50;
 const GUEST_AUTHOR_MAX_LENGTH = 20;
 const GUEST_PASSWORD_MIN_LENGTH = 4;
 const GUEST_PASSWORD_MAX_LENGTH = 20;
@@ -138,6 +139,7 @@ export async function POST(request: Request) {
       || !content.trim()
       || typeof category !== "string"
       || !category.trim()
+      || category.trim().length > CATEGORY_MAX_LENGTH
     ) {
       return NextResponse.json(
         { error: "필수 입력 데이터가 누락되었습니다." },
@@ -151,6 +153,9 @@ export async function POST(request: Request) {
         { status: 413 }
       );
     }
+    const safeTitle = title.trim();
+    const safeContent = content.trim();
+    const safeCategory = category.trim();
     if (
       discord_url != null
       && (typeof discord_url !== "string" || discord_url.length > DISCORD_URL_MAX_LENGTH)
@@ -305,7 +310,7 @@ export async function POST(request: Request) {
         );
       }
 
-      if (category === "듀오/스쿼드 모집" && discordUrl) {
+      if (safeCategory === "듀오/스쿼드 모집" && discordUrl) {
         const isValid = await validateDiscordUrl(discordUrl);
         if (!isValid) {
           return NextResponse.json(
@@ -318,7 +323,7 @@ export async function POST(request: Request) {
       try {
         const imgRegex = /<img[^>]+src\s*=\s*["']?([^"'\s>]+)["']?/g;
         const oldImages = [...(existingPost.content || "").matchAll(imgRegex)].map(m => m[1]);
-        const newImages = [...(content || "").matchAll(imgRegex)].map(m => m[1]);
+        const newImages = [...safeContent.matchAll(imgRegex)].map(m => m[1]);
         const deletedImages = oldImages.filter(src => !newImages.includes(src));
 
         const imagePathsToDelete = deletedImages
@@ -341,9 +346,9 @@ export async function POST(request: Request) {
       const { data, error: updateError } = await supabaseAdmin
         .from("posts")
         .update({
-          title,
-          content,
-          category,
+          title: safeTitle,
+          content: safeContent,
+          category: safeCategory,
           image_url,
           ...(isRequesterAdmin ? { is_notice: is_notice === true } : {}),
           discord_url,
@@ -393,7 +398,7 @@ export async function POST(request: Request) {
         }
       }
 
-      if (category === "듀오/스쿼드 모집" && discordUrl) {
+      if (safeCategory === "듀오/스쿼드 모집" && discordUrl) {
         const isValid = await validateDiscordUrl(discordUrl);
         if (!isValid) {
           return NextResponse.json(
@@ -404,8 +409,8 @@ export async function POST(request: Request) {
       }
 
       if (!user) {
-        const titleProfanity = checkProfanity(title);
-        const contentProfanity = checkProfanity(content);
+        const titleProfanity = checkProfanity(safeTitle);
+        const contentProfanity = checkProfanity(safeContent);
         if (titleProfanity.blocked || contentProfanity.blocked) {
           return NextResponse.json(
             { error: "제목 또는 본문에 비속어가 포함되어 있어 작성이 차단되었습니다." },
@@ -421,11 +426,11 @@ export async function POST(request: Request) {
         .from("posts")
         .insert([
           {
-            title,
-            content,
+            title: safeTitle,
+            content: safeContent,
             author: finalAuthor,
             user_id: finalUserId,
-            category,
+            category: safeCategory,
             image_url,
             discord_url,
             discord_channel_id,
