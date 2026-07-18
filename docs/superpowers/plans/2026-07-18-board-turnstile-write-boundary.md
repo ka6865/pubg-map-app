@@ -752,7 +752,7 @@ git commit -m "fix: 댓글 Turnstile 및 회원 저장 경계 서버 통합"
 - Consumes: Task 1~4 테스트 5개
 - Produces: `verify:admin` 필수 회귀와 P1 해결 추적
 
-- [ ] **Step 1: verify:admin에 신규 보안 테스트 편입**
+- [x] **Step 1: verify:admin에 신규 보안 테스트 편입**
 
 `package.json`의 `verify:admin`에 다음을 추가한다.
 
@@ -764,7 +764,7 @@ tests/board-comment-write-boundary.test.ts
 tests/board-turnstile-client.test.ts
 ```
 
-- [ ] **Step 2: 통합 리뷰 보고서 갱신**
+- [x] **Step 2: 통합 리뷰 보고서 갱신**
 
 P1 10번을 해결로 표시하고 다음 근거를 기록한다.
 
@@ -777,7 +777,7 @@ P1 10번을 해결로 표시하고 다음 근거를 기록한다.
 
 P1 미해결 수는 8건에서 Turnstile 한 건만 차감해 7건으로 기록한다. 다른 P1/P2는 해결 처리하지 않는다.
 
-- [ ] **Step 3: fresh 전체 검증**
+- [x] **Step 3: fresh 전체 검증**
 
 Run:
 
@@ -793,6 +793,8 @@ git diff --check
 
 실제 파일·테스트 수, skip 수, ESLint 오류·경고, TypeScript 결과를 보고서에 기록한다. 실행하지 않은 운영 항목은 통과로 표시하지 않는다.
 
+최종 보강 후 실제 결과: 집중 7개 파일·144개, analysis 17개·182개, admin 12개·242개, Jest 1 suite·2개, 전체 Vitest 38개·468개 통과·1개 파일·6개 skip이다. ESLint는 오류 0·기존 범위 경고 58, TypeScript 오류 0, 대상 ESLint·`git diff --check` 종료 코드 0이다.
+
 - [ ] **Step 4: 실제 Chrome 안전 회귀**
 
 로컬 서버를 띄우고 actual Chrome에서 다음을 확인한다.
@@ -805,7 +807,9 @@ git diff --check
 
 실제 Siteverify 성공은 공식 test key가 로컬 env에 이미 명시된 경우에만 실행한다. 운영 key·운영 DB로 글이나 댓글을 만들지 않는다.
 
-- [ ] **Step 5: 금지 경계·migration 검증**
+로컬 읽기 전용 결과: in-app browser에서 `/board`, `/board/write` HTTP 200, 의미 있는 본문, 오류 overlay 0, fresh console error 0을 확인했다. 글쓰기 링크, `비회원 보안 인증` region, 등록 버튼이 렌더됐다. 로컬 Turnstile 값이 비어 있어 실제 widget token·token 없는 client 차단·Siteverify·guest comment/member comment 저장은 preview/운영 게이트로 남긴다. 따라서 Step 4 전체는 완료 처리하지 않는다.
+
+- [x] **Step 5: 금지 경계·migration 검증**
 
 Run:
 
@@ -818,7 +822,11 @@ git status --short
 
 임시 PostgreSQL에서 migration을 적용해 첫 요청 true, 같은 window 두 번째 false, window 만료 후 true, invalid scope false, anon/authenticated execute false, service_role execute true를 확인한다.
 
-- [ ] **Step 6: 문서 커밋 및 fresh 리뷰**
+Task 5 fresh 결과: PostgreSQL 15.18 임시 클러스터에 현재 migration을 재적용했다. RLS 활성·공개 policy 0건, anon/authenticated table·RPC 접근 거부, service-role 최소 table 권한·RPC 실행권한, `SECURITY INVOKER`, 빈 `search_path`, cleanup 인덱스를 확인했다. 첫 요청 true·동일 window false·정확한 window 경계 true·invalid false, 동일 actor 두 세션 true/false·최종 count 1, 최대 3건 bounded cleanup, unsafe cutoff·invalid max 0을 확인했다. consume-first cleanup은 잠긴 활성 행을 skip했고 cleanup-first consume은 삭제 commit 후 새 행을 생성했다. 5초 statement timeout 내 양방향 경쟁이 끝났고 임시 서버는 fast shutdown했다.
+
+최종 보안 리뷰 보강: guest는 Siteverify 성공 후 quota를 소비하고 IPv6 actor를 `/64`로 정규화한다. 최대 5 batch·5,000행·30초 이후 새 batch 시작 제한과 backlog 보고, cleanup/maintenance job 분리, 모바일 회원 route의 동일 원자 quota, published post·동일 post parent를 `FOR SHARE`로 잠금 검증하는 `create_published_post_comment` RPC를 추가했다. posts/comments 공개 INSERT·UPDATE와 notifications 공개 INSERT policy·권한을 제거했다. 새 RPC는 임시 PostgreSQL 15.18에서 공개글 1행 반환, draft·다른 post 부모·비공개 전환 선점·부모 post 이동 선점 경쟁 0행, 공개 실행권한 없음·service-role 전용 실행을 확인했다. 응답 DTO에서 비밀번호 hash·원문 IP를 제거하고 선택적 `TURNSTILE_ALLOWED_HOSTNAMES` 검증을 추가했다.
+
+- [x] **Step 6: 문서 커밋 및 fresh 리뷰**
 
 ```bash
 git add package.json docs/reviews/2026-07-15-feature-code-review.md docs/superpowers/specs/2026-07-18-board-turnstile-write-boundary-design.md docs/superpowers/plans/2026-07-18-board-turnstile-write-boundary.md docs/superpowers/specs/2026-07-18-p1-release-gate-design.md
@@ -826,6 +834,8 @@ git commit -m "docs: 게시판 Turnstile P1 조치 결과 반영"
 ```
 
 Task 1~5 전체 diff를 fresh 서브에이전트가 보안·동시성·무료 플랜·회귀 관점으로 리뷰한다. Critical·Important는 같은 작업 범위에서 수정하고 재리뷰한다.
+
+최종 `gpt-5.6-sol` high 재리뷰 결과는 Critical 0건, Important 0건, Minor 3건이며 로컬 `develop` 통합 적격이다. Minor는 `TURNSTILE_ALLOWED_HOSTNAMES` 미설정 시 hostname 검사 비활성, 진행 중 cleanup RPC hard timeout 부재, PostgreSQL 실제 경쟁 검증의 CI 미자동화다. 첫 항목은 preview·production 필수 배포 게이트로 유지하고 나머지는 후속 운영 개선으로 추적한다.
 
 ---
 

@@ -270,7 +270,7 @@ describe("게시글 쓰기 Turnstile 저장 경계", () => {
     expect(admin.insert).not.toHaveBeenCalled();
   });
 
-  it("quota 거부 시 Siteverify와 저장을 호출하지 않는다", async () => {
+  it("guest quota 거부는 Siteverify 성공 후 저장 전에 차단한다", async () => {
     const admin = createWriteAdmin();
     mocks.withOptionalAuth.mockResolvedValue({ user: null, supabaseAdmin: admin.supabaseAdmin });
     mocks.consumeQuota.mockResolvedValue({
@@ -282,12 +282,12 @@ describe("게시글 쓰기 Turnstile 저장 경계", () => {
     const response = await postsWritePOST(makePostRequest({ turnstileToken: "token" }));
 
     expect(response.status).toBe(429);
-    expect(mocks.verifyTurnstile).not.toHaveBeenCalled();
+    expect(mocks.verifyTurnstile).toHaveBeenCalledOnce();
     expect(mocks.hash).not.toHaveBeenCalled();
     expect(admin.insert).not.toHaveBeenCalled();
   });
 
-  it("quota RPC 장애는 Siteverify와 저장 전에 503으로 fail-closed 처리한다", async () => {
+  it("guest quota RPC 장애는 Siteverify 성공 후 저장 전에 503으로 fail-closed 처리한다", async () => {
     const admin = createWriteAdmin();
     mocks.withOptionalAuth.mockResolvedValue({ user: null, supabaseAdmin: admin.supabaseAdmin });
     mocks.consumeQuota.mockResolvedValue({
@@ -299,11 +299,11 @@ describe("게시글 쓰기 Turnstile 저장 경계", () => {
     const response = await postsWritePOST(makePostRequest({ turnstileToken: "token" }));
 
     expect(response.status).toBe(503);
-    expect(mocks.verifyTurnstile).not.toHaveBeenCalled();
+    expect(mocks.verifyTurnstile).toHaveBeenCalledOnce();
     expect(admin.insert).not.toHaveBeenCalled();
   });
 
-  it("Turnstile 거부는 bcrypt와 저장 전에 400으로 차단한다", async () => {
+  it("Turnstile 거부는 quota·bcrypt·저장 전에 400으로 차단한다", async () => {
     const admin = createWriteAdmin();
     mocks.withOptionalAuth.mockResolvedValue({ user: null, supabaseAdmin: admin.supabaseAdmin });
     mocks.verifyTurnstile.mockResolvedValue({
@@ -315,6 +315,7 @@ describe("게시글 쓰기 Turnstile 저장 경계", () => {
     const response = await postsWritePOST(makePostRequest({ turnstileToken: "token" }));
 
     expect(response.status).toBe(400);
+    expect(mocks.consumeQuota).not.toHaveBeenCalled();
     expect(mocks.hash).not.toHaveBeenCalled();
     expect(admin.insert).not.toHaveBeenCalled();
   });
@@ -336,7 +337,25 @@ describe("게시글 쓰기 Turnstile 저장 경계", () => {
       remoteIp: "203.0.113.10",
       token: "token",
     });
+    expect(mocks.verifyTurnstile.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.consumeQuota.mock.invocationCallOrder[0],
+    );
+    expect(mocks.consumeQuota.mock.invocationCallOrder[0]).toBeLessThan(
+      admin.insert.mock.invocationCallOrder[0],
+    );
     expect(admin.insert).toHaveBeenCalledTimes(1);
+  });
+
+  it("모든 게시글 쓰기 응답은 서버 전용 비밀번호 해시와 IP 주소를 포함하지 않는다", async () => {
+    const admin = createWriteAdmin();
+    mocks.withOptionalAuth.mockResolvedValue({ user: null, supabaseAdmin: admin.supabaseAdmin });
+
+    const response = await postsWritePOST(makePostRequest({ turnstileToken: "token" }));
+    const payload = JSON.stringify(await response.json());
+
+    expect(response.status).toBe(200);
+    expect(payload).not.toContain("password_hash");
+    expect(payload).not.toContain("ip_address");
   });
 
   it("실제 client의 이미지·디스코드·클랜 payload는 허용 key만 저장한다", async () => {
@@ -506,7 +525,7 @@ describe("게시글 쓰기 Turnstile 저장 경계", () => {
     ]);
   });
 
-  it("호환 guest route는 quota 거부 시 Siteverify와 저장을 호출하지 않는다", async () => {
+  it("호환 guest route는 Siteverify 성공 뒤 quota 거부 시 저장을 호출하지 않는다", async () => {
     const admin = createGuestCompatibilityAdmin();
     mocks.withOptionalAuth.mockResolvedValue({ user: null, supabaseAdmin: admin.supabaseAdmin });
     mocks.consumeQuota.mockResolvedValue({
@@ -518,7 +537,7 @@ describe("게시글 쓰기 Turnstile 저장 경계", () => {
     const response = await guestPostsPOST(makeCompatibilityRequest({ turnstileToken: "token" }));
 
     expect(response.status).toBe(429);
-    expect(mocks.verifyTurnstile).not.toHaveBeenCalled();
+    expect(mocks.verifyTurnstile).toHaveBeenCalledOnce();
     expect(admin.insert).not.toHaveBeenCalled();
   });
 
@@ -534,7 +553,25 @@ describe("게시글 쓰기 Turnstile 저장 경계", () => {
       remoteIp: "203.0.113.10",
       token: "token",
     });
+    expect(mocks.verifyTurnstile.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.consumeQuota.mock.invocationCallOrder[0],
+    );
+    expect(mocks.consumeQuota.mock.invocationCallOrder[0]).toBeLessThan(
+      admin.insert.mock.invocationCallOrder[0],
+    );
     expect(admin.insert).toHaveBeenCalledTimes(1);
+  });
+
+  it("호환 게시글 쓰기 응답은 서버 전용 비밀번호 해시와 IP 주소를 포함하지 않는다", async () => {
+    const admin = createGuestCompatibilityAdmin();
+    mocks.withOptionalAuth.mockResolvedValue({ user: null, supabaseAdmin: admin.supabaseAdmin });
+
+    const response = await guestPostsPOST(makeCompatibilityRequest({ turnstileToken: "token" }));
+    const payload = JSON.stringify(await response.json());
+
+    expect(response.status).toBe(200);
+    expect(payload).not.toContain("password_hash");
+    expect(payload).not.toContain("ip_address");
   });
 });
 

@@ -15,6 +15,18 @@ const migration = fs.readFileSync(
 );
 
 describe("board write quota helper", () => {
+  it("IPv6 actor는 동일 /64 prefix로 정규화하지만 IPv4와 회원 actor는 보존한다", () => {
+    expect(buildBoardWriteActorHash("post", "2001:db8:1234:5678::1")).toBe(
+      buildBoardWriteActorHash("post", "2001:db8:1234:5678:abcd:ef01:2345:6789"),
+    );
+    expect(buildBoardWriteActorHash("post", "203.0.113.10")).not.toBe(
+      buildBoardWriteActorHash("post", "203.0.113.11"),
+    );
+    expect(buildBoardWriteActorHash("post", "user-1")).not.toBe(
+      buildBoardWriteActorHash("post", "user-2"),
+    );
+  });
+
   it("동일 actor를 scope별 결정적 64자리 hex로 가명화한다", () => {
     const postHash = buildBoardWriteActorHash("post", "203.0.113.10");
 

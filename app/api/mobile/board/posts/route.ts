@@ -4,6 +4,7 @@ import { withAuthGuard } from "@/utils/supabase/guard";
 import { checkProfanity } from "@/lib/board/profanityFilter";
 import { extractClientIp, checkIpBlacklist } from "@/lib/board/ipUtils";
 import { toBoardImageProxyUrl } from "@/lib/board-image-proxy";
+import { consumeBoardWriteQuota } from "@/lib/board/writeQuota.server";
 
 const clean = (value: string | undefined) => (value || "").replace(/['";\s]+/g, "").trim();
 const supabaseUrl = clean(process.env.NEXT_PUBLIC_SUPABASE_URL);
@@ -184,15 +185,12 @@ export async function POST(request: Request) {
   if (checkProfanity(title).blocked) return jsonError("제목에 부적절한 표현이 포함되어 있습니다.", 400);
   if (checkProfanity(content).blocked) return jsonError("본문에 부적절한 표현이 포함되어 있습니다.", 400);
 
-  const since = new Date(Date.now() - 60_000).toISOString();
-  const { data: recentPost } = await auth.supabaseAdmin
-    .from("posts")
-    .select("id")
-    .eq("user_id", auth.user.id)
-    .gte("created_at", since)
-    .limit(1)
-    .maybeSingle();
-  if (recentPost) return jsonError("게시글은 1분에 한 번만 작성할 수 있습니다.", 429);
+  const quota = await consumeBoardWriteQuota({
+    supabaseAdmin: auth.supabaseAdmin,
+    scope: "post",
+    actor: auth.user.id,
+  });
+  if (!quota.ok) return jsonError(quota.error, quota.status);
 
   const { data: profile } = await auth.supabaseAdmin
     .from("profiles")

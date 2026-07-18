@@ -3,12 +3,22 @@ import type { TurnstileAction } from "./turnstileContract";
 const SITEVERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 const TOKEN_MAX_LENGTH = 2048;
 const VERIFY_TIMEOUT_MS = 5000;
+const HOSTNAME_MISMATCH_ERROR = "보안 인증 도메인이 일치하지 않습니다.";
 
 type FetchLike = typeof fetch;
 
 export type TurnstileVerificationResult =
   | { ok: true }
   | { ok: false; status: 400 | 503; error: string };
+
+function getAllowedHostnames(): Set<string> {
+  return new Set(
+    (process.env.TURNSTILE_ALLOWED_HOSTNAMES ?? "")
+      .split(",")
+      .map((hostname) => hostname.trim().toLowerCase())
+      .filter(Boolean),
+  );
+}
 
 export async function verifyTurnstileToken(input: {
   token: unknown;
@@ -49,8 +59,20 @@ export async function verifyTurnstileToken(input: {
       throw new Error("turnstile_payload");
     }
 
-    const value = outcome as { success?: unknown; action?: unknown };
-    if (value.success === true && value.action === input.expectedAction) {
+    const value = outcome as { success?: unknown; action?: unknown; hostname?: unknown };
+    if (value.success !== true || value.action !== input.expectedAction) {
+      return { ok: false, status: 400, error: "보안 인증에 실패했습니다. 다시 시도해주세요." };
+    }
+
+    const allowedHostnames = getAllowedHostnames();
+    if (allowedHostnames.size > 0) {
+      const hostname = typeof value.hostname === "string" ? value.hostname.trim().toLowerCase() : "";
+      if (!hostname || !allowedHostnames.has(hostname)) {
+        return { ok: false, status: 400, error: HOSTNAME_MISMATCH_ERROR };
+      }
+    }
+
+    if (value.success === true) {
       return { ok: true };
     }
     return { ok: false, status: 400, error: "보안 인증에 실패했습니다. 다시 시도해주세요." };

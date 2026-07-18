@@ -16,6 +16,7 @@ import { TURNSTILE_ACTIONS } from "@/lib/board/turnstileContract";
 const TURNSTILE_TOKEN_MAX_LENGTH = 2048;
 const TITLE_MAX_LENGTH = 50;
 const CATEGORY_MAX_LENGTH = 50;
+const POST_RESPONSE_COLUMNS = "id, title, content, author, user_id, category, image_url, discord_url, discord_channel_id, is_notice, clan_info, created_at, views, likes, status, parent_id";
 
 export async function POST(request: Request) {
   try {
@@ -76,15 +77,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "차단된 IP입니다. 관리자에게 문의해주세요." }, { status: 403 });
     }
 
-    const quota = await consumeBoardWriteQuota({
-      supabaseAdmin,
-      scope: "post",
-      actor: clientIp,
-    });
-    if (!quota.ok) {
-      return NextResponse.json({ error: quota.error }, { status: quota.status });
-    }
-
     const turnstile = await verifyTurnstileToken({
       token,
       remoteIp: clientIp,
@@ -92,6 +84,15 @@ export async function POST(request: Request) {
     });
     if (!turnstile.ok) {
       return NextResponse.json({ error: turnstile.error }, { status: turnstile.status });
+    }
+
+    const quota = await consumeBoardWriteQuota({
+      supabaseAdmin,
+      scope: "post",
+      actor: clientIp,
+    });
+    if (!quota.ok) {
+      return NextResponse.json({ error: quota.error }, { status: quota.status });
     }
 
     const titleCheck = checkProfanity(safeTitle);
@@ -124,7 +125,7 @@ export async function POST(request: Request) {
         views: 0,
         likes: 0,
       }])
-      .select()
+      .select(POST_RESPONSE_COLUMNS)
       .single();
 
     if (error) {

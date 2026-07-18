@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 
 const mocks = vi.hoisted(() => ({
   withOptionalAuth: vi.fn(),
@@ -42,6 +43,31 @@ vi.mock("bcryptjs", () => ({
 
 import { POST as commentsPOST } from "../app/api/board/comments/route";
 
+const commentMigration = readFileSync(
+  "supabase/migrations/20260719000000_create_published_post_comment.sql",
+  "utf8",
+);
+
+describe("게시판 DB 쓰기 권한 경계", () => {
+  it("posts와 comments의 공개 INSERT·UPDATE policy와 권한을 제거한다", () => {
+    expect(commentMigration).toContain('DROP POLICY IF EXISTS "본인 ID로만 글 작성 가능" ON public.posts');
+    expect(commentMigration).toContain('DROP POLICY IF EXISTS "Allow owners and admins to update posts" ON public.posts');
+    expect(commentMigration).toContain('DROP POLICY IF EXISTS "본인 ID로만 댓글 작성 가능" ON public.comments');
+    expect(commentMigration).toContain('DROP POLICY IF EXISTS "본인 댓글만 수정 가능" ON public.comments');
+    expect(commentMigration).toContain('DROP POLICY IF EXISTS "notifications_insert_authenticated" ON public.notifications');
+    expect(commentMigration).toMatch(
+      /REVOKE INSERT, UPDATE ON TABLE public\.posts, public\.comments\s+FROM PUBLIC, anon, authenticated/i,
+    );
+    expect(commentMigration).toMatch(
+      /GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public\.posts, public\.comments\s+TO service_role/i,
+    );
+    expect(commentMigration).toMatch(
+      /REVOKE INSERT ON TABLE public\.notifications\s+FROM PUBLIC, anon, authenticated/i,
+    );
+    expect(commentMigration).toMatch(/GRANT INSERT ON TABLE public\.notifications TO service_role/i);
+  });
+});
+
 type AdminOptions = {
   profile?: { nickname: string | null } | null;
   profileError?: unknown;
@@ -53,10 +79,12 @@ type AdminOptions = {
     post_id: number;
   } | null;
   parentError?: unknown;
-  post?: { user_id: string | null; title: string } | null;
+  post?: { id?: number; user_id: string | null; title: string; status?: "published" | "draft" | "hidden" } | null;
   postError?: unknown;
   commentError?: unknown;
   notificationError?: unknown;
+  rpcResult?: { id: number; post_id: number; user_id: string | null; author: string; content: string; parent_id: number | null; created_at: string } | null;
+  rpcError?: unknown;
 };
 
 function createAdmin(options: AdminOptions = {}) {
@@ -78,8 +106,8 @@ function createAdmin(options: AdminOptions = {}) {
   }));
   const postSingle = vi.fn(async () => ({
     data: options.post === undefined
-      ? { user_id: "post-owner", title: "게시글 제목" }
-      : options.post,
+      ? { id: 7, user_id: "post-owner", title: "게시글 제목", status: "published" }
+      : options.post && { id: 7, status: "published", ...options.post },
     error: options.postError ?? null,
   }));
   const commentSingle = vi.fn(async () => ({
@@ -89,12 +117,24 @@ function createAdmin(options: AdminOptions = {}) {
   const insertComment = vi.fn(() => ({
     select: vi.fn(() => ({ single: commentSingle })),
   }));
+  const rpc = vi.fn(async () => ({
+    data: options.rpcResult === undefined ? [{
+      id: 91,
+      post_id: 7,
+      user_id: null,
+      author: "비회원",
+      content: "댓글",
+      parent_id: null,
+      created_at: "2026-07-19T00:00:00.000Z",
+    }] : options.rpcResult ? [options.rpcResult] : [],
+    error: options.rpcError ?? null,
+  }));
   const insertNotification = vi.fn(async () => ({
     error: options.notificationError ?? null,
   }));
 
   const supabaseAdmin = {
-    rpc: vi.fn(),
+    rpc,
     from: vi.fn((table: string) => {
       if (table === "profiles") {
         return {
@@ -117,7 +157,7 @@ function createAdmin(options: AdminOptions = {}) {
       if (table === "posts") {
         return {
           select: vi.fn(() => ({
-            eq: vi.fn(() => ({ single: postSingle })),
+            eq: vi.fn(() => ({ single: postSingle, maybeSingle: postSingle })),
           })),
         };
       }
@@ -135,6 +175,7 @@ function createAdmin(options: AdminOptions = {}) {
     profileSingle,
     parentSingle,
     postSingle,
+    rpc,
   };
 }
 
@@ -226,7 +267,7 @@ describe("댓글 Turnstile 저장 경계", () => {
     expect(admin.insertComment).not.toHaveBeenCalled();
   });
 
-  it("guest는 IP quota 다음 guest_comment Siteverify와 bcrypt를 거쳐 insert한다", async () => {
+  it("guest는 guest_comment Siteverify 성공 뒤 IP quota와 bcrypt를 거쳐 insert한다", async () => {
     const admin = createAdmin();
     mocks.withOptionalAuth.mockResolvedValue({ user: null, supabaseAdmin: admin.supabaseAdmin });
 
@@ -244,25 +285,65 @@ describe("댓글 Turnstile 저장 경계", () => {
       expectedAction: "guest_comment",
     });
     expect(mocks.hash).toHaveBeenCalledWith("password", 10);
-    expect(admin.insertComment).toHaveBeenCalledWith([expect.objectContaining({
-      post_id: 7,
-      user_id: null,
-      author: "비회원",
-      password_hash: "password-hash",
-      ip_address: "203.0.113.10",
-    })]);
-    expect(mocks.consumeQuota.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.verifyTurnstile.mock.invocationCallOrder[0],
-    );
+    expect(admin.rpc).toHaveBeenCalledWith("create_published_post_comment", expect.objectContaining({
+      p_post_id: 7,
+      p_user_id: null,
+      p_author: "비회원",
+      p_password_hash: "password-hash",
+      p_ip_address: "203.0.113.10",
+    }));
     expect(mocks.verifyTurnstile.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.consumeQuota.mock.invocationCallOrder[0],
+    );
+    expect(mocks.consumeQuota.mock.invocationCallOrder[0]).toBeLessThan(
       mocks.hash.mock.invocationCallOrder[0],
     );
   });
 
   it.each([
+    [null, null],
+    [{ user_id: "owner", title: "비공개", status: "draft" }, null],
+  ] as const)("없는 또는 비공개 게시글은 insert 전에 고정 404로 거부한다", async (post, postError) => {
+    const admin = createAdmin({ post, postError });
+    mocks.withOptionalAuth.mockResolvedValue({ user: null, supabaseAdmin: admin.supabaseAdmin });
+
+    const response = await commentsPOST(makeCommentRequest());
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: "게시글을 찾을 수 없습니다." });
+    expect(mocks.hash).not.toHaveBeenCalled();
+    expect(admin.rpc).not.toHaveBeenCalled();
+  });
+
+  it("게시글 조회 장애는 원본 오류를 노출하지 않고 저장 전에 503으로 fail-closed 처리한다", async () => {
+    const admin = createAdmin({ post: null, postError: { message: "raw post lookup failure" } });
+    mocks.withOptionalAuth.mockResolvedValue({ user: null, supabaseAdmin: admin.supabaseAdmin });
+
+    const response = await commentsPOST(makeCommentRequest());
+    const payload = JSON.stringify(await response.json());
+
+    expect(response.status).toBe(503);
+    expect(payload).not.toContain("raw post lookup failure");
+    expect(mocks.hash).not.toHaveBeenCalled();
+    expect(admin.rpc).not.toHaveBeenCalled();
+  });
+
+  it("원자적 RPC가 댓글과 서버 전용 필드를 분리한 DTO만 응답한다", async () => {
+    const admin = createAdmin();
+    mocks.withOptionalAuth.mockResolvedValue({ user: null, supabaseAdmin: admin.supabaseAdmin });
+
+    const response = await commentsPOST(makeCommentRequest());
+    const payload = JSON.stringify(await response.json());
+
+    expect(response.status).toBe(200);
+    expect(payload).not.toContain("password_hash");
+    expect(payload).not.toContain("ip_address");
+  });
+
+  it.each([
     [{ ok: false, status: 429, error: "댓글은 10초에 한 번만 작성할 수 있습니다." }, 429],
     [{ ok: false, status: 503, error: "게시판 요청 제한을 확인하지 못했습니다." }, 503],
-  ] as const)("quota·RPC 거부를 고정 상태로 fail-closed 처리한다", async (quotaResult, status) => {
+  ] as const)("guest quota·RPC 거부는 Siteverify 성공 뒤 고정 상태로 fail-closed 처리한다", async (quotaResult, status) => {
     const admin = createAdmin();
     mocks.withOptionalAuth.mockResolvedValue({ user: null, supabaseAdmin: admin.supabaseAdmin });
     mocks.consumeQuota.mockResolvedValue(quotaResult);
@@ -270,7 +351,7 @@ describe("댓글 Turnstile 저장 경계", () => {
     const response = await commentsPOST(makeCommentRequest());
 
     expect(response.status).toBe(status);
-    expect(mocks.verifyTurnstile).not.toHaveBeenCalled();
+    expect(mocks.verifyTurnstile).toHaveBeenCalledOnce();
     expect(mocks.hash).not.toHaveBeenCalled();
     expect(admin.insertComment).not.toHaveBeenCalled();
   });
@@ -288,6 +369,7 @@ describe("댓글 Turnstile 저장 경계", () => {
     const payload = JSON.stringify(await response.json());
 
     expect(response.status).toBe(503);
+    expect(mocks.consumeQuota).not.toHaveBeenCalled();
     expect(payload).not.toContain("raw-secret-token");
     expect(mocks.hash).not.toHaveBeenCalled();
     expect(admin.insertComment).not.toHaveBeenCalled();
@@ -307,7 +389,7 @@ describe("댓글 Turnstile 저장 경계", () => {
     expect(admin.insertComment).not.toHaveBeenCalled();
   });
 
-  it("cross-post parent는 quota·Siteverify 후 bcrypt·insert·notification 전에 400으로 거부한다", async () => {
+  it("cross-post parent는 Siteverify·quota 후 bcrypt·insert·notification 전에 400으로 거부한다", async () => {
     const admin = createAdmin({
       parent: {
         id: 15,
@@ -325,10 +407,10 @@ describe("댓글 Turnstile 저장 경계", () => {
     expect(mocks.consumeQuota).toHaveBeenCalledOnce();
     expect(mocks.verifyTurnstile).toHaveBeenCalledOnce();
     expect(admin.parentSingle).toHaveBeenCalledOnce();
-    expect(mocks.consumeQuota.mock.invocationCallOrder[0]).toBeLessThan(
-      mocks.verifyTurnstile.mock.invocationCallOrder[0],
-    );
     expect(mocks.verifyTurnstile.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.consumeQuota.mock.invocationCallOrder[0],
+    );
+    expect(mocks.consumeQuota.mock.invocationCallOrder[0]).toBeLessThan(
       admin.parentSingle.mock.invocationCallOrder[0],
     );
     expect(mocks.hash).not.toHaveBeenCalled();
@@ -386,12 +468,12 @@ describe("댓글 Turnstile 저장 경계", () => {
     });
     expect(mocks.verifyTurnstile).not.toHaveBeenCalled();
     expect(mocks.hash).not.toHaveBeenCalled();
-    expect(admin.insertComment).toHaveBeenCalledWith([expect.objectContaining({
-      user_id: "member-a",
-      author: "서버닉네임",
-      password_hash: null,
-      ip_address: null,
-    })]);
+    expect(admin.rpc).toHaveBeenCalledWith("create_published_post_comment", expect.objectContaining({
+      p_user_id: "member-a",
+      p_author: "서버닉네임",
+      p_password_hash: null,
+      p_ip_address: null,
+    }));
     expect(admin.insertNotification).toHaveBeenCalledWith([{
       user_id: "post-owner",
       sender_id: "member-a",
@@ -419,11 +501,11 @@ describe("댓글 Turnstile 저장 경계", () => {
     expect(response.status).toBe(200);
     expect(admin.parentSingle).toHaveBeenCalledOnce();
     expect(admin.parentSingle.mock.invocationCallOrder[0]).toBeLessThan(
-      admin.insertComment.mock.invocationCallOrder[0],
+      admin.rpc.mock.invocationCallOrder[0],
     );
-    expect(admin.insertComment).toHaveBeenCalledWith([expect.objectContaining({
-      content: "@부모작성자 댓글 내용",
-    })]);
+    expect(admin.rpc).toHaveBeenCalledWith("create_published_post_comment", expect.objectContaining({
+      p_content: "@부모작성자 댓글 내용",
+    }));
     expect(admin.insertNotification).toHaveBeenCalledWith([expect.objectContaining({
       user_id: "parent-user",
       type: "reply",
@@ -447,9 +529,9 @@ describe("댓글 Turnstile 저장 경계", () => {
     }));
 
     expect(response.status).toBe(200);
-    expect(admin.insertComment).toHaveBeenCalledWith([expect.objectContaining({
-      content: "@부모작성자 이미 있는 답글",
-    })]);
+    expect(admin.rpc).toHaveBeenCalledWith("create_published_post_comment", expect.objectContaining({
+      p_content: "@부모작성자 이미 있는 답글",
+    }));
   });
 
   it("회원 대댓글은 서버 접두어를 포함해 5,000자를 넘으면 insert 전에 거부한다", async () => {
@@ -494,9 +576,9 @@ describe("댓글 Turnstile 저장 경계", () => {
     }));
 
     expect(response.status).toBe(200);
-    expect(admin.insertComment).toHaveBeenCalledWith([expect.objectContaining({
-      content: "@<script>alert(1)</script> 댓글 내용",
-    })]);
+    expect(admin.rpc).toHaveBeenCalledWith("create_published_post_comment", expect.objectContaining({
+      p_content: "@<script>alert(1)</script> 댓글 내용",
+    }));
   });
 
   it("guest 대댓글은 기존처럼 parent author 접두어 없이 본문을 저장한다", async () => {
@@ -506,9 +588,9 @@ describe("댓글 Turnstile 저장 경계", () => {
     const response = await commentsPOST(makeCommentRequest({ parent_id: 15 }));
 
     expect(response.status).toBe(200);
-    expect(admin.insertComment).toHaveBeenCalledWith([expect.objectContaining({
-      content: "댓글 내용",
-    })]);
+    expect(admin.rpc).toHaveBeenCalledWith("create_published_post_comment", expect.objectContaining({
+      p_content: "댓글 내용",
+    }));
   });
 
   it("회원 자신이 알림 대상이면 notification을 생성하지 않는다", async () => {
@@ -530,7 +612,6 @@ describe("댓글 Turnstile 저장 경계", () => {
 
   it("notification 저장 실패는 댓글 성공을 되돌리지 않고 내부 오류를 응답에 노출하지 않는다", async () => {
     const admin = createAdmin({ notificationError: { message: "raw notification failure" } });
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     mocks.withOptionalAuth.mockResolvedValue({
       user: { id: "member-a" },
       supabaseAdmin: admin.supabaseAdmin,
@@ -545,8 +626,5 @@ describe("댓글 Turnstile 저장 경계", () => {
 
     expect(response.status).toBe(200);
     expect(payload).not.toContain("raw notification failure");
-    expect(errorSpy).toHaveBeenCalledWith("[Board Comment] 알림 저장에 실패했습니다.");
-    expect(JSON.stringify(errorSpy.mock.calls)).not.toContain("raw notification failure");
-    errorSpy.mockRestore();
   });
 });

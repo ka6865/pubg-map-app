@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isIP } from "node:net";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export type BoardWriteScope = "post" | "comment";
@@ -30,7 +31,35 @@ export function buildBoardWriteActorHash(
   scope: BoardWriteScope,
   actor: string,
 ): string {
-  return createHash("sha256").update(`${scope}:${actor}`).digest("hex");
+  return createHash("sha256")
+    .update(`${scope}:${normalizeBoardWriteActor(actor)}`)
+    .digest("hex");
+}
+
+function normalizeBoardWriteActor(actor: string): string {
+  const trimmedActor = actor.trim();
+  if (isIP(trimmedActor) !== 6) return trimmedActor;
+
+  const [head = "", tail = ""] = trimmedActor.toLowerCase().split("::", 2);
+  const headParts = head ? head.split(":") : [];
+  const tailParts = tail ? tail.split(":") : [];
+  const expandIpv4 = (part: string) => {
+    if (!part.includes(".")) return [part];
+    const octets = part.split(".").map(Number);
+    return [
+      ((octets[0] << 8) | octets[1]).toString(16),
+      ((octets[2] << 8) | octets[3]).toString(16),
+    ];
+  };
+  const parts = [...headParts, ...tailParts].flatMap(expandIpv4);
+  const missingParts = 8 - parts.length;
+  const expanded = [
+    ...headParts.flatMap(expandIpv4),
+    ...Array(Math.max(missingParts, 0)).fill("0"),
+    ...tailParts.flatMap(expandIpv4),
+  ];
+
+  return `ipv6/64:${expanded.slice(0, 4).map((part) => part.padStart(4, "0")).join(":")}`;
 }
 
 export async function consumeBoardWriteQuota(input: {

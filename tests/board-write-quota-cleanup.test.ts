@@ -57,24 +57,28 @@ describe("board write quota bounded cleanup migration", () => {
 });
 
 describe("board write quota cleanup job", () => {
-  it("24시간 cutoff와 1000행 상한으로 RPC를 한 번만 호출한다", async () => {
+  it("24시간 cutoff를 유지하면서 1000행 batch를 총 상한까지 반복하고 backlog를 보고한다", async () => {
     const scriptPath = resolve("scripts/cleanup_board_write_rate_limits.ts");
     expect(existsSync(scriptPath)).toBe(true);
     if (!existsSync(scriptPath)) return;
 
     const cleanupModule = await import("../scripts/cleanup_board_write_rate_limits");
-    const rpc = vi.fn().mockResolvedValue({ data: 17, error: null });
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: 1000, error: null })
+      .mockResolvedValueOnce({ data: 17, error: null });
 
     await expect(cleanupModule.cleanupBoardWriteRateLimits(
       { rpc } as never,
       new Date("2026-07-19T12:00:00.000Z"),
     )).resolves.toEqual({
       cutoff: "2026-07-18T12:00:00.000Z",
-      deletedRows: 17,
+      deletedRows: 1017,
       maxRows: 1000,
+      batches: 2,
+      hasRemaining: false,
     });
-    expect(rpc).toHaveBeenCalledTimes(1);
-    expect(rpc).toHaveBeenCalledWith("cleanup_board_write_rate_limits", {
+    expect(rpc).toHaveBeenCalledTimes(2);
+    expect(rpc).toHaveBeenNthCalledWith(1, "cleanup_board_write_rate_limits", {
       p_cutoff: "2026-07-18T12:00:00.000Z",
       p_max_rows: 1000,
     });
@@ -96,19 +100,33 @@ describe("board write quota cleanup job", () => {
     expect(createServiceClient).not.toHaveBeenCalled();
   });
 
-  it("기존 일일 GitHub Actions에서만 credential을 주입해 1회 실행한다", () => {
+  it("최대 batch 수에 도달하면 남은 backlog를 보고하고 추가 RPC를 호출하지 않는다", async () => {
+    const cleanupModule = await import("../scripts/cleanup_board_write_rate_limits");
+    const rpc = vi.fn().mockResolvedValue({ data: 1000, error: null });
+
+    await expect(cleanupModule.cleanupBoardWriteRateLimits(
+      { rpc } as never,
+      new Date("2026-07-19T12:00:00.000Z"),
+    )).resolves.toMatchObject({
+      deletedRows: cleanupModule.BOARD_WRITE_QUOTA_CLEANUP_MAX_ROWS
+        * cleanupModule.BOARD_WRITE_QUOTA_CLEANUP_MAX_BATCHES,
+      batches: cleanupModule.BOARD_WRITE_QUOTA_CLEANUP_MAX_BATCHES,
+      hasRemaining: true,
+    });
+    expect(rpc).toHaveBeenCalledTimes(cleanupModule.BOARD_WRITE_QUOTA_CLEANUP_MAX_BATCHES);
+  });
+
+  it("quota cleanup 실패와 무관하게 maintenance를 실행하되 cleanup 실패는 workflow 실패로 남긴다", () => {
     const workflowSource = readFileSync(resolve(".github/workflows/daily-tasks.yml"), "utf8");
     const parsed: unknown = loadYaml(workflowSource);
     expect(isRecord(parsed)).toBe(true);
     if (!isRecord(parsed) || !isRecord(parsed.jobs)) return;
-    const maintenance = parsed.jobs.maintenance;
-    expect(isRecord(maintenance)).toBe(true);
-    if (!isRecord(maintenance) || !Array.isArray(maintenance.steps)) return;
-    const steps = maintenance.steps;
-    const cleanupSteps = steps.filter((step) => (
+    const cleanup = parsed.jobs["board-write-quota-cleanup"];
+    expect(isRecord(cleanup)).toBe(true);
+    if (!isRecord(cleanup) || !Array.isArray(cleanup.steps)) return;
+    const cleanupSteps = cleanup.steps.filter((step) => (
       isRecord(step) && step.run === "npx tsx scripts/cleanup_board_write_rate_limits.ts"
     ));
-
     expect(cleanupSteps).toHaveLength(1);
     const cleanupStep = cleanupSteps[0];
     expect(isRecord(cleanupStep)).toBe(true);
@@ -119,10 +137,13 @@ describe("board write quota cleanup job", () => {
       SUPABASE_SERVICE_ROLE_KEY: "${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}",
     });
 
+    const maintenance = parsed.jobs.maintenance;
+    expect(isRecord(maintenance)).toBe(true);
+    if (!isRecord(maintenance) || !Array.isArray(maintenance.steps)) return;
+    const steps = maintenance.steps;
     const installIndex = steps.findIndex((step) => (
       isRecord(step) && step.run === "npm ci"
     ));
-    const cleanupIndex = steps.indexOf(cleanupStep);
     const externalMaintenanceIndexes = [
       "npx tsx scripts/monitor_storage.ts --label \"BEFORE\"",
       "npx tsx scripts/cleanup_telemetry.ts",
@@ -132,7 +153,6 @@ describe("board write quota cleanup job", () => {
     )));
 
     expect(installIndex).toBeGreaterThanOrEqual(0);
-    expect(cleanupIndex).toBe(installIndex + 1);
-    expect(externalMaintenanceIndexes.every((index) => cleanupIndex < index)).toBe(true);
+    expect(externalMaintenanceIndexes.every((index) => installIndex < index)).toBe(true);
   });
 });

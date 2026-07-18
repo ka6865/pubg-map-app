@@ -14,6 +14,13 @@ const PASSWORD_MAX_LENGTH = 20;
 const TOKEN_MAX_LENGTH = 2048;
 const USER_ID_MAX_LENGTH = 128;
 
+type PostTarget = {
+  id: number;
+  user_id: string | null;
+  title: string;
+  status: "published";
+};
+
 type CommentBody = {
   post_id: number;
   content: string;
@@ -132,15 +139,6 @@ export async function POST(request: Request) {
       }
     }
 
-    const quota = await consumeBoardWriteQuota({
-      supabaseAdmin,
-      scope: "comment",
-      actor: user?.id ?? clientIp,
-    });
-    if (!quota.ok) {
-      return jsonError(quota.error, quota.status);
-    }
-
     if (!user) {
       const turnstile = await verifyTurnstileToken({
         token: body.turnstileToken,
@@ -151,6 +149,34 @@ export async function POST(request: Request) {
         return jsonError(turnstile.error, turnstile.status);
       }
     }
+
+    const quota = await consumeBoardWriteQuota({
+      supabaseAdmin,
+      scope: "comment",
+      actor: user?.id ?? clientIp,
+    });
+    if (!quota.ok) {
+      return jsonError(quota.error, quota.status);
+    }
+
+    const { data: post, error: postError } = await supabaseAdmin
+      .from("posts")
+      .select("id, user_id, title, status")
+      .eq("id", body.post_id)
+      .maybeSingle();
+    if (postError) {
+      return jsonError("게시글을 확인하지 못했습니다.", 503);
+    }
+    if (
+      !post
+      || !isPositiveSafeInteger(post.id)
+      || typeof post.title !== "string"
+      || (post.user_id !== null && typeof post.user_id !== "string")
+      || post.status !== "published"
+    ) {
+      return jsonError("게시글을 찾을 수 없습니다.", 404);
+    }
+    const postTarget: PostTarget = post;
 
     let parentTarget: ParentCommentTarget | null = null;
     if (body.parent_id) {
@@ -222,61 +248,41 @@ export async function POST(request: Request) {
       ipAddress = clientIp;
     }
 
-    const { data, error } = await supabaseAdmin
-      .from("comments")
-      .insert([{
-        post_id: body.post_id,
-        user_id: user?.id ?? null,
-        author,
-        content: storedContent,
-        parent_id: body.parent_id,
-        password_hash: passwordHash,
-        ip_address: ipAddress,
-      }])
-      .select()
-      .single();
+    const { data, error } = await supabaseAdmin.rpc("create_published_post_comment", {
+      p_post_id: body.post_id,
+      p_user_id: user?.id ?? null,
+      p_author: author,
+      p_content: storedContent,
+      p_parent_id: body.parent_id,
+      p_password_hash: passwordHash,
+      p_ip_address: ipAddress,
+    });
 
     if (error) {
       return jsonError("댓글 저장 중 오류가 발생했습니다.", 500);
     }
+    const comment = Array.isArray(data) ? data[0] : null;
+    if (!comment) {
+      return jsonError("게시글을 찾을 수 없습니다.", 404);
+    }
 
     if (user) {
-      const targetResult = parentTarget
-        ? { data: parentTarget, error: null }
-        : await supabaseAdmin
-            .from("posts")
-            .select("user_id, title")
-            .eq("id", body.post_id)
-            .single();
-
-      if (!targetResult.error && targetResult.data) {
-        const target = targetResult.data as {
-          user_id: string | null;
-          content?: string;
-          title?: string;
-          post_id?: number;
-        };
-        if (target.user_id && target.user_id !== user.id) {
-          const { error: notificationError } = await supabaseAdmin
-            .from("notifications")
-            .insert([{
-              user_id: target.user_id,
-              sender_id: user.id,
-              sender_name: author,
-              type: body.parent_id ? "reply" : "comment",
-              post_id: body.post_id,
-              preview_text: body.parent_id ? target.content : target.title,
-            }]);
-          if (notificationError) {
-            console.error("[Board Comment] 알림 저장에 실패했습니다.");
-          }
-        }
-      } else {
-        console.error("[Board Comment] 알림 대상 확인에 실패했습니다.");
+      const target = parentTarget ?? postTarget;
+      if (target.user_id && target.user_id !== user.id) {
+        await supabaseAdmin
+          .from("notifications")
+          .insert([{
+            user_id: target.user_id,
+            sender_id: user.id,
+            sender_name: author,
+            type: body.parent_id ? "reply" : "comment",
+            post_id: body.post_id,
+            preview_text: parentTarget ? parentTarget.content : postTarget.title,
+          }]);
       }
     }
 
-    return NextResponse.json({ success: true, data });
+    return NextResponse.json({ success: true, data: comment });
   } catch {
     return jsonError("서버 오류가 발생했습니다.", 500);
   }

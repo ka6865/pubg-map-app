@@ -92,9 +92,11 @@ describe("IP 유틸리티 (ipUtils)", () => {
 
 describe("Cloudflare Turnstile Siteverify 검증", () => {
   const originalSecret = process.env.TURNSTILE_SECRET_KEY;
+  const originalHostnames = process.env.TURNSTILE_ALLOWED_HOSTNAMES;
 
   beforeEach(() => {
     delete process.env.TURNSTILE_SECRET_KEY;
+    delete process.env.TURNSTILE_ALLOWED_HOSTNAMES;
   });
 
   afterEach(() => {
@@ -102,6 +104,11 @@ describe("Cloudflare Turnstile Siteverify 검증", () => {
       delete process.env.TURNSTILE_SECRET_KEY;
     } else {
       process.env.TURNSTILE_SECRET_KEY = originalSecret;
+    }
+    if (originalHostnames === undefined) {
+      delete process.env.TURNSTILE_ALLOWED_HOSTNAMES;
+    } else {
+      process.env.TURNSTILE_ALLOWED_HOSTNAMES = originalHostnames;
     }
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
@@ -163,6 +170,56 @@ describe("Cloudflare Turnstile Siteverify 검증", () => {
     await verifyTurnstileToken({ token: "token", expectedAction: "guest_post", fetchImpl });
     const body = (fetchImpl.mock.calls[0][1] as RequestInit).body as FormData;
     expect(body.has("remoteip")).toBe(false);
+  });
+
+  it("allowlist가 설정되면 hostname 일치 성공 응답만 통과시킨다", async () => {
+    process.env.TURNSTILE_SECRET_KEY = "test-secret";
+    process.env.TURNSTILE_ALLOWED_HOSTNAMES = "bgms.gg, preview.bgms.gg";
+
+    const result = await verifyTurnstileToken({
+      token: "token",
+      expectedAction: "guest_post",
+      fetchImpl: vi.fn().mockResolvedValue(new Response(JSON.stringify({
+        success: true,
+        action: "guest_post",
+        hostname: "preview.bgms.gg",
+      }))),
+    });
+
+    expect(result).toEqual({ ok: true });
+  });
+
+  it.each(["evil.example", undefined])("allowlist hostname 불일치(%j)는 고정 메시지로 fail-closed 처리한다", async (hostname) => {
+    process.env.TURNSTILE_SECRET_KEY = "test-secret";
+    process.env.TURNSTILE_ALLOWED_HOSTNAMES = "bgms.gg";
+
+    const result = await verifyTurnstileToken({
+      token: "token",
+      expectedAction: "guest_post",
+      fetchImpl: vi.fn().mockResolvedValue(new Response(JSON.stringify({
+        success: true,
+        action: "guest_post",
+        ...(hostname === undefined ? {} : { hostname }),
+      }))),
+    });
+
+    expect(result).toEqual({ ok: false, status: 400, error: "보안 인증 도메인이 일치하지 않습니다." });
+  });
+
+  it("allowlist 설정이 없으면 기존 배포 호환성을 위해 hostname 검증 없이 성공 응답을 허용한다", async () => {
+    process.env.TURNSTILE_SECRET_KEY = "test-secret";
+
+    const result = await verifyTurnstileToken({
+      token: "token",
+      expectedAction: "guest_post",
+      fetchImpl: vi.fn().mockResolvedValue(new Response(JSON.stringify({
+        success: true,
+        action: "guest_post",
+        hostname: "unknown.local",
+      }))),
+    });
+
+    expect(result).toEqual({ ok: true });
   });
 
   it.each([

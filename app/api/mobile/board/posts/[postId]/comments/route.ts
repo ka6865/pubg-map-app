@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { withAuthGuard } from "@/utils/supabase/guard";
 import { checkProfanity } from "@/lib/board/profanityFilter";
 import { extractClientIp, checkIpBlacklist } from "@/lib/board/ipUtils";
+import { consumeBoardWriteQuota } from "@/lib/board/writeQuota.server";
 
 function jsonError(message: string, status: number) {
   return NextResponse.json({ error: message }, { status });
@@ -71,15 +72,12 @@ export async function POST(
     return jsonError("부적절한 표현이 포함되어 있습니다. 내용을 수정해주세요.", 400);
   }
 
-  const since = new Date(Date.now() - 10_000).toISOString();
-  const { data: recentComment } = await auth.supabaseAdmin
-    .from("comments")
-    .select("id")
-    .eq("user_id", auth.user.id)
-    .gte("created_at", since)
-    .limit(1)
-    .maybeSingle();
-  if (recentComment) return jsonError("댓글은 10초에 한 번만 작성할 수 있습니다.", 429);
+  const quota = await consumeBoardWriteQuota({
+    supabaseAdmin: auth.supabaseAdmin,
+    scope: "comment",
+    actor: auth.user.id,
+  });
+  if (!quota.ok) return jsonError(quota.error, quota.status);
 
   const { data: profile } = await auth.supabaseAdmin
     .from("profiles")
@@ -88,20 +86,19 @@ export async function POST(
     .maybeSingle();
 
   const author = profile?.nickname || auth.user.email || "알 수 없음";
-  const { data, error } = await auth.supabaseAdmin
-    .from("comments")
-    .insert([{
-      post_id: id,
-      user_id: auth.user.id,
-      author,
-      content,
-      parent_id: Number.isFinite(parentId) ? parentId : null,
-      ip_address: clientIp,
-    }])
-    .select("id")
-    .single();
+  const { data, error } = await auth.supabaseAdmin.rpc("create_published_post_comment", {
+    p_post_id: id,
+    p_user_id: auth.user.id,
+    p_author: author,
+    p_content: content,
+    p_parent_id: Number.isFinite(parentId) ? parentId : null,
+    p_password_hash: null,
+    p_ip_address: clientIp,
+  });
 
-  if (error || !data) return jsonError("댓글 저장 중 오류가 발생했습니다.", 500);
+  if (error) return jsonError("댓글 저장 중 오류가 발생했습니다.", 500);
+  const comment = Array.isArray(data) ? data[0] : null;
+  if (!comment) return jsonError("게시글을 찾을 수 없습니다.", 404);
 
-  return NextResponse.json({ success: true, id: data.id });
+  return NextResponse.json({ success: true, id: comment.id });
 }

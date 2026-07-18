@@ -4,14 +4,18 @@
 - 기준 문서: `README.md`, `docs/tactical_score_guide.md`, `docs-private/.project_context.md`, 텔레메트리·티어 개발 문서
 - 범위: 지도·전술 도구·리플레이·모바일 UI, PUBG 전적·분석·AI, 게시판·인증·관리자·Supabase/R2
 - 방식: 기능 영역별 읽기 전용 병렬 리뷰, 정적 분석, 관련 테스트, 프로덕션 의존성 감사
-- 조치 범위: P0 ingest 공개 경계 제거, Hotdrop GitHub Actions 전환, 텔레메트리 공용 계약·identity·cleanup 통합, 회귀 게이트 확장
+- 조치 범위: P0 ingest 공개 경계 제거, Hotdrop GitHub Actions 전환, 텔레메트리 공용 계약·identity·cleanup 통합, 게시판 Turnstile 쓰기 경계, 회귀 게이트 확장
 - 운영 데이터 변경: 없음
 
 ## 1. 결론
 
-최초 리뷰에서 P0 1건, P1 12건, P2 15건을 확인했다. P0은 공개 `/api/pubg/ingest` route를 제거하고 `/api/pubg/match`가 검증된 PUBG 분석 결과를 서버 저장 함수에 직접 전달하도록 전환해 해결했다. 최종 리뷰에서 확인한 `source=scraper`와 `force=true` 위조 경로도 서로 독립된 timing-safe header 인증으로 차단했다. P1은 Hotdrop 1건과 텔레메트리 3건을 해결해 실제 미해결 항목이 8건이다. P2는 보안 테스트 계약 복구와 리플레이 요청 전환 경쟁 2건을 해결해 실제 미해결 항목이 13건이다.
+최초 리뷰에서 P0 1건, P1 12건, P2 15건을 확인했다. P0은 공개 `/api/pubg/ingest` route를 제거하고 `/api/pubg/match`가 검증된 PUBG 분석 결과를 서버 저장 함수에 직접 전달하도록 전환해 해결했다. 최종 리뷰에서 확인한 `source=scraper`와 `force=true` 위조 경로도 서로 독립된 timing-safe header 인증으로 차단했다. P1은 Hotdrop 1건, 텔레메트리 3건, 게시판 Turnstile 1건을 해결해 실제 미해결 항목이 7건이다. P2는 보안 테스트 계약 복구와 리플레이 요청 전환 경쟁 2건을 해결해 실제 미해결 항목이 13건이다.
 
 텔레메트리 공용 fetch SDK, 플레이어·플랫폼 cache identity, 2D/3D 소비자, registry cleanup 계약을 통합했다. 최종 재검토의 Important 5건은 identity sequence 최소 권한, reserve→upload→원자 finalize, cache hit registry 복구, registry-only inventory manifest, 2D mode·nickname fail-closed로 보완했다. 추가 재검토의 만료 pending 부분 삭제·finalize/cleanup 교착 문제는 정확한 lease 조건, 삭제 후 rollback postcondition, 공통 lock 순서로 보완했다. manifest upload 사이에 만료하는 lease는 앱과 RPC가 공유하는 `p_now` 기준시각으로 해당 run 전체에서 보호한다. 빈 `mode` query도 이제 유효하지 않다. 운영 DB migration과 cleanup은 실행하지 않았으며, 배포는 migration을 먼저 적용한 뒤 애플리케이션을 반영해야 한다.
+
+게시판은 독립 `/api/board/turnstile`과 `sessionStorage.turnstile_verified` 면제를 제거했다. 비회원 게시글·댓글은 실제 저장 요청에 포함된 single-use token을 각각 `guest_post`·`guest_comment` action으로 검증하고, 회원 댓글도 서버 route에서 JWT user ID·작성자·notification 대상을 결정한다. Supabase 원자 RPC는 게시글 60초·댓글 10초에 1회를 적용하고 RPC 장애와 migration 미적용을 503으로 fail-closed 처리한다. 운영 Supabase migration·운영 게시글·댓글 쓰기·운영 Turnstile Siteverify는 실행하지 않았다.
+
+최종 보안 재검토 항목은 invalid Turnstile이 quota row를 만들지 않도록 guest Siteverify 성공 후 quota를 소비하고, IPv6 guest actor `/64` 정규화와 bounded multi-batch cleanup을 적용해 보완했다. 모바일 회원 route도 동일 원자 quota와 published 댓글 RPC를 사용한다. 댓글 RPC는 published 게시글과 동일 post 부모를 `FOR SHARE`로 잠근 뒤 삽입하며, quota cleanup job은 기존 일일 maintenance와 분리했다. posts/comments 공개 INSERT·UPDATE 및 notifications 공개 INSERT policy·권한을 제거해 인증 사용자의 PostgREST 직접 우회를 차단했다. 게시글·댓글 응답은 서버 전용 `password_hash`·`ip_address`를 제외하고, 설정된 경우 Siteverify hostname allowlist도 검증한다.
 
 보안 측면에서는 Storage 객체 삭제 BOLA, 승인 작업 중복 실행, CAPTCHA 우회, 공개 analytics 오염, 제보 알림 임계값 우회가 즉시 수정 대상이다.
 
@@ -19,19 +23,26 @@
 
 | 검증 | 결과 |
 |---|---|
-| `npm run verify:core` | 통과: ESLint 오류 0·경고 62, TypeScript 오류 0 |
+| `npm run verify:core` | 통과: ESLint 오류 0·경고 58, TypeScript 오류 0 |
 | `npm run verify:analysis` | 통과: 17개 파일, 182개 테스트 |
-| `npm run verify:admin` | 통과: 5개 파일, 90개 테스트 |
+| `npm run verify:admin` | 통과: 게시판·모바일 보안 회귀 7개 파일 편입 후 12개 파일, 242개 테스트 |
+| `npx vitest run tests/board-*.test.ts` 집중 범위 | 통과: 7개 파일, 144개 테스트 |
 | `npm test -- --runInBand` | 통과: Jest 1개 suite, 2개 테스트 |
-| `env DOTENV_CONFIG_PATH=.env.local node --require ../../node_modules/dotenv/config ../../node_modules/vitest/vitest.mjs run` | 통과: 33개 파일 통과·1개 스킵, 335개 테스트 통과·6개 스킵 |
+| `env DOTENV_CONFIG_PATH=../../.env.local node --require ../../node_modules/dotenv/config ../../node_modules/vitest/vitest.mjs run` | 통과: 38개 파일 통과·1개 스킵, 468개 테스트 통과·6개 스킵 |
+| 게시판 migration fresh PostgreSQL 15.18 | 통과: RLS 활성·공개 policy 0건, anon/authenticated table·RPC 접근 거부, service-role 최소 권한, 첫 요청 true·같은 window false·정확한 window 경계 true·invalid false, 동시 요청 true/false·최종 count 1, bounded cleanup·양방향 cleanup/consume 경쟁 통과 |
+| 로컬 브라우저 `/board`, `/board/write` | 통과: HTTP 200, 의미 있는 본문, 오류 overlay 0, fresh console error 0, 글쓰기 링크·비회원 보안 인증 region·등록 버튼 렌더. 로컬 Turnstile 값이 비어 있어 실제 widget/Siteverify·저장은 미실행 |
 | `npm run verify:telemetry-db` | 통과: 임시 PostgreSQL 15 service-role sequence, registry-only row 감소, 만료 pending 원자 정리, snapshot lease 보호, finalize 잠금 순서 관찰, 양방향 두 세션 교착 |
 | `npm audit --omit=dev` | 이번 조치에서 재실행하지 않음. 최초 리뷰 결과는 10건(High 3, Moderate 5, Low 2) |
 
 `tests/security.test.ts`는 현재 `withOptionalAuth` 계약과 Shadow Draft의 `parent_id` 삭제 조건으로 복구해 `verify:admin`에 포함했다. worktree에는 독립 `node_modules/dotenv`, `node_modules/vitest`가 없어 `./node_modules` 직접 경로 명령은 테스트 시작 전 종료 코드 1로 종료됐다. `.env.local`은 기본 checkout을 가리키는 추적 제외 심볼릭 링크로 유지하고, 기본 checkout의 의존성 경로를 명시해 전체 Vitest를 재실행한 결과 통과했다. 환경변수 값은 출력하지 않았다.
 
+게시판 migration은 운영과 분리된 PostgreSQL 15.18 임시 클러스터에 최신 파일을 재적용했다. 함수는 `SECURITY INVOKER`, 빈 `search_path`, service-role 전용 `EXECUTE`이며 quota table은 RLS 활성·공개 policy 0건이다. 게시글·댓글 quota의 첫 요청, 동일 window 차단, 정확한 만료 경계, invalid 입력, anon/authenticated 거부, 동일 actor 두 세션 동시 요청을 확인했다. 정리는 24시간 보존 cutoff와 batch 최대 삭제 건수를 지키며 SQL은 현재보다 1시간 이내인 위험 cutoff를 거부한다. consume-first에서는 잠긴 활성 행을 건너뛰고 cleanup-first에서는 대기한 consume이 삭제 후 새 행을 생성했다. 댓글 RPC는 공개글 성공, draft·다른 post 부모 거부, 비공개 전환 선점과 부모 post 이동 선점 시 대기 후 0행을 확인했다. 임시 서버는 검증 직후 fast shutdown했고 운영 migration·운영 데이터 변경은 없었다.
+
+로컬 브라우저는 루트 `.env.local`을 값 출력 없이 프로세스에만 주입해 `/board`와 `/board/write`를 확인했다. 두 route는 HTTP 200, 오류 overlay 0, fresh console error 0이었고 글쓰기 화면의 `비회원 보안 인증` region과 등록 버튼이 렌더됐다. 로컬 Turnstile 값이 비어 있으므로 실제 widget token 발급, Siteverify, 게시글·댓글 저장은 배포 preview 게이트로 남겼다.
+
 운영과 분리된 임시 PostgreSQL 15에 migration을 실제 적용해 RPC 문법·권한·행위를 검증했다. `SET ROLE service_role` identity INSERT/UPSERT가 성공했고 registry-only row는 1건에서 0건으로 감소했다. 최신 `updated_at`을 가지면서 lease가 만료된 pending match는 master·stats·processed·registry가 모두 0건으로 원자 정리됐다. snapshot 기준시각에 active였던 500ms lease는 1초 대기 후 RPC를 호출해도 master·stats·registry가 보존됐다. writer-first에서는 active pending lease가 master·stats를 보호했고, cleanup-first에서는 대기한 writer가 원자 finalize RPC로 master·processed·ready registry를 재구축했다. finalize 함수가 registry lock에서 대기하는 동안 별도 세션의 master row `FOR UPDATE NOWAIT`가 성공해 registry-first 순서를 실제 관찰했다. finalize-first에서는 4초 statement timeout 내에 cleanup이 완료되어 deadlock이 없음을 확인했다. RPC는 `SECURITY INVOKER`, 빈 `search_path`, service-role 전용 `EXECUTE`를 유지한다.
 
-`verify:core`의 ESLint 경고는 32개 파일에서 62개가 발생했다. 오류는 0개이고 TypeScript는 통과했으며, 이번 텔레메트리 변경 파일에서 신규 unused import·`console.log`는 확인되지 않았다. 기존 경고는 본 문서 7장의 유지보수 부채로 유지한다.
+`verify:core`의 ESLint 경고는 58개가 발생했다. 오류는 0개이고 TypeScript는 통과했으며, 이번 변경 파일에서 신규 unused import·`console.log`는 확인되지 않았다. 기존 경고는 본 문서 7장의 유지보수 부채로 유지한다.
 
 ## 3. P0 — 즉시 차단
 
@@ -157,6 +168,17 @@
 
 #### 10) Turnstile 검증이 실제 비회원 쓰기와 결합되지 않음
 
+> 조치 상태: 해결됨
+>
+> - standalone verify route와 `sessionStorage` 면제 제거
+> - 실제 post/comment 쓰기 요청 내 single-use token·action·remote IP 검증
+> - 회원 댓글을 서버 route로 통합하고 기존 답글·게시글 notification 계약 보존
+> - Supabase 원자 RPC로 게시글 60초·댓글 10초 quota, RLS, 공개 policy 0건, service-role 전용 권한 적용
+> - 웹·모바일 회원 route가 같은 user actor quota를 공유하고 IPv6 guest actor는 `/64`로 정규화
+> - published 게시글·동일 post 부모를 잠금 검증하는 원자 댓글 RPC와 안전 응답 DTO 적용
+> - quota cleanup을 일일 maintenance와 분리하고 최대 5,000행·30초 이후 새 batch 제한 및 backlog 관측 적용
+> - migration 선적용 후 앱 배포 필수. 운영 migration·운영 쓰기는 미실행
+
 - 근거: `app/api/board/turnstile/route.ts:12-39`, `app/api/board/posts/route.ts:19-80`, `app/api/board/comments/route.ts:14-66`, `app/api/posts/write/route.ts:45-52,207-256`
 - 영향: 클라이언트 `sessionStorage` 플래그만 우회하면 guest 글·댓글 route를 직접 호출해 스팸, bcrypt CPU 부하, DB 소진을 일으킬 수 있다.
 - 조치: 쓰기 요청에 token을 포함하고 같은 서버 요청에서 siteverify 후 일회성으로 소비한다. IP/user rate limit도 함께 적용한다.
@@ -217,7 +239,7 @@
 
 1. [x] `/api/pubg/ingest` 공개 route 제거 및 `/api/pubg/match` 서버 내부 직접 저장 전환
 2. [x] Hotdrop 실행 경계를 GitHub Actions로 이전
-3. Turnstile을 guest write에 서버 결합
+3. [x] Turnstile을 guest write에 서버 결합
 4. Storage 삭제 소유권 검증
 5. 제보 notify 최신 임계값·원자성 검증
 
@@ -247,6 +269,8 @@
 - 실제 Chrome에서 `/stats`, Steam `KangHeeSung_` 검색, `/maps/erangel` 렌더는 통과했지만 최근 match 20건은 모두 HTTP 500으로 실패했다. sanitized 오류만 확인해 정확한 실패 단계는 미확정이며, 무료 PUBG API 예산과 Discord 중복 알림을 막기 위해 실데이터 재시도를 중단했다.
 - 2026-07-18 최종 로컬 Chrome 회귀에서 `/stats`, `/maps/erangel`, 불완전 query의 `/replay/3d?matchId=qa-no-external-call`은 모두 HTTP 200으로 렌더됐고 브라우저 console error는 0건이었다. 불완전 3D query는 외부 telemetry 요청 없이 `3D 리플레이 query가 누락되었거나 지원되지 않습니다.` 오류로 fail-closed 처리됐다.
 - migration 선적용·애플리케이션 배포 후 Steam/Kakao 2D·3D 실데이터 회귀 QA가 남아 있다.
+- 게시판 migration은 운영 Supabase에 적용하지 않았다. 로컬 PostgreSQL 15.18의 quota·댓글 RPC 권한·경계·동시성 검증과 `/board`, `/board/write` 읽기 전용 브라우저 QA만 완료했다. 배포 시 두 migration을 먼저 적용하고 Vercel에 `TURNSTILE_ALLOWED_HOSTNAMES` allowlist를 설정한 뒤, 공식 Turnstile test key preview에서 guest post·comment 성공, token 재사용 거부, 429를 확인하고 실운영 QA를 진행해야 한다. 운영 DB나 운영 Turnstile key로 로컬 완료 증거를 만들지 않았다.
+- 최종 보안 재리뷰는 Critical 0건·Important 0건·Minor 3건이다. cleanup 진행 중 RPC의 hard timeout과 게시판 PostgreSQL 실제 경쟁 검증 CI 자동화는 후속 개선이며, hostname allowlist 미설정은 preview·production 배포 차단 조건으로 취급한다.
 - 운영 DB의 `pending_markers` 실제 RLS 정책은 저장소 migration만으로 확인할 수 없었다.
 - Vercel/프록시가 Host 헤더를 고정하는지는 로컬 코드만으로 확인할 수 없었다.
 - iOS Safari, Android WebView, Capacitor 실기기 동작은 실행하지 않았다.

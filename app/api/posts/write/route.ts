@@ -26,6 +26,7 @@ const DISCORD_CHANNEL_ID_MAX_LENGTH = 64;
 const USER_ID_MAX_LENGTH = 128;
 const CLAN_INFO_MAX_SERIALIZED_LENGTH = 1024;
 const CLAN_MEMBER_COUNT_MAX = 100;
+const POST_RESPONSE_COLUMNS = "id, title, content, author, user_id, category, image_url, discord_url, discord_channel_id, is_notice, clan_info, created_at, views, likes, status, parent_id";
 const CLAN_INFO_KEYS = new Set<keyof ClanInfo>([
   "id",
   "name",
@@ -356,7 +357,7 @@ export async function POST(request: Request) {
           clan_info: safeClanInfo,
         })
         .eq("id", editingPostId)
-        .select();
+        .select(POST_RESPONSE_COLUMNS);
 
       if (updateError) {
         throw updateError;
@@ -378,15 +379,6 @@ export async function POST(request: Request) {
         }
       }
 
-      const quota = await consumeBoardWriteQuota({
-        supabaseAdmin,
-        scope: "post",
-        actor: user?.id ?? clientIp,
-      });
-      if (!quota.ok) {
-        return NextResponse.json({ error: quota.error }, { status: quota.status });
-      }
-
       if (!user) {
         const turnstile = await verifyTurnstileToken({
           token: turnstileToken,
@@ -396,6 +388,15 @@ export async function POST(request: Request) {
         if (!turnstile.ok) {
           return NextResponse.json({ error: turnstile.error }, { status: turnstile.status });
         }
+      }
+
+      const quota = await consumeBoardWriteQuota({
+        supabaseAdmin,
+        scope: "post",
+        actor: user?.id ?? clientIp,
+      });
+      if (!quota.ok) {
+        return NextResponse.json({ error: quota.error }, { status: quota.status });
       }
 
       if (safeCategory === "듀오/스쿼드 모집" && discordUrl) {
@@ -440,7 +441,7 @@ export async function POST(request: Request) {
             ip_address: clientIp,
           },
         ])
-        .select();
+        .select(POST_RESPONSE_COLUMNS);
 
       if (insertError) throw insertError;
       return NextResponse.json({ success: true, data: data[0] });
