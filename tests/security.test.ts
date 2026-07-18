@@ -229,7 +229,7 @@ describe("🔒 BGMS API Route Security Guard Tests", () => {
 
       const mockRequest = new Request("http://localhost:3000/api/posts/promote", {
         method: "POST",
-        body: JSON.stringify({ postId: "draft-id" }),
+        body: JSON.stringify({ postId: 1, expectedParentRevision: 0 }),
       });
 
       const response = await postsPromotePOST(mockRequest);
@@ -252,7 +252,7 @@ describe("🔒 BGMS API Route Security Guard Tests", () => {
 
       const mockRequest = new Request("http://localhost:3000/api/posts/promote", {
         method: "POST",
-        body: JSON.stringify({ postId: "draft-id" }),
+        body: JSON.stringify({ postId: 1, expectedParentRevision: 0 }),
       });
 
       const response = await postsPromotePOST(mockRequest);
@@ -282,7 +282,7 @@ describe("🔒 BGMS API Route Security Guard Tests", () => {
       expect(response.status).toBe(400);
 
       const json = await response.json();
-      expect(json.error).toContain("필수 입력 데이터(postId)가 누락되었습니다");
+      expect(json.error).toContain("필수 입력 데이터가 올바르지 않습니다");
     });
 
     it("4. 존재하지 않는 초안이거나 조회 오류 시 404 Not Found를 반환해야 함", async () => {
@@ -296,14 +296,14 @@ describe("🔒 BGMS API Route Security Guard Tests", () => {
         error: null,
       });
 
-      postChain._singleValue = {
-        data: null,
-        error: new Error("Not Found"),
-      };
+      mockSupabaseAdmin.rpc.mockResolvedValueOnce({
+        data: [{ result_code: "not_found", post_id: null, revision: null }],
+        error: null,
+      });
 
       const mockRequest = new Request("http://localhost:3000/api/posts/promote", {
         method: "POST",
-        body: JSON.stringify({ postId: "non-existent-id" }),
+        body: JSON.stringify({ postId: 1, expectedParentRevision: 0 }),
       });
 
       const response = await postsPromotePOST(mockRequest);
@@ -324,18 +324,18 @@ describe("🔒 BGMS API Route Security Guard Tests", () => {
         error: null,
       });
 
-      postChain._singleValue = {
-        data: { id: "pub-id", status: "published" },
+      mockSupabaseAdmin.rpc.mockResolvedValueOnce({
+        data: [{ result_code: "already_promoted", post_id: 1, revision: 2 }],
         error: null,
-      };
+      });
 
       const mockRequest = new Request("http://localhost:3000/api/posts/promote", {
         method: "POST",
-        body: JSON.stringify({ postId: "pub-id" }),
+        body: JSON.stringify({ postId: 1, expectedParentRevision: 0 }),
       });
 
       const response = await postsPromotePOST(mockRequest);
-      expect(response.status).toBe(400);
+      expect(response.status).toBe(409);
 
       const json = await response.json();
       expect(json.error).toContain("이미 승격(발행)된 게시글입니다");
@@ -352,19 +352,10 @@ describe("🔒 BGMS API Route Security Guard Tests", () => {
         error: null,
       });
 
-      postChain._singleValue = {
-        data: { id: "new-draft-id", status: "draft", parent_id: null },
-        error: null,
-      };
-
-      postChain._arrayValue = {
-        data: [{ id: "new-draft-id", status: "published" }],
-        error: null,
-      };
 
       const mockRequest = new Request("http://localhost:3000/api/posts/promote", {
         method: "POST",
-        body: JSON.stringify({ postId: "new-draft-id" }),
+        body: JSON.stringify({ postId: 1, expectedParentRevision: 0 }),
       });
 
       const response = await postsPromotePOST(mockRequest);
@@ -372,7 +363,7 @@ describe("🔒 BGMS API Route Security Guard Tests", () => {
 
       const json = await response.json();
       expect(json.success).toBe(true);
-      expect(json.message).toContain("새 게시글이 성공적으로 발행되었습니다");
+      expect(json.message).toContain("수정 사항이 원본 게시글에 성공적으로 반영되었습니다");
     });
 
     it("7. parent_id가 있는 Shadow Draft 승격 시 원본 글에 병합(Merge)하고, 기존 미사용 이미지를 스토리지에서 삭제한 후 초안을 제거해야 함", async () => {
@@ -386,51 +377,14 @@ describe("🔒 BGMS API Route Security Guard Tests", () => {
         error: null,
       });
 
-      // 순차적으로 resolve할 single 값들을 셋팅
-      // 1. 초안 게시글 조회 시 반환할 데이터
-      // 2. 기존 원본 글의 content 획득 시 반환할 데이터
-      postChain._singleValues = [
-        {
-          data: {
-            id: "shadow-draft-id",
-            status: "draft",
-            parent_id: "original-id",
-            title: "New Title",
-            content: 'New content with <img src="/storage/v1/object/public/images/new.png">',
-          },
-          error: null,
-        },
-        {
-          data: {
-            content: 'Old content with <img src="/storage/v1/object/public/images/old.png">',
-          },
-          error: null,
-        }
-      ];
-
-      // delete 및 update mock 체인
-      postChain.update.mockReturnThis();
-      const mockDelete = vi.fn().mockReturnThis();
-      const mockDeleteEq = vi.fn().mockResolvedValue({ error: null });
-      mockSupabaseAdmin.from.mockImplementation((table: string) => {
-        if (table === "profiles") return profileChain;
-        if (table === "posts") {
-          return {
-            ...postChain,
-            delete: mockDelete.mockReturnValue({ eq: mockDeleteEq }),
-          };
-        }
-        return {};
-      });
-
-      const mockRemove = vi.fn().mockResolvedValue({ data: [], error: null });
-      mockSupabaseAdmin.storage.from = vi.fn().mockReturnValue({
-        remove: mockRemove,
+      mockSupabaseAdmin.rpc.mockResolvedValueOnce({
+        data: [{ result_code: "ok", post_id: 2, revision: 1, title: "New Title", content: "본문", image_url: null }],
+        error: null,
       });
 
       const mockRequest = new Request("http://localhost:3000/api/posts/promote", {
         method: "POST",
-        body: JSON.stringify({ postId: "shadow-draft-id" }),
+        body: JSON.stringify({ postId: 1, expectedParentRevision: 0 }),
       });
 
       const response = await postsPromotePOST(mockRequest);
@@ -440,10 +394,12 @@ describe("🔒 BGMS API Route Security Guard Tests", () => {
       expect(json.success).toBe(true);
       expect(json.message).toContain("수정 사항이 원본 게시글에 성공적으로 반영되었습니다");
 
-      // storage에서 old.png가 올바르게 삭제 요청되었는지 검증
-      expect(mockRemove).toHaveBeenCalledWith(["old.png"]);
-      // 초안 삭제가 이루어졌는지 검증
-      expect(mockDeleteEq).toHaveBeenCalledWith("parent_id", "original-id");
+      expect(mockSupabaseAdmin.rpc).toHaveBeenCalledWith("merge_board_post_draft_with_images", {
+        p_draft_post_id: 1,
+        p_actor_user_id: "admin-user",
+        p_expected_parent_revision: 0,
+      });
+      expect(mockSupabaseAdmin.storage.from).not.toHaveBeenCalled();
     });
   });
 });

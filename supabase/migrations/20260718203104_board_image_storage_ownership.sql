@@ -390,6 +390,140 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.merge_board_post_draft_with_images(
+  p_draft_post_id bigint, p_actor_user_id uuid, p_expected_parent_revision bigint
+)
+RETURNS TABLE(result_code text, post_id bigint, revision bigint, title text, content text, image_url text)
+LANGUAGE plpgsql SECURITY INVOKER SET search_path = ''
+AS $$
+DECLARE
+  v_parent public.posts%ROWTYPE;
+  v_draft public.posts%ROWTYPE;
+  v_sibling_draft_ids bigint[];
+  v_candidate_image_ids uuid[];
+BEGIN
+  IF p_draft_post_id IS NULL OR p_actor_user_id IS NULL OR p_expected_parent_revision IS NULL
+    OR p_expected_parent_revision < 0 THEN
+    RETURN QUERY SELECT 'not_found'::text, NULL::bigint, NULL::bigint, NULL::text, NULL::text, NULL::text;
+    RETURN;
+  END IF;
+
+  -- 부모와 선택 초안을 같은 순서로 잠가, 서로 다른 shadow 초안 승격도 직렬화한다.
+  FOR v_parent IN
+    SELECT post_row.*
+    FROM public.posts AS post_row
+    WHERE post_row.id IN (
+      p_draft_post_id,
+      (SELECT draft_row.parent_id FROM public.posts AS draft_row WHERE draft_row.id = p_draft_post_id)
+    )
+    ORDER BY post_row.id
+    FOR UPDATE
+  LOOP
+    IF v_parent.id = p_draft_post_id THEN v_draft := v_parent; END IF;
+  END LOOP;
+
+  IF v_draft.id IS NULL THEN
+    RETURN QUERY SELECT 'not_found'::text, NULL::bigint, NULL::bigint, NULL::text, NULL::text, NULL::text;
+    RETURN;
+  END IF;
+  IF v_draft.status <> 'draft' THEN
+    RETURN QUERY SELECT 'already_promoted'::text, v_draft.id, v_draft.revision, NULL::text, NULL::text, NULL::text;
+    RETURN;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM public.profiles AS profile_row
+    WHERE profile_row.id = p_actor_user_id AND profile_row.role = 'admin'
+  ) THEN
+    RETURN QUERY SELECT 'forbidden'::text, v_draft.id, v_draft.revision, NULL::text, NULL::text, NULL::text;
+    RETURN;
+  END IF;
+  -- parent 없는 신규 초안도 기존 승격 API 호환을 위해 같은 RPC 안에서 발행한다.
+  IF v_draft.parent_id IS NULL THEN
+    IF v_draft.revision <> p_expected_parent_revision THEN
+      RETURN QUERY SELECT 'revision_conflict'::text, v_draft.id, v_draft.revision, NULL::text, NULL::text, NULL::text;
+      RETURN;
+    END IF;
+    UPDATE public.posts AS post_row
+    SET status = 'published', revision = post_row.revision + 1
+    WHERE post_row.id = v_draft.id
+    RETURNING post_row.revision INTO v_draft.revision;
+    RETURN QUERY SELECT 'ok'::text, v_draft.id, v_draft.revision,
+      v_draft.title, v_draft.content, v_draft.image_url;
+    RETURN;
+  END IF;
+
+  SELECT post_row.* INTO v_parent
+  FROM public.posts AS post_row
+  WHERE post_row.id = v_draft.parent_id;
+  IF NOT FOUND THEN
+    RETURN QUERY SELECT 'not_found'::text, NULL::bigint, NULL::bigint, NULL::text, NULL::text, NULL::text;
+    RETURN;
+  END IF;
+  IF v_parent.revision <> p_expected_parent_revision THEN
+    RETURN QUERY SELECT 'revision_conflict'::text, v_parent.id, v_parent.revision, NULL::text, NULL::text, NULL::text;
+    RETURN;
+  END IF;
+
+  -- 기존 API 의미를 유지해 같은 부모의 모든 shadow draft를 함께 제거한다.
+  SELECT array_agg(draft_row.id ORDER BY draft_row.id) INTO v_sibling_draft_ids
+  FROM (
+    SELECT post_row.id
+    FROM public.posts AS post_row
+    WHERE post_row.parent_id = v_parent.id
+      AND post_row.status = 'draft'
+    ORDER BY post_row.id
+    FOR UPDATE
+  ) AS draft_row;
+  IF v_sibling_draft_ids IS NULL OR NOT p_draft_post_id = ANY(v_sibling_draft_ids) THEN
+    RETURN QUERY SELECT 'not_found'::text, NULL::bigint, NULL::bigint, NULL::text, NULL::text, NULL::text;
+    RETURN;
+  END IF;
+
+  -- ref 삭제/이전과 cleanup worker 간의 lock 순서를 image UUID 오름차순으로 맞춘다.
+  SELECT array_agg(DISTINCT ref_row.image_id ORDER BY ref_row.image_id) INTO v_candidate_image_ids
+  FROM public.board_post_image_refs AS ref_row
+  WHERE ref_row.post_id = v_parent.id OR ref_row.post_id = ANY(v_sibling_draft_ids);
+  PERFORM image_row.id
+  FROM public.board_image_objects AS image_row
+  WHERE image_row.id = ANY(COALESCE(v_candidate_image_ids, ARRAY[]::uuid[]))
+  ORDER BY image_row.id
+  FOR UPDATE;
+
+  DELETE FROM public.board_post_image_refs AS ref_row
+  WHERE ref_row.post_id = v_parent.id;
+
+  INSERT INTO public.board_post_image_refs (post_id, image_id, usage)
+  SELECT v_parent.id, ref_row.image_id, ref_row.usage
+  FROM public.board_post_image_refs AS ref_row
+  WHERE ref_row.post_id = p_draft_post_id
+  ON CONFLICT DO NOTHING;
+
+  UPDATE public.posts AS post_row
+  SET title = v_draft.title, content = v_draft.content, category = v_draft.category,
+      image_url = v_draft.image_url, discord_url = v_draft.discord_url,
+      discord_channel_id = v_draft.discord_channel_id, clan_info = v_draft.clan_info,
+      is_notice = v_draft.is_notice, status = 'published', revision = post_row.revision + 1
+  WHERE post_row.id = v_parent.id
+  RETURNING post_row.revision INTO v_parent.revision;
+
+  DELETE FROM public.posts AS post_row
+  WHERE post_row.id = ANY(v_sibling_draft_ids);
+
+  UPDATE public.board_image_objects AS image_row
+  SET status = 'delete_pending', delete_after = now(), delete_lease_until = NULL,
+      delete_lease_token = NULL, updated_at = now()
+  WHERE image_row.id = ANY(COALESCE(v_candidate_image_ids, ARRAY[]::uuid[]))
+    AND image_row.status = 'ready'
+    AND NOT EXISTS (
+      SELECT 1 FROM public.board_post_image_refs AS ref_row
+      WHERE ref_row.image_id = image_row.id
+    );
+
+  RETURN QUERY SELECT 'ok'::text, v_parent.id, v_parent.revision,
+    v_draft.title, v_draft.content, v_draft.image_url;
+END;
+$$;
+
 DO $$
 BEGIN
   INSERT INTO public.board_image_objects (bucket_id, storage_key, status)
@@ -426,9 +560,11 @@ REVOKE ALL ON FUNCTION public.write_board_post_with_images(bigint, uuid, bigint,
 REVOKE ALL ON FUNCTION public.claim_board_image_deletions(integer, timestamptz, integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.claim_board_image_deletions_for_owner(uuid, uuid[], timestamptz, integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.finalize_board_image_deletion(uuid, uuid, boolean) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.merge_board_post_draft_with_images(bigint, uuid, bigint) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.reserve_board_image_upload(uuid, text, bigint) TO service_role;
 GRANT EXECUTE ON FUNCTION public.complete_board_image_upload(uuid, uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.write_board_post_with_images(bigint, uuid, bigint, text, text, text, text, boolean, text, uuid, text, text, text, text, jsonb, uuid[], uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.claim_board_image_deletions(integer, timestamptz, integer) TO service_role;
 GRANT EXECUTE ON FUNCTION public.claim_board_image_deletions_for_owner(uuid, uuid[], timestamptz, integer) TO service_role;
 GRANT EXECUTE ON FUNCTION public.finalize_board_image_deletion(uuid, uuid, boolean) TO service_role;
+GRANT EXECUTE ON FUNCTION public.merge_board_post_draft_with_images(bigint, uuid, bigint) TO service_role;

@@ -121,7 +121,10 @@ export default function BoardDetailClient({
       const response = await fetch("/api/posts/promote", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ postId: post.id }),
+        body: JSON.stringify({
+          postId: post.id,
+          expectedParentRevision: (post as Post & { revision?: number }).revision ?? 0,
+        }),
       });
       const result = await response.json();
       if (!response.ok || result.error) {
