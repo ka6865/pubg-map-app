@@ -3,14 +3,6 @@ import { pathToFileURL } from "node:url";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
 import { TELEMETRY_VERSION } from "../lib/pubg-analysis/constants";
-import {
-  mergeActiveTelemetryPaths,
-} from "../lib/pubg-analysis/telemetryCleanup";
-import {
-  deleteMultipleFromR2,
-  isR2Configured,
-  listR2Files,
-} from "../lib/pubg-analysis/r2Service";
 
 export type TelemetryCleanupMasterRow = {
   match_id: string;
@@ -19,28 +11,13 @@ export type TelemetryCleanupMasterRow = {
   created_at: string;
 };
 
-export type TelemetryCleanupCacheRow = {
-  match_id: string;
-  storage_path: string | null;
-};
-
-type R2File = {
-  key: string;
-  size: number;
-  lastModified?: Date | null;
-};
-
 type RangePage<T> = {
   data: T[] | null;
   error: { message?: string } | null;
 };
 
 export type TelemetryCleanupDependencies = {
-  isR2Configured(): boolean;
   listMasterRows(): Promise<TelemetryCleanupMasterRow[]>;
-  listCacheRows(): Promise<TelemetryCleanupCacheRow[]>;
-  listR2Files(limit: number): Promise<R2File[]>;
-  deleteR2Paths(storagePaths: string[]): Promise<void>;
   cleanupExpiredMatches(
     matchIds: string[],
     cutoff: Date,
@@ -51,19 +28,15 @@ export type TelemetryCleanupDependencies = {
 export type TelemetryCleanupConfig = {
   cutoff: Date;
   targetVersion: number;
-  r2ScanLimit: number;
 };
 
 export type TelemetryCleanupResult = {
   deletedMatchCount: number;
-  deletedR2PathCount: number;
-  scannedR2Count: number;
-  r2ScanMayBeTruncated: boolean;
+  r2DeletionDeferred: true;
 };
 
 const QUERY_PAGE_SIZE = 500;
 const DELETE_BATCH_SIZE = 50;
-const PERMANENT_R2_PREFIXES = ["attachments/", "crates/", "weapons/"] as const;
 
 export async function fetchAllRowsByRange<T>(
   fetchPage: (from: number, to: number) => Promise<RangePage<T>>,
@@ -120,21 +93,9 @@ function validateConfig(config: TelemetryCleanupConfig): void {
     !Number.isFinite(config.cutoff.getTime())
     || !Number.isInteger(config.targetVersion)
     || config.targetVersion < 0
-    || !Number.isInteger(config.r2ScanLimit)
-    || config.r2ScanLimit < 1
   ) {
     throw new Error("telemetry-cleanup-invalid-config");
   }
-}
-
-function isPermanentR2Asset(storagePath: string): boolean {
-  return PERMANENT_R2_PREFIXES.some((prefix) => storagePath.startsWith(prefix));
-}
-
-function isPastCleanupGrace(file: R2File, cutoff: Date): boolean {
-  return file.lastModified instanceof Date
-    && Number.isFinite(file.lastModified.getTime())
-    && file.lastModified.getTime() < cutoff.getTime();
 }
 
 function validateCleanedMatchIds(
@@ -157,21 +118,10 @@ export async function runTelemetryStorageCleanup(
   dependencies: TelemetryCleanupDependencies,
 ): Promise<TelemetryCleanupResult> {
   validateConfig(config);
-  if (!dependencies.isR2Configured()) {
-    throw new Error("telemetry-cleanup-r2-not-configured");
-  }
-
-  const [masterRows, cacheRows] = await Promise.all([
-    dependencies.listMasterRows(),
-    dependencies.listCacheRows(),
-  ]);
-  const bucketFiles = await dependencies.listR2Files(config.r2ScanLimit);
-
-  const activePaths = mergeActiveTelemetryPaths(masterRows, cacheRows);
+  const masterRows = await dependencies.listMasterRows();
   const expiredRows = masterRows.filter((row) => isExpiredMasterRow(row, config));
   const expiredMatchIds = uniqueValues(expiredRows.map((row) => row.match_id));
   let deletedMatchCount = 0;
-  let deletedR2PathCount = 0;
 
   for (const matchIds of chunkValues(expiredMatchIds, DELETE_BATCH_SIZE)) {
     const cleanedMatchIds = await dependencies.cleanupExpiredMatches(
@@ -182,26 +132,9 @@ export async function runTelemetryStorageCleanup(
     deletedMatchCount += validateCleanedMatchIds(matchIds, cleanedMatchIds).length;
   }
 
-  const orphanedPaths = uniqueValues(
-    bucketFiles
-      .filter((file) => (
-        file.key.length > 0
-        && !isPermanentR2Asset(file.key)
-        && !activePaths.has(file.key)
-        && isPastCleanupGrace(file, config.cutoff)
-      ))
-      .map((file) => file.key),
-  );
-  if (orphanedPaths.length > 0) {
-    await dependencies.deleteR2Paths(orphanedPaths);
-    deletedR2PathCount += orphanedPaths.length;
-  }
-
   return {
     deletedMatchCount,
-    deletedR2PathCount,
-    scannedR2Count: bucketFiles.length,
-    r2ScanMayBeTruncated: bucketFiles.length >= config.r2ScanLimit,
+    r2DeletionDeferred: true,
   };
 }
 
@@ -209,7 +142,6 @@ function createTelemetryCleanupDependencies(
   supabase: SupabaseClient,
 ): TelemetryCleanupDependencies {
   return {
-    isR2Configured,
     listMasterRows: () => fetchAllRowsByRange(async (from, to) => {
       const { data, error } = await supabase
         .from("match_master_telemetry")
@@ -221,19 +153,6 @@ function createTelemetryCleanupDependencies(
         error,
       };
     }),
-    listCacheRows: () => fetchAllRowsByRange(async (from, to) => {
-      const { data, error } = await supabase
-        .from("telemetry_map_cache_entries")
-        .select("id, match_id, storage_path")
-        .order("id", { ascending: true })
-        .range(from, to);
-      return {
-        data: data as TelemetryCleanupCacheRow[] | null,
-        error,
-      };
-    }),
-    listR2Files,
-    deleteR2Paths: deleteMultipleFromR2,
     cleanupExpiredMatches: async (matchIds, cutoff, targetVersion) => {
       const { data, error } = await supabase.rpc(
         "cleanup_expired_telemetry_matches",
@@ -349,8 +268,7 @@ export async function runTelemetryCleanupFromEnvironment(): Promise<void> {
   const configuredTargetVersion = parseIntegerEnv("CLEANUP_TARGET_VERSION", 56);
   const targetVersion = Math.min(configuredTargetVersion, currentVersion - 1);
   const retentionDays = parseIntegerEnv("CLEANUP_RETENTION_DAYS", 1);
-  const r2ScanLimit = Math.min(parseIntegerEnv("CLEANUP_R2_SCAN_LIMIT", 1_000), 1_000);
-  if (retentionDays < 1 || r2ScanLimit < 1) {
+  if (retentionDays < 1) {
     throw new Error("telemetry-cleanup-invalid-environment-config");
   }
 
@@ -361,7 +279,6 @@ export async function runTelemetryCleanupFromEnvironment(): Promise<void> {
   const result = await runTelemetryStorageCleanup({
     cutoff: new Date(now.getTime() - retentionDays * 24 * 60 * 60 * 1_000),
     targetVersion,
-    r2ScanLimit,
   }, createTelemetryCleanupDependencies(supabase));
 
   await cleanupOrphanedAnalysisRows(supabase);

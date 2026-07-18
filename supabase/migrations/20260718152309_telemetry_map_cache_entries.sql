@@ -31,6 +31,8 @@ language plpgsql
 security invoker
 set search_path = ''
 as $$
+declare
+  eligible_match_ids text[];
 begin
   if p_match_ids is null
     or p_cutoff is null
@@ -39,6 +41,9 @@ begin
   then
     raise exception 'telemetry-cleanup-invalid-rpc-input' using errcode = '22023';
   end if;
+
+  lock table public.telemetry_map_cache_entries
+    in share row exclusive mode;
 
   perform 1
   from public.match_master_telemetry as master
@@ -52,46 +57,51 @@ begin
   order by cache.id
   for update;
 
-  return query
-  with eligible as materialized (
-    select master.match_id
-    from public.match_master_telemetry as master
-    where master.match_id = any(p_match_ids)
-      and (
-        master.telemetry_version < p_target_version
-        or master.created_at < p_cutoff
-      )
-      and not exists (
-        select 1
-        from public.telemetry_map_cache_entries as cache
-        where cache.match_id = master.match_id
-          and cache.updated_at >= p_cutoff
-      )
-  ),
-  deleted_match_stats as (
-    delete from public.match_stats_raw as stats
-    using eligible
-    where stats.match_id = eligible.match_id
-  ),
-  deleted_processed as (
-    delete from public.processed_match_telemetry as processed
-    using eligible
-    where processed.match_id = eligible.match_id
-  ),
-  deleted_cache as (
-    delete from public.telemetry_map_cache_entries as cache
-    using eligible
-    where cache.match_id = eligible.match_id
-  ),
-  deleted_master as (
-    delete from public.match_master_telemetry as master
-    using eligible
-    where master.match_id = eligible.match_id
-    returning master.match_id
+  select coalesce(
+    array_agg(master.match_id order by master.match_id),
+    array[]::text[]
   )
-  select deleted_master.match_id
-  from deleted_master
-  order by deleted_master.match_id;
+  into eligible_match_ids
+  from public.match_master_telemetry as master
+  where master.match_id = any(p_match_ids)
+    and (
+      master.telemetry_version < p_target_version
+      or master.created_at < p_cutoff
+    )
+    and not exists (
+      select 1
+      from public.telemetry_map_cache_entries as cache
+      where cache.match_id = master.match_id
+        and cache.updated_at >= p_cutoff
+    );
+
+  if cardinality(eligible_match_ids) = 0 then
+    return;
+  end if;
+
+  delete from public.match_stats_raw as stats
+  where stats.match_id = any(eligible_match_ids);
+
+  delete from public.processed_match_telemetry as processed
+  where processed.match_id = any(eligible_match_ids);
+
+  delete from public.telemetry_map_cache_entries as cache
+  where cache.match_id = any(eligible_match_ids)
+    and cache.updated_at < p_cutoff;
+
+  return query
+  delete from public.match_master_telemetry as master
+  where master.match_id = any(eligible_match_ids)
+    and (
+      master.telemetry_version < p_target_version
+      or master.created_at < p_cutoff
+    )
+    and not exists (
+      select 1
+      from public.telemetry_map_cache_entries as cache
+      where cache.match_id = master.match_id
+    )
+  returning master.match_id;
 end;
 $$;
 
