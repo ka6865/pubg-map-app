@@ -1,0 +1,276 @@
+# 텔레메트리 계약·캐시 Identity 통합 설계
+
+## 1. 목표
+
+PUBG 텔레메트리 리플레이의 서버 응답, R2 캐시, 2D·3D 소비자 계약을 하나로 통합한다. 같은 매치라도 플랫폼과 분석 대상 플레이어가 다르면 캐시가 섞이지 않게 하고, Kakao 리플레이가 Steam 기본값으로 조회되는 문제를 제거한다.
+
+이 설계는 코드리뷰 보고서의 다음 P1 항목을 함께 해결한다.
+
+1. 3D 및 Squad 2D 소비자가 `{ downloadUrl }` 응답을 직접 payload로 오인하는 문제
+2. 플레이어별 텔레메트리 결과를 `matchId + mode` 캐시로 공유하는 문제
+3. Kakao 2D 리플레이가 `steam`으로 조회되는 문제
+
+미지원 맵의 3D 차단과 맵 capability registry는 별도 P1/P2 작업으로 남긴다.
+
+## 2. 확정된 전환 정책
+
+- 기존 `matchId + mode` 및 `matchId` 단일 R2 키는 새 코드에서 읽지 않는다.
+- 기존 R2 객체를 이번 배포에서 일괄 삭제하거나 새 키로 복사하지 않는다.
+- 신규 요청과 재분석은 새 identity 키에만 저장한다.
+- 기존 객체는 현재 운영 보존·정리 정책에 따라 자연 정리한다.
+- 운영 데이터 삭제 명령과 대량 R2 migration은 실행하지 않는다.
+
+## 3. 검토한 접근 방식
+
+### 선택: 새 identity 키로 완전 전환
+
+새 키만 읽고 쓰며 구 키는 fallback하지 않는다. 캐시 적중률은 전환 직후 낮아지지만 다른 팀 관점 데이터가 재사용되는 위험을 즉시 제거한다.
+
+### 제외: 구 키 fallback
+
+새 키 miss 시 기존 `matchId + mode` 객체를 읽으면 비용은 줄지만 오염 가능성을 유지한다. 캐시 본문에 identity가 없는 구 객체는 안전하게 검증할 수 없으므로 제외한다.
+
+### 제외: 기존 객체 일괄 삭제
+
+정합성은 빠르게 확보할 수 있지만 운영 R2 객체를 대량 삭제해야 한다. 이번 작업의 안전 범위를 벗어나므로 제외한다.
+
+## 4. 아키텍처
+
+### 4.1 공용 identity 모듈
+
+`lib/pubg-analysis/telemetryIdentity.ts`를 추가한다.
+
+- 지원 플랫폼: `steam | kakao`
+- 지원 모드: `lite | full`
+- identity:
+  - `matchId`
+  - `platform`
+  - `playerId`
+  - `mode`
+  - `telemetryVersion`
+- R2 key:
+  - `telemetry-map/v{TELEMETRY_VERSION}/{platform}/{matchId}/{playerHash}/{mode}.json`
+  - `playerHash`는 accountId의 SHA-256 앞 32자를 사용해 signed URL에 원본 accountId가 노출되지 않게 한다.
+- 모든 문자열은 허용 형식과 길이를 검증하고, 허용되지 않는 값은 fail-closed한다.
+
+`app/api/pubg/match/route.ts`와 `app/api/pubg/telemetry/route.ts`는 이 모듈만 사용해 키를 만든다. 호출부마다 키 문자열을 조립하지 않는다.
+
+### 4.2 payload 계약
+
+`lib/pubg-analysis/telemetryPayload.ts`를 추가하고 서버와 브라우저가 공유한다.
+
+```ts
+type TelemetryPayload = {
+  identity: {
+    matchId: string;
+    platform: "steam" | "kakao";
+    playerId: string;
+    mode: "lite" | "full";
+    telemetryVersion: number;
+  };
+  startTime: string;
+  teammates: string[];
+  teamNames: string[];
+  events: unknown[];
+  zoneEvents: unknown[];
+  mapName: string;
+};
+```
+
+공용 validator는 객체 형태, identity 완전 일치, 필수 배열, 문자열 필드를 검사한다. identity가 없거나 요청 identity와 다르면 캐시 hit로 인정하지 않는다.
+
+### 4.3 서버 캐시 서비스
+
+`lib/pubg-analysis/telemetryMapCache.ts`를 추가한다.
+
+- `readTelemetryMapCache(identity)`
+  - 새 R2 key만 조회한다.
+  - JSON을 파싱하고 payload identity를 요청 identity와 대조한다.
+  - 누락·파싱 실패·identity mismatch는 cache miss로 처리한다.
+  - 검증된 객체만 presigned URL 발급 대상으로 인정한다.
+- `writeTelemetryMapCache(identity, payload)`
+  - payload identity를 다시 검증한다.
+  - R2 업로드 후 registry row를 upsert한다.
+  - registry 실패는 성공으로 숨기지 않는다.
+
+서버 route는 캐시 본문을 검증한 뒤에만 presigned URL을 반환한다. 브라우저도 직접 다운로드한 payload를 다시 검증해 잘못된 signed object나 구 캐시를 표시하지 않는다.
+
+### 4.4 Supabase registry
+
+새 migration으로 `telemetry_map_cache_entries`를 추가한다.
+
+- `match_id text not null`
+- `platform text not null check (platform in ('steam', 'kakao'))`
+- `player_id text not null`
+- `mode text not null check (mode in ('lite', 'full'))`
+- `telemetry_version numeric not null`
+- `storage_path text not null unique`
+- `created_at timestamptz not null default now()`
+- `updated_at timestamptz not null default now()`
+- unique identity:
+  - `(match_id, platform, player_id, mode, telemetry_version)`
+
+RLS를 활성화하고 공개 정책을 만들지 않는다. 브라우저가 테이블에 직접 접근하지 않으며 service-role 서버 경로만 사용한다.
+
+`match_master_telemetry`는 매치 메타데이터의 기존 기준으로 유지한다. 새 플레이어별 지도 캐시는 별도 registry에서 관리해 한 match row의 `storage_path`가 여러 플레이어 객체를 대표하는 문제를 만들지 않는다.
+
+### 4.5 cleanup 정합성
+
+`scripts/cleanup_telemetry.ts`는 활성 R2 경로를 계산할 때 다음 두 집합을 합친다.
+
+- 기존 `match_master_telemetry.storage_path`
+- 신규 `telemetry_map_cache_entries.storage_path`
+
+매치 master row를 만료 처리할 때 해당 `match_id`의 registry 경로를 함께 조회하고 파생 지도 캐시를 삭제 대상으로 포함한다. R2 삭제 성공 여부와 DB row 삭제 오류를 구분해 보고한다.
+
+이번 구현과 검증에서는 cleanup을 실제 실행하지 않는다.
+
+## 5. 서버 데이터 흐름
+
+### 캐시 hit
+
+1. route가 `matchId`, `nickname`, `platform`, `mode`를 검증한다.
+2. PUBG match 응답에서 nickname을 정규화 비교해 accountId를 확정한다.
+3. accountId로 요청 identity와 새 R2 key를 만든다.
+4. R2 본문을 읽어 payload와 identity를 검증한다.
+5. 검증 성공 시 같은 key의 presigned URL과 expected identity를 반환한다.
+
+### 캐시 miss
+
+1. PUBG telemetry를 받아 `AnalysisEngine`을 요청 mode로 실행한다.
+2. payload에 identity를 포함한다.
+3. 새 R2 key로 업로드한다.
+4. Supabase registry를 upsert한다.
+5. presigned URL과 expected identity를 반환한다.
+
+`/api/pubg/match`가 분석 과정에서 생성하는 기본 지도 캐시는 `lite` identity로 같은 cache service를 사용한다. `full`은 사용자가 고정밀 리플레이를 요청할 때 별도로 생성한다.
+
+## 6. 브라우저 공용 fetch
+
+`lib/pubg-analysis/fetchTelemetryPayload.ts`를 추가한다.
+
+```ts
+fetchTelemetryPayload(
+  request: {
+    matchId: string;
+    nickname: string;
+    platform: "steam" | "kakao";
+    mapName?: string;
+    mode: "lite" | "full";
+  },
+  options?: {
+    signal?: AbortSignal;
+    fetchFn?: typeof fetch;
+  }
+): Promise<TelemetryPayload>
+```
+
+동작 순서는 다음과 같다.
+
+1. 모든 query를 `URLSearchParams`로 인코딩한다.
+2. API 응답 상태와 `{ downloadUrl, identity }` envelope를 검증한다.
+3. 같은 AbortSignal로 presigned URL을 다운로드한다.
+4. JSON payload schema와 expected identity를 검증한다.
+5. 오류 원문이나 signed URL을 사용자 메시지에 노출하지 않고 제한된 오류를 반환한다.
+
+다음 소비자가 이 함수만 사용한다.
+
+- `hooks/useTelemetry.ts`
+- `app/replay/3d/page.tsx`
+- `components/stat/Squad2DMap.tsx`
+
+각 소비자 내부의 중복 fetch·downloadUrl 분기·부분 파싱은 제거한다.
+
+## 7. platform 전달
+
+- `MatchCard`의 간이 2D 및 고정밀 2D URL에 `platform`을 포함한다.
+- `MapShell`은 query의 `platform`을 읽고 allowlist 검증 후 `useTelemetry`에 전달한다.
+- `useTelemetry`의 시그니처는 `(matchId, nickname, platform, mapName)`으로 변경한다.
+- 닫기 동작은 `playback`, `nickname`, `platform`, `mode`를 함께 제거한다.
+- 3D와 Squad 2D는 기존 prop/query의 platform을 공용 fetch 함수에 전달한다.
+- platform 누락 또는 미지원 값은 `steam`으로 조용히 보정하지 않고 사용자 오류로 처리한다.
+
+## 8. 오류와 보안 경계
+
+- `matchId`, `nickname`, `platform`, `mode`는 서버와 클라이언트 양쪽에서 검증한다.
+- nickname은 정규화 비교하지만 payload에는 PUBG API의 canonical name을 사용한다.
+- accountId 원문은 R2 key와 signed URL에 넣지 않는다.
+- cache identity mismatch는 cache miss로 재생성하며 잘못된 payload를 반환하지 않는다.
+- API key, R2 signed URL, accountId, 외부 오류 stack을 사용자 응답이나 브라우저 로그에 남기지 않는다.
+- route의 운영 오류 기록은 제한된 분류 코드와 endpoint 기준으로 남긴다.
+- fetch 전환 시 AbortSignal을 API와 R2 다운로드 모두에 적용해 이전 요청이 최신 화면 상태를 덮지 않게 한다.
+
+## 9. 테스트 설계
+
+### identity·payload 단위 테스트
+
+- platform/mode allowlist
+- 동일 match라도 platform/player/mode가 다르면 key가 다름
+- accountId가 key에 평문으로 포함되지 않음
+- payload identity 일치·불일치
+- 구 payload처럼 identity가 없으면 거부
+
+### 서버 route·cache 테스트
+
+- 새 키만 읽고 구 키를 fallback하지 않음
+- 검증된 cache hit만 presigned URL 반환
+- mismatch·파싱 실패는 재생성
+- match route와 telemetry route가 같은 key builder 사용
+- registry upsert 오류 전파
+- `steam`/`kakao`, `lite`/`full` 분리
+
+### 공용 fetch 테스트
+
+- API envelope 후 presigned payload 다운로드
+- API·R2 오류 처리
+- expected identity 불일치 거부
+- 동일 AbortSignal이 두 fetch에 전달됨
+- 3D·Squad 2D·hook이 공용 함수만 소비
+
+### platform 경계 테스트
+
+- MatchCard의 두 2D URL에 platform 포함
+- MapShell이 platform을 hook에 전달
+- Kakao 요청이 API까지 `kakao`로 유지
+- 누락·미지원 platform fail-closed
+
+### 운영 정합성 테스트
+
+- cleanup 활성 경로가 master와 신규 registry를 합침
+- 만료 match의 신규 registry 객체가 함께 정리 대상이 됨
+- 실제 R2·Supabase 삭제는 테스트 dependency로 대체
+
+## 10. 문서와 검증
+
+- `docs-private/.project_context.md`의 지도 캐시 경로와 소비자 흐름을 새 계약으로 갱신한다.
+- `docs-private/.pubg-telemetry-guide.md`의 서로 충돌하는 cache key 설명을 새 identity 규칙으로 통일한다.
+- `docs/reviews/2026-07-15-feature-code-review.md`에서 P1 1~3의 해결 상태와 실제 남은 P1 수를 갱신한다.
+- 신규 테스트를 `verify:analysis`에 포함한다.
+- 필수 검증:
+  - 집중 신규 테스트
+  - `npm run verify:analysis`
+  - `npm run verify:admin`
+  - 전체 Vitest
+  - Jest
+  - `npm run verify:core`
+  - 변경 범위 ESLint
+  - `git diff --check`
+
+## 11. 비범위
+
+- 기존 R2 객체 일괄 삭제·복사
+- 운영 migration 직접 적용
+- 운영 cleanup 실행
+- 3D 미지원 맵 capability registry
+- 공개 telemetry cache-miss rate limit
+- 전술 점수·티어·분석 버전 산식 변경
+- 외부 Gemini 호출
+
+## 12. 성공 기준
+
+- 모든 리플레이 소비자가 같은 `{ downloadUrl, identity } → payload` 계약을 사용한다.
+- 같은 match의 다른 platform/player/mode가 같은 지도 캐시를 재사용하지 않는다.
+- Kakao 2D 요청이 Steam으로 변환되지 않는다.
+- 구 identity 없는 R2 payload를 새 코드가 읽지 않는다.
+- 새 R2 객체가 Supabase registry와 cleanup 활성 경로에 등록된다.
+- 운영 데이터 삭제 없이 코드·migration·문서·테스트가 준비된다.
