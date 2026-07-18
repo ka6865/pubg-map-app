@@ -15,6 +15,8 @@ import { POST as releasePOST } from "../app/api/board/images/release/route";
 const USER_ID = "11111111-1111-4111-8111-111111111111";
 const IMAGE_ID = "22222222-2222-4222-8222-222222222222";
 const LEASE_TOKEN = "33333333-3333-4333-8333-333333333333";
+const SECOND_IMAGE_ID = "44444444-4444-4444-8444-444444444444";
+const THIRD_IMAGE_ID = "55555555-5555-4555-8555-555555555555";
 
 function request(path: string, body: unknown) {
   return new Request(`https://bgms.test${path}`, {
@@ -35,7 +37,7 @@ function createAdmin(options?: {
   const rpc = vi.fn((name: string) => {
     if (name === "reserve_board_image_upload") {
       return Promise.resolve(options?.reserve ?? {
-        data: [{ image_id: IMAGE_ID, bucket_id: "board-images-v2", storage_key: "server-key" }],
+        data: [{ image_id: IMAGE_ID, bucket_id: "board-images-v2", storage_key: IMAGE_ID }],
         error: null,
       });
     }
@@ -44,7 +46,7 @@ function createAdmin(options?: {
     }
     if (name === "claim_board_image_deletions_for_owner") {
       return Promise.resolve(options?.claim ?? {
-        data: [{ image_id: IMAGE_ID, bucket_id: "board-images-v2", storage_key: "server-key", lease_token: LEASE_TOKEN }],
+        data: [{ image_id: IMAGE_ID, bucket_id: "board-images-v2", storage_key: IMAGE_ID, lease_token: LEASE_TOKEN }],
         error: null,
       });
     }
@@ -97,13 +99,13 @@ describe("게시판 이미지 signed upload API", () => {
 
     expect(response.status).toBe(200);
     expect(admin.from).toHaveBeenCalledWith("board-images-v2");
-    expect(admin.createSignedUploadUrl).toHaveBeenCalledWith("server-key", { upsert: false });
+    expect(admin.createSignedUploadUrl).toHaveBeenCalledWith(IMAGE_ID, { upsert: false });
     expect(await response.json()).toEqual({
       imageId: IMAGE_ID,
       bucketId: "board-images-v2",
-      storageKey: "server-key",
+      storageKey: IMAGE_ID,
       token: "signed-secret-token",
-      publicUrl: expect.stringContaining("/storage/v1/object/public/board-images-v2/server-key"),
+      publicUrl: expect.stringContaining(`/storage/v1/object/public/board-images-v2/${IMAGE_ID}`),
     });
   });
 
@@ -119,6 +121,31 @@ describe("게시판 이미지 signed upload API", () => {
     expect(payload).not.toContain("raw-storage-error");
   });
 
+  it.each([
+    ["다른 bucket", { image_id: IMAGE_ID, bucket_id: "other-bucket", storage_key: IMAGE_ID }],
+    ["UUID가 아닌 image_id", { image_id: "not-a-uuid", bucket_id: "board-images-v2", storage_key: "not-a-uuid" }],
+    ["image_id와 다른 storage_key", { image_id: IMAGE_ID, bucket_id: "board-images-v2", storage_key: "other-key" }],
+  ])("reserve는 RPC 반환 %s 계약 위반 시 signed URL을 생성하지 않고 503을 반환한다", async (_name, row) => {
+    const admin = createAdmin({ reserve: { data: [row], error: null } });
+    mocks.withAuthGuard.mockResolvedValue({ user: { id: USER_ID }, supabaseAdmin: admin.supabaseAdmin });
+
+    const response = await reservePOST(request("/api/board/images/reserve", { mimeType: "image/png", byteSize: 10 }));
+
+    expect(response.status).toBe(503);
+    expect(admin.createSignedUploadUrl).not.toHaveBeenCalled();
+  });
+
+  it("reserve RPC 예외는 원문을 노출하지 않는 503으로 고정한다", async () => {
+    const admin = createAdmin();
+    admin.rpc.mockImplementation(() => Promise.reject(new Error("raw-reserve-error")));
+    mocks.withAuthGuard.mockResolvedValue({ user: { id: USER_ID }, supabaseAdmin: admin.supabaseAdmin });
+
+    const response = await reservePOST(request("/api/board/images/reserve", { mimeType: "image/png", byteSize: 10 }));
+
+    expect(response.status).toBe(503);
+    expect(JSON.stringify(await response.json())).not.toContain("raw-reserve-error");
+  });
+
   it("complete는 storage 검증 RPC 성공일 때만 public URL을 반환한다", async () => {
     const admin = createAdmin({ complete: { data: false, error: null } });
     mocks.withAuthGuard.mockResolvedValue({ user: { id: USER_ID }, supabaseAdmin: admin.supabaseAdmin });
@@ -131,6 +158,17 @@ describe("게시판 이미지 signed upload API", () => {
       p_image_id: IMAGE_ID,
       p_owner_user_id: USER_ID,
     });
+  });
+
+  it("complete RPC 예외는 원문을 노출하지 않는 503으로 고정한다", async () => {
+    const admin = createAdmin();
+    admin.rpc.mockImplementation(() => Promise.reject(new Error("raw-complete-error")));
+    mocks.withAuthGuard.mockResolvedValue({ user: { id: USER_ID }, supabaseAdmin: admin.supabaseAdmin });
+
+    const response = await completePOST(request("/api/board/images/complete", { imageId: IMAGE_ID }));
+
+    expect(response.status).toBe(503);
+    expect(JSON.stringify(await response.json())).not.toContain("raw-complete-error");
   });
 
   it("release는 20개 초과 또는 UUID 외 imageId를 인증 전에 400으로 거부한다", async () => {
@@ -174,5 +212,68 @@ describe("게시판 이미지 signed upload API", () => {
     mocks.withAuthGuard.mockResolvedValueOnce({ user: { id: USER_ID }, supabaseAdmin: empty.supabaseAdmin });
     expect((await releasePOST(request("/api/board/images/release", { imageIds: [IMAGE_ID] }))).status).toBe(200);
     expect(empty.remove).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["다른 bucket", { image_id: IMAGE_ID, bucket_id: "other-bucket", storage_key: IMAGE_ID, lease_token: LEASE_TOKEN }],
+    ["요청에 없는 image_id", { image_id: SECOND_IMAGE_ID, bucket_id: "board-images-v2", storage_key: SECOND_IMAGE_ID, lease_token: LEASE_TOKEN }],
+    ["image_id와 다른 storage_key", { image_id: IMAGE_ID, bucket_id: "board-images-v2", storage_key: "other-key", lease_token: LEASE_TOKEN }],
+    ["UUID가 아닌 lease token", { image_id: IMAGE_ID, bucket_id: "board-images-v2", storage_key: IMAGE_ID, lease_token: "not-a-uuid" }],
+  ])("release는 claim 반환 %s 계약 위반 시 storage remove 없이 503을 반환한다", async (_name, claim) => {
+    const admin = createAdmin({ claim: { data: [claim], error: null } });
+    mocks.withAuthGuard.mockResolvedValue({ user: { id: USER_ID }, supabaseAdmin: admin.supabaseAdmin });
+
+    const response = await releasePOST(request("/api/board/images/release", { imageIds: [IMAGE_ID] }));
+
+    expect(response.status).toBe(503);
+    expect(admin.remove).not.toHaveBeenCalled();
+  });
+
+  it("release는 중복 claim 계약 위반 시 storage remove 없이 503을 반환한다", async () => {
+    const claim = { image_id: IMAGE_ID, bucket_id: "board-images-v2", storage_key: IMAGE_ID, lease_token: LEASE_TOKEN };
+    const admin = createAdmin({ claim: { data: [claim, claim], error: null } });
+    mocks.withAuthGuard.mockResolvedValue({ user: { id: USER_ID }, supabaseAdmin: admin.supabaseAdmin });
+
+    const response = await releasePOST(request("/api/board/images/release", { imageIds: [IMAGE_ID] }));
+
+    expect(response.status).toBe(503);
+    expect(admin.remove).not.toHaveBeenCalled();
+  });
+
+  it("release는 claim 및 remove 예외를 원문 없이 처리하고 remove 예외에도 finalize(false)를 시도한다", async () => {
+    const claimFailure = createAdmin();
+    claimFailure.rpc.mockImplementation(() => Promise.reject(new Error("raw-claim-error")));
+    mocks.withAuthGuard.mockResolvedValueOnce({ user: { id: USER_ID }, supabaseAdmin: claimFailure.supabaseAdmin });
+    const claimResponse = await releasePOST(request("/api/board/images/release", { imageIds: [IMAGE_ID] }));
+
+    expect(claimResponse.status).toBe(503);
+    expect(JSON.stringify(await claimResponse.json())).not.toContain("raw-claim-error");
+
+    const removeFailure = createAdmin();
+    removeFailure.remove.mockRejectedValue(new Error("raw-remove-error"));
+    mocks.withAuthGuard.mockResolvedValueOnce({ user: { id: USER_ID }, supabaseAdmin: removeFailure.supabaseAdmin });
+    const removeResponse = await releasePOST(request("/api/board/images/release", { imageIds: [IMAGE_ID] }));
+
+    expect(removeResponse.status).toBe(200);
+    expect(removeFailure.rpc).toHaveBeenLastCalledWith("finalize_board_image_deletion", {
+      p_image_id: IMAGE_ID,
+      p_lease_token: LEASE_TOKEN,
+      p_deleted: false,
+    });
+  });
+
+  it("release는 타 소유자 등을 포함해 성공 finalize된 삭제 외 모든 고유 요청을 200 deferred로 반환한다", async () => {
+    const admin = createAdmin({ claim: {
+      data: [{ image_id: IMAGE_ID, bucket_id: "board-images-v2", storage_key: IMAGE_ID, lease_token: LEASE_TOKEN }],
+      error: null,
+    } });
+    mocks.withAuthGuard.mockResolvedValue({ user: { id: USER_ID }, supabaseAdmin: admin.supabaseAdmin });
+
+    const response = await releasePOST(request("/api/board/images/release", {
+      imageIds: [IMAGE_ID, IMAGE_ID, SECOND_IMAGE_ID, THIRD_IMAGE_ID],
+    }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ released: 1, deferred: 2 });
   });
 });

@@ -1,6 +1,7 @@
 import {
   BOARD_IMAGE_BUCKET,
   type BoardImageMimeType,
+  isUuid,
 } from "./imageStorageContract";
 
 type RpcResult<T> = PromiseLike<{ data: T; error: unknown }>;
@@ -48,17 +49,28 @@ export async function reserveBoardImageUpload(input: {
   token: string;
   publicUrl: string;
 }>> {
-  const reservation = await input.supabaseAdmin.rpc("reserve_board_image_upload", {
-    p_owner_user_id: input.ownerUserId,
-    p_expected_mime_type: input.mimeType,
-    p_max_bytes: input.byteSize,
-  });
+  let reservation: { data: unknown; error: unknown };
+  try {
+    reservation = await input.supabaseAdmin.rpc("reserve_board_image_upload", {
+      p_owner_user_id: input.ownerUserId,
+      p_expected_mime_type: input.mimeType,
+      p_max_bytes: input.byteSize,
+    });
+  } catch {
+    return { ok: false, status: 503 };
+  }
   const row = getFirstReservedImage(reservation.data);
   if (reservation.error || !row) return { ok: false, status: 503 };
 
-  const { data: signed, error } = await input.supabaseAdmin.storage
-    .from(BOARD_IMAGE_BUCKET)
-    .createSignedUploadUrl(row.storage_key, { upsert: false });
+  let signedResult: { data: { token?: string } | null; error: unknown };
+  try {
+    signedResult = await input.supabaseAdmin.storage
+      .from(BOARD_IMAGE_BUCKET)
+      .createSignedUploadUrl(row.storage_key, { upsert: false });
+  } catch {
+    return { ok: false, status: 503 };
+  }
+  const { data: signed, error } = signedResult;
   if (error || !signed?.token) return { ok: false, status: 503 };
 
   return {
@@ -78,10 +90,16 @@ export async function completeBoardImageUpload(input: {
   ownerUserId: string;
   imageId: string;
 }): Promise<ImageStorageResult<{ imageId: string; publicUrl: string }>> {
-  const { data, error } = await input.supabaseAdmin.rpc("complete_board_image_upload", {
-    p_image_id: input.imageId,
-    p_owner_user_id: input.ownerUserId,
-  });
+  let completion: { data: unknown; error: unknown };
+  try {
+    completion = await input.supabaseAdmin.rpc("complete_board_image_upload", {
+      p_image_id: input.imageId,
+      p_owner_user_id: input.ownerUserId,
+    });
+  } catch {
+    return { ok: false, status: 503 };
+  }
+  const { data, error } = completion;
   if (error) return { ok: false, status: 503 };
   if (data !== true) return { ok: false, status: 404 };
 
@@ -99,57 +117,80 @@ export async function releaseBoardImages(input: {
   ownerUserId: string;
   imageIds: string[];
 }): Promise<ImageStorageResult<{ released: number; deferred: number }>> {
-  const { data, error } = await input.supabaseAdmin.rpc("claim_board_image_deletions_for_owner", {
-    p_owner_user_id: input.ownerUserId,
-    p_image_ids: input.imageIds,
-    p_now: new Date().toISOString(),
-    p_lease_seconds: 300,
-  });
+  let claimResult: { data: unknown; error: unknown };
+  try {
+    claimResult = await input.supabaseAdmin.rpc("claim_board_image_deletions_for_owner", {
+      p_owner_user_id: input.ownerUserId,
+      p_image_ids: input.imageIds,
+      p_now: new Date().toISOString(),
+      p_lease_seconds: 300,
+    });
+  } catch {
+    return { ok: false, status: 503 };
+  }
+  const { data, error } = claimResult;
   if (error) return { ok: false, status: 503 };
 
-  const claims = getClaimedImages(data);
+  const requestedImageIds = new Set(input.imageIds);
+  const claims = getClaimedImages(data, requestedImageIds);
+  if (!claims) return { ok: false, status: 503 };
   let released = 0;
-  let deferred = 0;
   for (const claim of claims) {
-    const { error: removeError } = await input.supabaseAdmin.storage
-      .from(claim.bucket_id)
-      .remove([claim.storage_key]);
-    const deleted = !removeError;
-    const finalized = await input.supabaseAdmin.rpc("finalize_board_image_deletion", {
-      p_image_id: claim.image_id,
-      p_lease_token: claim.lease_token,
-      p_deleted: deleted,
-    });
+    let deleted = false;
+    try {
+      const { error: removeError } = await input.supabaseAdmin.storage
+        .from(claim.bucket_id)
+        .remove([claim.storage_key]);
+      deleted = !removeError;
+    } catch {
+      deleted = false;
+    }
 
-    if (deleted && !finalized.error && finalized.data === true) {
+    let finalized: { data: unknown; error: unknown } | null = null;
+    try {
+      finalized = await input.supabaseAdmin.rpc("finalize_board_image_deletion", {
+        p_image_id: claim.image_id,
+        p_lease_token: claim.lease_token,
+        p_deleted: deleted,
+      });
+    } catch {
+      finalized = null;
+    }
+    if (deleted && !finalized?.error && finalized?.data === true) {
       released += 1;
-    } else {
-      deferred += 1;
     }
   }
-  return { ok: true, data: { released, deferred } };
+  return { ok: true, data: { released, deferred: requestedImageIds.size - released } };
 }
 
 function getFirstReservedImage(value: unknown): ReservedImageRow | null {
   if (!Array.isArray(value) || value.length !== 1) return null;
   const row = value[0];
   if (!isRecord(row) || typeof row.image_id !== "string" || typeof row.bucket_id !== "string"
-    || typeof row.storage_key !== "string") return null;
+    || typeof row.storage_key !== "string" || row.bucket_id !== BOARD_IMAGE_BUCKET
+    || !isUuid(row.image_id) || row.storage_key !== row.image_id) return null;
   return { image_id: row.image_id, bucket_id: row.bucket_id, storage_key: row.storage_key };
 }
 
-function getClaimedImages(value: unknown): ClaimedImageRow[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((row) => {
+function getClaimedImages(value: unknown, requestedImageIds: Set<string>): ClaimedImageRow[] | null {
+  if (!Array.isArray(value) || value.length > requestedImageIds.size) return null;
+  const claimedImageIds = new Set<string>();
+  const claims: ClaimedImageRow[] = [];
+  for (const row of value) {
     if (!isRecord(row) || typeof row.image_id !== "string" || typeof row.bucket_id !== "string"
-      || typeof row.storage_key !== "string" || typeof row.lease_token !== "string") return [];
-    return [{
+      || typeof row.storage_key !== "string" || typeof row.lease_token !== "string"
+      || row.bucket_id !== BOARD_IMAGE_BUCKET || !isUuid(row.image_id) || !isUuid(row.lease_token)
+      || row.storage_key !== row.image_id || !requestedImageIds.has(row.image_id)
+      || claimedImageIds.has(row.image_id)) return null;
+    claimedImageIds.add(row.image_id);
+    claims.push({
       image_id: row.image_id,
       bucket_id: row.bucket_id,
       storage_key: row.storage_key,
       lease_token: row.lease_token,
-    }];
-  });
+    });
+  }
+  return claims;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
