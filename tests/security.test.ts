@@ -10,6 +10,14 @@ vi.mock("../utils/supabase/guard", () => ({
   withOptionalAuth: vi.fn(),
 }));
 
+vi.mock("../lib/board/writeQuota.server", () => ({
+  consumeBoardWriteQuota: vi.fn(async () => ({ ok: true })),
+}));
+
+vi.mock("../lib/board/turnstile.server", () => ({
+  verifyTurnstileToken: vi.fn(async () => ({ ok: true })),
+}));
+
 describe("🔒 BGMS API Route Security Guard Tests", () => {
   let mockSupabaseAdmin: any;
   let profileChain: any;

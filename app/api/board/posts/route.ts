@@ -1,31 +1,41 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
-import { createClient as createAdminClient } from "@supabase/supabase-js";
 import { withOptionalAuth } from "@/utils/supabase/guard";
 import { checkProfanity } from "@/lib/board/profanityFilter";
 import { extractClientIp, checkIpBlacklist } from "@/lib/board/ipUtils";
+import { consumeBoardWriteQuota } from "@/lib/board/writeQuota.server";
+import { verifyTurnstileToken } from "@/lib/board/turnstile.server";
+import { TURNSTILE_ACTIONS } from "@/lib/board/turnstileContract";
 
 /**
  * @fileoverview 비회원 게시글 생성 API
  *
- * 기존 /api/posts/write 는 로그인 필수(withAuthGuard)이므로,
- * 비회원 글쓰기는 이 라우트를 통해 별도 처리합니다.
- * IP 차단 확인 → 비속어 필터 → 비밀번호 해싱 → 저장 파이프라인을 적용합니다.
+ * 호환성을 위해 유지하며 모든 요청을 비회원 작성으로 처리합니다.
  */
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
+const TURNSTILE_TOKEN_MAX_LENGTH = 2048;
 
 export async function POST(request: Request) {
   try {
-    const auth = await withOptionalAuth();
-    if (auth.error) return auth.error;
-    const { supabaseAdmin } = auth;
+    let body: Record<string, unknown>;
+    try {
+      const value: unknown = await request.json();
+      if (!value || typeof value !== "object" || Array.isArray(value)) {
+        return NextResponse.json({ error: "요청 본문이 올바르지 않습니다." }, { status: 400 });
+      }
+      body = value as Record<string, unknown>;
+    } catch {
+      return NextResponse.json({ error: "요청 본문이 올바르지 않습니다." }, { status: 400 });
+    }
+    const { title, content, author, password, category, turnstileToken } = body;
 
-    const body = await request.json();
-    const { title, content, author, password, category } = body;
-
-    if (!title?.trim() || !content?.trim() || !author?.trim() || !password || !category) {
+    if (
+      typeof title !== "string" || !title.trim()
+      || typeof content !== "string" || !content.trim()
+      || typeof author !== "string" || !author.trim()
+      || typeof password !== "string" || !password
+      || typeof category !== "string" || !category.trim()
+    ) {
       return NextResponse.json({ error: "필수 입력값이 누락되었습니다." }, { status: 400 });
     }
     if (author.trim().length > 20) {
@@ -37,15 +47,42 @@ export async function POST(request: Request) {
     if (content.length > 300000) {
       return NextResponse.json({ error: "게시글 용량이 너무 큽니다." }, { status: 413 });
     }
+    const token = typeof turnstileToken === "string" ? turnstileToken.trim() : "";
+    if (!token || token.length > TURNSTILE_TOKEN_MAX_LENGTH) {
+      return NextResponse.json(
+        { error: "보안 인증 토큰이 올바르지 않습니다." },
+        { status: 400 },
+      );
+    }
 
-    // 1. IP 차단 확인
+    const auth = await withOptionalAuth();
+    if (auth.error) return auth.error;
+    const { supabaseAdmin } = auth;
+
     const clientIp = extractClientIp(request);
     const isBlocked = await checkIpBlacklist(clientIp, supabaseAdmin);
     if (isBlocked) {
       return NextResponse.json({ error: "차단된 IP입니다. 관리자에게 문의해주세요." }, { status: 403 });
     }
 
-    // 2. 1차 비속어 필터
+    const quota = await consumeBoardWriteQuota({
+      supabaseAdmin,
+      scope: "post",
+      actor: clientIp,
+    });
+    if (!quota.ok) {
+      return NextResponse.json({ error: quota.error }, { status: quota.status });
+    }
+
+    const turnstile = await verifyTurnstileToken({
+      token,
+      remoteIp: clientIp,
+      expectedAction: TURNSTILE_ACTIONS.post,
+    });
+    if (!turnstile.ok) {
+      return NextResponse.json({ error: turnstile.error }, { status: turnstile.status });
+    }
+
     const titleCheck = checkProfanity(title);
     if (titleCheck.blocked) {
       return NextResponse.json({ error: "제목에 부적절한 표현이 포함되어 있습니다." }, { status: 400 });
@@ -59,10 +96,8 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "닉네임에 부적절한 표현이 포함되어 있습니다." }, { status: 400 });
     }
 
-    // 3. 비밀번호 단방향 해싱
     const passwordHash = await bcrypt.hash(password, 10);
 
-    // 4. 비회원 게시글 저장 (service_role로 RLS 우회)
     const { data, error } = await supabaseAdmin
       .from("posts")
       .insert([{
@@ -82,13 +117,11 @@ export async function POST(request: Request) {
       .single();
 
     if (error) {
-      console.error("[Guest Post Create] DB error:", error);
       return NextResponse.json({ error: "게시글 저장 중 오류가 발생했습니다." }, { status: 500 });
     }
 
     return NextResponse.json({ success: true, data });
-  } catch (err: any) {
-    console.error("[Guest Post Create] Unexpected error:", err);
+  } catch {
     return NextResponse.json({ error: "서버 오류가 발생했습니다." }, { status: 500 });
   }
 }

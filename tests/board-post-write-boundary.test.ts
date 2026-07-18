@@ -1,0 +1,395 @@
+import { readFileSync } from "node:fs";
+import { describe, beforeEach, expect, it, vi } from "vitest";
+
+const mocks = vi.hoisted(() => ({
+  withOptionalAuth: vi.fn(),
+  extractClientIp: vi.fn(() => "203.0.113.10"),
+  checkIpBlacklist: vi.fn(async () => false),
+  checkProfanity: vi.fn(() => ({ blocked: false })),
+  consumeQuota: vi.fn(),
+  verifyTurnstile: vi.fn(),
+  genSalt: vi.fn(async () => "salt"),
+  hash: vi.fn(async () => "password-hash"),
+}));
+
+vi.mock("../utils/supabase/guard", () => ({
+  withOptionalAuth: mocks.withOptionalAuth,
+}));
+
+vi.mock("../lib/board/ipUtils", () => ({
+  extractClientIp: mocks.extractClientIp,
+  checkIpBlacklist: mocks.checkIpBlacklist,
+}));
+
+vi.mock("../lib/board/profanityFilter", () => ({
+  checkProfanity: mocks.checkProfanity,
+}));
+
+vi.mock("../lib/board/writeQuota.server", () => ({
+  consumeBoardWriteQuota: mocks.consumeQuota,
+}));
+
+vi.mock("../lib/board/turnstile.server", () => ({
+  verifyTurnstileToken: mocks.verifyTurnstile,
+}));
+
+vi.mock("bcryptjs", () => ({
+  default: {
+    genSalt: mocks.genSalt,
+    hash: mocks.hash,
+  },
+}));
+
+import { POST as postsWritePOST } from "../app/api/posts/write/route";
+import { POST as guestPostsPOST } from "../app/api/board/posts/route";
+
+function createWriteAdmin(options?: {
+  role?: "user" | "admin";
+  nickname?: string;
+  existingPost?: boolean;
+}) {
+  const insert = vi.fn(() => ({
+    select: vi.fn(async () => ({
+      data: [{ id: 41, title: "테스트 글" }],
+      error: null,
+    })),
+  }));
+  const update = vi.fn(() => ({
+    eq: vi.fn(() => ({
+      select: vi.fn(async () => ({ data: [{ id: 41 }], error: null })),
+    })),
+  }));
+  const profileSingle = vi.fn(async () => ({
+    data: { role: options?.role ?? "user", nickname: options?.nickname },
+    error: null,
+  }));
+  const existingSingle = vi.fn(async () => ({
+    data: options?.existingPost === false
+      ? null
+      : { user_id: "user-a", content: "" },
+    error: options?.existingPost === false ? { message: "missing" } : null,
+  }));
+  const rpc = vi.fn();
+  const supabaseAdmin = {
+    rpc,
+    from: vi.fn((table: string) => {
+      if (table === "profiles") {
+        return {
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({ single: profileSingle })),
+          })),
+        };
+      }
+      if (table === "posts") {
+        return {
+          insert,
+          update,
+          select: vi.fn(() => ({
+            eq: vi.fn(() => ({ single: existingSingle })),
+          })),
+        };
+      }
+      throw new Error(`unexpected table: ${table}`);
+    }),
+    storage: {
+      from: vi.fn(() => ({ remove: vi.fn(async () => ({ error: null })) })),
+    },
+  };
+  return { supabaseAdmin, insert, update, rpc };
+}
+
+function createGuestCompatibilityAdmin() {
+  const single = vi.fn(async () => ({
+    data: { id: 42, title: "호환 글" },
+    error: null,
+  }));
+  const insert = vi.fn(() => ({
+    select: vi.fn(() => ({ single })),
+  }));
+  const supabaseAdmin = {
+    rpc: vi.fn(),
+    from: vi.fn(() => ({ insert })),
+  };
+  return { supabaseAdmin, insert };
+}
+
+function makePostRequest(overrides: Record<string, unknown> = {}) {
+  return new Request("https://bgms.test/api/posts/write", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      title: "테스트 글",
+      content: "테스트 본문",
+      category: "자유",
+      author: "비회원",
+      password: "password",
+      user_id: null,
+      editingPostId: null,
+      ...overrides,
+    }),
+  });
+}
+
+function makeCompatibilityRequest(overrides: Record<string, unknown> = {}) {
+  return new Request("https://bgms.test/api/board/posts", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      title: "호환 글",
+      content: "호환 본문",
+      category: "자유",
+      author: "비회원",
+      password: "password",
+      ...overrides,
+    }),
+  });
+}
+
+describe("게시글 쓰기 Turnstile 저장 경계", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.extractClientIp.mockReturnValue("203.0.113.10");
+    mocks.checkIpBlacklist.mockResolvedValue(false);
+    mocks.checkProfanity.mockReturnValue({ blocked: false });
+    mocks.consumeQuota.mockResolvedValue({ ok: true });
+    mocks.verifyTurnstile.mockResolvedValue({ ok: true });
+    mocks.genSalt.mockResolvedValue("salt");
+    mocks.hash.mockResolvedValue("password-hash");
+  });
+
+  it("잘못된 JSON은 인증과 quota 전에 400으로 거부한다", async () => {
+    const response = await postsWritePOST(new Request("https://bgms.test/api/posts/write", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{",
+    }));
+
+    expect(response.status).toBe(400);
+    expect(mocks.withOptionalAuth).not.toHaveBeenCalled();
+    expect(mocks.consumeQuota).not.toHaveBeenCalled();
+  });
+
+  it("비회원 신규 글은 token 없이 quota, bcrypt, insert에 도달하지 않는다", async () => {
+    const admin = createWriteAdmin();
+    mocks.withOptionalAuth.mockResolvedValue({ user: null, supabaseAdmin: admin.supabaseAdmin });
+
+    const response = await postsWritePOST(makePostRequest());
+
+    expect(response.status).toBe(400);
+    expect(mocks.consumeQuota).not.toHaveBeenCalled();
+    expect(mocks.verifyTurnstile).not.toHaveBeenCalled();
+    expect(mocks.hash).not.toHaveBeenCalled();
+    expect(admin.insert).not.toHaveBeenCalled();
+  });
+
+  it("quota 거부 시 Siteverify와 저장을 호출하지 않는다", async () => {
+    const admin = createWriteAdmin();
+    mocks.withOptionalAuth.mockResolvedValue({ user: null, supabaseAdmin: admin.supabaseAdmin });
+    mocks.consumeQuota.mockResolvedValue({
+      ok: false,
+      status: 429,
+      error: "게시글은 1분에 한 번만 작성할 수 있습니다.",
+    });
+
+    const response = await postsWritePOST(makePostRequest({ turnstileToken: "token" }));
+
+    expect(response.status).toBe(429);
+    expect(mocks.verifyTurnstile).not.toHaveBeenCalled();
+    expect(mocks.hash).not.toHaveBeenCalled();
+    expect(admin.insert).not.toHaveBeenCalled();
+  });
+
+  it("quota RPC 장애는 Siteverify와 저장 전에 503으로 fail-closed 처리한다", async () => {
+    const admin = createWriteAdmin();
+    mocks.withOptionalAuth.mockResolvedValue({ user: null, supabaseAdmin: admin.supabaseAdmin });
+    mocks.consumeQuota.mockResolvedValue({
+      ok: false,
+      status: 503,
+      error: "게시판 요청 제한을 확인하지 못했습니다.",
+    });
+
+    const response = await postsWritePOST(makePostRequest({ turnstileToken: "token" }));
+
+    expect(response.status).toBe(503);
+    expect(mocks.verifyTurnstile).not.toHaveBeenCalled();
+    expect(admin.insert).not.toHaveBeenCalled();
+  });
+
+  it("Turnstile 거부는 bcrypt와 저장 전에 400으로 차단한다", async () => {
+    const admin = createWriteAdmin();
+    mocks.withOptionalAuth.mockResolvedValue({ user: null, supabaseAdmin: admin.supabaseAdmin });
+    mocks.verifyTurnstile.mockResolvedValue({
+      ok: false,
+      status: 400,
+      error: "보안 인증에 실패했습니다. 다시 시도해주세요.",
+    });
+
+    const response = await postsWritePOST(makePostRequest({ turnstileToken: "token" }));
+
+    expect(response.status).toBe(400);
+    expect(mocks.hash).not.toHaveBeenCalled();
+    expect(admin.insert).not.toHaveBeenCalled();
+  });
+
+  it("valid guest_post token만 비회원 insert를 허용한다", async () => {
+    const admin = createWriteAdmin();
+    mocks.withOptionalAuth.mockResolvedValue({ user: null, supabaseAdmin: admin.supabaseAdmin });
+
+    const response = await postsWritePOST(makePostRequest({ turnstileToken: "token" }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.consumeQuota).toHaveBeenCalledWith({
+      supabaseAdmin: admin.supabaseAdmin,
+      actor: "203.0.113.10",
+      scope: "post",
+    });
+    expect(mocks.verifyTurnstile).toHaveBeenCalledWith({
+      expectedAction: "guest_post",
+      remoteIp: "203.0.113.10",
+      token: "token",
+    });
+    expect(admin.insert).toHaveBeenCalledTimes(1);
+  });
+
+  it("회원 신규 글은 user quota를 사용하고 Turnstile을 호출하지 않는다", async () => {
+    const admin = createWriteAdmin();
+    mocks.withOptionalAuth.mockResolvedValue({
+      user: { id: "user-a" },
+      supabaseAdmin: admin.supabaseAdmin,
+    });
+
+    const response = await postsWritePOST(makePostRequest({
+      author: "회원",
+      password: null,
+      user_id: "user-a",
+    }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.consumeQuota).toHaveBeenCalledWith({
+      supabaseAdmin: admin.supabaseAdmin,
+      actor: "user-a",
+      scope: "post",
+    });
+    expect(mocks.verifyTurnstile).not.toHaveBeenCalled();
+    expect(admin.insert).toHaveBeenCalledTimes(1);
+  });
+
+  it("회원 작성자·user ID·공지 권한은 서버 프로필을 기준으로 저장한다", async () => {
+    const admin = createWriteAdmin({ nickname: "서버회원" });
+    mocks.withOptionalAuth.mockResolvedValue({
+      user: { id: "user-a" },
+      supabaseAdmin: admin.supabaseAdmin,
+    });
+
+    const response = await postsWritePOST(makePostRequest({
+      author: "위조작성자",
+      password: null,
+      user_id: "user-a",
+      is_notice: true,
+    }));
+
+    expect(response.status).toBe(200);
+    expect(admin.insert).toHaveBeenCalledWith([
+      expect.objectContaining({
+        author: "서버회원",
+        user_id: "user-a",
+        is_notice: false,
+      }),
+    ]);
+  });
+
+  it("회원 글 수정은 quota와 Turnstile을 소비하지 않는다", async () => {
+    const admin = createWriteAdmin();
+    mocks.withOptionalAuth.mockResolvedValue({
+      user: { id: "user-a" },
+      supabaseAdmin: admin.supabaseAdmin,
+    });
+
+    const response = await postsWritePOST(makePostRequest({
+      editingPostId: 41,
+      author: "회원",
+      password: null,
+      user_id: "user-a",
+    }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.consumeQuota).not.toHaveBeenCalled();
+    expect(mocks.verifyTurnstile).not.toHaveBeenCalled();
+    expect(admin.update).toHaveBeenCalledTimes(1);
+  });
+
+  it("호환 guest route는 token 누락 시 quota, bcrypt, insert 전에 거부한다", async () => {
+    const admin = createGuestCompatibilityAdmin();
+    mocks.withOptionalAuth.mockResolvedValue({ user: null, supabaseAdmin: admin.supabaseAdmin });
+
+    const response = await guestPostsPOST(makeCompatibilityRequest());
+
+    expect(response.status).toBe(400);
+    expect(mocks.consumeQuota).not.toHaveBeenCalled();
+    expect(mocks.hash).not.toHaveBeenCalled();
+    expect(admin.insert).not.toHaveBeenCalled();
+  });
+
+  it("호환 guest route는 타입이 잘못된 body를 인증 전에 400으로 거부한다", async () => {
+    const response = await guestPostsPOST(makeCompatibilityRequest({ title: 1234 }));
+
+    expect(response.status).toBe(400);
+    expect(mocks.withOptionalAuth).not.toHaveBeenCalled();
+    expect(mocks.consumeQuota).not.toHaveBeenCalled();
+  });
+
+  it("호환 guest route는 quota 거부 시 Siteverify와 저장을 호출하지 않는다", async () => {
+    const admin = createGuestCompatibilityAdmin();
+    mocks.withOptionalAuth.mockResolvedValue({ user: null, supabaseAdmin: admin.supabaseAdmin });
+    mocks.consumeQuota.mockResolvedValue({
+      ok: false,
+      status: 429,
+      error: "게시글은 1분에 한 번만 작성할 수 있습니다.",
+    });
+
+    const response = await guestPostsPOST(makeCompatibilityRequest({ turnstileToken: "token" }));
+
+    expect(response.status).toBe(429);
+    expect(mocks.verifyTurnstile).not.toHaveBeenCalled();
+    expect(admin.insert).not.toHaveBeenCalled();
+  });
+
+  it("호환 guest route는 valid guest_post token만 insert를 허용한다", async () => {
+    const admin = createGuestCompatibilityAdmin();
+    mocks.withOptionalAuth.mockResolvedValue({ user: null, supabaseAdmin: admin.supabaseAdmin });
+
+    const response = await guestPostsPOST(makeCompatibilityRequest({ turnstileToken: "token" }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.verifyTurnstile).toHaveBeenCalledWith({
+      expectedAction: "guest_post",
+      remoteIp: "203.0.113.10",
+      token: "token",
+    });
+    expect(admin.insert).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("BoardWrite Turnstile client 계약", () => {
+  const source = readFileSync(
+    new URL("../components/board/BoardWriteClient.tsx", import.meta.url),
+    "utf8",
+  );
+
+  it("guest_post 위젯을 비회원 신규 작성에서만 표시한다", () => {
+    expect(source).toContain("!user && !editPostId");
+    expect(source).toContain("<TurnstileWidget");
+    expect(source).toContain("action={TURNSTILE_ACTIONS.post}");
+  });
+
+  it("비회원 token을 메모리에 보관해 실제 저장 body에 포함한다", () => {
+    expect(source).toContain("const [turnstileToken, setTurnstileToken] = useState<string | null>(null)");
+    expect(source).toContain("turnstileToken: user || editPostId ? null : turnstileToken");
+    expect(source).not.toContain("turnstile_verified");
+    expect(source).not.toContain("/api/board/turnstile");
+  });
+
+  it("비회원 submit 시도 후 성공과 실패 모두 token과 widget을 초기화한다", () => {
+    expect(source).toMatch(/finally\s*{[\s\S]*setTurnstileToken\(null\)[\s\S]*setTurnstileGeneration/);
+  });
+});
