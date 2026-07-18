@@ -73,14 +73,44 @@ export function useTelemetry(
   const [maxTimeMs, setMaxTimeMs] = useState(0);
   const [isFullMode, setIsFullMode] = useState(false);
   const teamColorMapRef = useRef<Record<number, string>>({});
+  const lastUpdateRef = useRef<number>(0);
+  const timerRef = useRef<number | null>(null);
+  const statesRef = useRef<Record<string, PlayerState>>({});
+  const lastProcessedTimeRef = useRef<number>(-1);
+  const lastEventIndexRef = useRef<number>(0);
+  const historyPosRef = useRef<Record<string, { x: number, y: number, time: number, health: number }>>({});
+  const futurePosRef = useRef<Record<string, { x: number, y: number, time: number, health: number } | null>>({});
+  const [currentStates, setCurrentStates] = useState<Record<string, PlayerState>>({});
+
+  const resetTelemetryState = useCallback(() => {
+    if (timerRef.current !== null) cancelAnimationFrame(timerRef.current);
+    timerRef.current = null;
+    setEvents([]);
+    setTeammates([]);
+    setTeamNames([]);
+    setZoneEvents([]);
+    setLoading(false);
+    setError(null);
+    setIsPlaying(false);
+    setCurrentTimeMs(0);
+    setMaxTimeMs(0);
+    setIsFullMode(false);
+    setCurrentStates({});
+    teamColorMapRef.current = {};
+    statesRef.current = {};
+    lastProcessedTimeRef.current = -1;
+    lastEventIndexRef.current = 0;
+    historyPosRef.current = {};
+    futurePosRef.current = {};
+  }, []);
 
   const fetchTelemetry = useCallback(async (
     full: boolean = false,
-    controller?: AbortController,
+    controller: AbortController,
   ) => {
+    resetTelemetryState();
     if (!matchId || !nickname || !playbackPlatform || !mapName) return;
     setLoading(true);
-    setError(null);
     try {
       const data = await fetchTelemetryPayload({
         matchId,
@@ -88,7 +118,8 @@ export function useTelemetry(
         platform: playbackPlatform,
         mapName,
         mode: full ? "full" : "lite",
-      }, controller ? { signal: controller.signal } : undefined);
+      }, { signal: controller.signal });
+      if (controller.signal.aborted) return;
 
       const evs = data.events as TelemetryEvent[];
       setEvents(evs);
@@ -119,12 +150,12 @@ export function useTelemetry(
         setMaxTimeMs(0);
       }
     } catch (error: unknown) {
-      if (controller?.signal.aborted) return;
+      if (controller.signal.aborted) return;
       setError(error instanceof Error ? error.message : "텔레메트리 요청에 실패했습니다.");
     } finally {
-      if (!controller?.signal.aborted) setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
-  }, [matchId, nickname, playbackPlatform, mapName]);
+  }, [matchId, nickname, playbackPlatform, mapName, resetTelemetryState]);
 
   // ✅ 시작 시점의 mode 파람리터를 ref로 고정하여 리렌더 시 불필요한 re-fetch 방지
   const initialModeRef = useRef<string | null>(
@@ -136,9 +167,6 @@ export function useTelemetry(
     void fetchTelemetry(initialModeRef.current === "full", controller);
     return () => controller.abort();
   }, [fetchTelemetry]);
-
-  const lastUpdateRef = useRef<number>(0);
-  const timerRef = useRef<number | null>(null);
 
   // 🎯 React 19 대응: 마운트 시점에 안전하게 초기값 할당 (Purity 보장)
   useEffect(() => {
@@ -165,16 +193,6 @@ export function useTelemetry(
     timerRef.current = requestAnimationFrame(loop);
     return () => { if (timerRef.current) cancelAnimationFrame(timerRef.current); };
   }, [isPlaying, playbackSpeed, maxTimeMs]);
-
-  // 🚀 변수명 변경 및 위치 조정 (IDE 유령 에러 해결용)
-  const statesRef = useRef<Record<string, PlayerState>>({});
-  const lastProcessedTimeRef = useRef<number>(-1);
-  const lastEventIndexRef = useRef<number>(0);
-  const historyPosRef = useRef<Record<string, { x: number, y: number, time: number, health: number }>>({});
-  const futurePosRef = useRef<Record<string, { x: number, y: number, time: number, health: number } | null>>({});
-
-  // 🎯 React 19 대응: currentStates를 상태로 관리하고 useEffect에서 안전하게 업데이트 (Cascading Render 방지)
-  const [currentStates, setCurrentStates] = useState<Record<string, PlayerState>>({});
 
   useEffect(() => {
     if (events.length === 0) {

@@ -27,6 +27,7 @@ type TelemetryFetchOptions = {
 
 const MATCH_ID = /^[A-Za-z0-9._-]{1,160}$/;
 const NICKNAME = /^[^\u0000-\u001f\u007f]{1,64}$/;
+const MAP_NAME = /^[^\u0000-\u001f\u007f]{1,80}$/;
 const REQUEST_ERROR = "텔레메트리 요청에 실패했습니다.";
 const DOWNLOAD_ERROR = "텔레메트리 다운로드에 실패했습니다.";
 const VALIDATION_ERROR = "텔레메트리 데이터 검증에 실패했습니다.";
@@ -48,6 +49,9 @@ function validateRequest(request: TelemetryRequest): {
   const nickname = request.nickname.trim();
   if (!NICKNAME.test(nickname)) {
     throw new Error("유효하지 않은 nickname입니다.");
+  }
+  if (request.mapName !== undefined && !MAP_NAME.test(request.mapName)) {
+    throw new Error("유효하지 않은 mapName입니다.");
   }
 
   return {
@@ -101,7 +105,7 @@ export async function fetchTelemetryPayload(
     platform: validated.platform,
     mode: validated.mode,
   });
-  if (request.mapName) query.set("mapName", request.mapName);
+  if (request.mapName !== undefined) query.set("mapName", request.mapName);
 
   const fetchFn = options.fetchFn ?? fetch;
   const envelopeValue = await requestJson(

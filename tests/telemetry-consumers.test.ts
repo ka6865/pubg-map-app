@@ -29,7 +29,7 @@ describe("텔레메트리 소비자 계약", () => {
     expect(useTelemetrySource).toContain("platform: playbackPlatform");
     expect(useTelemetrySource).toContain("signal: controller.signal");
     expect(replay3dSource).toContain("platform: targetPlatform");
-    expect(replay3dSource).toContain("signal: controller.signal");
+    expect(replay3dSource).toContain("signal: request.controller.signal");
     expect(squad2dSource).toContain("platform: telemetryPlatform");
     expect(squad2dSource).toContain("signal: controller.signal");
     expect(replay3dSource).not.toMatch(/platform\s*\|\|\s*["']steam["']/);
@@ -47,11 +47,31 @@ describe("텔레메트리 소비자 계약", () => {
     );
     expect(mapShellSource).not.toMatch(/searchParams\?\.get\(["']platform["']\)\s*\|\|\s*["']steam["']/);
     expect(mapShellSource).toContain("error={playbackPlatformError || telemetryError}");
+    expect(mapShellSource).toContain("isActive: !!playbackId && !playbackPlatformError");
+    expect(mapShellSource).toContain("safeTelemetryEvents");
+    expect(mapShellSource).toContain("safeCurrentStates");
+    expect(mapShellSource).toContain("safeTeamNames");
+    expect(mapShellSource).toContain("safeZoneEvents");
   });
 
   it("닫기 동작이 replay query 네 개를 모두 제거한다", () => {
     for (const query of ["playback", "nickname", "platform", "mode"]) {
       expect(mapShellSource).toContain(`p.delete("${query}")`);
     }
+  });
+
+  it("3D 자동·수동 요청이 같은 latest request 경계와 상태 초기화를 사용한다", () => {
+    expect(replay3dSource).toContain("useLatestTelemetryRequest");
+    expect(replay3dSource).toContain("resetReplayState");
+    expect(replay3dSource.match(/startTelemetryRequest\(/g)).toHaveLength(2);
+    expect(replay3dSource).toContain("isCurrent(request)");
+    expect(replay3dSource).toContain("cancelRequest(request)");
+    expect(replay3dSource).toContain("resolveReplay3DRequest");
+  });
+
+  it("useTelemetry가 identity 전환·누락·실패 전에 이전 리플레이 상태를 초기화한다", () => {
+    expect(useTelemetrySource).toContain("resetTelemetryState");
+    expect(useTelemetrySource).toContain("controller.signal.aborted");
+    expect(useTelemetrySource).toMatch(/resetTelemetryState\(\);[\s\S]*if \(!matchId/);
   });
 });

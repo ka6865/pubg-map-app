@@ -157,4 +157,23 @@ describe("fetchTelemetryPayload", () => {
 
     expect(fetchFn).not.toHaveBeenCalled();
   });
+
+  it("mapName의 제어문자와 최대 길이 초과를 fetch 전에 거부한다", async () => {
+    const fetchFn = vi.fn();
+    const valid = {
+      matchId: "match-1",
+      nickname: "Player",
+      platform: "steam" as const,
+      mode: "lite" as const,
+    };
+
+    for (const mapName of ["Baltic\nMain", "x".repeat(81)]) {
+      await expect(fetchTelemetryPayload({
+        ...valid,
+        mapName,
+      }, { fetchFn })).rejects.toThrow("유효하지 않은 mapName입니다.");
+    }
+
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
 });

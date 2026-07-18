@@ -77,6 +77,10 @@ const MapShell = memo(({
       currentTimeMs, setCurrentTimeMs, maxTimeMs, currentStates, teamNames, zoneEvents,
       isFullMode
     } = useTelemetry(playbackId, playbackNickname, playbackPlatform, activeMapId);
+    const safeTelemetryEvents = playbackPlatformError ? [] : telemetryEvents;
+    const safeCurrentStates = playbackPlatformError ? {} : currentStates;
+    const safeTeamNames = playbackPlatformError ? [] : teamNames;
+    const safeZoneEvents = playbackPlatformError ? [] : zoneEvents;
 
     const [activeMode, setActiveMode] = useState<"none" | "mortar" | "flight" | "report" | "simulate">("none");
     const [isMortarDisclaimerOpen, setIsMortarDisclaimerOpen] = useState(false);
@@ -409,8 +413,8 @@ const MapShell = memo(({
               pendingVehicles={playbackId ? [] : pendingVehicles} filters={filters} isHotDropOn={isHotDropOn}
               isHighPrecision={isFullMode}
               telemetryData={{
-                isActive: !!playbackId, mapName: activeMapId || "Erangel", events: telemetryEvents, currentTimeMs, currentStates,
-                teamNames, zoneEvents, showZone, showCombatDots, showShotDots, hiddenPlayers, showPlayerNames, showFlightPath,
+                isActive: !!playbackId && !playbackPlatformError, mapName: activeMapId || "Erangel", events: safeTelemetryEvents, currentTimeMs, currentStates: safeCurrentStates,
+                teamNames: safeTeamNames, zoneEvents: safeZoneEvents, showZone, showCombatDots, showShotDots, hiddenPlayers, showPlayerNames, showFlightPath,
               }}
               simulatorStep={simulatorStep}
               simulatorPhases={simulatorPhases}
@@ -444,9 +448,9 @@ const MapShell = memo(({
                     </div>
                   )}
 
-                  {zoneEvents.length > 0 && (
+                  {safeZoneEvents.length > 0 && (
                     <div className={`bg-black/80 backdrop-blur-md ${isMobile ? 'px-3 py-0.5' : 'px-4 py-1'} rounded-full border border-white/10 shadow-2xl flex items-center gap-3 animate-fade-in`}>
-                       <ZoneStatus currentTimeMs={currentTimeMs} zoneEvents={zoneEvents} />
+                       <ZoneStatus currentTimeMs={currentTimeMs} zoneEvents={safeZoneEvents} />
                     </div>
                   )}
                   
@@ -459,7 +463,7 @@ const MapShell = memo(({
                     <div className="flex flex-col items-center">
                       <span className="text-[9px] text-[#F2A900] font-bold uppercase tracking-widest">Alive</span>
                       <span className={`${isMobile ? 'text-lg' : 'text-2xl'} font-mono font-bold text-[#F2A900] leading-none`}>
-                        {Object.values(currentStates || {}).filter((p: any) => !p.isDead).length}
+                        {Object.values(safeCurrentStates).filter((p: any) => !p.isDead).length}
                       </span>
                     </div>
                   </div>
@@ -493,7 +497,7 @@ const MapShell = memo(({
                 {/* 하단 플레이어 컨트롤러 */}
                 <div className={`absolute ${isMobile ? 'bottom-20' : 'bottom-6'} left-1/2 -translate-x-1/2 z-[1000] w-full max-w-2xl px-4`}>
                   <TelemetryPlayer
-                    events={telemetryEvents} teamNames={teamNames} isPlaying={isPlaying} setIsPlaying={setIsPlaying} playbackSpeed={playbackSpeed}
+                    events={safeTelemetryEvents} teamNames={safeTeamNames} isPlaying={isPlaying} setIsPlaying={setIsPlaying} playbackSpeed={playbackSpeed}
                     setPlaybackSpeed={setPlaybackSpeed} currentTimeMs={currentTimeMs} setCurrentTimeMs={setCurrentTimeMs}
                     maxTimeMs={maxTimeMs} loading={telemetryLoading} error={playbackPlatformError || telemetryError} showZone={showZone}
                     onToggleZone={() => setShowZone(!showZone)} showCombatDots={showCombatDots}
@@ -512,9 +516,9 @@ const MapShell = memo(({
                     }}
                   />
                 </div>
-                {telemetryEvents.length > 0 && (
+                {safeTelemetryEvents.length > 0 && (
                   <div className={isMobile ? "translate-y-[-60px]" : ""}>
-                    <KillFeed events={telemetryEvents} currentTimeMs={currentTimeMs} teamNames={teamNames} playbackSpeed={playbackSpeed} />
+                    <KillFeed events={safeTelemetryEvents} currentTimeMs={currentTimeMs} teamNames={safeTeamNames} playbackSpeed={playbackSpeed} />
                   </div>
                 )}
               </>
@@ -535,7 +539,7 @@ const MapShell = memo(({
                   onClick={() => setIsMenuOpen(false)}
                 />
               )}
-              <TelemetrySidebar currentStates={currentStates} teamNames={teamNames} />
+              <TelemetrySidebar currentStates={safeCurrentStates} teamNames={safeTeamNames} />
             </div>
           )}
         </div>
