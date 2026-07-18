@@ -52,4 +52,65 @@ describe("게시판 이미지 Storage 소유권 마이그레이션", () => {
     expect(sql).toContain('DROP POLICY IF EXISTS "Delete Policy" ON storage.objects');
     expect(sql).toContain("board-images-v2");
   });
+
+  it("OUT 변수와 충돌하지 않도록 RPC SQL 컬럼을 별칭으로 한정한다", () => {
+    const sql = readMigrationSql();
+
+    expect(sql).toContain("FROM public.posts AS post_row WHERE post_row.id = p_post_id FOR UPDATE");
+    expect(sql).toContain("UPDATE public.posts AS post_row");
+    expect(sql).toContain("RETURNING post_row.revision INTO v_post.revision");
+    expect(sql).not.toContain("WHERE id = p_post_id FOR UPDATE");
+    expect(sql).not.toContain("RETURNING revision INTO v_post.revision");
+  });
+
+  it("attach와 detach가 같은 이미지 행을 고정 순서로 잠근다", () => {
+    const sql = readMigrationSql();
+
+    expect(sql).toContain("locked_image_ids AS");
+    expect(sql).toContain("ORDER BY requested_row.requested_image_id");
+    expect(sql).toContain("FOR UPDATE");
+    expect(sql).toContain("invalid_board_image_reference");
+    expect(sql).toContain("image_row.status = 'ready'");
+  });
+
+  it("만료 pending과 deleting lease를 bounded claim으로 회수한다", () => {
+    const sql = readMigrationSql();
+
+    expect(sql).toContain("now() + interval '24 hours'");
+    expect(sql).toContain("object_row.status = 'delete_pending' AND object_row.delete_after <= p_now");
+    expect(sql).toContain("object_row.status = 'deleting' AND object_row.delete_lease_until <= p_now");
+    expect(sql).toContain("object_row.status = 'pending' AND object_row.expires_at <= p_now");
+    expect(sql).toContain("ORDER BY object_row.id");
+    expect(sql).toContain("LIMIT LEAST(p_limit, 20)");
+  });
+
+  it("실제 images 객체와 정규 Supabase URL만 legacy ref로 backfill한다", () => {
+    const sql = readMigrationSql();
+
+    expect(sql).toContain("FROM storage.objects AS storage_object");
+    expect(sql).toContain("storage_object.bucket_id = 'images'");
+    expect(sql).toContain("https://%.supabase.co/storage/v1/object/public/images/%");
+    expect(sql).toContain("legacy_url.image_url NOT LIKE '%\\\\%%'");
+    expect(sql).not.toContain("owner_user_id = storage_object.owner");
+  });
+
+  it("참조와 삭제 claim 조회를 위한 인덱스를 만든다", () => {
+    const sql = readMigrationSql();
+
+    expect(sql).toContain("CREATE INDEX IF NOT EXISTS board_post_image_refs_image_id_idx");
+    expect(sql).toContain("CREATE INDEX IF NOT EXISTS board_image_objects_claim_idx");
+  });
+
+  it("격리 DB 검증 스크립트가 운영 URL을 거부하고 핵심 행위를 검사한다", () => {
+    const script = readFileSync(resolve(process.cwd(), "scripts/verify_board_image_storage_migration.ts"), "utf8");
+
+    expect(script).toContain("unsafe-board-image-storage-test-database-url");
+    expect(script).toContain("reserve-complete");
+    expect(script).toContain("mime-size-rejection");
+    expect(script).toContain("revision-conflict-immutable");
+    expect(script).toContain("multi-ref-detach");
+    expect(script).toContain("duplicate-claim");
+    expect(script).toContain("expired-lease-reclaim");
+    expect(script).toContain("finalize-retry");
+  });
 });
