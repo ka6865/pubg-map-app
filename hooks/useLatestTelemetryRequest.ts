@@ -2,22 +2,16 @@ import { useCallback, useEffect, useRef } from "react";
 
 export type TelemetryRequestToken = Readonly<{
   controller: AbortController;
-  identity: string;
-  sequence: number;
 }>;
 
 export function useLatestTelemetryRequest() {
   const currentRef = useRef<TelemetryRequestToken | null>(null);
-  const sequenceRef = useRef(0);
 
-  const begin = useCallback((identity: string): TelemetryRequestToken => {
+  const begin = useCallback((): TelemetryRequestToken => {
     currentRef.current?.controller.abort();
     const request = {
       controller: new AbortController(),
-      identity,
-      sequence: sequenceRef.current + 1,
     };
-    sequenceRef.current = request.sequence;
     currentRef.current = request;
     return request;
   }, []);

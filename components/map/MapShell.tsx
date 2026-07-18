@@ -14,7 +14,7 @@ import HomeNotice from "./HomeNotice";
 import { TelemetrySidebar } from "./telemetry/TelemetrySidebar";
 import { SimulatorPanel } from "./SimulatorPanel";
 import { HeatmapLegend } from "./HeatmapLegend";
-import type { TelemetryPlatform } from "../../lib/pubg-analysis/telemetryIdentity";
+import type { TelemetryMode, TelemetryPlatform } from "../../lib/pubg-analysis/telemetryIdentity";
 
 interface MapShellProps {
   activeMapId: string;
@@ -63,24 +63,34 @@ const MapShell = memo(({
     const playbackId = searchParams?.get("playback") || null;
     const playbackNickname = searchParams?.get("nickname") || null;
     const playbackPlatformParam = searchParams?.get("platform") || null;
+    const playbackModeParam = searchParams?.get("mode") || null;
     const playbackPlatform: TelemetryPlatform | null =
       playbackPlatformParam === "steam" || playbackPlatformParam === "kakao"
         ? playbackPlatformParam
         : null;
-    const playbackPlatformError = playbackId && !playbackPlatform
-      ? "리플레이 platform이 누락되었거나 지원되지 않습니다."
-      : null;
+    const playbackMode: TelemetryMode | null = playbackModeParam === null
+      ? "lite"
+      : playbackModeParam === "lite" || playbackModeParam === "full"
+        ? playbackModeParam
+        : null;
+    const playbackIdentityError = playbackId && !playbackNickname
+      ? "리플레이 nickname이 누락되었습니다."
+      : playbackId && !playbackPlatform
+        ? "리플레이 platform이 누락되었거나 지원되지 않습니다."
+        : playbackId && !playbackMode
+          ? "리플레이 mode가 지원되지 않습니다."
+          : null;
     
     const {
       events: telemetryEvents, loading: telemetryLoading, error: telemetryError,
       isPlaying, setIsPlaying, playbackSpeed, setPlaybackSpeed,
       currentTimeMs, setCurrentTimeMs, maxTimeMs, currentStates, teamNames, zoneEvents,
       isFullMode
-    } = useTelemetry(playbackId, playbackNickname, playbackPlatform, activeMapId);
-    const safeTelemetryEvents = playbackPlatformError ? [] : telemetryEvents;
-    const safeCurrentStates = playbackPlatformError ? {} : currentStates;
-    const safeTeamNames = playbackPlatformError ? [] : teamNames;
-    const safeZoneEvents = playbackPlatformError ? [] : zoneEvents;
+    } = useTelemetry(playbackId, playbackNickname, playbackPlatform, playbackMode, activeMapId);
+    const safeTelemetryEvents = playbackIdentityError ? [] : telemetryEvents;
+    const safeCurrentStates = playbackIdentityError ? {} : currentStates;
+    const safeTeamNames = playbackIdentityError ? [] : teamNames;
+    const safeZoneEvents = playbackIdentityError ? [] : zoneEvents;
 
     const [activeMode, setActiveMode] = useState<"none" | "mortar" | "flight" | "report" | "simulate">("none");
     const [isMortarDisclaimerOpen, setIsMortarDisclaimerOpen] = useState(false);
@@ -413,7 +423,7 @@ const MapShell = memo(({
               pendingVehicles={playbackId ? [] : pendingVehicles} filters={filters} isHotDropOn={isHotDropOn}
               isHighPrecision={isFullMode}
               telemetryData={{
-                isActive: !!playbackId && !playbackPlatformError, mapName: activeMapId || "Erangel", events: safeTelemetryEvents, currentTimeMs, currentStates: safeCurrentStates,
+                isActive: !!playbackId && !playbackIdentityError, mapName: activeMapId || "Erangel", events: safeTelemetryEvents, currentTimeMs, currentStates: safeCurrentStates,
                 teamNames: safeTeamNames, zoneEvents: safeZoneEvents, showZone, showCombatDots, showShotDots, hiddenPlayers, showPlayerNames, showFlightPath,
               }}
               simulatorStep={simulatorStep}
@@ -499,7 +509,7 @@ const MapShell = memo(({
                   <TelemetryPlayer
                     events={safeTelemetryEvents} teamNames={safeTeamNames} isPlaying={isPlaying} setIsPlaying={setIsPlaying} playbackSpeed={playbackSpeed}
                     setPlaybackSpeed={setPlaybackSpeed} currentTimeMs={currentTimeMs} setCurrentTimeMs={setCurrentTimeMs}
-                    maxTimeMs={maxTimeMs} loading={telemetryLoading} error={playbackPlatformError || telemetryError} showZone={showZone}
+                    maxTimeMs={maxTimeMs} loading={telemetryLoading} error={playbackIdentityError || telemetryError} showZone={showZone}
                     onToggleZone={() => setShowZone(!showZone)} showCombatDots={showCombatDots}
                     onToggleCombatDots={() => setShowCombatDots(!showCombatDots)} showShotDots={showShotDots}
                     onToggleShotDots={() => setShowShotDots(!showShotDots)} hiddenPlayers={hiddenPlayers}

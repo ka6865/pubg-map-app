@@ -2,9 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
+  buildTelemetryObjectInventoryArchive,
   fetchAllRowsByRange,
   runTelemetryStorageCleanup,
   type TelemetryCleanupDependencies,
+  type TelemetryCleanupRegistryRow,
 } from "../scripts/cleanup_telemetry";
 
 function createDependencies(
@@ -12,7 +14,10 @@ function createDependencies(
 ): TelemetryCleanupDependencies {
   return {
     listMasterRows: vi.fn().mockResolvedValue([]),
+    listRegistryRows: vi.fn().mockResolvedValue([]),
+    archiveObjectInventory: vi.fn().mockResolvedValue(undefined),
     cleanupExpiredMatches: vi.fn(async (matchIds: string[]) => matchIds),
+    now: () => new Date("2026-07-18T00:00:00.000Z"),
     ...overrides,
   };
 }
@@ -86,8 +91,113 @@ describe("telemetry cleanup registry", () => {
     expect(cleanupExpiredMatches).toHaveBeenCalledWith(["m1"], cutoff, 59);
     expect(result).toEqual({
       deletedMatchCount: 1,
+      archivedObjectCount: 0,
+      inventoryManifestCount: 0,
       r2DeletionDeferred: true,
     });
+  });
+
+  it("master 없는 만료 registry를 R2 manifest에 먼저 보관한 뒤 DB cleanup에 전달한다", async () => {
+    const registryRow: TelemetryCleanupRegistryRow = {
+      match_id: "registry-only",
+      storage_path: "telemetry-map/v60/steam/registry-only/player/lite.json",
+      status: "ready",
+      lease_expires_at: null,
+      updated_at: "2026-07-01T00:00:00.000Z",
+    };
+    const archiveObjectInventory = vi.fn().mockResolvedValue(undefined);
+    const cleanupExpiredMatches = vi.fn().mockResolvedValue(["registry-only"]);
+
+    const result = await runTelemetryStorageCleanup({
+      cutoff: new Date("2026-07-17T00:00:00.000Z"),
+      targetVersion: 59,
+    }, createDependencies({
+      listRegistryRows: vi.fn().mockResolvedValue([registryRow]),
+      archiveObjectInventory,
+      cleanupExpiredMatches,
+    }));
+
+    expect(archiveObjectInventory).toHaveBeenCalledWith([registryRow]);
+    expect(cleanupExpiredMatches).toHaveBeenCalledWith(
+      ["registry-only"],
+      new Date("2026-07-17T00:00:00.000Z"),
+      59,
+    );
+    expect(archiveObjectInventory.mock.invocationCallOrder[0])
+      .toBeLessThan(cleanupExpiredMatches.mock.invocationCallOrder[0]);
+    expect(result).toEqual({
+      deletedMatchCount: 1,
+      archivedObjectCount: 1,
+      inventoryManifestCount: 1,
+      r2DeletionDeferred: true,
+    });
+  });
+
+  it("inventory manifest는 입력 순서와 무관한 결정적 key를 사용한다", () => {
+    const rows: TelemetryCleanupRegistryRow[] = [
+      {
+        match_id: "m2",
+        storage_path: "telemetry-map/b.json",
+        status: "ready",
+        lease_expires_at: null,
+        updated_at: "2026-07-01T00:00:00.000Z",
+      },
+      {
+        match_id: "m1",
+        storage_path: "telemetry-map/a.json",
+        status: "ready",
+        lease_expires_at: null,
+        updated_at: "2026-07-01T00:00:00.000Z",
+      },
+    ];
+
+    const forward = buildTelemetryObjectInventoryArchive(rows);
+    const reversed = buildTelemetryObjectInventoryArchive([...rows].reverse());
+
+    expect(forward).toEqual(reversed);
+    expect(forward.storagePath).toMatch(/^telemetry-inventory\/v1\/[a-f0-9]{64}\.json$/);
+  });
+
+  it("inventory manifest 저장 실패 시 registry cleanup RPC를 호출하지 않는다", async () => {
+    const cleanupExpiredMatches = vi.fn().mockResolvedValue(["registry-only"]);
+    await expect(runTelemetryStorageCleanup({
+      cutoff: new Date("2026-07-17T00:00:00.000Z"),
+      targetVersion: 59,
+    }, createDependencies({
+      listRegistryRows: vi.fn().mockResolvedValue([{
+        match_id: "registry-only",
+        storage_path: "telemetry-map/registry-only.json",
+        status: "ready",
+        lease_expires_at: null,
+        updated_at: "2026-07-01T00:00:00.000Z",
+      }]),
+      archiveObjectInventory: vi.fn().mockRejectedValue(new Error("r2 unavailable")),
+      cleanupExpiredMatches,
+    }))).rejects.toThrow("r2 unavailable");
+    expect(cleanupExpiredMatches).not.toHaveBeenCalled();
+  });
+
+  it("활성 pending lease는 registry-only cleanup 후보에서 제외한다", async () => {
+    const cleanupExpiredMatches = vi.fn().mockResolvedValue([]);
+    const archiveObjectInventory = vi.fn().mockResolvedValue(undefined);
+
+    await runTelemetryStorageCleanup({
+      cutoff: new Date("2026-07-17T00:00:00.000Z"),
+      targetVersion: 59,
+    }, createDependencies({
+      listRegistryRows: vi.fn().mockResolvedValue([{
+        match_id: "writer-active",
+        storage_path: "telemetry-map/writer-active.json",
+        status: "pending",
+        lease_expires_at: "2026-07-18T00:15:00.000Z",
+        updated_at: "2026-07-01T00:00:00.000Z",
+      }]),
+      archiveObjectInventory,
+      cleanupExpiredMatches,
+    }));
+
+    expect(archiveObjectInventory).not.toHaveBeenCalled();
+    expect(cleanupExpiredMatches).not.toHaveBeenCalled();
   });
 
   it("50개를 넘는 만료 match를 RPC 입력 상한에 맞게 나눈다", async () => {
@@ -178,6 +288,8 @@ describe("telemetry cleanup registry", () => {
     expect(migration).toContain("in share row exclusive mode");
     expect(migration).toContain("cache.updated_at >= p_cutoff");
     expect(migration).toContain("cache.updated_at < p_cutoff");
+    expect(migration).toContain("lease_expires_at >= statement_timestamp()");
+    expect(migration).toContain("master.match_id is null");
     expect(migration).toContain("not exists");
     expect(migration).toContain("delete from public.match_stats_raw");
     expect(migration).toContain("delete from public.processed_match_telemetry");

@@ -108,5 +108,13 @@ describe("telemetry identity", () => {
     expect(sql).not.toMatch(/create policy/i);
     expect(sql).toContain("revoke all on table public.telemetry_map_cache_entries from anon, authenticated");
     expect(sql).toContain("grant select, insert, update, delete on table public.telemetry_map_cache_entries to service_role");
+    expect(sql).toMatch(
+      /pg_get_serial_sequence\(\s*'public\.telemetry_map_cache_entries',\s*'id'\s*\)/,
+    );
+    expect(sql).toMatch(/revoke all on sequence[\s\S]*from public, anon, authenticated/i);
+    expect(sql).toMatch(/grant usage, select on sequence[\s\S]*to service_role/i);
+    expect(sql).toContain("finalize_telemetry_cache_write");
+    expect(sql).toMatch(/insert into public\.processed_match_telemetry[\s\S]*insert into public\.match_master_telemetry[\s\S]*insert into public\.telemetry_map_cache_entries/);
+    expect(sql).toMatch(/revoke all on function public\.finalize_telemetry_cache_write[\s\S]*from public, anon, authenticated/);
   });
 });

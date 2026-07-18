@@ -1,7 +1,7 @@
 // BGMS Refreshed V2
 import { useState, useEffect, useRef, useCallback } from "react";
 import { fetchTelemetryPayload } from "../lib/pubg-analysis/fetchTelemetryPayload";
-import type { TelemetryPlatform } from "../lib/pubg-analysis/telemetryIdentity";
+import type { TelemetryMode, TelemetryPlatform } from "../lib/pubg-analysis/telemetryIdentity";
 
 export interface TelemetryEvent {
   type: "position" | "enemy_position" | "ride" | "leave" | "kill" | "groggy" | "took_damage" | "shot" | "revive" | "create" | "throw" | "throw_explode" | "grenade" | "smoke" | "damage";
@@ -58,6 +58,7 @@ export function useTelemetry(
   matchId: string | null,
   nickname: string | null,
   playbackPlatform: TelemetryPlatform | null,
+  playbackMode: TelemetryMode | null,
   mapName: string,
 ) {
   const [events, setEvents] = useState<TelemetryEvent[]>([]);
@@ -109,7 +110,7 @@ export function useTelemetry(
     controller: AbortController,
   ) => {
     resetTelemetryState();
-    if (!matchId || !nickname || !playbackPlatform || !mapName) return;
+    if (!matchId || !nickname || !playbackPlatform || !playbackMode || !mapName) return;
     setLoading(true);
     try {
       const data = await fetchTelemetryPayload({
@@ -117,7 +118,7 @@ export function useTelemetry(
         nickname,
         platform: playbackPlatform,
         mapName,
-        mode: full ? "full" : "lite",
+        mode: full ? "full" : playbackMode,
       }, { signal: controller.signal });
       if (controller.signal.aborted) return;
 
@@ -155,18 +156,13 @@ export function useTelemetry(
     } finally {
       if (!controller.signal.aborted) setLoading(false);
     }
-  }, [matchId, nickname, playbackPlatform, mapName, resetTelemetryState]);
-
-  // ✅ 시작 시점의 mode 파람리터를 ref로 고정하여 리렌더 시 불필요한 re-fetch 방지
-  const initialModeRef = useRef<string | null>(
-    typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("mode") : null
-  );
+  }, [matchId, nickname, playbackPlatform, playbackMode, mapName, resetTelemetryState]);
 
   useEffect(() => {
     const controller = new AbortController();
-    void fetchTelemetry(initialModeRef.current === "full", controller);
+    void fetchTelemetry(playbackMode === "full", controller);
     return () => controller.abort();
-  }, [fetchTelemetry]);
+  }, [fetchTelemetry, playbackMode]);
 
   // 🎯 React 19 대응: 마운트 시점에 안전하게 초기값 할당 (Purity 보장)
   useEffect(() => {

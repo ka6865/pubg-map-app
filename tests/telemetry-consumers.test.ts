@@ -12,6 +12,7 @@ describe("텔레메트리 소비자 계약", () => {
   const squad2dSource = source("components/stat/Squad2DMap.tsx");
   const matchCardSource = source("components/stat/MatchCard.tsx");
   const mapShellSource = source("components/map/MapShell.tsx");
+  const latestRequestSource = source("hooks/useLatestTelemetryRequest.ts");
 
   it("hook·3D·Squad 2D가 공용 fetch만 사용한다", () => {
     expect(useTelemetrySource).toContain("fetchTelemetryPayload");
@@ -39,15 +40,16 @@ describe("텔레메트리 소비자 계약", () => {
     expect(matchCardSource.match(/platform=\$\{encodeURIComponent\(platform\)\}/g)).toHaveLength(2);
   });
 
-  it("MapShell이 platform을 fail-closed 검증하고 hook에 4개 인자를 전달한다", () => {
+  it("MapShell이 완전한 playback identity를 fail-closed 검증하고 hook에 전달한다", () => {
     expect(mapShellSource).toContain("playbackPlatform");
-    expect(mapShellSource).toContain("playbackPlatformError");
+    expect(mapShellSource).toContain("playbackMode");
     expect(mapShellSource).toMatch(
-      /useTelemetry\(playbackId, playbackNickname, playbackPlatform, activeMapId\)/,
+      /useTelemetry\(playbackId, playbackNickname, playbackPlatform, playbackMode, activeMapId\)/,
     );
     expect(mapShellSource).not.toMatch(/searchParams\?\.get\(["']platform["']\)\s*\|\|\s*["']steam["']/);
-    expect(mapShellSource).toContain("error={playbackPlatformError || telemetryError}");
-    expect(mapShellSource).toContain("isActive: !!playbackId && !playbackPlatformError");
+    expect(mapShellSource).toContain("playbackIdentityError");
+    expect(mapShellSource).toContain("error={playbackIdentityError || telemetryError}");
+    expect(mapShellSource).toContain("isActive: !!playbackId && !playbackIdentityError");
     expect(mapShellSource).toContain("safeTelemetryEvents");
     expect(mapShellSource).toContain("safeCurrentStates");
     expect(mapShellSource).toContain("safeTeamNames");
@@ -67,6 +69,19 @@ describe("텔레메트리 소비자 계약", () => {
     expect(replay3dSource).toContain("isCurrent(request)");
     expect(replay3dSource).toContain("cancelRequest(request)");
     expect(replay3dSource).toContain("resolveReplay3DRequest");
+  });
+
+  it("latest request token은 실제 판정에 쓰는 controller만 유지한다", () => {
+    expect(latestRequestSource).not.toContain("identity:");
+    expect(latestRequestSource).not.toContain("sequence");
+  });
+
+  it("Squad 2D identity 전환은 이전 payload와 재생 상태를 즉시 초기화한다", () => {
+    expect(squad2dSource).toContain("resetSquadReplayState");
+    expect(squad2dSource).toMatch(
+      /resetSquadReplayState[\s\S]*setTelemetry\(null\)[\s\S]*setIsPlaying\(false\)[\s\S]*setPlaybackTimeMs\(0\)/,
+    );
+    expect(squad2dSource).toMatch(/loadTelemetry[\s\S]*resetSquadReplayState\(\)/);
   });
 
   it("useTelemetry가 identity 전환·누락·실패 전에 이전 리플레이 상태를 초기화한다", () => {

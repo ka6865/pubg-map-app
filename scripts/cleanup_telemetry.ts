@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -11,6 +12,14 @@ export type TelemetryCleanupMasterRow = {
   created_at: string;
 };
 
+export type TelemetryCleanupRegistryRow = {
+  match_id: string;
+  storage_path: string;
+  status: "pending" | "ready";
+  lease_expires_at: string | null;
+  updated_at: string;
+};
+
 type RangePage<T> = {
   data: T[] | null;
   error: { message?: string } | null;
@@ -18,11 +27,14 @@ type RangePage<T> = {
 
 export type TelemetryCleanupDependencies = {
   listMasterRows(): Promise<TelemetryCleanupMasterRow[]>;
+  listRegistryRows(): Promise<TelemetryCleanupRegistryRow[]>;
+  archiveObjectInventory(rows: TelemetryCleanupRegistryRow[]): Promise<void>;
   cleanupExpiredMatches(
     matchIds: string[],
     cutoff: Date,
     targetVersion: number,
   ): Promise<string[]>;
+  now(): Date;
 };
 
 export type TelemetryCleanupConfig = {
@@ -32,6 +44,8 @@ export type TelemetryCleanupConfig = {
 
 export type TelemetryCleanupResult = {
   deletedMatchCount: number;
+  archivedObjectCount: number;
+  inventoryManifestCount: number;
   r2DeletionDeferred: true;
 };
 
@@ -98,6 +112,27 @@ function validateConfig(config: TelemetryCleanupConfig): void {
   }
 }
 
+function isExpiredRegistryRow(
+  row: TelemetryCleanupRegistryRow,
+  cutoff: Date,
+  now: Date,
+): boolean {
+  const updatedAt = Date.parse(row.updated_at);
+  const leaseExpiresAt = row.lease_expires_at === null
+    ? null
+    : Date.parse(row.lease_expires_at);
+  if (
+    !Number.isFinite(updatedAt)
+    || (leaseExpiresAt !== null && !Number.isFinite(leaseExpiresAt))
+  ) {
+    throw new Error("telemetry-cleanup-invalid-registry-row");
+  }
+  const hasActiveLease = row.status === "pending"
+    && leaseExpiresAt !== null
+    && leaseExpiresAt >= now.getTime();
+  return updatedAt < cutoff.getTime() && !hasActiveLease;
+}
+
 function validateCleanedMatchIds(
   requestedMatchIds: string[],
   cleanedMatchIds: string[],
@@ -118,12 +153,38 @@ export async function runTelemetryStorageCleanup(
   dependencies: TelemetryCleanupDependencies,
 ): Promise<TelemetryCleanupResult> {
   validateConfig(config);
-  const masterRows = await dependencies.listMasterRows();
+  const [masterRows, registryRows] = await Promise.all([
+    dependencies.listMasterRows(),
+    dependencies.listRegistryRows(),
+  ]);
+  const now = dependencies.now();
+  if (!Number.isFinite(now.getTime())) {
+    throw new Error("telemetry-cleanup-invalid-now");
+  }
   const expiredRows = masterRows.filter((row) => isExpiredMasterRow(row, config));
-  const expiredMatchIds = uniqueValues(expiredRows.map((row) => row.match_id));
+  const masterMatchIds = new Set(masterRows.map((row) => row.match_id));
+  const expiredRegistryRows = registryRows.filter((row) => (
+    isExpiredRegistryRow(row, config.cutoff, now)
+  ));
+  const registryOnlyMatchIds = expiredRegistryRows
+    .filter((row) => !masterMatchIds.has(row.match_id))
+    .map((row) => row.match_id);
+  const expiredMatchIds = uniqueValues([
+    ...expiredRows.map((row) => row.match_id),
+    ...registryOnlyMatchIds,
+  ]);
   let deletedMatchCount = 0;
+  let archivedObjectCount = 0;
+  let inventoryManifestCount = 0;
 
   for (const matchIds of chunkValues(expiredMatchIds, DELETE_BATCH_SIZE)) {
+    const matchIdSet = new Set(matchIds);
+    const inventoryRows = expiredRegistryRows.filter((row) => matchIdSet.has(row.match_id));
+    if (inventoryRows.length > 0) {
+      await dependencies.archiveObjectInventory(inventoryRows);
+      archivedObjectCount += inventoryRows.length;
+      inventoryManifestCount += 1;
+    }
     const cleanedMatchIds = await dependencies.cleanupExpiredMatches(
       matchIds,
       config.cutoff,
@@ -134,8 +195,36 @@ export async function runTelemetryStorageCleanup(
 
   return {
     deletedMatchCount,
+    archivedObjectCount,
+    inventoryManifestCount,
     r2DeletionDeferred: true,
   };
+}
+
+export function buildTelemetryObjectInventoryArchive(
+  rows: TelemetryCleanupRegistryRow[],
+): { storagePath: string; body: string } {
+  const inventory = [...rows]
+    .sort((left, right) => left.storage_path.localeCompare(right.storage_path))
+    .map(({ match_id, storage_path }) => ({ match_id, storage_path }));
+  const body = JSON.stringify({ version: 1, objects: inventory });
+  const digest = createHash("sha256").update(body).digest("hex");
+  return {
+    storagePath: `telemetry-inventory/v1/${digest}.json`,
+    body,
+  };
+}
+
+async function archiveTelemetryObjectInventory(
+  rows: TelemetryCleanupRegistryRow[],
+): Promise<void> {
+  const archive = buildTelemetryObjectInventoryArchive(rows);
+  const { uploadToR2 } = await import("../lib/pubg-analysis/r2Service");
+  await uploadToR2(
+    archive.storagePath,
+    archive.body,
+    "application/json",
+  );
 }
 
 function createTelemetryCleanupDependencies(
@@ -153,6 +242,19 @@ function createTelemetryCleanupDependencies(
         error,
       };
     }),
+    listRegistryRows: () => fetchAllRowsByRange(async (from, to) => {
+      const { data, error } = await supabase
+        .from("telemetry_map_cache_entries")
+        .select("match_id, storage_path, status, lease_expires_at, updated_at")
+        .order("match_id", { ascending: true })
+        .order("storage_path", { ascending: true })
+        .range(from, to);
+      return {
+        data: data as TelemetryCleanupRegistryRow[] | null,
+        error,
+      };
+    }),
+    archiveObjectInventory: archiveTelemetryObjectInventory,
     cleanupExpiredMatches: async (matchIds, cutoff, targetVersion) => {
       const { data, error } = await supabase.rpc(
         "cleanup_expired_telemetry_matches",
@@ -178,6 +280,7 @@ function createTelemetryCleanupDependencies(
         return (row as { match_id: string }).match_id;
       });
     },
+    now: () => new Date(),
   };
 }
 

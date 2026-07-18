@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useCallback, useState, useEffect, useMemo } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -235,6 +235,13 @@ export default function Squad2DMap({ matchId, nickname, platform, mapName, focus
   const [showNames, setShowNames] = useState<boolean>(true); // 기본적으로 이름 툴팁 활성화
   const [hoveredChar, setHoveredChar] = useState<string | null>(null);
 
+  const resetSquadReplayState = useCallback(() => {
+    setTelemetry(null);
+    setIsPlaying(false);
+    setPlaybackTimeMs(0);
+    setSelectedKnockIdx(0);
+  }, []);
+
   // Check if mobile device
   useEffect(() => {
     const checkMobile = () => {
@@ -250,10 +257,10 @@ export default function Squad2DMap({ matchId, nickname, platform, mapName, focus
     let active = true;
     const controller = new AbortController();
     async function loadTelemetry() {
+      resetSquadReplayState();
       try {
         setLoading(true);
         setError(null);
-        setSelectedKnockIdx(0); // Reset index on match change
         const telemetryPlatform = parseTelemetryPlatform(platform);
         const data = await fetchTelemetryPayload({
           matchId,
@@ -281,7 +288,7 @@ export default function Squad2DMap({ matchId, nickname, platform, mapName, focus
       active = false;
       controller.abort();
     };
-  }, [matchId, nickname, platform, mapName]);
+  }, [matchId, nickname, platform, mapName, resetSquadReplayState]);
 
   // Sync selectedKnockIdx with focusTimeMs when telemetry or focusTimeMs changes
   useEffect(() => {

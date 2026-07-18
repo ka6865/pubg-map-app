@@ -12,8 +12,8 @@ describe("3D latest telemetry request 경계", () => {
     const { result } = renderHook(() => useLatestTelemetryRequest());
     let first!: TelemetryRequestToken;
     let second!: TelemetryRequestToken;
-    act(() => { first = result.current.begin("match-1:steam"); });
-    act(() => { second = result.current.begin("match-2:kakao"); });
+    act(() => { first = result.current.begin(); });
+    act(() => { second = result.current.begin(); });
 
     expect(first.controller.signal.aborted).toBe(true);
     expect(second.controller.signal.aborted).toBe(false);
@@ -29,7 +29,7 @@ describe("3D latest telemetry request 경계", () => {
   it("unmount 시 현재 요청을 abort한다", () => {
     const { result, unmount } = renderHook(() => useLatestTelemetryRequest());
     let request!: TelemetryRequestToken;
-    act(() => { request = result.current.begin("match-1:steam"); });
+    act(() => { request = result.current.begin(); });
 
     unmount();
 

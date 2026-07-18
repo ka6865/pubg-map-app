@@ -11,7 +11,7 @@
 
 최초 리뷰에서 P0 1건, P1 12건, P2 15건을 확인했다. P0은 공개 `/api/pubg/ingest` route를 제거하고 `/api/pubg/match`가 검증된 PUBG 분석 결과를 서버 저장 함수에 직접 전달하도록 전환해 해결했다. 최종 리뷰에서 확인한 `source=scraper`와 `force=true` 위조 경로도 서로 독립된 timing-safe header 인증으로 차단했다. P1은 Hotdrop 1건과 텔레메트리 3건을 해결해 실제 미해결 항목이 8건이다. P2는 보안 테스트 계약 복구와 리플레이 요청 전환 경쟁 2건을 해결해 실제 미해결 항목이 13건이다.
 
-텔레메트리 공용 fetch SDK, 플레이어·플랫폼 cache identity, 2D/3D 소비자, registry cleanup 계약을 통합했다. 운영 DB migration과 cleanup은 실행하지 않았으며, 배포는 migration을 먼저 적용한 뒤 애플리케이션을 반영해야 한다.
+텔레메트리 공용 fetch SDK, 플레이어·플랫폼 cache identity, 2D/3D 소비자, registry cleanup 계약을 통합했다. 최종 재검토의 Important 5건은 identity sequence 최소 권한, reserve→upload→원자 finalize, cache hit registry 복구, registry-only inventory manifest, 2D mode·nickname fail-closed로 보완했다. 운영 DB migration과 cleanup은 실행하지 않았으며, 배포는 migration을 먼저 적용한 뒤 애플리케이션을 반영해야 한다.
 
 보안 측면에서는 Storage 객체 삭제 BOLA, 승인 작업 중복 실행, CAPTCHA 우회, 공개 analytics 오염, 제보 알림 임계값 우회가 즉시 수정 대상이다.
 
@@ -20,15 +20,16 @@
 | 검증 | 결과 |
 |---|---|
 | `npm run verify:core` | 통과: ESLint 오류 0·경고 62, TypeScript 오류 0 |
-| `npm run verify:analysis` | 통과: 17개 파일, 170개 테스트 |
+| `npm run verify:analysis` | 통과: 17개 파일, 179개 테스트 |
 | `npm run verify:admin` | 통과: 5개 파일, 90개 테스트 |
 | `npm test -- --runInBand` | 통과: Jest 1개 suite, 2개 테스트 |
-| `env DOTENV_CONFIG_PATH=.env.local node --require ../../node_modules/dotenv/config ../../node_modules/vitest/vitest.mjs run` | 통과: 33개 파일 통과·1개 스킵, 323개 테스트 통과·6개 스킵 |
+| `env DOTENV_CONFIG_PATH=.env.local node --require ../../node_modules/dotenv/config ../../node_modules/vitest/vitest.mjs run` | 통과: 33개 파일 통과·1개 스킵, 332개 테스트 통과·6개 스킵 |
+| `npm run verify:telemetry-db` | 통과: 임시 PostgreSQL 15 service-role sequence, registry-only row 감소, 두 세션 경합, 원자 finalize |
 | `npm audit --omit=dev` | 이번 조치에서 재실행하지 않음. 최초 리뷰 결과는 10건(High 3, Moderate 5, Low 2) |
 
 `tests/security.test.ts`는 현재 `withOptionalAuth` 계약과 Shadow Draft의 `parent_id` 삭제 조건으로 복구해 `verify:admin`에 포함했다. worktree에는 독립 `node_modules/dotenv`, `node_modules/vitest`가 없어 `./node_modules` 직접 경로 명령은 테스트 시작 전 종료 코드 1로 종료됐다. `.env.local`은 기본 checkout을 가리키는 추적 제외 심볼릭 링크로 유지하고, 기본 checkout의 의존성 경로를 명시해 전체 Vitest를 재실행한 결과 통과했다. 환경변수 값은 출력하지 않았다.
 
-운영과 분리된 임시 PostgreSQL 15에 migration을 실제 적용해 cleanup RPC 문법·권한·행위를 검증했다. 오래된 match는 4개 관련 테이블에서 정리됐고 최근 registry writer가 있는 match의 master·cache·stats·processed row는 모두 보존됐다. RPC `EXECUTE`는 `anon=false`, `authenticated=false`, `service_role=true`를 확인했다.
+운영과 분리된 임시 PostgreSQL 15에 migration을 실제 적용해 RPC 문법·권한·행위를 검증했다. `SET ROLE service_role` identity INSERT/UPSERT가 성공했고 registry-only row는 1건에서 0건으로 감소했다. writer-first에서는 active pending lease가 master·stats를 보호했고, cleanup-first에서는 대기한 writer가 원자 finalize RPC로 master·processed·ready registry를 각각 1건 재구축했다. RPC는 `SECURITY INVOKER`, 빈 `search_path`, service-role 전용 `EXECUTE`를 유지한다.
 
 `verify:core`의 ESLint 경고는 32개 파일에서 62개가 발생했다. 오류는 0개이고 TypeScript는 통과했으며, 이번 텔레메트리 변경 파일에서 신규 unused import·`console.log`는 확인되지 않았다. 기존 경고는 본 문서 7장의 유지보수 부채로 유지한다.
 
@@ -83,6 +84,9 @@
 > - 브라우저에는 `sha256(accountId)[0:32]` 기반 `playerKey`만 공개하고 원본 account/player ID는 응답에서 제거
 > - R2 payload identity를 서버 cache hit와 브라우저 다운로드 양쪽에서 재검증
 > - `telemetry_map_cache_entries` registry, RLS·grant, table lock·cutoff 재검증 cleanup RPC 추가
+> - identity sequence 공개 권한 회수와 service-role 최소 `USAGE, SELECT` grant 추가
+> - 비싼 처리 전 pending lease reserve, processed·master·ready registry 원자 finalize, cache hit registry 복구 적용
+> - registry-only 만료 row는 결정적 R2 inventory manifest 저장 성공 후 DB에서 삭제해 object inventory를 보존하면서 Supabase row를 줄임
 > - stale R2 목록으로 동일 key의 신규 업로드를 지우지 않도록 애플리케이션 R2 자동 삭제 비활성화·`r2DeletionDeferred: true` 보고
 > - 운영 migration·R2 cleanup은 미실행. migration 선적용 후 앱 배포 필수
 
@@ -239,7 +243,7 @@
 
 - 기준 문서로 기록된 `docs-private/.project_context.md`와 `docs-private/.pubg-telemetry-guide.md`는 현재 checkout과 Git 추적 목록에 존재하지 않아 이번 작업에서 갱신하지 못했다. 현재 캐시 계약은 공개 설계·구현 계획·본 리뷰 문서에 동기화했다.
 - `telemetry_map_cache_entries`와 cleanup RPC migration은 운영 Supabase에 적용하지 않았고, 운영 R2 cleanup도 실행하지 않았다.
-- R2 자동 삭제는 deterministic key 재업로드 TOCTOU 방지를 위해 비활성화했다. 무료 R2 저장량을 모니터링하고 immutable generation key 또는 Cloudflare가 공식 보장하는 conditional delete 도입 후 자동 정리를 재개해야 한다.
+- R2 object 자동 삭제는 deterministic key 재업로드 TOCTOU 방지를 위해 비활성화했다. registry row 삭제 전 최대 50개 object path를 결정적 inventory manifest 1개로 보관하며, 무료 R2 저장량을 모니터링하고 immutable generation key 또는 Cloudflare가 공식 보장하는 conditional delete 도입 후 자동 정리를 재개해야 한다.
 - 실제 Chrome에서 `/stats`, Steam `KangHeeSung_` 검색, `/maps/erangel` 렌더는 통과했지만 최근 match 20건은 모두 HTTP 500으로 실패했다. sanitized 오류만 확인해 정확한 실패 단계는 미확정이며, 무료 PUBG API 예산과 Discord 중복 알림을 막기 위해 실데이터 재시도를 중단했다.
 - 2026-07-18 최종 로컬 Chrome 회귀에서 `/stats`, `/maps/erangel`, 불완전 query의 `/replay/3d?matchId=qa-no-external-call`은 모두 HTTP 200으로 렌더됐고 브라우저 console error는 0건이었다. 불완전 3D query는 외부 telemetry 요청 없이 `3D 리플레이 query가 누락되었거나 지원되지 않습니다.` 오류로 fail-closed 처리됐다.
 - migration 선적용·애플리케이션 배포 후 Steam/Kakao 2D·3D 실데이터 회귀 QA가 남아 있다.

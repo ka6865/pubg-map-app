@@ -14,7 +14,14 @@ import {
   isR2Configured,
   uploadToR2,
 } from "@/lib/pubg-analysis/r2Service";
-import { writeTelemetryMapCache } from "@/lib/pubg-analysis/telemetryMapCache";
+import {
+  reserveTelemetryMapCache,
+  writeTelemetryMapCache,
+} from "@/lib/pubg-analysis/telemetryMapCache";
+import {
+  finalizeTelemetryMapCacheLifecycle,
+  upsertTelemetryMapCacheReservation,
+} from "@/lib/pubg-analysis/telemetryRegistry.server";
 import { createTelemetryIdentity } from "@/lib/pubg-analysis/telemetryIdentity";
 import {
   buildTelemetryPublicIdentity,
@@ -39,22 +46,6 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
-
-async function registerTelemetryMapCache(row: {
-  match_id: string;
-  platform: string;
-  player_id: string;
-  mode: string;
-  telemetry_version: number;
-  storage_path: string;
-  updated_at: string;
-}): Promise<void> {
-  const { error } = await supabase
-    .from("telemetry_map_cache_entries")
-    .upsert(row, { onConflict: "match_id,platform,player_id,mode,telemetry_version" });
-
-  if (error) throw new Error("텔레메트리 캐시 레지스트리 저장에 실패했습니다.");
-}
 
 async function safeJsonParse(res: Response): Promise<any> {
   const contentType = res.headers.get("content-type") || "";
@@ -371,6 +362,19 @@ async function reanalyzeAndSave(
   force: boolean = false,
   source: AnalysisSource = 'user'
 ) {
+  const telemetryIdentity = createTelemetryIdentity({
+    matchId,
+    platform,
+    playerId: myAccountId,
+    mode: "lite",
+    telemetryVersion: TELEMETRY_VERSION,
+  });
+  await reserveTelemetryMapCache(telemetryIdentity, {
+    isConfigured: isR2Configured,
+    reserve: (row) => upsertTelemetryMapCacheReservation(supabase, row),
+    now: () => new Date(),
+  });
+
   const telemetryAsset = matchData.included.find((it: any) => it.type === "asset");
   let telData: any[] = [];
 
@@ -527,13 +531,6 @@ async function reanalyzeAndSave(
   };
 
   const { mapData, ...tacticalResult } = fullResult;
-  const telemetryIdentity = createTelemetryIdentity({
-    matchId,
-    platform,
-    playerId: myAccountId,
-    mode: "lite",
-    telemetryVersion: TELEMETRY_VERSION,
-  });
   const telemetryPayload = createTelemetryPayload({
     identity: buildTelemetryPublicIdentity(telemetryIdentity),
     startTime: matchAttr.createdAt,
@@ -543,41 +540,31 @@ async function reanalyzeAndSave(
     zoneEvents: pseudonymizeTelemetryAccountIds(mapData?.zoneEvents || []),
     mapName: result.mapName || matchAttr.mapName || matchAttr.mapId,
   });
-  const telemetryCache = await writeTelemetryMapCache(telemetryIdentity, telemetryPayload, {
-    isConfigured: isR2Configured,
-    download: downloadFromR2,
-    upload: uploadToR2,
-    sign: getPresignedUrlFromR2,
-    register: registerTelemetryMapCache,
-    now: () => new Date(),
-  });
-
   const processedTelemetryRecord = buildProcessedTelemetryUpsert(
     matchId,
     lowerNickname,
     platform,
-    tacticalResult
+    tacticalResult,
   );
-
-  const { error: processedTelemetryError } = await supabase
-    .from("processed_match_telemetry")
-    .upsert(processedTelemetryRecord, { onConflict: "match_id,platform,player_id" });
-  if (processedTelemetryError) {
-    throw new Error("분석 텔레메트리 저장에 실패했습니다.");
-  }
-
-  const { error: masterTelemetryError } = await supabase
-    .from("match_master_telemetry")
-    .upsert({
-      match_id: matchId,
-      map_name: matchAttr.mapId,
-      game_mode: matchAttr.gameMode,
-      telemetry_version: Math.floor(TELEMETRY_VERSION),
-      storage_path: telemetryCache.storagePath,
-    }, { onConflict: "match_id" });
-  if (masterTelemetryError) {
-    throw new Error("매치 텔레메트리 메타데이터 저장에 실패했습니다.");
-  }
+  await writeTelemetryMapCache(telemetryIdentity, telemetryPayload, {
+    isConfigured: isR2Configured,
+    download: downloadFromR2,
+    upload: uploadToR2,
+    sign: getPresignedUrlFromR2,
+    reserve: (row) => upsertTelemetryMapCacheReservation(supabase, row),
+    finalize: (row) => finalizeTelemetryMapCacheLifecycle(supabase, {
+      row,
+      mapName: matchAttr.mapId,
+      gameMode: matchAttr.gameMode,
+      processed: {
+        playerId: processedTelemetryRecord.player_id,
+        platform: processedTelemetryRecord.platform,
+        data: processedTelemetryRecord.data,
+        updatedAt: processedTelemetryRecord.updated_at,
+      },
+    }),
+    now: () => new Date(),
+  });
 
   try {
     const persistenceResult = await persistMatchAnalysis(supabase, {

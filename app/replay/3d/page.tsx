@@ -552,12 +552,7 @@ function Replay3DContent() {
   }, [completeRequest, isCurrent]);
 
   const startTelemetryRequest = useCallback((target: Replay3DRequest) => {
-    const request = beginRequest([
-      target.matchId,
-      target.nickname,
-      target.platform,
-      "full",
-    ].join(":"));
+    const request = beginRequest();
     resetReplayState();
     setErrorMsg(null);
     setIsLoading(true);

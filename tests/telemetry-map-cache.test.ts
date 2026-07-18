@@ -47,7 +47,8 @@ function createDeps(
     download: vi.fn().mockResolvedValue(null),
     upload: vi.fn().mockResolvedValue(undefined),
     sign: vi.fn().mockResolvedValue("https://r2.example/signed"),
-    register: vi.fn().mockResolvedValue(undefined),
+    reserve: vi.fn().mockResolvedValue(undefined),
+    finalize: vi.fn().mockResolvedValue(undefined),
     now: () => new Date("2026-07-18T00:00:00.000Z"),
     ...overrides,
   };
@@ -61,7 +62,21 @@ describe("telemetry map cache", () => {
       payload,
       downloadUrl: "https://r2.example/signed",
     });
+    expect(deps.finalize).toHaveBeenCalledWith(expect.objectContaining({
+      status: "ready",
+      lease_expires_at: null,
+    }));
     expect(deps.sign).toHaveBeenCalledOnce();
+  });
+
+  it("검증된 cache hit의 registry 복구가 실패하면 URL을 반환하지 않는다", async () => {
+    const deps = createDeps({
+      download: vi.fn().mockResolvedValue(JSON.stringify(payload)),
+      finalize: vi.fn().mockRejectedValue(new Error("registry unavailable")),
+    });
+
+    await expect(readTelemetryMapCache(identity, deps)).rejects.toThrow("registry unavailable");
+    expect(deps.sign).not.toHaveBeenCalled();
   });
 
   it("identity가 없거나 다른 본문은 cache miss로 처리하고 sign하지 않는다", async () => {
@@ -88,24 +103,33 @@ describe("telemetry map cache", () => {
     await expect(readTelemetryMapCache(identity, deps)).rejects.toThrow(signError);
   });
 
-  it("write는 R2 업로드 후 registry를 등록하고 등록 실패를 전파한다", async () => {
-    const registerError = new Error("registry unavailable");
-    const deps = createDeps({ register: vi.fn().mockRejectedValue(registerError) });
+  it("write는 registry를 reserve한 뒤 R2 업로드와 finalize를 순서대로 수행한다", async () => {
+    const finalizeError = new Error("registry unavailable");
+    const deps = createDeps({ finalize: vi.fn().mockRejectedValue(finalizeError) });
 
-    await expect(writeTelemetryMapCache(identity, payload, deps)).rejects.toThrow(registerError);
+    await expect(writeTelemetryMapCache(identity, payload, deps)).rejects.toThrow(finalizeError);
+    expect(deps.reserve).toHaveBeenCalledOnce();
     expect(deps.upload).toHaveBeenCalledOnce();
-    expect(deps.register).toHaveBeenCalledOnce();
-    expect(deps.register).toHaveBeenCalledWith(expect.objectContaining({
+    expect(deps.finalize).toHaveBeenCalledOnce();
+    expect(deps.reserve).toHaveBeenCalledWith(expect.objectContaining({
       match_id: identity.matchId,
       platform: identity.platform,
       player_id: identity.playerId,
       mode: identity.mode,
       telemetry_version: identity.telemetryVersion,
+      status: "pending",
       updated_at: "2026-07-18T00:00:00.000Z",
     }));
+    expect(deps.finalize).toHaveBeenCalledWith(expect.objectContaining({
+      status: "ready",
+      lease_expires_at: null,
+    }));
     expect(deps.sign).not.toHaveBeenCalled();
-    expect((deps.upload as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0])
-      .toBeLessThan((deps.register as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0]);
+    const reserveOrder = (deps.reserve as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0];
+    const uploadOrder = (deps.upload as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0];
+    const finalizeOrder = (deps.finalize as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0];
+    expect(reserveOrder).toBeLessThan(uploadOrder);
+    expect(uploadOrder).toBeLessThan(finalizeOrder);
   });
 
   it("R2 필수 설정이 없으면 write를 시작하지 않는다", async () => {
@@ -114,7 +138,8 @@ describe("telemetry map cache", () => {
     await expect(writeTelemetryMapCache(identity, payload, deps))
       .rejects.toThrow("텔레메트리 캐시 저장소");
     expect(deps.upload).not.toHaveBeenCalled();
-    expect(deps.register).not.toHaveBeenCalled();
+    expect(deps.reserve).not.toHaveBeenCalled();
+    expect(deps.finalize).not.toHaveBeenCalled();
     expect(deps.sign).not.toHaveBeenCalled();
   });
 
@@ -164,6 +189,24 @@ describe("telemetry map cache", () => {
       expect(source).not.toContain("_v${TELEMETRY_VERSION}_map");
       expect(source).not.toMatch(/platform\s*\|\|\s*["']steam["']/);
     }
+  });
+
+  it("두 writer가 비싼 telemetry 처리 전에 registry lease를 reserve한다", () => {
+    const telemetryRoute = fs.readFileSync(
+      path.resolve("app/api/pubg/telemetry/route.ts"),
+      "utf8",
+    );
+    const matchRoute = fs.readFileSync(
+      path.resolve("app/api/pubg/match/route.ts"),
+      "utf8",
+    );
+
+    expect(telemetryRoute.indexOf("reserveTelemetryMapCache(identity"))
+      .toBeLessThan(telemetryRoute.indexOf("fetch(asset.attributes.URL"));
+    expect(matchRoute.indexOf("reserveTelemetryMapCache(telemetryIdentity"))
+      .toBeLessThan(matchRoute.indexOf("downloadFromR2(analyzePath)"));
+    expect(matchRoute).toContain("finalizeTelemetryMapCacheLifecycle");
+    expect(telemetryRoute).toContain("finalizeTelemetryMapCacheLifecycle");
   });
 
   it("private analyze 캐시를 signed URL이나 API 응답으로 연결하지 않는다", () => {

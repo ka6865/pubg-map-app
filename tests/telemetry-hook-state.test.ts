@@ -12,6 +12,15 @@ vi.mock("../lib/pubg-analysis/fetchTelemetryPayload", () => ({
 }));
 
 import { useTelemetry } from "../hooks/useTelemetry";
+import type { TelemetryMode, TelemetryPlatform } from "../lib/pubg-analysis/telemetryIdentity";
+
+const useTelemetryWithMode = useTelemetry as unknown as (
+  matchId: string | null,
+  nickname: string | null,
+  platform: TelemetryPlatform | null,
+  mode: TelemetryMode | null,
+  mapName: string,
+) => ReturnType<typeof useTelemetry>;
 
 function telemetryPayload(matchId: string, eventName: string) {
   return {
@@ -55,7 +64,7 @@ describe("useTelemetry identity 전환", () => {
     fetchTelemetryPayloadMock.mockResolvedValue(telemetryPayload("match-1", "OldPlayer"));
     const { result, rerender } = renderHook(
       ({ platform }: { platform: "steam" | null }) =>
-        useTelemetry("match-1", "OldPlayer", platform, "erangel"),
+        useTelemetry("match-1", "OldPlayer", platform, "lite", "erangel"),
       { initialProps: { platform: "steam" as "steam" | null } },
     );
 
@@ -77,7 +86,7 @@ describe("useTelemetry identity 전환", () => {
       .mockResolvedValueOnce(telemetryPayload("match-1", "OldPlayer"))
       .mockRejectedValueOnce(new Error("텔레메트리 요청에 실패했습니다."));
     const { result, rerender } = renderHook(
-      ({ matchId }) => useTelemetry(matchId, "Player", "steam", "erangel"),
+      ({ matchId }) => useTelemetry(matchId, "Player", "steam", "lite", "erangel"),
       { initialProps: { matchId: "match-1" } },
     );
 
@@ -98,7 +107,7 @@ describe("useTelemetry identity 전환", () => {
       .mockReturnValueOnce(oldRequest.promise)
       .mockReturnValueOnce(newRequest.promise);
     const { result, rerender } = renderHook(
-      ({ matchId }) => useTelemetry(matchId, "Player", "steam", "erangel"),
+      ({ matchId }) => useTelemetry(matchId, "Player", "steam", "lite", "erangel"),
       { initialProps: { matchId: "match-1" } },
     );
 
@@ -114,5 +123,24 @@ describe("useTelemetry identity 전환", () => {
 
     expect(result.current.teamNames).toEqual(["NewPlayer"]);
     expect(result.current.events[0]?.name).toBe("NewPlayer");
+  });
+
+  it("같은 컴포넌트에서 mode가 바뀌면 이전 요청을 중단하고 새 identity를 요청한다", async () => {
+    fetchTelemetryPayloadMock.mockResolvedValue(telemetryPayload("match-1", "Player"));
+    const { rerender } = renderHook(
+      ({ mode }: { mode: TelemetryMode }) =>
+        useTelemetryWithMode("match-1", "Player", "steam", mode, "erangel"),
+      { initialProps: { mode: "lite" as TelemetryMode } },
+    );
+
+    await waitFor(() => expect(fetchTelemetryPayloadMock).toHaveBeenCalledTimes(1));
+    const firstSignal = fetchTelemetryPayloadMock.mock.calls[0][1].signal as AbortSignal;
+    expect(fetchTelemetryPayloadMock.mock.calls[0][0]).toMatchObject({ mode: "lite" });
+
+    rerender({ mode: "full" });
+
+    await waitFor(() => expect(fetchTelemetryPayloadMock).toHaveBeenCalledTimes(2));
+    expect(firstSignal.aborted).toBe(true);
+    expect(fetchTelemetryPayloadMock.mock.calls[1][0]).toMatchObject({ mode: "full" });
   });
 });

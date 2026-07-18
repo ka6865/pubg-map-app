@@ -894,7 +894,9 @@ git add package.json docs/reviews/2026-07-15-feature-code-review.md docs/superpo
 git commit -m "docs: 텔레메트리 P1 조치 결과 반영"
 ```
 
-2026-07-18 최종 로컬 검증은 `verify:analysis` 170개, `verify:admin` 90개, 전체 Vitest 323개 통과·6개 스킵, Jest 2개, ESLint 오류 0·경고 62, TypeScript 오류 0으로 종료됐다. 실제 Chrome에서 `/stats`, `/maps/erangel`, 불완전 query의 3D 리플레이 fail-closed 화면을 확인했고 console error는 0건이었다. 무료 PUBG API 예산 보호를 위해 기존 실데이터 500 요청은 반복하지 않았다.
+2026-07-18 최종 재검토 보완에서 Important 5건과 범위가 작은 Minor 3건을 TDD로 수정했다. registry는 `pending` lease reserve 후 R2 upload, SECURITY INVOKER RPC의 processed·master·ready 원자 finalize로 전환했고 cache hit도 registry 복구 뒤 URL을 반환한다. registry-only 만료 row는 최대 50개당 결정적 R2 inventory manifest 1개를 먼저 저장한 후 DB cleanup에 진입한다. 2D MapShell은 nickname·platform·mode를 함께 fail-closed 검증하고 mode를 hook dependency로 전달하며 Squad 2D 상태 reset과 latest request dead metadata를 정리했다.
+
+재검증은 `verify:analysis` 179개, `verify:admin` 90개, 전체 Vitest 332개 통과·6개 스킵, Jest 2개, ESLint 오류 0·기존 경고 62, TypeScript 오류 0으로 종료됐다. `verify:telemetry-db`는 임시 PostgreSQL 15에서 service-role identity insert/upsert, registry-only row 감소, writer-first·cleanup-first 두 세션 경합과 원자 finalize를 통과했다. 운영 Supabase/R2/PUBG API는 호출하지 않았다. 기존 Chrome `/stats`, `/maps/erangel`, 불완전 3D query 결과는 유지하며 실제 Steam/Kakao 데이터 QA는 배포 후 gate로 남긴다.
 
 ---
 
@@ -903,12 +905,12 @@ git commit -m "docs: 텔레메트리 P1 조치 결과 반영"
 - 설계의 기존 R2 무삭제·구 키 미사용 정책을 Task 2와 Task 5에 연결했다.
 - 공용 identity 타입과 Node crypto key builder를 분리해 브라우저 bundle 경계를 보존했다.
 - 서버 cache 본문 검증과 브라우저 direct payload 검증을 각각 Task 2와 Task 3에 연결했다.
-- `match_master_telemetry.storage_path` 단일성 문제를 신규 registry와 cleanup 합집합으로 해결했다.
+- `match_master_telemetry.storage_path` 단일성 문제를 신규 registry와 결정적 R2 inventory manifest로 해결했다.
 - Kakao platform은 MatchCard URL부터 MapShell, hook, 공용 fetch, API까지 전 경로를 포함했다.
-- Task 4 테스트는 운영 cleanup을 실행하지 않고 순수 helper와 source boundary만 검증한다.
+- Task 4 테스트는 운영 cleanup을 실행하지 않고 임시 PostgreSQL 15에서 service-role 권한과 두 세션 경합을 검증한다.
 - migration은 local 파일만 생성하며 운영 적용·삭제 명령을 포함하지 않는다.
 - registry 권한은 공개 role을 명시 폐쇄하고 service role만 명시 허용하며, cleanup은 registry 조회 실패 시 삭제를 시작하지 않는다.
-- 신규 테스트 7개가 Task 5의 `verify:analysis`에 편입된다.
+- 신규 회귀 테스트가 Task 5의 `verify:analysis`와 비운영 `verify:telemetry-db`에 편입된다.
 - Task 3 완료 직후와 최종 통합 전 실제 Chrome에서 `/stats`, `/stats/steam/KangHeeSung_`, `/maps/erangel`, 2D·3D 리플레이를 검증한다.
 - P1 미해결 수는 11건에서 세 항목만 차감한 8건이며 다른 항목은 유지한다.
 - placeholder, 미정 요구사항, 다른 Task의 정의에 의존하는 불명확한 함수 시그니처가 없다.

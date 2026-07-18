@@ -13,7 +13,7 @@ const {
   mockFrom,
   mockPersistMatchAnalysis,
   mockProcessedTelemetryMaybeSingle,
-  mockProcessedTelemetryUpsert,
+  mockRpc,
   mockReportPubgApiError,
   mockIsR2Configured,
   mockSupabase,
@@ -25,7 +25,7 @@ const {
     return { run: mockEngineRun };
   });
   const mockProcessedTelemetryMaybeSingle = vi.fn().mockResolvedValue({ data: null, error: null });
-  const mockProcessedTelemetryUpsert = vi.fn();
+  const mockRpc = vi.fn().mockResolvedValue({ data: null, error: null });
   const mockFrom = vi.fn((table: string) => {
     if (table === "processed_match_telemetry") {
       const query = {
@@ -35,12 +35,12 @@ const {
       };
       query.select.mockReturnValue(query);
       query.eq.mockReturnValue(query);
-      return { ...query, upsert: mockProcessedTelemetryUpsert };
+      return query;
     }
 
     return { upsert: vi.fn().mockResolvedValue({ error: null }) };
   });
-  const mockSupabase = { from: mockFrom };
+  const mockSupabase = { from: mockFrom, rpc: mockRpc };
 
   return {
     mockCreateClient: vi.fn(() => mockSupabase),
@@ -50,7 +50,7 @@ const {
     mockFrom,
     mockPersistMatchAnalysis: vi.fn<(...args: unknown[]) => Promise<PersistMatchAnalysisResult>>(),
     mockProcessedTelemetryMaybeSingle,
-    mockProcessedTelemetryUpsert,
+    mockRpc,
     mockReportPubgApiError: vi.fn().mockResolvedValue(undefined),
     mockIsR2Configured,
     mockSupabase,
@@ -292,7 +292,6 @@ describe("PUBG match persistence behavior", () => {
     mockEngineRun.mockReturnValue(analysisResult);
     mockIsR2Configured.mockReturnValue(true);
     mockPersistMatchAnalysis.mockResolvedValue({ succeeded: [], failures: [] });
-    mockProcessedTelemetryUpsert.mockResolvedValue({ error: null });
     mockProcessedTelemetryMaybeSingle.mockResolvedValue({ data: null, error: null });
     mockPubgMatchResponse();
   });
@@ -386,18 +385,20 @@ describe("PUBG match persistence behavior", () => {
     consoleError.mockRestore();
   });
 
-  it("processed telemetry를 정확히 한 번 canonical identity conflict로 upsert한다", async () => {
+  it("processed telemetry와 cache lifecycle을 canonical identity RPC로 한 번 finalize한다", async () => {
     const response = await GET(createMatchRequest());
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual(expect.objectContaining({ matchId: MATCH_ID }));
-    expect(mockProcessedTelemetryUpsert).toHaveBeenCalledTimes(1);
-    expect(mockProcessedTelemetryUpsert).toHaveBeenCalledWith(
+    expect(mockRpc).toHaveBeenCalledTimes(1);
+    expect(mockRpc).toHaveBeenCalledWith(
+      "finalize_telemetry_cache_write",
       expect.objectContaining({
-        match_id: MATCH_ID,
-        platform: "steam",
-        player_id: NICKNAME.toLowerCase(),
-        data: {
+        p_match_id: MATCH_ID,
+        p_platform: "steam",
+        p_processed_platform: "steam",
+        p_processed_player_id: NICKNAME.toLowerCase(),
+        p_processed_data: {
           fullResult: expect.objectContaining({
             matchId: MATCH_ID,
             platform: "steam",
@@ -405,7 +406,6 @@ describe("PUBG match persistence behavior", () => {
           }),
         },
       }),
-      { onConflict: "match_id,platform,player_id" },
     );
   });
 
@@ -444,7 +444,6 @@ describe("PUBG match query boundary", () => {
     mockEngineRun.mockReturnValue(analysisResult);
     mockIsR2Configured.mockReturnValue(true);
     mockPersistMatchAnalysis.mockResolvedValue({ succeeded: [], failures: [] });
-    mockProcessedTelemetryUpsert.mockResolvedValue({ error: null });
     mockProcessedTelemetryMaybeSingle.mockResolvedValue({ data: null, error: null });
     mockPubgMatchResponse();
   });

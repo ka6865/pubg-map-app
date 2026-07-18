@@ -124,8 +124,10 @@ type TelemetryPayload = {
 - `writeTelemetryMapCache(serverIdentity, payload)`
   - payload identity를 다시 검증한다.
   - R2 필수 설정이 없으면 업로드 성공으로 처리하지 않는다.
-  - R2 업로드 후 registry row를 upsert한다.
-  - registry 실패는 성공으로 숨기지 않는다.
+  - 비싼 telemetry 처리와 R2 업로드 전에 `pending` registry lease를 reserve한다.
+  - R2 업로드 후 processed·master·registry `ready`를 SECURITY INVOKER RPC 한 트랜잭션으로 finalize한다.
+  - 검증된 R2 cache hit도 registry·master 복구 finalize에 성공한 뒤에만 URL을 반환한다.
+  - reserve·finalize 실패는 성공으로 숨기지 않는다.
 
 서버 route는 캐시 본문을 검증한 뒤에만 presigned URL을 반환한다. 브라우저도 직접 다운로드한 payload를 다시 검증해 잘못된 signed object나 구 캐시를 표시하지 않는다.
 
@@ -139,23 +141,22 @@ type TelemetryPayload = {
 - `mode text not null check (mode in ('lite', 'full'))`
 - `telemetry_version numeric not null`
 - `storage_path text not null unique`
+- `status text not null check (status in ('pending', 'ready'))`
+- `lease_expires_at timestamptz`
 - `created_at timestamptz not null default now()`
 - `updated_at timestamptz not null default now()`
 - unique identity:
   - `(match_id, platform, player_id, mode, telemetry_version)`
 
-RLS를 활성화하고 공개 정책을 만들지 않는다. `anon`, `authenticated` 권한은 명시적으로 회수하고 `service_role`에는 서버가 필요한 `select`, `insert`, `update`, `delete`만 명시적으로 부여한다. 이는 2026년 Supabase의 신규 테이블 Data API 명시 grant 전환과 기존 프로젝트의 자동 grant 양쪽에서 동일하게 동작하게 하기 위한 계약이다. 브라우저가 테이블에 직접 접근하지 않으며 service-role 서버 경로만 사용한다.
+RLS를 활성화하고 공개 정책을 만들지 않는다. `anon`, `authenticated` 권한은 명시적으로 회수하고 `service_role`에는 서버가 필요한 `select`, `insert`, `update`, `delete`만 명시적으로 부여한다. identity sequence도 실제 sequence 이름을 조회해 공개 권한을 회수하고 `service_role`에 `usage`, `select`만 부여한다. finalize와 cleanup RPC는 `SECURITY INVOKER`, 빈 `search_path`, 완전 수식 이름을 사용하며 `EXECUTE`는 `service_role`에만 허용한다. 브라우저가 테이블이나 RPC에 직접 접근하지 않는다.
 
 `match_master_telemetry`는 매치 메타데이터의 기존 기준으로 유지한다. 새 플레이어별 지도 캐시는 별도 registry에서 관리해 한 match row의 `storage_path`가 여러 플레이어 객체를 대표하는 문제를 만들지 않는다.
 
 ### 4.6 cleanup 정합성
 
-`scripts/cleanup_telemetry.ts`는 활성 R2 경로를 계산할 때 다음 두 집합을 합친다.
+`scripts/cleanup_telemetry.ts`는 master와 registry를 모두 페이지 조회해 master 없는 registry-only row도 만료 후보에 포함한다. DB row를 지우기 전에 최대 50개 batch의 object inventory를 정렬하고 SHA-256 결정적 key의 R2 manifest 한 개로 보관한다. manifest upload가 실패하면 cleanup RPC를 호출하지 않으며 같은 입력 재시도는 같은 manifest key를 사용한다. R2 object 자체는 삭제하지 않는다.
 
-- 기존 `match_master_telemetry.storage_path`
-- 신규 `telemetry_map_cache_entries.storage_path`
-
-매치 master row를 만료 처리할 때 해당 `match_id`의 registry 최근 갱신 여부를 트랜잭션 내에서 재검증한다. cleanup RPC는 registry 테이블에 `SHARE ROW EXCLUSIVE` lock을 적용해 신규 writer를 잠시 대기시키고, 최근 registry가 없는 만료 match만 `match_stats_raw → processed_match_telemetry → telemetry_map_cache_entries → match_master_telemetry` 순서로 삭제한다. master 삭제 직전에 만료 조건과 남은 registry 부재를 다시 확인한다.
+매치 master row를 만료 처리할 때 해당 `match_id`의 registry 상태를 트랜잭션 내에서 재검증한다. cleanup RPC는 registry 테이블에 `SHARE ROW EXCLUSIVE` lock을 적용해 신규 writer를 잠시 대기시키고, 최근 `ready` row나 만료되지 않은 `pending` lease가 없는 match만 `match_stats_raw → processed_match_telemetry → telemetry_map_cache_entries → match_master_telemetry` 순서로 삭제한다. writer가 먼저 reserve하면 cleanup에서 제외되고, cleanup이 먼저 끝나면 writer가 processed·master·ready registry 전체를 finalize RPC로 재구축한다.
 
 master 만료 후보 조회가 실패하면 모든 cleanup RPC 전에 fail-closed로 중단한다. cleanup RPC가 실패하거나 테이블·함수가 아직 없으면 해당 최대 50개 match batch가 트랜잭션으로 rollback되고 후속 batch를 중단한다. 이미 성공해 commit된 이전 batch까지 되돌린다고 기록하지 않는다. registry upsert 실패도 캐시 쓰기 성공으로 숨기지 않는다.
 
@@ -163,7 +164,7 @@ master 만료 후보 조회가 실패하면 모든 cleanup RPC 전에 fail-close
 
 애플리케이션 cleanup의 R2 자동 삭제는 이번 배포에서 전면 비활성화한다. `ListObjectsV2` 스냅샷 후 같은 deterministic key가 재업로드되면 과거 `LastModified`를 근거로 신규 객체를 삭제할 수 있고, 현재 Cloudflare R2 S3 계약에서 batch conditional delete를 입증하지 못했기 때문이다. R2 객체는 보존하고 `r2DeletionDeferred: true`를 보고한다. 무료 R2 저장량 누적은 운영 모니터링 대상으로 두며, immutable generation key 또는 공식적으로 검증된 conditional delete를 도입한 후 자동 삭제를 별도 활성화한다.
 
-이번 구현과 검증에서는 cleanup을 실제 실행하지 않는다.
+운영 Supabase/R2 cleanup은 실행하지 않는다. 운영과 분리된 임시 PostgreSQL 15에서만 `SET ROLE service_role` identity insert/upsert, registry-only row 감소, writer-first·cleanup-first 두 세션 경합을 실행한다.
 
 ## 5. 서버 데이터 흐름
 
@@ -177,11 +178,12 @@ master 만료 후보 조회가 실패하면 모든 cleanup RPC 전에 fail-close
 
 ### 캐시 miss
 
-1. PUBG telemetry를 받아 `AnalysisEngine`을 요청 mode로 실행한다.
-2. payload에는 공개 identity만 포함한다.
-3. 새 R2 key로 업로드한다.
-4. Supabase registry를 upsert한다.
-5. presigned URL과 공개 expected identity를 반환한다.
+1. registry에 만료 시간이 있는 `pending` lease를 reserve한다.
+2. PUBG telemetry를 받아 `AnalysisEngine`을 요청 mode로 실행한다.
+3. payload에는 공개 identity만 포함한다.
+4. 새 R2 key로 업로드한다.
+5. processed·master·ready registry를 원자 finalize한다.
+6. presigned URL과 공개 expected identity를 반환한다.
 
 `/api/pubg/match`가 분석 과정에서 생성하는 기본 지도 캐시는 `lite` identity로 같은 cache service를 사용한다. `full`은 사용자가 고정밀 리플레이를 요청할 때 별도로 생성한다.
 

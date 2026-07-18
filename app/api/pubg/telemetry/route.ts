@@ -15,8 +15,14 @@ import {
 } from "@/lib/pubg-analysis/telemetryCacheKey.server";
 import {
   readTelemetryMapCache,
+  reserveTelemetryMapCache,
   writeTelemetryMapCache,
+  type TelemetryMapCacheDependencies,
 } from "@/lib/pubg-analysis/telemetryMapCache";
+import {
+  finalizeTelemetryMapCacheLifecycle,
+  upsertTelemetryMapCacheReservation,
+} from "@/lib/pubg-analysis/telemetryRegistry.server";
 import {
   createTelemetryIdentity,
   parseTelemetryMode,
@@ -34,22 +40,6 @@ const supabase = createClient(
 
 const MATCH_ID = /^[A-Za-z0-9._-]{1,160}$/;
 const MAX_NICKNAME_LENGTH = 64;
-
-async function registerTelemetryMapCache(row: {
-  match_id: string;
-  platform: string;
-  player_id: string;
-  mode: string;
-  telemetry_version: number;
-  storage_path: string;
-  updated_at: string;
-}): Promise<void> {
-  const { error } = await supabase
-    .from("telemetry_map_cache_entries")
-    .upsert(row, { onConflict: "match_id,platform,player_id,mode,telemetry_version" });
-
-  if (error) throw new Error("텔레메트리 캐시 레지스트리 저장에 실패했습니다.");
-}
 
 function invalidRequest(message: string) {
   return NextResponse.json({ error: message }, { status: 400 });
@@ -129,12 +119,17 @@ export async function GET(request: Request) {
       mode,
       telemetryVersion: TELEMETRY_VERSION,
     });
-    const deps = {
+    const deps: TelemetryMapCacheDependencies = {
       isConfigured: isR2Configured,
       download: downloadFromR2,
       upload: uploadToR2,
       sign: getPresignedUrlFromR2,
-      register: registerTelemetryMapCache,
+      reserve: (row) => upsertTelemetryMapCacheReservation(supabase, row),
+      finalize: (row) => finalizeTelemetryMapCacheLifecycle(supabase, {
+        row,
+        mapName: matchData.data.attributes.mapId || mapName,
+        gameMode: matchData.data.attributes.gameMode || "unknown",
+      }),
       now: () => new Date(),
     };
     const cached = await readTelemetryMapCache(identity, deps);
@@ -144,6 +139,8 @@ export async function GET(request: Request) {
         { headers: { "Cache-Control": "no-store" } },
       );
     }
+
+    await reserveTelemetryMapCache(identity, deps);
 
     const telemetryRes = await fetch(asset.attributes.URL, { cache: "no-store" });
     if (!telemetryRes.ok) throw new Error("PUBG telemetry request failed");
