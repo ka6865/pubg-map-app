@@ -48,13 +48,14 @@ async function rejected(statement: string, label: string): Promise<void> {
   throw new Error(`${label}: expected-rejection`);
 }
 
-type Fixture = { runId: string; postIds: number[]; imageIds: string[]; storageKeys: string[]; cleanup: () => Promise<void> };
+type Fixture = { runId: string; postIds: number[]; imageIds: string[]; storageKeys: string[]; authUserIds: string[]; cleanup: () => Promise<void> };
 
 function createFixture(name: string): Fixture {
   const runId = `verify-board-image-${name}-${crypto.randomUUID()}`;
   const postIds: number[] = [];
   const imageIds: string[] = [];
   const storageKeys: string[] = [];
+  const authUserIds: string[] = [];
   const cleanup = async (): Promise<void> => {
     await sql(`SET ROLE service_role;
       DELETE FROM public.board_post_image_refs AS ref_row WHERE ref_row.post_id = ANY(${bigintArray(postIds)}) OR ref_row.image_id = ANY(${uuidArray(imageIds)});
@@ -65,8 +66,14 @@ function createFixture(name: string): Fixture {
     equal(await scalar(`SELECT count(*)::text FROM public.board_image_objects AS image_row WHERE image_row.id = ANY(${uuidArray(imageIds)}) OR image_row.storage_key LIKE ${quote(`${runId}%`)}`, "cleanup-image-residue"), "0", "cleanup-image-residue");
     equal(await scalar(`SELECT count(*)::text FROM public.board_post_image_refs AS ref_row WHERE ref_row.post_id = ANY(${bigintArray(postIds)}) OR ref_row.image_id = ANY(${uuidArray(imageIds)})`, "cleanup-ref-residue"), "0", "cleanup-ref-residue");
     equal(await scalar(`SELECT count(*)::text FROM storage.objects AS storage_object WHERE storage_object.name = ANY(${textArray(storageKeys)}) OR storage_object.name LIKE ${quote(`${runId}%`)}`, "cleanup-storage-residue"), "0", "cleanup-storage-residue");
+    if (authUserIds.length > 0) await sql(`DELETE FROM auth.users AS user_row WHERE user_row.id = ANY(${uuidArray(authUserIds)})`);
   };
-  return { runId, postIds, imageIds, storageKeys, cleanup };
+  return { runId, postIds, imageIds, storageKeys, authUserIds, cleanup };
+}
+
+async function ensureAuthUser(fixture: Fixture, userId: string): Promise<void> {
+  const inserted = await sql(`INSERT INTO auth.users (id, aud, role, raw_app_meta_data, raw_user_meta_data, created_at, updated_at) VALUES (${quote(userId)}::uuid, 'authenticated', 'authenticated', '{}'::jsonb, '{}'::jsonb, now(), now()) ON CONFLICT (id) DO NOTHING RETURNING id::text`);
+  if (inserted.split(/\r?\n/).includes(userId)) fixture.authUserIds.push(userId);
 }
 
 async function withFixture(name: string, scenario: (fixture: Fixture) => Promise<void>): Promise<void> {
@@ -190,6 +197,8 @@ async function verifyRevisionAndAttachDetachRace(): Promise<void> {
 
 async function verifyOwnerScopedReleaseClaims(): Promise<void> {
   await withFixture("owner-release", async (fixture) => {
+    const otherOwnerId = "00000000-0000-0000-0000-000000000002";
+    await ensureAuthUser(fixture, otherOwnerId);
     const ownReady = await reserveReady(fixture, "own-ready");
     const ownPending = (await reserve(fixture, "own-pending")).imageId;
     const referenced = await reserveReady(fixture, "referenced");
@@ -202,19 +211,24 @@ async function verifyOwnerScopedReleaseClaims(): Promise<void> {
       fixture.imageIds.push(imageId);
       return imageId;
     };
-    const otherOwner = await createRegistry("other-owner", "NULL", "ready");
+    const otherOwner = await createRegistry("other-owner", `${quote(otherOwnerId)}::uuid`, "ready");
+    const deletePending = await createRegistry("delete-pending", `${quote(ownerId)}::uuid`, "delete_pending");
     const activeDeleting = await createRegistry("active-deleting", `${quote(ownerId)}::uuid`, "deleting", "now() + interval '5 minutes'");
     const expiredDeleting = await createRegistry("expired-deleting", `${quote(ownerId)}::uuid`, "deleting", "now() - interval '1 minute'");
-    const requested = [ownReady, ownPending, otherOwner, referenced, activeDeleting, expiredDeleting, ownReady];
+    const requested = [ownReady, ownPending, otherOwner, referenced, deletePending, activeDeleting, expiredDeleting, ownReady];
     const claimed = (await sql(`SET ROLE service_role; SELECT result.image_id::text FROM public.claim_board_image_deletions_for_owner(${quote(ownerId)}::uuid, ${uuidArray(requested)}, now(), 300) AS result ORDER BY result.image_id`)).split(/\r?\n/).filter(Boolean);
     equal(String(claimed.includes(ownReady)), "true", "owner-release-own-ready");
     equal(String(claimed.includes(ownPending)), "true", "owner-release-own-pending");
-    equal(String(claimed.includes(otherOwner)), "false", "owner-release-other-owner");
+    equal(String(claimed.includes(otherOwner)), "false", "owner-release-other-owner-excluded");
     equal(String(claimed.includes(referenced)), "false", "owner-release-referenced");
     equal(String(claimed.includes(unrequested)), "false", "owner-release-unrequested");
     equal(String(claimed.includes(activeDeleting)), "false", "owner-release-active-deleting");
     equal(String(claimed.includes(expiredDeleting)), "true", "owner-release-expired-deleting");
     equal(String(claimed.filter((id) => id === ownReady).length), "1", "owner-release-duplicate-once");
+    equal(String(claimed.filter((id) => id === deletePending).length), "1", "owner-release-delete-pending-once");
+    equal(await imageStatus(deletePending, "owner-release-delete-pending-status"), "deleting", "owner-release-delete-pending-status");
+    const otherOwnerClaimed = await scalar(`SET ROLE service_role; SELECT count(*)::text FROM public.claim_board_image_deletions_for_owner(${quote(otherOwnerId)}::uuid, ${uuidArray([otherOwner])}, now(), 300) AS result WHERE result.image_id = ${quote(otherOwner)}::uuid`, "owner-release-other-owner-own-claim");
+    equal(otherOwnerClaimed, "1", "owner-release-other-owner-own-claim");
     await rejected(`SET ROLE service_role; SELECT * FROM public.claim_board_image_deletions_for_owner(${quote(ownerId)}::uuid, ARRAY[]::uuid[], now(), 300)`, "owner-release-empty-rejected");
     await rejected(`SET ROLE service_role; SELECT * FROM public.claim_board_image_deletions_for_owner(${quote(ownerId)}::uuid, ARRAY[NULL]::uuid[], now(), 300)`, "owner-release-null-rejected");
     await rejected(`SET ROLE service_role; SELECT * FROM public.claim_board_image_deletions_for_owner(${quote(ownerId)}::uuid, ${uuidArray(Array.from({ length: 21 }, () => ownReady))}, now(), 300)`, "owner-release-21-rejected");

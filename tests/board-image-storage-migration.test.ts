@@ -270,4 +270,24 @@ describe("게시판 이미지 Storage 소유권 마이그레이션", () => {
       expect(script).toContain(label);
     }
   });
+
+  it("owner release verifier는 실제 owner2 UUID row로 소유권 격리를 검증한다", () => {
+    const script = readFileSync(resolve(process.cwd(), "scripts/verify_board_image_storage_migration.ts"), "utf8");
+    const scenario = script.slice(script.indexOf("async function verifyOwnerScopedReleaseClaims"), script.indexOf("async function verifyClaimsAndRecovery"));
+
+    expect(scenario).toContain('const otherOwnerId = "00000000-0000-0000-0000-000000000002"');
+    expect(scenario).toContain("ensureAuthUser");
+    expect(scenario).toContain("owner-release-other-owner-excluded");
+    expect(scenario).toContain("owner-release-other-owner-own-claim");
+    expect(scenario).not.toContain('createRegistry("other-owner", "NULL"');
+  });
+
+  it("owner release verifier는 owner1 delete_pending을 한 번 claim하고 deleting 전이를 확인한다", () => {
+    const script = readFileSync(resolve(process.cwd(), "scripts/verify_board_image_storage_migration.ts"), "utf8");
+    const scenario = script.slice(script.indexOf("async function verifyOwnerScopedReleaseClaims"), script.indexOf("async function verifyClaimsAndRecovery"));
+
+    expect(scenario).toContain('createRegistry("delete-pending"');
+    expect(scenario).toContain("owner-release-delete-pending-once");
+    expect(scenario).toContain("owner-release-delete-pending-status");
+  });
 });
