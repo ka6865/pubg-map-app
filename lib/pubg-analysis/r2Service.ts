@@ -175,10 +175,13 @@ export async function deleteMultipleFromR2(keys: string[]): Promise<void> {
     });
 
     try {
-      await getR2Client().send(command);
-    } catch (error) {
-      console.error('[R2 Error] Failed to batch delete files from R2', error);
-      throw error;
+      const response = await getR2Client().send(command);
+      if (response.Errors && response.Errors.length > 0) {
+        throw new Error('r2-batch-delete-partial-failure');
+      }
+    } catch {
+      console.error('[R2 Error] Failed to batch delete files from R2');
+      throw new Error('r2-batch-delete-failed');
     }
   }
 }

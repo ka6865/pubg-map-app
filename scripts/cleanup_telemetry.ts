@@ -1,235 +1,340 @@
-import { createClient } from '@supabase/supabase-js';
-import dotenv from 'dotenv';
-import path from 'path';
-import { listR2Files, deleteMultipleFromR2 } from '../lib/pubg-analysis/r2Service';
-import { TELEMETRY_VERSION } from '../lib/pubg-analysis/constants';
+import { resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import dotenv from "dotenv";
+import { TELEMETRY_VERSION } from "../lib/pubg-analysis/constants";
+import {
+  mergeActiveTelemetryPaths,
+  selectTelemetryCachePathsForMatches,
+} from "../lib/pubg-analysis/telemetryCleanup";
+import {
+  deleteMultipleFromR2,
+  listR2Files,
+} from "../lib/pubg-analysis/r2Service";
 
-// .env.local 파일 로드
-dotenv.config({ path: path.resolve(process.cwd(), '.env.local') });
+export type TelemetryCleanupMasterRow = {
+  match_id: string;
+  storage_path: string | null;
+  telemetry_version: number | string | null;
+  created_at: string;
+};
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+export type TelemetryCleanupCacheRow = {
+  match_id: string;
+  storage_path: string | null;
+};
 
-if (!supabaseUrl || !supabaseServiceKey) {
-  console.error('❌ 환경 변수가 누락되었습니다. .env.local 파일을 확인해주세요.');
-  process.exit(1);
+type R2File = {
+  key: string;
+  size: number;
+};
+
+type RangePage<T> = {
+  data: T[] | null;
+  error: { message?: string } | null;
+};
+
+export type TelemetryCleanupDependencies = {
+  listMasterRows(): Promise<TelemetryCleanupMasterRow[]>;
+  listCacheRows(): Promise<TelemetryCleanupCacheRow[]>;
+  listR2Files(limit: number): Promise<R2File[]>;
+  deleteR2Paths(storagePaths: string[]): Promise<void>;
+  deleteMatchRows(table: string, matchIds: string[]): Promise<void>;
+};
+
+export type TelemetryCleanupConfig = {
+  cutoff: Date;
+  targetVersion: number;
+  r2ScanLimit: number;
+};
+
+export type TelemetryCleanupResult = {
+  deletedMatchCount: number;
+  deletedR2PathCount: number;
+  scannedR2Count: number;
+  r2ScanMayBeTruncated: boolean;
+};
+
+const QUERY_PAGE_SIZE = 500;
+const DELETE_BATCH_SIZE = 50;
+const PERMANENT_R2_PREFIXES = ["crates/", "weapons/"] as const;
+
+export async function fetchAllRowsByRange<T>(
+  fetchPage: (from: number, to: number) => Promise<RangePage<T>>,
+  pageSize = QUERY_PAGE_SIZE,
+): Promise<T[]> {
+  if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 1_000) {
+    throw new Error("telemetry-cleanup-invalid-page-size");
+  }
+
+  const rows: T[] = [];
+  for (let from = 0; ; from += pageSize) {
+    const page = await fetchPage(from, from + pageSize - 1);
+    if (page.error) {
+      throw new Error(page.error.message || "telemetry-cleanup-page-read-failed");
+    }
+
+    const data = page.data ?? [];
+    rows.push(...data);
+    if (data.length < pageSize) return rows;
+  }
 }
 
-const supabase = createClient(supabaseUrl, supabaseServiceKey, {
-  auth: {
-    autoRefreshToken: false,
-    persistSession: false
-  }
-});
-
-// 환경 변수에 따라 삭제 강도 조절 (Daily Action용)
-const currentVersion = Math.floor(TELEMETRY_VERSION);
-let envTargetVersion = parseInt(process.env.CLEANUP_TARGET_VERSION || '56');
-
-// 안전 장치: CLEANUP_TARGET_VERSION이 현재 동작 중인 버전을 덮어쓰지 않도록 강제 제한 (활성 데이터 삭제 방지)
-if (envTargetVersion >= currentVersion) {
-  console.warn(`⚠️ 경고: CLEANUP_TARGET_VERSION (${envTargetVersion})이 현재 동작 중인 텔레메트리 버전 (${currentVersion})보다 크거나 같습니다.`);
-  console.warn(`   안전을 위해 TARGET_VERSION을 활성 버전 미만인 ${currentVersion - 1}로 강제 강하 조정합니다.`);
-  envTargetVersion = currentVersion - 1;
+function uniqueValues(values: string[]): string[] {
+  return [...new Set(values)];
 }
 
-const TARGET_VERSION = envTargetVersion;
-const RETENTION_DAYS = parseInt(process.env.CLEANUP_RETENTION_DAYS || '1');
+function chunkValues<T>(values: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < values.length; index += size) {
+    chunks.push(values.slice(index, index + size));
+  }
+  return chunks;
+}
 
-async function smartCleanup() {
-  console.log('🚀 [BGMS Smart Cleaner] 작업을 시작합니다...');
-  
-  const now = new Date();
-  const expirationDate = new Date(now.getTime() - (RETENTION_DAYS * 24 * 60 * 60 * 1000));
-  console.log(`📅 기준 날짜: ${expirationDate.toISOString()} (이전 데이터 삭제)`);
-  console.log(`🔢 기준 버전: V${TARGET_VERSION} (미만 버전 삭제)`);
+function isExpiredMasterRow(
+  row: TelemetryCleanupMasterRow,
+  config: TelemetryCleanupConfig,
+): boolean {
+  const telemetryVersion = Number(row.telemetry_version);
+  const createdAt = Date.parse(row.created_at);
+  if (!Number.isFinite(telemetryVersion) || !Number.isFinite(createdAt)) {
+    throw new Error("telemetry-cleanup-invalid-master-row");
+  }
 
-  // 0. 고립된 데이터 정리 (match_master_telemetry에 없는 match_stats_raw/processed_match_telemetry 삭제)
-  console.log('🧹 고립된 상세 데이터 확인 및 정리 중...');
-  try {
-    const { data: orphanedMatches, error: orphanError } = await supabase
-      .rpc('get_orphaned_match_ids');
+  return telemetryVersion < config.targetVersion
+    || createdAt < config.cutoff.getTime();
+}
 
-    if (orphanError) {
-      console.warn('⚠️ 고립된 match_id 조회 실패:', orphanError.message);
-    } else if (orphanedMatches && orphanedMatches.length > 0) {
-      const orphanedMatchIds = orphanedMatches.map((row: any) => row.match_id).filter(Boolean);
-      console.log(`🧹 발견된 고립 매치 ID 개수: ${orphanedMatchIds.length}개. 정리를 진행합니다.`);
-      
-      // 1) match_stats_raw 삭제
-      const { error: delStatsErr } = await supabase
-        .from('match_stats_raw')
+function validateConfig(config: TelemetryCleanupConfig): void {
+  if (
+    !Number.isFinite(config.cutoff.getTime())
+    || !Number.isInteger(config.targetVersion)
+    || config.targetVersion < 0
+    || !Number.isInteger(config.r2ScanLimit)
+    || config.r2ScanLimit < 1
+  ) {
+    throw new Error("telemetry-cleanup-invalid-config");
+  }
+}
+
+function isPermanentR2Asset(storagePath: string): boolean {
+  return PERMANENT_R2_PREFIXES.some((prefix) => storagePath.startsWith(prefix));
+}
+
+export async function runTelemetryStorageCleanup(
+  config: TelemetryCleanupConfig,
+  dependencies: TelemetryCleanupDependencies,
+): Promise<TelemetryCleanupResult> {
+  validateConfig(config);
+
+  const [masterRows, cacheRows] = await Promise.all([
+    dependencies.listMasterRows(),
+    dependencies.listCacheRows(),
+  ]);
+  const bucketFiles = await dependencies.listR2Files(config.r2ScanLimit);
+
+  const activePaths = mergeActiveTelemetryPaths(masterRows, cacheRows);
+  const expiredRows = masterRows.filter((row) => isExpiredMasterRow(row, config));
+  const expiredMatchIds = uniqueValues(expiredRows.map((row) => row.match_id));
+  let deletedMatchCount = 0;
+  let deletedR2PathCount = 0;
+
+  for (const matchIds of chunkValues(expiredMatchIds, DELETE_BATCH_SIZE)) {
+    const targetSet = new Set(matchIds);
+    const masterPaths = expiredRows
+      .filter((row) => targetSet.has(row.match_id))
+      .map((row) => row.storage_path)
+      .filter((storagePath): storagePath is string => Boolean(storagePath));
+    const cachePaths = selectTelemetryCachePathsForMatches(cacheRows, matchIds);
+    const targetPaths = uniqueValues([...masterPaths, ...cachePaths]);
+
+    if (targetPaths.length > 0) {
+      await dependencies.deleteR2Paths(targetPaths);
+      deletedR2PathCount += targetPaths.length;
+    }
+
+    await dependencies.deleteMatchRows("match_stats_raw", matchIds);
+    await dependencies.deleteMatchRows("processed_match_telemetry", matchIds);
+    await dependencies.deleteMatchRows("telemetry_map_cache_entries", matchIds);
+    await dependencies.deleteMatchRows("match_master_telemetry", matchIds);
+    deletedMatchCount += matchIds.length;
+  }
+
+  const orphanedPaths = uniqueValues(
+    bucketFiles
+      .map((file) => file.key)
+      .filter((storagePath) => (
+        storagePath.length > 0
+        && !isPermanentR2Asset(storagePath)
+        && !activePaths.has(storagePath)
+      )),
+  );
+  if (orphanedPaths.length > 0) {
+    await dependencies.deleteR2Paths(orphanedPaths);
+    deletedR2PathCount += orphanedPaths.length;
+  }
+
+  return {
+    deletedMatchCount,
+    deletedR2PathCount,
+    scannedR2Count: bucketFiles.length,
+    r2ScanMayBeTruncated: bucketFiles.length >= config.r2ScanLimit,
+  };
+}
+
+function createTelemetryCleanupDependencies(
+  supabase: SupabaseClient,
+): TelemetryCleanupDependencies {
+  return {
+    listMasterRows: () => fetchAllRowsByRange(async (from, to) => {
+      const { data, error } = await supabase
+        .from("match_master_telemetry")
+        .select("match_id, storage_path, telemetry_version, created_at")
+        .order("match_id", { ascending: true })
+        .range(from, to);
+      return {
+        data: data as TelemetryCleanupMasterRow[] | null,
+        error,
+      };
+    }),
+    listCacheRows: () => fetchAllRowsByRange(async (from, to) => {
+      const { data, error } = await supabase
+        .from("telemetry_map_cache_entries")
+        .select("id, match_id, storage_path")
+        .order("id", { ascending: true })
+        .range(from, to);
+      return {
+        data: data as TelemetryCleanupCacheRow[] | null,
+        error,
+      };
+    }),
+    listR2Files,
+    deleteR2Paths: deleteMultipleFromR2,
+    deleteMatchRows: async (table, matchIds) => {
+      const { error } = await supabase
+        .from(table)
         .delete()
-        .in('match_id', orphanedMatchIds);
-      if (delStatsErr) {
-        console.error('❌ 고립된 match_stats_raw 삭제 실패:', delStatsErr.message);
-      } else {
-        console.log(`✓ 고립된 match_stats_raw 데이터 정리 완료`);
-      }
-      
-      // 2) processed_match_telemetry 삭제
-      const { error: delProcessedErr } = await supabase
-        .from('processed_match_telemetry')
+        .in("match_id", matchIds);
+      if (error) throw new Error(`telemetry-cleanup-delete-${table}-failed`);
+    },
+  };
+}
+
+async function cleanupOrphanedAnalysisRows(supabase: SupabaseClient): Promise<void> {
+  const { data, error } = await supabase.rpc("get_orphaned_match_ids");
+  if (error) throw new Error("telemetry-cleanup-orphan-query-failed");
+
+  const rows = (data ?? []) as Array<{ match_id: string | null }>;
+  const matchIds = uniqueValues(
+    rows
+      .map((row) => row.match_id)
+      .filter((matchId): matchId is string => Boolean(matchId)),
+  );
+  for (const batch of chunkValues(matchIds, DELETE_BATCH_SIZE)) {
+    for (const table of ["match_stats_raw", "processed_match_telemetry"]) {
+      const { error: deleteError } = await supabase
+        .from(table)
         .delete()
-        .in('match_id', orphanedMatchIds);
-      if (delProcessedErr) {
-        console.error('❌ 고립된 processed_match_telemetry 삭제 실패:', delProcessedErr.message);
-      } else {
-        console.log(`✓ 고립된 processed_match_telemetry 데이터 정리 완료`);
-      }
-    } else {
-      console.log('✅ 고립된 매치 데이터가 없습니다.');
+        .in("match_id", batch);
+      if (deleteError) throw new Error(`telemetry-cleanup-delete-${table}-failed`);
     }
-  } catch (err) {
-    console.error('❌ 고립 데이터 정리 중 예외 발생:', err);
   }
+}
 
-  let totalMatchesDeleted = 0;
-  let totalFilesDeleted = 0;
+async function cleanupInactivePlayerCache(
+  supabase: SupabaseClient,
+  now: Date,
+): Promise<void> {
+  const cutoff = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1_000).toISOString();
+  const { error } = await supabase
+    .from("pubg_player_cache")
+    .delete()
+    .eq("search_count", 0)
+    .lt("updated_at", cutoff);
+  if (error) throw new Error("telemetry-cleanup-player-cache-failed");
+}
 
-  while (true) {
-    const { data: targets, error: fetchError } = await supabase
-      .from('match_master_telemetry')
-      .select('match_id, storage_path')
-      .or(`telemetry_version.lt.${TARGET_VERSION},created_at.lt.${expirationDate.toISOString()}`)
-      .limit(50);
+async function cleanupBenchmarks(supabase: SupabaseClient): Promise<void> {
+  const { error: versionError } = await supabase
+    .from("global_benchmarks")
+    .delete()
+    .lt("filter_version", 8);
+  if (versionError) throw new Error("telemetry-cleanup-benchmark-version-failed");
 
-    if (fetchError) {
-      console.error('❌ 대상 조회 실패:', fetchError.message);
-      break;
-    }
-
-    if (!targets || targets.length === 0) break;
-
-    const matchIds = targets.map(t => t.match_id);
-    const storagePaths = targets.map(t => t.storage_path).filter(Boolean);
-
-    // 1. Cloudflare R2 스토리지 대량 삭제 (무부하 초고속 처리)
-    if (storagePaths.length > 0) {
-      try {
-        await deleteMultipleFromR2(storagePaths);
-        totalFilesDeleted += storagePaths.length;
-      } catch (storageError) {
-        console.error('❌ Cloudflare R2 삭제 실패:', storageError);
-      }
-    }
-
-    // 2. 관련 통계 데이터 삭제 (Cascade 역할)
-    await supabase.from('match_stats_raw').delete().in('match_id', matchIds);
-    await supabase.from('processed_match_telemetry').delete().in('match_id', matchIds);
-
-    // 3. 메인 매치 데이터 삭제
-    const { error: dbError } = await supabase
-      .from('match_master_telemetry')
-      .delete()
-      .in('match_id', matchIds);
-
-    if (!dbError) {
-      totalMatchesDeleted += targets.length;
-    }
-    
-    console.log(`⏳ 처리 중... (DB: ${totalMatchesDeleted}개 매치 및 관련 데이터 삭제됨)`);
-  }
-
-  // 4. 플레이어 자동완성 캐시 정리 (검색된 적이 없고 14일 이상 업데이트되지 않은 비활성 유저 캐시 소각)
-  console.log('🧹 비활성 플레이어 자동완성 캐시 정리 중...');
-  try {
-    const playerCutoffDate = new Date(now.getTime() - (14 * 24 * 60 * 60 * 1000));
-    const { count: deletedPlayersCount, error: playerCacheErr } = await supabase
-      .from('pubg_player_cache')
-      .delete({ count: 'exact' })
-      .eq('search_count', 0)
-      .lt('updated_at', playerCutoffDate.toISOString());
-
-    if (playerCacheErr) {
-      console.error('❌ 비활성 플레이어 캐시 삭제 실패:', playerCacheErr.message);
-    } else {
-      console.log(`✅ 비활성 플레이어 캐시 정리 완료 (${deletedPlayersCount || 0}개 유저 삭제됨)`);
-    }
-  } catch (err) {
-    console.error('❌ 플레이어 캐시 정리 중 예외 발생:', err);
-  }
-  
-  // 5. 벤치마크 데이터 정리 (filter_version 및 티어별 캡핑)
-  console.log('📊 벤치마크 데이터 정리 중...');
-  await supabase.from('global_benchmarks').delete().lt('filter_version', 8);
-
-  const tiers = ['S', 'A+', 'A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'C-', 'D+', 'D', 'D-'];
-  const MAX_SAMPLES_PER_TIER = 500;
-  const tierCounts: Record<string, number> = {};
-  let totalBenchmarksDeleted = 0;
-
+  const tiers = [
+    "S", "A+", "A", "A-", "B+", "B", "B-",
+    "C+", "C", "C-", "D+", "D", "D-",
+  ];
+  const maximumSamplesPerTier = 500;
   for (const tier of tiers) {
-    const { data: samples } = await supabase
-      .from('global_benchmarks')
-      .select('id')
-      .eq('tier', tier)
-      .order('created_at', { ascending: false });
-
-    let finalCount = 0;
-    if (samples) {
-      if (samples.length > MAX_SAMPLES_PER_TIER) {
-        const toDelete = samples.slice(MAX_SAMPLES_PER_TIER).map(s => s.id);
-        await supabase.from('global_benchmarks').delete().in('id', toDelete);
-        finalCount = MAX_SAMPLES_PER_TIER;
-        totalBenchmarksDeleted += toDelete.length;
-      } else {
-        finalCount = samples.length;
-      }
-    }
-    tierCounts[tier] = finalCount;
+    const { data, error } = await supabase
+      .from("global_benchmarks")
+      .select("id")
+      .eq("tier", tier)
+      .order("created_at", { ascending: false });
+    if (error) throw new Error("telemetry-cleanup-benchmark-query-failed");
+    const toDelete = (data ?? [])
+      .slice(maximumSamplesPerTier)
+      .map((row) => row.id);
+    if (toDelete.length === 0) continue;
+    const { error: deleteError } = await supabase
+      .from("global_benchmarks")
+      .delete()
+      .in("id", toDelete);
+    if (deleteError) throw new Error("telemetry-cleanup-benchmark-cap-failed");
   }
-  const tierLogs = tiers.map(t => `${t}: ${tierCounts[t] || 0}개`).join(', ');
-  console.log(`✅ 벤치마크 최신화 및 캡핑 완료 (티어별 최대 ${MAX_SAMPLES_PER_TIER}개, 총 ${totalBenchmarksDeleted}개 정리됨)`);
-  console.log(`   - 분포: ${tierLogs}`);
-
-  const bucketFiles = await listR2Files(1000);
-  if (bucketFiles && bucketFiles.length > 0) {
-    const { data: activeRecords } = await supabase.from('match_master_telemetry').select('storage_path');
-    const activePaths = new Set(activeRecords?.map(r => r.storage_path) || []);
-    const orphanedFiles = bucketFiles
-      .map(f => f.key)
-      .filter(name => {
-        // crates/ 및 weapons/ 하위의 서비스 영구 자산들은 고립 파일 정리에서 제외
-        if (name.startsWith('crates/') || name.startsWith('weapons/')) {
-          return false;
-        }
-        return !activePaths.has(name);
-      });
-
-    if (orphanedFiles.length > 0) {
-      try {
-        await deleteMultipleFromR2(orphanedFiles);
-        totalFilesDeleted += orphanedFiles.length;
-      } catch (orphanError) {
-        console.error('❌ Cloudflare R2 고립 파일 삭제 실패:', orphanError);
-      }
-    }
-  }
-
-  // 5. 최종 통계 및 용량 확인
-  console.log('\n📊 [최종 작업 통계]');
-  const { data: finalMatches } = await supabase.from('match_master_telemetry').select('count', { count: 'exact' });
-  
-  // 용량 합산 로직 (페이지네이션)
-  let totalSizeBytes = 0;
-  let totalFileCount = 0;
-  
-  const remainingFiles = await listR2Files(1000);
-  remainingFiles.forEach(f => {
-    totalSizeBytes += f.size;
-    totalFileCount++;
-  });
-
-  const totalSizeMB = (totalSizeBytes / (1024 * 1024)).toFixed(2);
-  const totalSizeGB = (totalSizeBytes / (1024 * 1024 * 1024)).toFixed(2);
-
-  console.log(`──────────────────────────────────────`);
-  console.log(`🗑️  삭제된 데이터: DB ${totalMatchesDeleted}개 매치 / Storage ${totalFilesDeleted}개`);
-  console.log(`📉 남은 데이터: DB ${finalMatches?.[0]?.count || 0}개 / Storage ${totalFileCount}개`);
-  console.log(`💾 현재 스토리지 사용량: ${totalSizeMB} MB (${totalSizeGB} GB)`);
-  console.log(`──────────────────────────────────────`);
-  console.log(`✨ 모든 작업이 완료되었습니다.`);
 }
 
-smartCleanup().catch(console.error);
+function requireEnv(key: string): string {
+  const value = process.env[key]?.trim();
+  if (!value) throw new Error(`${key}-missing`);
+  return value;
+}
+
+function parseIntegerEnv(key: string, fallback: number): number {
+  const raw = process.env[key]?.trim();
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value < 0) throw new Error(`${key}-invalid`);
+  return value;
+}
+
+export async function runTelemetryCleanupFromEnvironment(): Promise<void> {
+  dotenv.config({ path: resolve(process.cwd(), ".env.local") });
+  const supabaseUrl = requireEnv("NEXT_PUBLIC_SUPABASE_URL");
+  const serviceRoleKey = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
+  const currentVersion = Math.floor(TELEMETRY_VERSION);
+  const configuredTargetVersion = parseIntegerEnv("CLEANUP_TARGET_VERSION", 56);
+  const targetVersion = Math.min(configuredTargetVersion, currentVersion - 1);
+  const retentionDays = parseIntegerEnv("CLEANUP_RETENTION_DAYS", 1);
+  const r2ScanLimit = Math.min(parseIntegerEnv("CLEANUP_R2_SCAN_LIMIT", 1_000), 1_000);
+  if (retentionDays < 1 || r2ScanLimit < 1) {
+    throw new Error("telemetry-cleanup-invalid-environment-config");
+  }
+
+  const supabase = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+  const now = new Date();
+  const result = await runTelemetryStorageCleanup({
+    cutoff: new Date(now.getTime() - retentionDays * 24 * 60 * 60 * 1_000),
+    targetVersion,
+    r2ScanLimit,
+  }, createTelemetryCleanupDependencies(supabase));
+
+  await cleanupOrphanedAnalysisRows(supabase);
+  await cleanupInactivePlayerCache(supabase, now);
+  await cleanupBenchmarks(supabase);
+  console.info(JSON.stringify(result));
+}
+
+const isDirectRun = Boolean(process.argv[1])
+  && pathToFileURL(resolve(process.argv[1])).href === import.meta.url;
+
+if (isDirectRun) {
+  void runTelemetryCleanupFromEnvironment().catch(() => {
+    console.error("텔레메트리 cleanup 작업이 실패했습니다.");
+    process.exitCode = 1;
+  });
+}
