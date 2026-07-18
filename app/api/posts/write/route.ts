@@ -306,6 +306,28 @@ export async function POST(request: Request) {
         );
       }
 
+      const preflight = await getEditPreflight({
+        supabaseAdmin: supabaseAdmin as unknown as EditQueryAdmin,
+        postId: editingPostId,
+        actorUserId: user.id,
+        isRequesterAdmin,
+        expectedRevision: safeExpectedRevision,
+      });
+      if (preflight instanceof NextResponse) return preflight;
+
+      const retainedImageIds = await getRetainedImageIds({
+        supabaseAdmin: supabaseAdmin as unknown as EditQueryAdmin,
+        postId: editingPostId,
+        content: safeContent,
+        imageUrl: typeof image_url === "string" ? image_url : null,
+      });
+      if (retainedImageIds instanceof NextResponse) return retainedImageIds;
+
+      const mergedContentImageIds = mergeImageIds(contentImageIds, retainedImageIds.contentImageIds);
+      if (mergedContentImageIds.length > 20) {
+        return NextResponse.json({ error: "이미지 참조 또는 수정 버전이 올바르지 않습니다." }, { status: 400 });
+      }
+
       if (safeCategory === "듀오/스쿼드 모집" && discordUrl) {
         const isValid = await validateDiscordUrl(discordUrl);
         if (!isValid) {
@@ -333,8 +355,8 @@ export async function POST(request: Request) {
         discordUrl,
         discordChannelId: typeof discord_channel_id === "string" ? discord_channel_id : null,
         clanInfo: safeClanInfo,
-        contentImageIds,
-        thumbnailImageId,
+        contentImageIds: mergedContentImageIds,
+        thumbnailImageId: retainedImageIds.thumbnailImageId ?? thumbnailImageId,
       });
     } else {
       const finalAuthor = user ? memberAuthor : (author as string).trim();
@@ -497,16 +519,125 @@ async function writePostWithImages(input: {
   return NextResponse.json({ error: "게시글을 저장하지 못했습니다." }, { status: 503 });
 }
 
-function getWriteResult(value: unknown): { result_code: string; post_id: number; revision: number } | null {
+type WriteResult =
+  | { result_code: "ok" | "revision_conflict" | "forbidden"; post_id: number; revision: number }
+  | { result_code: "not_found"; post_id: null; revision: null };
+
+function getWriteResult(value: unknown): WriteResult | null {
   if (!Array.isArray(value) || value.length !== 1) return null;
   const row = value[0];
   if (!row || typeof row !== "object" || Array.isArray(row)) return null;
   const record = row as Record<string, unknown>;
-  return typeof record.result_code === "string"
+  if (record.result_code === "not_found") {
+    return record.post_id === null && record.revision === null
+      ? { result_code: "not_found", post_id: null, revision: null }
+      : null;
+  }
+  if (
+    (record.result_code === "ok" || record.result_code === "revision_conflict" || record.result_code === "forbidden")
     && typeof record.post_id === "number"
     && Number.isSafeInteger(record.post_id)
     && typeof record.revision === "number"
     && Number.isSafeInteger(record.revision)
-    ? { result_code: record.result_code, post_id: record.post_id, revision: record.revision }
+  ) return { result_code: record.result_code, post_id: record.post_id, revision: record.revision };
+  return null;
+}
+
+type EditQueryResult = { data: unknown; error: unknown };
+type EditQueryAdmin = {
+  from: (table: string) => {
+    select: (columns: string) => {
+      eq: (column: string, value: number) => {
+        maybeSingle?: () => PromiseLike<EditQueryResult>;
+      } | PromiseLike<EditQueryResult>;
+    };
+  };
+};
+
+async function getEditPreflight(input: {
+  supabaseAdmin: EditQueryAdmin;
+  postId: number;
+  actorUserId: string;
+  isRequesterAdmin: boolean;
+  expectedRevision: number | null;
+}): Promise<NextResponse | null> {
+  try {
+    const query = input.supabaseAdmin.from("posts").select("user_id, revision").eq("id", input.postId);
+    const result: EditQueryResult = "maybeSingle" in query && typeof query.maybeSingle === "function"
+      ? await query.maybeSingle()
+      : await (query as PromiseLike<EditQueryResult>);
+    if (result.error) return NextResponse.json({ error: "게시글을 저장하지 못했습니다." }, { status: 503 });
+    if (!isEditPost(result.data)) return result.data === null
+      ? NextResponse.json({ error: "수정할 게시글을 찾을 수 없습니다." }, { status: 404 })
+      : NextResponse.json({ error: "게시글을 저장하지 못했습니다." }, { status: 503 });
+    if (!input.isRequesterAdmin && result.data.user_id !== input.actorUserId) {
+      return NextResponse.json({ error: "게시글 수정 권한이 없습니다." }, { status: 403 });
+    }
+    if (result.data.revision !== input.expectedRevision) {
+      return NextResponse.json({ error: "게시글이 다른 곳에서 수정되었습니다." }, { status: 409 });
+    }
+    return null;
+  } catch {
+    return NextResponse.json({ error: "게시글을 저장하지 못했습니다." }, { status: 503 });
+  }
+}
+
+function isEditPost(value: unknown): value is { user_id: string | null; revision: number } {
+  return !!value && typeof value === "object" && !Array.isArray(value)
+    && (typeof (value as Record<string, unknown>).user_id === "string" || (value as Record<string, unknown>).user_id === null)
+    && typeof (value as Record<string, unknown>).revision === "number"
+    && Number.isSafeInteger((value as Record<string, unknown>).revision);
+}
+
+async function getRetainedImageIds(input: {
+  supabaseAdmin: EditQueryAdmin;
+  postId: number;
+  content: string;
+  imageUrl: string | null;
+}): Promise<NextResponse | { contentImageIds: string[]; thumbnailImageId: string | null }> {
+  try {
+    const result: EditQueryResult = await (input.supabaseAdmin.from("board_post_image_refs")
+      .select("image_id, usage, board_image_objects(bucket_id, storage_key, status)")
+      .eq("post_id", input.postId) as PromiseLike<EditQueryResult>);
+    if (result.error || !Array.isArray(result.data)) {
+      return NextResponse.json({ error: "게시글을 저장하지 못했습니다." }, { status: 503 });
+    }
+    const contentUrls = new Set(Array.from(input.content.matchAll(/<img\b[^>]*\bsrc\s*=\s*(["'])(.*?)\1/gi), (match) => match[2]));
+    const contentImageIds: string[] = [];
+    let thumbnailImageId: string | null = null;
+    for (const row of result.data) {
+      const ref = parseManagedPostImageRef(row);
+      if (!ref) continue;
+      const canonicalUrl = toBoardImagePublicUrl(ref.storageKey);
+      if (contentUrls.has(canonicalUrl)) contentImageIds.push(ref.imageId);
+      if (input.imageUrl === canonicalUrl) thumbnailImageId = ref.imageId;
+    }
+    return { contentImageIds: [...new Set(contentImageIds)], thumbnailImageId };
+  } catch {
+    return NextResponse.json({ error: "게시글을 저장하지 못했습니다." }, { status: 503 });
+  }
+}
+
+function parseManagedPostImageRef(value: unknown): { imageId: string; usage: "content" | "thumbnail"; storageKey: string } | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const row = value as Record<string, unknown>;
+  const image = row.board_image_objects;
+  if (!image || typeof image !== "object" || Array.isArray(image)) return null;
+  const object = image as Record<string, unknown>;
+  return typeof row.image_id === "string" && isUuid(row.image_id)
+    && (row.usage === "content" || row.usage === "thumbnail")
+    && object.bucket_id === "board-images-v2"
+    && object.storage_key === row.image_id
+    && object.status === "ready"
+    ? { imageId: row.image_id, usage: row.usage, storageKey: object.storage_key }
     : null;
+}
+
+function mergeImageIds(clientImageIds: string[], retainedImageIds: string[]): string[] {
+  return [...new Set([...retainedImageIds, ...clientImageIds])];
+}
+
+function toBoardImagePublicUrl(storageKey: string): string {
+  const baseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://supabase.invalid").replace(/\/$/, "");
+  return `${baseUrl}/storage/v1/object/public/board-images-v2/${encodeURIComponent(storageKey)}`;
 }

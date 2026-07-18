@@ -64,6 +64,10 @@ function createWriteAdmin(options?: {
   role?: "user" | "admin";
   nickname?: string;
   existingPost?: boolean;
+  postOwnerId?: string;
+  postRevision?: number;
+  postQueryError?: unknown;
+  existingRefs?: unknown[];
 }) {
   const insert = vi.fn(() => ({
     select: vi.fn(async () => ({
@@ -83,10 +87,11 @@ function createWriteAdmin(options?: {
   const existingSingle = vi.fn(async () => ({
     data: options?.existingPost === false
       ? null
-      : { user_id: "user-a", content: "" },
-    error: options?.existingPost === false ? { message: "missing" } : null,
+      : { user_id: options?.postOwnerId ?? "user-a", revision: options?.postRevision ?? 0 },
+    error: options?.postQueryError ?? (options?.existingPost === false ? null : null),
   }));
-  const rpc = vi.fn(async () => ({
+  const refs = vi.fn(async () => ({ data: options?.existingRefs ?? [], error: null }));
+  const rpc = vi.fn(async (): Promise<{ data: unknown; error: unknown }> => ({
     data: [{ result_code: "ok", post_id: 41, revision: 0 }],
     error: null,
   }));
@@ -105,7 +110,14 @@ function createWriteAdmin(options?: {
           insert,
           update,
           select: vi.fn(() => ({
-            eq: vi.fn(() => ({ single: existingSingle })),
+            eq: vi.fn(() => ({ single: existingSingle, maybeSingle: existingSingle })),
+          })),
+        };
+      }
+      if (table === "board_post_image_refs") {
+        return {
+          select: vi.fn(() => ({
+            eq: refs,
           })),
         };
       }
@@ -115,7 +127,7 @@ function createWriteAdmin(options?: {
       from: vi.fn(() => ({ remove: vi.fn(async () => ({ error: null })) })),
     },
   };
-  return { supabaseAdmin, insert, update, rpc };
+  return { supabaseAdmin, insert, update, rpc, existingSingle, refs };
 }
 
 function createGuestCompatibilityAdmin() {
@@ -175,6 +187,7 @@ describe("게시글 쓰기 Turnstile 저장 경계", () => {
     mocks.verifyTurnstile.mockResolvedValue({ ok: true });
     mocks.genSalt.mockResolvedValue("salt");
     mocks.hash.mockResolvedValue("password-hash");
+    mocks.externalFetch.mockResolvedValue({ ok: true, json: async () => ({ guild: { id: "1486899870928470121" } }) });
     vi.stubGlobal("fetch", mocks.externalFetch);
   });
 
@@ -451,6 +464,150 @@ describe("게시글 쓰기 Turnstile 저장 경계", () => {
     expect(mocks.consumeQuota).not.toHaveBeenCalled();
     expect(mocks.verifyTurnstile).not.toHaveBeenCalled();
     expect(admin.rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("수정은 기존 managed v2 URL이 본문·thumbnail에 남으면 해당 ID와 usage를 RPC payload에 보존한다", async () => {
+    const contentImageId = "22222222-2222-4222-8222-222222222222";
+    const thumbnailImageId = "33333333-3333-4333-8333-333333333333";
+    const baseUrl = "https://example.supabase.co";
+    const contentUrl = `${baseUrl}/storage/v1/object/public/board-images-v2/${contentImageId}`;
+    const thumbnailUrl = `${baseUrl}/storage/v1/object/public/board-images-v2/${thumbnailImageId}`;
+    const admin = createWriteAdmin({
+      existingRefs: [
+        { image_id: contentImageId, usage: "content", board_image_objects: { bucket_id: "board-images-v2", storage_key: contentImageId, status: "ready" } },
+        { image_id: thumbnailImageId, usage: "thumbnail", board_image_objects: { bucket_id: "board-images-v2", storage_key: thumbnailImageId, status: "ready" } },
+      ],
+    });
+    const previousBaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    process.env.NEXT_PUBLIC_SUPABASE_URL = baseUrl;
+    mocks.withOptionalAuth.mockResolvedValue({ user: { id: "user-a" }, supabaseAdmin: admin.supabaseAdmin });
+
+    try {
+      const response = await postsWritePOST(makePostRequest({
+        editingPostId: 41,
+        expectedRevision: 0,
+        author: "회원",
+        password: null,
+        user_id: "user-a",
+        content: `<p>수정</p><img src="${contentUrl}">`,
+        image_url: thumbnailUrl,
+        contentImageIds: ["44444444-4444-4444-8444-444444444444"],
+      }));
+
+      expect(response.status).toBe(200);
+      expect(admin.rpc).toHaveBeenCalledWith("write_board_post_with_images", expect.objectContaining({
+        p_content_image_ids: [contentImageId, "44444444-4444-4444-8444-444444444444"],
+        p_thumbnail_image_id: thumbnailImageId,
+      }));
+    } finally {
+      if (previousBaseUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+      else process.env.NEXT_PUBLIC_SUPABASE_URL = previousBaseUrl;
+    }
+  });
+
+  it("수정에서 기존 managed URL을 제거하면 기존 ID를 payload에 넣지 않아 RPC가 detach한다", async () => {
+    const contentImageId = "22222222-2222-4222-8222-222222222222";
+    const admin = createWriteAdmin({
+      existingRefs: [{ image_id: contentImageId, usage: "content", board_image_objects: { bucket_id: "board-images-v2", storage_key: contentImageId, status: "ready" } }],
+    });
+    mocks.withOptionalAuth.mockResolvedValue({ user: { id: "user-a" }, supabaseAdmin: admin.supabaseAdmin });
+
+    const response = await postsWritePOST(makePostRequest({
+      editingPostId: 41, expectedRevision: 0, author: "회원", password: null, user_id: "user-a",
+      contentImageIds: [], content: "이미지 제거", image_url: null,
+    }));
+
+    expect(response.status).toBe(200);
+    expect(admin.rpc).toHaveBeenCalledWith("write_board_post_with_images", expect.objectContaining({
+      p_content_image_ids: [], p_thumbnail_image_id: null,
+    }));
+  });
+
+  it("기존 ref의 usage와 무관하게 실제 URL 위치에 따라 content·thumbnail usage를 전환하고 ID를 중복하지 않는다", async () => {
+    const imageId = "22222222-2222-4222-8222-222222222222";
+    const baseUrl = "https://example.supabase.co";
+    const imageUrl = `${baseUrl}/storage/v1/object/public/board-images-v2/${imageId}`;
+    const admin = createWriteAdmin({
+      existingRefs: [
+        { image_id: imageId, usage: "content", board_image_objects: { bucket_id: "board-images-v2", storage_key: imageId, status: "ready" } },
+      ],
+    });
+    const previousBaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    process.env.NEXT_PUBLIC_SUPABASE_URL = baseUrl;
+    mocks.withOptionalAuth.mockResolvedValue({ user: { id: "user-a" }, supabaseAdmin: admin.supabaseAdmin });
+
+    try {
+      const response = await postsWritePOST(makePostRequest({
+        editingPostId: 41, expectedRevision: 0, author: "회원", password: null, user_id: "user-a",
+        content: `<img src="${imageUrl}">`, image_url: imageUrl, contentImageIds: [], thumbnailImageId: null,
+      }));
+
+      expect(response.status).toBe(200);
+      expect(admin.rpc).toHaveBeenCalledWith("write_board_post_with_images", expect.objectContaining({
+        p_content_image_ids: [imageId], p_thumbnail_image_id: imageId,
+      }));
+    } finally {
+      if (previousBaseUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+      else process.env.NEXT_PUBLIC_SUPABASE_URL = previousBaseUrl;
+    }
+  });
+
+  it.each([
+    ["없는 글", createWriteAdmin({ existingPost: false }), 404],
+    ["다른 작성자", createWriteAdmin({ postOwnerId: "other-user" }), 403],
+    ["오래된 revision", createWriteAdmin({ postRevision: 1 }), 409],
+  ])("수정 사전 검증은 %s에서 Discord fetch와 write RPC 전에 차단한다", async (_label, admin, status) => {
+    mocks.withOptionalAuth.mockResolvedValue({ user: { id: "user-a" }, supabaseAdmin: admin.supabaseAdmin });
+    const response = await postsWritePOST(makePostRequest({
+      editingPostId: 41, expectedRevision: 0, author: "회원", password: null, user_id: "user-a",
+      category: "듀오/스쿼드 모집", discord_url: "https://discord.gg/test",
+    }));
+
+    expect(response.status).toBe(status);
+    expect(mocks.externalFetch).not.toHaveBeenCalled();
+    expect(admin.refs).not.toHaveBeenCalled();
+    expect(admin.rpc).not.toHaveBeenCalled();
+  });
+
+  it("수정 사전 게시글 조회 오류는 외부 fetch와 write RPC 전에 503으로 고정한다", async () => {
+    const admin = createWriteAdmin({ postQueryError: { message: "raw-post-error" } });
+    mocks.withOptionalAuth.mockResolvedValue({ user: { id: "user-a" }, supabaseAdmin: admin.supabaseAdmin });
+    const response = await postsWritePOST(makePostRequest({
+      editingPostId: 41, expectedRevision: 0, author: "회원", password: null, user_id: "user-a",
+      category: "듀오/스쿼드 모집", discord_url: "https://discord.gg/test",
+    }));
+
+    expect(response.status).toBe(503);
+    expect(mocks.externalFetch).not.toHaveBeenCalled();
+    expect(admin.refs).not.toHaveBeenCalled();
+    expect(admin.rpc).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["ok", { result_code: "ok", post_id: 41, revision: 1 }, 200],
+    ["revision_conflict", { result_code: "revision_conflict", post_id: 41, revision: 1 }, 409],
+    ["forbidden", { result_code: "forbidden", post_id: 41, revision: 1 }, 403],
+    ["not_found", { result_code: "not_found", post_id: null, revision: null }, 404],
+  ])("write RPC result_code별 nullable 계약을 엄격히 해석한다", async (_code, row, status) => {
+    const admin = createWriteAdmin();
+    admin.rpc.mockResolvedValue({ data: [row], error: null });
+    mocks.withOptionalAuth.mockResolvedValue({ user: { id: "user-a" }, supabaseAdmin: admin.supabaseAdmin });
+    const response = await postsWritePOST(makePostRequest({ editingPostId: 41, expectedRevision: 0, author: "회원", password: null, user_id: "user-a" }));
+    expect(response.status).toBe(status);
+  });
+
+  it.each([
+    { result_code: "not_found", post_id: 41, revision: 1 },
+    { result_code: "ok", post_id: null, revision: null },
+    { result_code: "unknown", post_id: 41, revision: 1 },
+  ])("write RPC의 malformed result는 503으로 fail-closed 처리한다", async (row) => {
+    const admin = createWriteAdmin();
+    admin.rpc.mockResolvedValue({ data: [row], error: null });
+    mocks.withOptionalAuth.mockResolvedValue({ user: { id: "user-a" }, supabaseAdmin: admin.supabaseAdmin });
+
+    const response = await postsWritePOST(makePostRequest({ editingPostId: 41, expectedRevision: 0, author: "회원", password: null, user_id: "user-a" }));
+
+    expect(response.status).toBe(503);
   });
 
   it("호환 guest route는 token 누락 시 quota, bcrypt, insert 전에 거부한다", async () => {

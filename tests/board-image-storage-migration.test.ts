@@ -85,6 +85,18 @@ describe("게시판 이미지 Storage 소유권 마이그레이션", () => {
     expect(sql).toContain("image_row.status = 'ready'");
   });
 
+  it("수정 RPC는 revision 비교 전에 ownership/admin 권한을 검사한다", () => {
+    const sql = readMigrationSql();
+    const script = readFileSync(resolve(process.cwd(), "scripts/verify_board_image_storage_migration.ts"), "utf8");
+    const functionStart = sql.indexOf("CREATE OR REPLACE FUNCTION public.write_board_post_with_images");
+    const ownershipCheck = sql.indexOf("v_post.user_id IS DISTINCT FROM p_actor_user_id", functionStart);
+    const revisionCheck = sql.indexOf("v_post.revision <> p_expected_revision", functionStart);
+
+    expect(ownershipCheck).toBeGreaterThan(functionStart);
+    expect(revisionCheck).toBeGreaterThan(ownershipCheck);
+    expect(script).toContain("unauthorized-stale-revision");
+  });
+
   it("만료 pending·미참조 ready와 deleting lease를 bounded claim으로 회수한다", () => {
     const sql = readMigrationSql();
 

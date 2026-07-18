@@ -178,13 +178,13 @@ BEGIN
     SELECT post_row.* INTO v_post
     FROM public.posts AS post_row WHERE post_row.id = p_post_id FOR UPDATE;
     IF NOT FOUND THEN RETURN QUERY SELECT 'not_found'::text, NULL::bigint, NULL::bigint; RETURN; END IF;
-    IF v_post.revision <> p_expected_revision THEN
-      RETURN QUERY SELECT 'revision_conflict'::text, v_post.id, v_post.revision; RETURN;
-    END IF;
     IF p_actor_user_id IS NULL OR (v_post.user_id IS DISTINCT FROM p_actor_user_id AND NOT EXISTS (
       SELECT 1 FROM public.profiles AS profile_row
       WHERE profile_row.id = p_actor_user_id AND profile_row.role = 'admin'
     )) THEN RETURN QUERY SELECT 'forbidden'::text, v_post.id, v_post.revision; RETURN; END IF;
+    IF v_post.revision <> p_expected_revision THEN
+      RETURN QUERY SELECT 'revision_conflict'::text, v_post.id, v_post.revision; RETURN;
+    END IF;
     v_new_post_id := v_post.id;
     SELECT array_agg(DISTINCT ref_row.image_id ORDER BY ref_row.image_id) INTO v_old_image_ids
     FROM public.board_post_image_refs AS ref_row WHERE ref_row.post_id = v_new_post_id;
