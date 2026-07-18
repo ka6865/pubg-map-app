@@ -21,6 +21,19 @@ PUBG 텔레메트리 리플레이의 서버 응답, R2 캐시, 2D·3D 소비자 
 - 운영 데이터 삭제 명령과 대량 R2 migration은 실행하지 않는다.
 - 배포 순서는 Supabase migration 적용 후 애플리케이션 배포이며, migration 미적용 상태에서 신규 코드나 cleanup을 먼저 실행하지 않는다.
 
+### 2.1 사용자 승인 보안 보완
+
+2026-07-18 사용자 선택 1번에 따라 서버 identity와 브라우저 공개 identity를 분리한다. 이 결정은 아래의 과거 `identity.playerId` 예시보다 우선한다.
+
+- 서버 identity는 원본 accountId를 `playerId`로 보유하며 R2 key 생성과 Supabase registry 저장에만 사용한다.
+- 공개 identity는 원본 accountId를 포함하지 않고 `playerKey = sha256(accountId).slice(0, 32)`만 포함한다.
+- API envelope와 R2 payload에는 공개 identity만 포함한다.
+- 브라우저는 `matchId + platform + playerKey + mode + telemetryVersion`을 검증한다.
+- R2 본문 파싱·identity 오류만 cache miss로 취급한다. presigned URL 발급 장애는 인프라 오류로 전파한다.
+- telemetry map cache 쓰기는 R2 필수 설정이 없으면 성공으로 처리하지 않고 fail-closed한다.
+- `/api/pubg/match` 분석 엔진은 요청 문자열이 아니라 PUBG participant의 canonical nickname을 사용한다.
+- background 재분석 실패는 사용자 응답에 원본 오류를 노출하지 않되 운영 오류 기록을 남긴다.
+
 ## 3. 검토한 접근 방식
 
 ### 선택: 새 identity 키로 완전 전환
@@ -39,14 +52,20 @@ PUBG 텔레메트리 리플레이의 서버 응답, R2 캐시, 2D·3D 소비자 
 
 ### 4.1 공용 identity 계약
 
-`lib/pubg-analysis/telemetryIdentity.ts`를 추가한다. 이 파일은 브라우저에서도 사용하는 타입, platform·mode 파서, identity 비교만 제공하며 Node 전용 모듈을 import하지 않는다.
+`lib/pubg-analysis/telemetryIdentity.ts`는 platform·mode 파서와 서버·공개 identity 타입 및 공개 identity 비교를 제공하며 Node 전용 모듈을 import하지 않는다.
 
 - 지원 플랫폼: `steam | kakao`
 - 지원 모드: `lite | full`
-- identity:
+- 서버 identity:
   - `matchId`
   - `platform`
   - `playerId`
+  - `mode`
+  - `telemetryVersion`
+- 공개 identity:
+  - `matchId`
+  - `platform`
+  - `playerKey`
   - `mode`
   - `telemetryVersion`
 - 모든 문자열은 허용 형식과 길이를 검증하고, 허용되지 않는 값은 fail-closed한다.
@@ -57,7 +76,7 @@ PUBG 텔레메트리 리플레이의 서버 응답, R2 캐시, 2D·3D 소비자 
 
 - 파일 첫 줄에서 `server-only`를 import한다.
 - R2 key는 `telemetry-map/v{TELEMETRY_VERSION}/{platform}/{matchId}/{playerHash}/{mode}.json`이다.
-- `playerHash`는 accountId의 SHA-256 앞 32자를 사용해 signed URL에 원본 accountId가 노출되지 않게 한다.
+- `playerHash`와 공개 `playerKey`는 동일하게 accountId의 SHA-256 앞 32자를 사용해 R2 key, signed URL, API envelope, R2 payload에 원본 accountId가 노출되지 않게 한다.
 - `app/api/pubg/match/route.ts`와 `app/api/pubg/telemetry/route.ts`는 이 모듈만 사용해 키를 만든다. 호출부마다 키 문자열을 조립하지 않는다.
 
 ### 4.3 payload 계약
@@ -69,7 +88,7 @@ type TelemetryPayload = {
   identity: {
     matchId: string;
     platform: "steam" | "kakao";
-    playerId: string;
+    playerKey: string;
     mode: "lite" | "full";
     telemetryVersion: number;
   };
@@ -88,13 +107,15 @@ type TelemetryPayload = {
 
 `lib/pubg-analysis/telemetryMapCache.ts`를 추가한다.
 
-- `readTelemetryMapCache(identity)`
+- `readTelemetryMapCache(serverIdentity)`
   - 새 R2 key만 조회한다.
-  - JSON을 파싱하고 payload identity를 요청 identity와 대조한다.
+  - server identity에서 공개 identity를 파생하고 JSON payload의 공개 identity와 대조한다.
   - 누락·파싱 실패·identity mismatch는 cache miss로 처리한다.
+  - 검증 이후의 presigned URL 발급 실패는 cache miss로 숨기지 않고 전파한다.
   - 검증된 객체만 presigned URL 발급 대상으로 인정한다.
-- `writeTelemetryMapCache(identity, payload)`
+- `writeTelemetryMapCache(serverIdentity, payload)`
   - payload identity를 다시 검증한다.
+  - R2 필수 설정이 없으면 업로드 성공으로 처리하지 않는다.
   - R2 업로드 후 registry row를 upsert한다.
   - registry 실패는 성공으로 숨기지 않는다.
 
@@ -138,17 +159,17 @@ registry 전체 조회나 match별 조회가 실패하거나 테이블이 아직
 
 1. route가 `matchId`, `nickname`, `platform`, `mode`를 검증한다.
 2. PUBG match 응답에서 nickname을 정규화 비교해 accountId를 확정한다.
-3. accountId로 요청 identity와 새 R2 key를 만든다.
-4. R2 본문을 읽어 payload와 identity를 검증한다.
-5. 검증 성공 시 같은 key의 presigned URL과 expected identity를 반환한다.
+3. accountId로 서버 identity, 공개 `playerKey`, 새 R2 key를 만든다.
+4. R2 본문을 읽어 payload의 공개 identity를 검증한다.
+5. 검증 성공 시 같은 key의 presigned URL과 공개 expected identity를 반환한다.
 
 ### 캐시 miss
 
 1. PUBG telemetry를 받아 `AnalysisEngine`을 요청 mode로 실행한다.
-2. payload에 identity를 포함한다.
+2. payload에는 공개 identity만 포함한다.
 3. 새 R2 key로 업로드한다.
 4. Supabase registry를 upsert한다.
-5. presigned URL과 expected identity를 반환한다.
+5. presigned URL과 공개 expected identity를 반환한다.
 
 `/api/pubg/match`가 분석 과정에서 생성하는 기본 지도 캐시는 `lite` identity로 같은 cache service를 사용한다. `full`은 사용자가 고정밀 리플레이를 요청할 때 별도로 생성한다.
 
@@ -201,7 +222,7 @@ fetchTelemetryPayload(
 
 - `matchId`, `nickname`, `platform`, `mode`는 서버와 클라이언트 양쪽에서 검증한다.
 - nickname은 정규화 비교하지만 payload에는 PUBG API의 canonical name을 사용한다.
-- accountId 원문은 R2 key와 signed URL에 넣지 않는다.
+- accountId 원문은 R2 key, signed URL, API envelope, R2 payload에 넣지 않는다.
 - cache identity mismatch는 cache miss로 재생성하며 잘못된 payload를 반환하지 않는다.
 - API key, R2 signed URL, accountId, 외부 오류 stack을 사용자 응답이나 브라우저 로그에 남기지 않는다.
 - route의 운영 오류 기록은 제한된 분류 코드와 endpoint 기준으로 남긴다.
@@ -215,6 +236,7 @@ fetchTelemetryPayload(
 - 동일 match라도 platform/player/mode가 다르면 key가 다름
 - accountId가 key에 평문으로 포함되지 않음
 - payload identity 일치·불일치
+- API envelope와 R2 payload에 `playerId` 또는 accountId 원문이 없고 공개 `playerKey`만 존재
 - 구 payload처럼 identity가 없으면 거부
 
 ### 서버 route·cache 테스트
@@ -276,6 +298,7 @@ fetchTelemetryPayload(
 ## 12. 성공 기준
 
 - 모든 리플레이 소비자가 같은 `{ downloadUrl, identity } → payload` 계약을 사용한다.
+- 실제 Chrome QA는 Steam `KangHeeSung_` 전적 검색과 2D·3D 리플레이 진입을 포함하며, 기존 `/stats`와 `/maps/erangel` 회귀도 확인한다.
 - 같은 match의 다른 platform/player/mode가 같은 지도 캐시를 재사용하지 않는다.
 - Kakao 2D 요청이 Steam으로 변환되지 않는다.
 - 구 identity 없는 R2 payload를 새 코드가 읽지 않는다.
