@@ -79,6 +79,10 @@ describe("🔒 BGMS API Route Security Guard Tests", () => {
 
     // supabaseAdmin DB 쿼리 mock 설정
     mockSupabaseAdmin = {
+      rpc: vi.fn(async () => ({
+        data: [{ result_code: "ok", post_id: 41, revision: 0 }],
+        error: null,
+      })),
       from: vi.fn((table) => {
         if (table === "profiles") return profileChain;
         if (table === "posts") return postChain;
@@ -159,12 +163,6 @@ describe("🔒 BGMS API Route Security Guard Tests", () => {
         error: null,
       });
 
-      // 신규 게시글 삽입 결과 mock
-      postChain.select.mockResolvedValueOnce({
-        data: [{ id: "new-post-id", title: "My Post" }],
-        error: null,
-      });
-
       // 본인의 user_id ("user-A")로 요청 전달
       const mockRequest = new Request("http://localhost:3000/api/posts/write", {
         method: "POST",
@@ -183,7 +181,7 @@ describe("🔒 BGMS API Route Security Guard Tests", () => {
 
       const json = await response.json();
       expect(json.success).toBe(true);
-      expect(json.data.title).toBe("My Post");
+      expect(json.data.id).toBe(41);
     });
 
     it("4. 관리자(role = admin)는 타인의 user_id로 글을 작성하거나 대리 수정하는 것이 허용되어야 함", async () => {
@@ -196,12 +194,6 @@ describe("🔒 BGMS API Route Security Guard Tests", () => {
       // DB에서 admin-user는 "admin" 권한을 가졌다고 응답
       profileChain.single.mockResolvedValueOnce({
         data: { role: "admin" },
-        error: null,
-      });
-
-      // 신규 게시글 삽입 결과 mock
-      postChain.select.mockResolvedValueOnce({
-        data: [{ id: "post-id", title: "Admin Edited" }],
         error: null,
       });
 

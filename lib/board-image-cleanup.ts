@@ -1,10 +1,17 @@
-export function getUnusedUploadedBoardImagePaths(
-  uploadedPaths: string[],
+export type UploadedBoardImage = {
+  imageId: string;
+  publicUrl: string;
+};
+
+export function getUnusedUploadedBoardImageIds(
+  uploadedImages: UploadedBoardImage[],
   content: string,
   thumbnailUrl = ""
 ): string[] {
-  return uploadedPaths.filter((path) => {
-    if (!path) return false;
-    return !content.includes(path) && !thumbnailUrl.includes(path);
+  return uploadedImages.flatMap((image) => {
+    if (!image.imageId || !image.publicUrl) return [];
+    return content.includes(image.publicUrl) || thumbnailUrl.includes(image.publicUrl)
+      ? []
+      : [image.imageId];
   });
 }

@@ -5,6 +5,7 @@ import { checkProfanity } from "@/lib/board/profanityFilter";
 import { consumeBoardWriteQuota } from "@/lib/board/writeQuota.server";
 import { verifyTurnstileToken } from "@/lib/board/turnstile.server";
 import { TURNSTILE_ACTIONS } from "@/lib/board/turnstileContract";
+import { isUuid } from "@/lib/board/imageStorageContract";
 import type { ClanInfo } from "@/types/board";
 import bcrypt from "bcryptjs";
 
@@ -26,7 +27,6 @@ const DISCORD_CHANNEL_ID_MAX_LENGTH = 64;
 const USER_ID_MAX_LENGTH = 128;
 const CLAN_INFO_MAX_SERIALIZED_LENGTH = 1024;
 const CLAN_MEMBER_COUNT_MAX = 100;
-const POST_RESPONSE_COLUMNS = "id, title, content, author, user_id, category, image_url, discord_url, discord_channel_id, is_notice, clan_info, created_at, views, likes, status, parent_id";
 const CLAN_INFO_KEYS = new Set<keyof ClanInfo>([
   "id",
   "name",
@@ -131,6 +131,9 @@ export async function POST(request: Request) {
       clan_info,
       turnstileToken,
     } = body;
+    const expectedRevision: unknown = body.expectedRevision ?? null;
+    const contentImageIds = body.contentImageIds ?? [];
+    const thumbnailImageId = body.thumbnailImageId ?? null;
 
     if (
       typeof title !== "string"
@@ -205,6 +208,15 @@ export async function POST(request: Request) {
     ) {
       return NextResponse.json({ error: "수정할 게시글 ID가 올바르지 않습니다." }, { status: 400 });
     }
+    if (
+      (editingPostId != null && (typeof expectedRevision !== "number" || !Number.isSafeInteger(expectedRevision) || expectedRevision < 0))
+      || (editingPostId == null && expectedRevision != null)
+      || !isValidImageIds(contentImageIds)
+      || (thumbnailImageId != null && !isUuid(thumbnailImageId))
+    ) {
+      return NextResponse.json({ error: "이미지 참조 또는 수정 버전이 올바르지 않습니다." }, { status: 400 });
+    }
+    const safeExpectedRevision = typeof expectedRevision === "number" ? expectedRevision : null;
     if (author != null && typeof author !== "string") {
       return NextResponse.json({ error: "작성자 정보가 올바르지 않습니다." }, { status: 400 });
     }
@@ -266,6 +278,9 @@ export async function POST(request: Request) {
         );
       }
     } else {
+      if (contentImageIds.length > 0 || thumbnailImageId !== null) {
+        return NextResponse.json({ error: "비회원은 이미지 업로드를 사용할 수 없습니다." }, { status: 400 });
+      }
       if (!editingPostId) {
         if (typeof author !== "string" || typeof password !== "string") {
           return NextResponse.json(
@@ -291,26 +306,6 @@ export async function POST(request: Request) {
         );
       }
 
-      const { data: existingPost, error: fetchError } = await supabaseAdmin
-        .from("posts")
-        .select("user_id, content")
-        .eq("id", editingPostId)
-        .single();
-
-      if (fetchError || !existingPost) {
-        return NextResponse.json(
-          { error: "수정할 게시글을 찾을 수 없습니다." },
-          { status: 404 }
-        );
-      }
-
-      if (existingPost.user_id !== user.id && !isRequesterAdmin) {
-        return NextResponse.json(
-          { error: "게시글 수정 권한이 없습니다." },
-          { status: 403 }
-        );
-      }
-
       if (safeCategory === "듀오/스쿼드 모집" && discordUrl) {
         const isValid = await validateDiscordUrl(discordUrl);
         if (!isValid) {
@@ -321,48 +316,26 @@ export async function POST(request: Request) {
         }
       }
 
-      try {
-        const imgRegex = /<img[^>]+src\s*=\s*["']?([^"'\s>]+)["']?/g;
-        const oldImages = [...(existingPost.content || "").matchAll(imgRegex)].map(m => m[1]);
-        const newImages = [...safeContent.matchAll(imgRegex)].map(m => m[1]);
-        const deletedImages = oldImages.filter(src => !newImages.includes(src));
-
-        const imagePathsToDelete = deletedImages
-          .map(src => {
-            if (src.includes("/storage/v1/object/public/images/")) {
-              const path = src.split("/storage/v1/object/public/images/")[1];
-              return path ? decodeURIComponent(path) : null;
-            }
-            return null;
-          })
-          .filter((path): path is string => path !== null);
-
-        if (imagePathsToDelete.length > 0) {
-          await supabaseAdmin.storage.from("images").remove(imagePathsToDelete);
-        }
-      } catch {
-        // 정리 실패는 게시글 수정을 차단하지 않는다.
-      }
-
-      const { data, error: updateError } = await supabaseAdmin
-        .from("posts")
-        .update({
-          title: safeTitle,
-          content: safeContent,
-          category: safeCategory,
-          image_url,
-          ...(isRequesterAdmin ? { is_notice: is_notice === true } : {}),
-          discord_url,
-          discord_channel_id,
-          clan_info: safeClanInfo,
-        })
-        .eq("id", editingPostId)
-        .select(POST_RESPONSE_COLUMNS);
-
-      if (updateError) {
-        throw updateError;
-      }
-      return NextResponse.json({ success: true, data: data[0] });
+      return writePostWithImages({
+        supabaseAdmin,
+        postId: editingPostId,
+        actorUserId: user.id,
+        expectedRevision: safeExpectedRevision,
+        title: safeTitle,
+        content: safeContent,
+        category: safeCategory,
+        imageUrl: typeof image_url === "string" ? image_url : null,
+        isNotice: isRequesterAdmin ? is_notice === true : false,
+        author: memberAuthor,
+        userId: user.id,
+        passwordHash: null,
+        ipAddress: null,
+        discordUrl,
+        discordChannelId: typeof discord_channel_id === "string" ? discord_channel_id : null,
+        clanInfo: safeClanInfo,
+        contentImageIds,
+        thumbnailImageId,
+      });
     } else {
       const finalAuthor = user ? memberAuthor : (author as string).trim();
       const finalUserId = user ? user.id : null;
@@ -423,28 +396,26 @@ export async function POST(request: Request) {
         passwordHash = await bcrypt.hash(guestPassword, salt);
       }
 
-      const { data, error: insertError } = await supabaseAdmin
-        .from("posts")
-        .insert([
-          {
-            title: safeTitle,
-            content: safeContent,
-            author: finalAuthor,
-            user_id: finalUserId,
-            category: safeCategory,
-            image_url,
-            discord_url,
-            discord_channel_id,
-            is_notice: isRequesterAdmin ? is_notice === true : false,
-            clan_info: safeClanInfo,
-            password_hash: passwordHash,
-            ip_address: clientIp,
-          },
-        ])
-        .select(POST_RESPONSE_COLUMNS);
-
-      if (insertError) throw insertError;
-      return NextResponse.json({ success: true, data: data[0] });
+      return writePostWithImages({
+        supabaseAdmin,
+        postId: null,
+        actorUserId: user?.id ?? null,
+        expectedRevision: null,
+        title: safeTitle,
+        content: safeContent,
+        category: safeCategory,
+        imageUrl: typeof image_url === "string" ? image_url : null,
+        isNotice: isRequesterAdmin ? is_notice === true : false,
+        author: finalAuthor,
+        userId: finalUserId,
+        passwordHash,
+        ipAddress: clientIp,
+        discordUrl,
+        discordChannelId: typeof discord_channel_id === "string" ? discord_channel_id : null,
+        clanInfo: safeClanInfo,
+        contentImageIds: user ? contentImageIds : [],
+        thumbnailImageId: user ? thumbnailImageId : null,
+      });
     }
 
   } catch {
@@ -453,4 +424,89 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+}
+
+function isValidImageIds(value: unknown): value is string[] {
+  return Array.isArray(value)
+    && value.length <= 20
+    && value.every(isUuid)
+    && new Set(value).size === value.length;
+}
+
+async function writePostWithImages(input: {
+  supabaseAdmin: { rpc: (name: string, params: Record<string, unknown>) => PromiseLike<{ data: unknown; error: unknown }> };
+  postId: number | null;
+  actorUserId: string | null;
+  expectedRevision: number | null;
+  title: string;
+  content: string;
+  category: string;
+  imageUrl: string | null;
+  isNotice: boolean;
+  author: string;
+  userId: string | null;
+  passwordHash: string | null;
+  ipAddress: string | null;
+  discordUrl: string;
+  discordChannelId: string | null;
+  clanInfo: ClanInfo | null | undefined;
+  contentImageIds: string[];
+  thumbnailImageId: string | null;
+}): Promise<NextResponse> {
+  let result: { data: unknown; error: unknown };
+  try {
+    result = await input.supabaseAdmin.rpc("write_board_post_with_images", {
+      p_post_id: input.postId,
+      p_actor_user_id: input.actorUserId,
+      p_expected_revision: input.expectedRevision,
+      p_title: input.title,
+      p_content: input.content,
+      p_category: input.category,
+      p_image_url: input.imageUrl,
+      p_is_notice: input.isNotice,
+      p_author: input.author,
+      p_user_id: input.userId,
+      p_password_hash: input.passwordHash,
+      p_ip_address: input.ipAddress,
+      p_discord_url: input.discordUrl,
+      p_discord_channel_id: input.discordChannelId,
+      p_clan_info: input.clanInfo ?? null,
+      p_content_image_ids: input.contentImageIds,
+      p_thumbnail_image_id: input.thumbnailImageId,
+    });
+  } catch {
+    return NextResponse.json({ error: "게시글을 저장하지 못했습니다." }, { status: 503 });
+  }
+  if (result.error) {
+    return NextResponse.json({ error: "게시글을 저장하지 못했습니다." }, { status: 503 });
+  }
+  const row = getWriteResult(result.data);
+  if (!row) return NextResponse.json({ error: "게시글을 저장하지 못했습니다." }, { status: 503 });
+  if (row.result_code === "ok") {
+    return NextResponse.json({ success: true, data: { id: row.post_id, revision: row.revision } });
+  }
+  if (row.result_code === "revision_conflict") {
+    return NextResponse.json({ error: "게시글이 다른 곳에서 수정되었습니다." }, { status: 409 });
+  }
+  if (row.result_code === "forbidden") {
+    return NextResponse.json({ error: "게시글 수정 권한이 없습니다." }, { status: 403 });
+  }
+  if (row.result_code === "not_found") {
+    return NextResponse.json({ error: "수정할 게시글을 찾을 수 없습니다." }, { status: 404 });
+  }
+  return NextResponse.json({ error: "게시글을 저장하지 못했습니다." }, { status: 503 });
+}
+
+function getWriteResult(value: unknown): { result_code: string; post_id: number; revision: number } | null {
+  if (!Array.isArray(value) || value.length !== 1) return null;
+  const row = value[0];
+  if (!row || typeof row !== "object" || Array.isArray(row)) return null;
+  const record = row as Record<string, unknown>;
+  return typeof record.result_code === "string"
+    && typeof record.post_id === "number"
+    && Number.isSafeInteger(record.post_id)
+    && typeof record.revision === "number"
+    && Number.isSafeInteger(record.revision)
+    ? { result_code: record.result_code, post_id: record.post_id, revision: record.revision }
+    : null;
 }

@@ -86,7 +86,10 @@ function createWriteAdmin(options?: {
       : { user_id: "user-a", content: "" },
     error: options?.existingPost === false ? { message: "missing" } : null,
   }));
-  const rpc = vi.fn();
+  const rpc = vi.fn(async () => ({
+    data: [{ result_code: "ok", post_id: 41, revision: 0 }],
+    error: null,
+  }));
   const supabaseAdmin = {
     rpc,
     from: vi.fn((table: string) => {
@@ -320,7 +323,7 @@ describe("게시글 쓰기 Turnstile 저장 경계", () => {
     expect(admin.insert).not.toHaveBeenCalled();
   });
 
-  it("valid guest_post token만 비회원 insert를 허용한다", async () => {
+  it("valid guest_post token만 비회원 원자 RPC 저장을 허용한다", async () => {
     const admin = createWriteAdmin();
     mocks.withOptionalAuth.mockResolvedValue({ user: null, supabaseAdmin: admin.supabaseAdmin });
 
@@ -341,9 +344,9 @@ describe("게시글 쓰기 Turnstile 저장 경계", () => {
       mocks.consumeQuota.mock.invocationCallOrder[0],
     );
     expect(mocks.consumeQuota.mock.invocationCallOrder[0]).toBeLessThan(
-      admin.insert.mock.invocationCallOrder[0],
+      admin.rpc.mock.invocationCallOrder[0],
     );
-    expect(admin.insert).toHaveBeenCalledTimes(1);
+    expect(admin.rpc).toHaveBeenCalledTimes(1);
   });
 
   it("모든 게시글 쓰기 응답은 서버 전용 비밀번호 해시와 IP 주소를 포함하지 않는다", async () => {
@@ -377,13 +380,11 @@ describe("게시글 쓰기 Turnstile 저장 경계", () => {
     }));
 
     expect(response.status).toBe(200);
-    expect(admin.insert).toHaveBeenCalledWith([
-      expect.objectContaining({
-        image_url: "https://example.com/image.png",
-        discord_channel_id: "123456789012345678",
-        clan_info: clanInfo,
-      }),
-    ]);
+    expect(admin.rpc).toHaveBeenCalledWith("write_board_post_with_images", expect.objectContaining({
+      p_image_url: "https://example.com/image.png",
+      p_discord_channel_id: "123456789012345678",
+      p_clan_info: clanInfo,
+    }));
   });
 
   it("회원 신규 글은 user quota를 사용하고 Turnstile을 호출하지 않는다", async () => {
@@ -406,7 +407,7 @@ describe("게시글 쓰기 Turnstile 저장 경계", () => {
       scope: "post",
     });
     expect(mocks.verifyTurnstile).not.toHaveBeenCalled();
-    expect(admin.insert).toHaveBeenCalledTimes(1);
+    expect(admin.rpc).toHaveBeenCalledTimes(1);
   });
 
   it("회원 작성자·user ID·공지 권한은 서버 프로필을 기준으로 저장한다", async () => {
@@ -424,13 +425,11 @@ describe("게시글 쓰기 Turnstile 저장 경계", () => {
     }));
 
     expect(response.status).toBe(200);
-    expect(admin.insert).toHaveBeenCalledWith([
-      expect.objectContaining({
-        author: "서버회원",
-        user_id: "user-a",
-        is_notice: false,
-      }),
-    ]);
+    expect(admin.rpc).toHaveBeenCalledWith("write_board_post_with_images", expect.objectContaining({
+      p_author: "서버회원",
+      p_user_id: "user-a",
+      p_is_notice: false,
+    }));
   });
 
   it("회원 글 수정은 quota와 Turnstile을 소비하지 않는다", async () => {
@@ -442,6 +441,7 @@ describe("게시글 쓰기 Turnstile 저장 경계", () => {
 
     const response = await postsWritePOST(makePostRequest({
       editingPostId: 41,
+      expectedRevision: 0,
       author: "회원",
       password: null,
       user_id: "user-a",
@@ -450,7 +450,7 @@ describe("게시글 쓰기 Turnstile 저장 경계", () => {
     expect(response.status).toBe(200);
     expect(mocks.consumeQuota).not.toHaveBeenCalled();
     expect(mocks.verifyTurnstile).not.toHaveBeenCalled();
-    expect(admin.update).toHaveBeenCalledTimes(1);
+    expect(admin.rpc).toHaveBeenCalledTimes(1);
   });
 
   it("호환 guest route는 token 누락 시 quota, bcrypt, insert 전에 거부한다", async () => {
@@ -516,9 +516,10 @@ describe("게시글 쓰기 Turnstile 저장 경계", () => {
     }));
 
     expect(writeResponse.status).toBe(200);
-    expect(writeAdmin.insert).toHaveBeenCalledWith([
-      expect.objectContaining({ title: "회원 글", category: "자유" }),
-    ]);
+    expect(writeAdmin.rpc).toHaveBeenCalledWith("write_board_post_with_images", expect.objectContaining({
+      p_title: "회원 글",
+      p_category: "자유",
+    }));
     expect(compatibilityResponse.status).toBe(200);
     expect(compatibilityAdmin.insert).toHaveBeenCalledWith([
       expect.objectContaining({ title: "호환 글", category: "자유" }),
