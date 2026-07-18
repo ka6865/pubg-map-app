@@ -54,7 +54,6 @@ export default function BoardDetailClient({
   const [newComment, setNewComment] = useState("");
   const [replyingTo, setReplyingTo] = useState<Comment | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
-  const [displayName, setDisplayName] = useState("익명");
   const [isMobile, setIsMobile] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [postImageFailed, setPostImageFailed] = useState(false);
@@ -70,12 +69,7 @@ export default function BoardDetailClient({
   } | null>(null);
   const [guestDeletePassword, setGuestDeletePassword] = useState("");
 
-  // Cloudflare Turnstile 세션 기반 캡차 상태
-  // 탭 내 1회 인증 후 sessionStorage에 플래그 저장하여 재인증 면제
   const [showCaptcha, setShowCaptcha] = useState(false);
-  const [captchaVerified, setCaptchaVerified] = useState(false);
-  // 캡차 통과 후 실행할 대기 액션 ('comment' | 'post')
-  const [captchaPendingAction, setCaptchaPendingAction] = useState<'comment' | 'post' | null>(null);
 
   // 🌟 초안 승격 및 AI 피드백 모달용 상태 추가
   const [isPromoting, setIsPromoting] = useState(false);
@@ -186,56 +180,24 @@ export default function BoardDetailClient({
     checkMobile();
     window.addEventListener("resize", checkMobile);
 
-    // \uc138\uc158\uc2a4\ud1a0\ub9ac\uc9c0\uc5d0 \uc778\uc99d \uc644\ub8cc \ud50c\ub798\uadf8\uac00 \uc788\uc73c\uba74 \ucea1\ucc28 \uba74\uc81c
-    if (sessionStorage.getItem("turnstile_verified") === "1") {
-      setCaptchaVerified(true);
-    }
-
     return () => window.removeEventListener("resize", checkMobile);
   }, []);
 
-  // Turnstile \ud1a0\ud070 \uc11c\ubc84 \uac80\uc99d \ud6c4 \uc138\uc158\uc5d0 \uc800\uc7a5 → \ub300\uae30 \uc561\uc158 \uc2e4\ud589
-  const handleTurnstileVerify = async (token: string) => {
-    try {
-      const res = await fetch("/api/board/turnstile", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token }),
-      });
-      const result = await res.json();
-      if (!result.success) {
-        toast.error(result.error || "\ubcf4\uc548 \uc778\uc99d\uc5d0 \uc2e4\ud328\ud588\uc2b5\ub2c8\ub2e4. \ub2e4\uc2dc \uc2dc\ub3c4\ud574\uc8fc\uc138\uc694.");
-        setShowCaptcha(false);
-        return;
-      }
-      // \uc138\uc158 \ub0b4 \uc7ac\uc778\uc99d \uba74\uc81c\ub97c \uc704\ud574 sessionStorage\uc5d0 \uc800\uc7a5
-      sessionStorage.setItem("turnstile_verified", "1");
-      setCaptchaVerified(true);
-      setShowCaptcha(false);
-
-      // \uce90\uc655 \ud1b5\uacfc \uc804 \uc2dc\ub3c4\ud588\ub358 \uc561\uc158 \uc5f0\uc18d \uc2e4\ud589
-      if (captchaPendingAction === "comment") {
-        setCaptchaPendingAction(null);
-        setTimeout(() => handleSaveComment(), 0);
-      }
-    } catch {
-      toast.error("\ubcf4\uc548 \uc778\uc99d \uc911 \uc624\ub958\uac00 \ubc1c\uc0dd\ud588\uc2b5\ub2c8\ub2e4.");
-      setShowCaptcha(false);
-    }
+  const handleTurnstileVerify = (token: string) => {
+    setShowCaptcha(false);
+    void handleSaveComment(token);
   };
 
 
   useEffect(() => {
     if (!user) {
       setIsAdmin(false);
-      setDisplayName("익명");
       return;
     }
     const fetchProfile = async () => {
       const { data } = await supabase.from("profiles").select("*").eq("id", user.id).single();
       if (data) {
         setIsAdmin(data.role === "admin");
-        setDisplayName(data.nickname || "익명");
       }
     };
     fetchProfile();
@@ -300,78 +262,53 @@ export default function BoardDetailClient({
     toast.success("게시글을 추천했습니다!");
   };
 
-  const handleSaveComment = async () => {
+  const handleSaveComment = async (verifiedToken?: string) => {
     if (!newComment.trim()) {
       toast.warning("댓글 내용을 입력해주세요.");
       return;
     }
 
-    // 회원 댓글: 기존 Supabase 직접 INSERT 방식 유지
-    if (user) {
-      const finalComment = replyingTo ? `@${replyingTo.author} ${newComment}` : newComment;
-      const { error } = await supabase.from("comments").insert([{
-        post_id: post.id,
-        user_id: user.id,
-        author: displayName,
-        content: finalComment,
-        parent_id: replyingTo ? replyingTo.id : null,
-      }]);
-      if (!error) {
-        trackEvent({ name: "post_action", params: { action: "create_comment", status: "success" } });
-        const targetUserId = replyingTo ? replyingTo.user_id : post.user_id;
-        if (targetUserId && targetUserId !== user.id) {
-          const { error: notiError } = await supabase.from("notifications").insert([{
-            user_id: targetUserId,
-            sender_id: user.id,
-            sender_name: displayName,
-            type: replyingTo ? "reply" : "comment",
-            post_id: post.id,
-            preview_text: replyingTo ? replyingTo.content : post.title,
-          }]);
-          if (notiError) {
-            console.error("[notifications INSERT 실패]", notiError.message, notiError.code);
-          }
-        }
-        setNewComment("");
-        setReplyingTo(null);
-        fetchComments();
-      } else {
-        trackEvent({ name: "post_action", params: { action: "create_comment", status: "fail", error_type: error.message } });
-        toast.error("댓글 저장 중 오류가 발생했습니다.");
-      }
+    if (!user && !guestNickname.trim()) {
+      toast.warning("닉네임을 입력해주세요.");
       return;
     }
-
-    // 비회원 댓글: Route Handler 경유
-    if (!guestNickname.trim()) return toast.warning("닉네임을 입력해주세요.");
-    if (!guestPassword) return toast.warning("비밀번호를 입력해주세요.");
-
-    // 세션 내 캡차 인증이 안 된 경우 → 캡차 모달 표시 후 대기
-    if (!captchaVerified) {
-      setCaptchaPendingAction("comment");
+    if (!user && !guestPassword) {
+      toast.warning("비밀번호를 입력해주세요.");
+      return;
+    }
+    if (!user && !verifiedToken) {
       setShowCaptcha(true);
       return;
     }
 
-    const res = await fetch("/api/board/comments", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        post_id: post.id,
-        author: guestNickname.trim(),
-        password: guestPassword,
-        content: newComment.trim(),
-        parent_id: replyingTo ? replyingTo.id : null,
-      }),
-    });
-    const result = await res.json();
-    if (!res.ok) {
-      toast.error(result.error || "댓글 저장 실패");
-    } else {
+    try {
+      const res = await fetch("/api/board/comments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          post_id: post.id,
+          author: user ? null : guestNickname.trim(),
+          password: user ? null : guestPassword,
+          content: newComment.trim(),
+          parent_id: replyingTo?.id ?? null,
+          turnstileToken: user ? null : verifiedToken,
+        }),
+      });
+      const result = await res.json() as { error?: string };
+      if (!res.ok) {
+        trackEvent({ name: "post_action", params: { action: "create_comment", status: "fail" } });
+        toast.error(result.error || "댓글 저장 실패");
+        return;
+      }
+
+      trackEvent({ name: "post_action", params: { action: "create_comment", status: "success" } });
       toast.success("댓글이 등록되었습니다.");
       setNewComment("");
       setReplyingTo(null);
-      fetchComments();
+      void fetchComments();
+    } catch {
+      trackEvent({ name: "post_action", params: { action: "create_comment", status: "fail" } });
+      toast.error("댓글 저장 중 오류가 발생했습니다.");
     }
   };
 
@@ -728,7 +665,7 @@ export default function BoardDetailClient({
             handleDeleteComment={handleDeleteComment}
             handleReportComment={handleReportComment}
             isAdmin={isAdmin}
-            handleSaveComment={handleSaveComment}
+            handleSaveComment={() => void handleSaveComment()}
             isMobile={isMobile}
             formatTimeAgo={formatTimeAgo}
             guestNickname={guestNickname}
@@ -853,14 +790,14 @@ export default function BoardDetailClient({
         </div>
       )}
 
-      {/* Cloudflare Turnstile 보안 인증 모달 (비회원 첫 작성 시 1회) */}
+      {/* 비회원 댓글 Turnstile 보안 인증 모달 */}
       {showCaptcha && (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
           <div className="bg-[#1a1a1a] border border-[#333] rounded-2xl max-w-sm w-full p-6 shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200">
             <div>
               <h3 className="text-base font-black text-white">보안 인증</h3>
               <p className="text-white/50 text-xs mt-1">
-                비회원 작성을 위해 한 번만 인증합니다. 이후 같은 탭에서는 자동으로 통과됩니다.
+                비회원 댓글을 등록하려면 보안 인증을 완료해주세요.
               </p>
             </div>
             <TurnstileWidget
@@ -869,13 +806,11 @@ export default function BoardDetailClient({
               onError={() => {
                 toast.error("보안 인증 중 오류가 발생했습니다.");
                 setShowCaptcha(false);
-                setCaptchaPendingAction(null);
               }}
             />
             <button
               onClick={() => {
                 setShowCaptcha(false);
-                setCaptchaPendingAction(null);
               }}
               className="text-xs text-white/30 hover:text-white/60 transition-colors text-center"
             >

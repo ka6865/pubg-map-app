@@ -490,6 +490,8 @@ describe("BoardWrite Turnstile client 계약", () => {
     new URL("../components/board/BoardWriteClient.tsx", import.meta.url),
     "utf8",
   );
+  const sessionVerificationFlag = ["turnstile", "verified"].join("_");
+  const standaloneVerifyRoute = ["/api/board", "turnstile"].join("/");
 
   it("guest_post 위젯을 비회원 신규 작성에서만 표시한다", () => {
     expect(source).toContain("!user && !editPostId");
@@ -500,8 +502,8 @@ describe("BoardWrite Turnstile client 계약", () => {
   it("비회원 token을 메모리에 보관해 실제 저장 body에 포함한다", () => {
     expect(source).toContain("const [turnstileToken, setTurnstileToken] = useState<string | null>(null)");
     expect(source).toContain("turnstileToken: user || editPostId ? null : turnstileToken");
-    expect(source).not.toContain("turnstile_verified");
-    expect(source).not.toContain("/api/board/turnstile");
+    expect(source).not.toContain(sessionVerificationFlag);
+    expect(source).not.toContain(standaloneVerifyRoute);
     expect(source).toContain("onError={() => setTurnstileToken(null)}");
   });
 

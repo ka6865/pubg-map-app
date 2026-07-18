@@ -606,7 +606,7 @@ git commit -m "fix: 비회원 게시글 Turnstile 저장 경계 결합"
 - Produces: 회원·비회원 공용 `POST /api/board/comments`
 - Preserves: 댓글 작성 후 대상 user notification
 
-- [ ] **Step 1: 댓글 서버·클라이언트 실패 테스트 작성**
+- [x] **Step 1: 댓글 서버·클라이언트 실패 테스트 작성**
 
 `tests/board-comment-write-boundary.test.ts`:
 
@@ -651,13 +651,13 @@ expect(detailSource).toContain("TURNSTILE_ACTIONS.comment");
 expect(writeSource).toContain("TURNSTILE_ACTIONS.post");
 ```
 
-- [ ] **Step 2: RED 확인**
+- [x] **Step 2: RED 확인**
 
 Run: `npx vitest run tests/board-comment-write-boundary.test.ts tests/board-turnstile-client.test.ts`
 
 Expected: guest token 미검증, 회원 direct insert, sessionStorage 문자열로 실패한다.
 
-- [ ] **Step 3: 댓글 route 공용 서버 저장 구현**
+- [x] **Step 3: 댓글 route 공용 서버 저장 구현**
 
 요청 body의 `post_id`, `content`, `parent_id`를 유한 양의 정수·1~5,000자 규칙으로 먼저 검증한다. 인증 후 actor quota를 소비하고 guest만 Turnstile·비밀번호·비속어를 검증한다.
 
@@ -682,7 +682,7 @@ if (!user) {
 
 회원은 `profiles.nickname`을 서버에서 읽고 `user.id`를 사용한다. 댓글 insert 후 parent comment 또는 post의 `user_id`와 preview를 조회하고 대상이 작성자와 다르면 기존 `notifications` row를 만든다. notification 실패는 댓글 성공을 되돌리지 않으며 고정 오류 문구만 기록한다.
 
-- [ ] **Step 4: BoardDetailClient 단일 route·single-use token 적용**
+- [x] **Step 4: BoardDetailClient 단일 route·single-use token 적용**
 
 `captchaVerified`, `captchaPendingAction`, `sessionStorage.turnstile_verified`, 회원 direct insert 분기를 제거한다. 회원과 guest 모두 같은 fetch를 사용하되 guest만 token을 요구한다.
 
@@ -715,7 +715,7 @@ const handleTurnstileVerify = (token: string) => {
 
 modal 문구는 “비회원 댓글을 등록하려면 보안 인증을 완료해주세요.”로 바꾸고 위젯에 `action={TURNSTILE_ACTIONS.comment}`를 전달한다. 요청 이후 modal이 unmount되어 사용한 token이 재사용되지 않게 한다.
 
-- [ ] **Step 5: GREEN·호출부 검사·커밋**
+- [x] **Step 5: GREEN·호출부 검사·커밋**
 
 Run:
 

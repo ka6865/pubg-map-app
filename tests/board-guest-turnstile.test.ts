@@ -8,7 +8,6 @@ import { extractClientIp, maskIp } from "../lib/board/ipUtils";
 import { verifyTurnstileToken } from "../lib/board/turnstile.server";
 import TurnstileWidget from "../components/board/TurnstileWidget";
 import { TURNSTILE_ACTIONS } from "../lib/board/turnstileContract";
-import { POST as verifyTurnstileRoute } from "../app/api/board/turnstile/route";
 
 describe("비속어 필터 (profanityFilter)", () => {
   it("정상적인 텍스트는 차단되지 않아야 한다", () => {
@@ -209,52 +208,6 @@ describe("Cloudflare Turnstile Siteverify 검증", () => {
 
     expect(result).toEqual({ ok: false, status: 503, error: "보안 인증 서버에 연결하지 못했습니다." });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe("Cloudflare Turnstile 호환 route", () => {
-  const originalSecret = process.env.TURNSTILE_SECRET_KEY;
-
-  afterEach(() => {
-    if (originalSecret === undefined) {
-      delete process.env.TURNSTILE_SECRET_KEY;
-    } else {
-      process.env.TURNSTILE_SECRET_KEY = originalSecret;
-    }
-    vi.unstubAllGlobals();
-  });
-
-  it("secret 누락을 고정 503으로 반환한다", async () => {
-    delete process.env.TURNSTILE_SECRET_KEY;
-    const fetchImpl = vi.fn();
-    vi.stubGlobal("fetch", fetchImpl);
-    const response = await verifyTurnstileRoute(new Request("https://example.com/api/board/turnstile", {
-      method: "POST",
-      body: JSON.stringify({ token: "token" }),
-    }));
-
-    expect(response.status).toBe(503);
-    expect(await response.json()).toEqual({ success: false, error: "보안 인증을 사용할 수 없습니다." });
-    expect(fetchImpl).not.toHaveBeenCalled();
-  });
-
-  it("guest_comment action이 아닌 토큰을 400으로 거부하고 remoteip을 전달한다", async () => {
-    process.env.TURNSTILE_SECRET_KEY = "test-secret";
-    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      success: true,
-      action: "guest_post",
-    })));
-    vi.stubGlobal("fetch", fetchImpl);
-    const response = await verifyTurnstileRoute(new Request("https://example.com/api/board/turnstile", {
-      method: "POST",
-      headers: { "x-forwarded-for": "203.0.113.10, 198.51.100.1" },
-      body: JSON.stringify({ token: "token" }),
-    }));
-
-    expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({ success: false, error: "보안 인증에 실패했습니다. 다시 시도해주세요." });
-    const body = (fetchImpl.mock.calls[0][1] as RequestInit).body as FormData;
-    expect(body.get("remoteip")).toBe("203.0.113.10");
   });
 });
 
