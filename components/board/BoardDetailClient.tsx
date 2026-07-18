@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { trackEvent } from "@/lib/analytics";
 import ConfirmModal from "../common/ConfirmModal";
 import TurnstileWidget from "./TurnstileWidget";
+import { TURNSTILE_ACTIONS } from "@/lib/board/turnstileContract";
 import AdfitBanner from "@/components/ads/AdfitBanner";
 import AdSenseBanner from "@/components/ads/AdSenseBanner";
 import { rewriteBoardImageUrls, toBoardImageProxyUrl } from "@/lib/board-image-proxy";
@@ -863,6 +864,7 @@ export default function BoardDetailClient({
               </p>
             </div>
             <TurnstileWidget
+              action={TURNSTILE_ACTIONS.comment}
               onVerify={handleTurnstileVerify}
               onError={() => {
                 toast.error("보안 인증 중 오류가 발생했습니다.");

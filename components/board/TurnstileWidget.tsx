@@ -1,14 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useCallback } from "react";
-
-/**
- * @fileoverview Cloudflare Turnstile 캡차 위젯 컴포넌트
- *
- * 세션 1회 인증 방식으로 동작합니다.
- * onVerify 콜백으로 토큰을 전달하면 부모에서 세션스토리지에 저장하여
- * 이후 동일 탭에서는 캡차 없이 글쓰기/댓글을 허용합니다.
- */
+import type { TurnstileAction } from "@/lib/board/turnstileContract";
 
 declare global {
   interface Window {
@@ -23,6 +16,7 @@ declare global {
 
 interface TurnstileOptions {
   sitekey: string;
+  action: TurnstileAction;
   callback: (token: string) => void;
   "error-callback"?: () => void;
   "expired-callback"?: () => void;
@@ -32,32 +26,51 @@ interface TurnstileOptions {
 }
 
 interface TurnstileWidgetProps {
+  action: TurnstileAction;
   onVerify: (token: string) => void;
   onError?: () => void;
 }
 
-export default function TurnstileWidget({ onVerify, onError }: TurnstileWidgetProps) {
+export default function TurnstileWidget({ action, onVerify, onError }: TurnstileWidgetProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const widgetIdRef = useRef<string | null>(null);
+  const onVerifyRef = useRef(onVerify);
+  const onErrorRef = useRef(onError);
+
+  useEffect(() => {
+    onVerifyRef.current = onVerify;
+  }, [onVerify]);
+
+  useEffect(() => {
+    onErrorRef.current = onError;
+  }, [onError]);
+
+  const resetCurrentWidget = useCallback(() => {
+    if (widgetIdRef.current && window.turnstile) {
+      window.turnstile.reset(widgetIdRef.current);
+    }
+  }, []);
 
   const renderWidget = useCallback(() => {
     if (!containerRef.current || !window.turnstile) return;
+    const sitekey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY?.trim();
+    if (!sitekey) {
+      onErrorRef.current?.();
+      return;
+    }
     if (widgetIdRef.current) {
       window.turnstile.remove(widgetIdRef.current);
     }
     widgetIdRef.current = window.turnstile.render(containerRef.current, {
-      sitekey: process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY!,
-      callback: onVerify,
-      "error-callback": onError,
-      "expired-callback": () => {
-        if (widgetIdRef.current && window.turnstile) {
-          window.turnstile.reset(widgetIdRef.current);
-        }
-      },
+      sitekey,
+      action,
+      callback: (token) => onVerifyRef.current(token),
+      "error-callback": () => onErrorRef.current?.(),
+      "expired-callback": resetCurrentWidget,
       theme: "dark",
       language: "ko",
     });
-  }, [onVerify, onError]);
+  }, [action, resetCurrentWidget]);
 
   useEffect(() => {
     // 스크립트가 이미 로드된 경우 바로 렌더링

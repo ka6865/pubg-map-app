@@ -31,13 +31,14 @@
 - Create: `lib/board/turnstile.server.ts`
 - Modify: `components/board/TurnstileWidget.tsx`
 - Modify: `tests/board-guest-turnstile.test.ts`
-- Delete: `app/api/board/turnstile/route.ts`
+- Modify: `app/api/board/turnstile/route.ts`
 
 **Interfaces:**
 - Produces: `type TurnstileAction = "guest_post" | "guest_comment"`
 - Produces: `verifyTurnstileToken(input): Promise<TurnstileVerificationResult>`
 - Produces: `<TurnstileWidget action onVerify onError />`
-- Removes: standalone `POST /api/board/turnstile`
+- Produces: Task 4 전까지 `guest_comment` action을 강제하는 호환 `POST /api/board/turnstile`
+- Defers: standalone route와 `sessionStorage` preverify 제거는 실제 댓글 저장 route 결합을 완료하는 Task 4에서 수행
 
 - [ ] **Step 1: 서버 검증 실패 테스트 작성**
 
@@ -195,7 +196,7 @@ export async function verifyTurnstileToken(input: {
 }
 ```
 
-- [ ] **Step 4: 위젯 action·callback 안정화와 standalone route 삭제**
+- [ ] **Step 4: 위젯 action·callback 안정화와 standalone route 호환 경계 고정**
 
 `TurnstileWidget`에 `action: TurnstileAction` prop을 추가한다. `onVerify`와 `onError`는 ref로 최신 callback을 읽어 부모 rerender 때 widget이 재생성되지 않게 한다.
 
@@ -216,7 +217,7 @@ window.turnstile.render(containerRef.current, {
 });
 ```
 
-`TurnstileOptions`에 `action: TurnstileAction`을 추가하고 `NEXT_PUBLIC_TURNSTILE_SITE_KEY`가 비어 있으면 `onError`만 호출하고 render하지 않는다. `app/api/board/turnstile/route.ts`는 삭제한다.
+`TurnstileOptions`에 `action: TurnstileAction`을 추가하고 `NEXT_PUBLIC_TURNSTILE_SITE_KEY`가 비어 있으면 `onError`만 호출하고 render하지 않는다. `app/api/board/turnstile/route.ts`는 Task 4 전 기능 보존을 위해 새 helper에 `guest_comment`를 전달하는 호환 wrapper로 유지하고, Task 4에서 모든 caller를 실제 저장 요청으로 전환한 후 삭제한다.
 
 - [ ] **Step 5: GREEN·정적 검사·커밋**
 
@@ -230,7 +231,7 @@ rg -n '/api/board/turnstile|turnstile_verified' app components lib tests
 git diff --check
 ```
 
-Expected: 테스트·정적 검사 0, 마지막 검색 0건이다.
+Expected: 테스트·정적 검사 0이다. 마지막 검색은 Task 4에서 제거할 호환 route·`BoardDetailClient` caller·`sessionStorage` 잔여만 보고하며, 이 범위 외 새 사용처는 0건이어야 한다.
 
 ```bash
 git add lib/board/turnstileContract.ts lib/board/turnstile.server.ts components/board/TurnstileWidget.tsx tests/board-guest-turnstile.test.ts app/api/board/turnstile/route.ts
@@ -595,6 +596,7 @@ git commit -m "fix: 비회원 게시글 Turnstile 저장 경계 결합"
 **Files:**
 - Modify: `app/api/board/comments/route.ts`
 - Modify: `components/board/BoardDetailClient.tsx`
+- Delete: `app/api/board/turnstile/route.ts`
 - Create: `tests/board-comment-write-boundary.test.ts`
 - Create: `tests/board-turnstile-client.test.ts`
 
