@@ -54,6 +54,8 @@ SET name = EXCLUDED.name, public = EXCLUDED.public, file_size_limit = EXCLUDED.f
 DROP POLICY IF EXISTS "Authenticated Users Insert" ON storage.objects;
 DROP POLICY IF EXISTS "Delete Policy" ON storage.objects;
 
+-- result_code 반환 컬럼 추가는 CREATE OR REPLACE로 기존 반환 타입을 바꿀 수 없어 선행 삭제한다.
+DROP FUNCTION IF EXISTS public.reserve_board_image_upload(uuid, text, bigint);
 CREATE OR REPLACE FUNCTION public.reserve_board_image_upload(
   p_owner_user_id uuid, p_expected_mime_type text, p_max_bytes bigint
 )

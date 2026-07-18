@@ -324,6 +324,11 @@ async function verifyLegacyBackfill(): Promise<void> {
       fixture.postIds.push(postId);
     }
     await sql(readFileSync(resolve(process.cwd(), "supabase/migrations/20260718203104_board_image_storage_ownership.sql"), "utf8"));
+    const reservation = await scalar(`SET ROLE service_role; SELECT result.result_code || ':' || result.image_id::text FROM public.reserve_board_image_upload(${quote(ownerId)}::uuid, 'image/png', 100) AS result`, "migration-reapply-reserve-contract");
+    const [resultCode, imageId] = reservation.split(":");
+    equal(resultCode, "ok", "migration-reapply-reserve-contract");
+    if (!imageId) throw new Error("migration-reapply-reserve-image-id-missing");
+    fixture.imageIds.push(imageId);
     for (const [index, expected, label] of [[0, "1", "legacy-canonical-ref-count"], [1, "0", "legacy-percent-encoded-ref-count"], [2, "0", "legacy-external-ref-count"], [3, "0", "legacy-lookalike-ref-count"]] as const) {
       equal(await scalar(`SELECT count(*)::text FROM public.board_post_image_refs AS ref_row WHERE ref_row.post_id = ${fixture.postIds[index]}`, label), expected, label);
     }
