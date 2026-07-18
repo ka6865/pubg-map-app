@@ -135,6 +135,7 @@ describe("Cloudflare Turnstile Siteverify 검증", () => {
 
   it("success와 action이 일치할 때만 통과하고 trim token과 remoteip을 전달한다", async () => {
     process.env.TURNSTILE_SECRET_KEY = "test-secret";
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
     const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       success: true,
       action: "guest_comment",
@@ -153,6 +154,8 @@ describe("Cloudflare Turnstile Siteverify 검증", () => {
     expect(body.get("response")).toBe("valid-token");
     expect(body.get("remoteip")).toBe("203.0.113.10");
     expect(options.signal).toBeInstanceOf(AbortSignal);
+    expect(timeoutSpy).toHaveBeenCalledOnce();
+    expect(timeoutSpy).toHaveBeenCalledWith(5000);
   });
 
   it("remoteIp가 빈 경우 remoteip 필드를 전송하지 않는다", async () => {
@@ -189,6 +192,21 @@ describe("Cloudflare Turnstile Siteverify 검증", () => {
       expectedAction: "guest_post",
       fetchImpl,
     });
+    expect(result).toEqual({ ok: false, status: 503, error: "보안 인증 서버에 연결하지 못했습니다." });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("Siteverify 요청이 abort되면 retry 없이 고정 503을 반환한다", async () => {
+    process.env.TURNSTILE_SECRET_KEY = "test-secret";
+    const fetchImpl = vi.fn().mockRejectedValue(new DOMException("aborted", "AbortError"));
+
+    const result = await verifyTurnstileToken({
+      token: "token",
+      remoteIp: "203.0.113.10",
+      expectedAction: "guest_post",
+      fetchImpl,
+    });
+
     expect(result).toEqual({ ok: false, status: 503, error: "보안 인증 서버에 연결하지 못했습니다." });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
