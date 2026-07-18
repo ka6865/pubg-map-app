@@ -24,17 +24,26 @@ CREATE TABLE IF NOT EXISTS public.board_post_image_refs (
   PRIMARY KEY (post_id, image_id, usage)
 );
 
+-- auth.users FK를 두지 않아 사용자 삭제가 rate-limit 이력 정리에 막히지 않는다.
+CREATE TABLE IF NOT EXISTS public.board_image_reservation_rate_limits (
+  owner_user_id uuid PRIMARY KEY,
+  window_started_at timestamptz NOT NULL,
+  reservation_count integer NOT NULL CHECK (reservation_count >= 0 AND reservation_count <= 10),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
 CREATE INDEX IF NOT EXISTS board_post_image_refs_image_id_idx
   ON public.board_post_image_refs (image_id);
 CREATE INDEX IF NOT EXISTS board_image_objects_claim_idx
   ON public.board_image_objects (status, delete_after, delete_lease_until, expires_at, id)
-  WHERE status IN ('pending', 'delete_pending', 'deleting');
+  WHERE status IN ('pending', 'ready', 'delete_pending', 'deleting');
 
 ALTER TABLE public.posts ADD COLUMN IF NOT EXISTS revision bigint NOT NULL DEFAULT 0;
 ALTER TABLE public.board_image_objects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.board_post_image_refs ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.board_image_objects, public.board_post_image_refs FROM PUBLIC, anon, authenticated;
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.board_image_objects, public.board_post_image_refs TO service_role;
+ALTER TABLE public.board_image_reservation_rate_limits ENABLE ROW LEVEL SECURITY;
+REVOKE ALL ON TABLE public.board_image_objects, public.board_post_image_refs, public.board_image_reservation_rate_limits FROM PUBLIC, anon, authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.board_image_objects, public.board_post_image_refs, public.board_image_reservation_rate_limits TO service_role;
 
 INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 VALUES ('board-images-v2', 'board-images-v2', true, 1572864, ARRAY['image/png', 'image/jpeg', 'image/webp'])
@@ -48,16 +57,61 @@ DROP POLICY IF EXISTS "Delete Policy" ON storage.objects;
 CREATE OR REPLACE FUNCTION public.reserve_board_image_upload(
   p_owner_user_id uuid, p_expected_mime_type text, p_max_bytes bigint
 )
-RETURNS TABLE(image_id uuid, bucket_id text, storage_key text)
+RETURNS TABLE(result_code text, image_id uuid, bucket_id text, storage_key text)
 LANGUAGE plpgsql SECURITY INVOKER SET search_path = ''
 AS $$
 DECLARE
   v_image_id uuid := gen_random_uuid();
+  v_now timestamptz := now();
+  v_window_started_at timestamptz;
+  v_reservation_count integer;
+  v_active_count integer;
+  v_active_bytes bigint;
 BEGIN
   IF p_owner_user_id IS NULL OR p_expected_mime_type NOT IN ('image/png', 'image/jpeg', 'image/webp')
     OR p_max_bytes IS NULL OR p_max_bytes <= 0 OR p_max_bytes > 1572864 THEN
     RAISE EXCEPTION 'invalid_board_image_reservation';
   END IF;
+
+  -- owner 단위 transaction advisory lock으로 동시 reserve의 rate/quota 검사를 직렬화한다.
+  PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext(p_owner_user_id::text));
+
+  SELECT rate_limit.window_started_at, rate_limit.reservation_count
+  INTO v_window_started_at, v_reservation_count
+  FROM public.board_image_reservation_rate_limits AS rate_limit
+  WHERE rate_limit.owner_user_id = p_owner_user_id
+  FOR UPDATE;
+
+  IF NOT FOUND OR v_window_started_at <= v_now - interval '1 minute' THEN
+    v_window_started_at := v_now;
+    v_reservation_count := 0;
+  END IF;
+
+  IF v_reservation_count >= 10 THEN
+    RETURN QUERY SELECT 'quota_exceeded'::text, NULL::uuid, NULL::text, NULL::text;
+    RETURN;
+  END IF;
+
+  SELECT count(*)::integer, COALESCE(sum(COALESCE(image_row.max_bytes, 0)), 0)
+  INTO v_active_count, v_active_bytes
+  FROM public.board_image_objects AS image_row
+  WHERE image_row.owner_user_id = p_owner_user_id
+    AND image_row.status IN ('pending', 'ready', 'delete_pending', 'deleting');
+
+  -- Supabase Free 1 GB의 사용자별 5% 안전 한도로 50 MiB를 hard cap 한다.
+  IF v_active_count >= 40 OR v_active_bytes + p_max_bytes > 52428800 THEN
+    RETURN QUERY SELECT 'quota_exceeded'::text, NULL::uuid, NULL::text, NULL::text;
+    RETURN;
+  END IF;
+
+  INSERT INTO public.board_image_reservation_rate_limits (
+    owner_user_id, window_started_at, reservation_count, updated_at
+  ) VALUES (
+    p_owner_user_id, v_window_started_at, v_reservation_count + 1, v_now
+  ) ON CONFLICT (owner_user_id) DO UPDATE
+  SET window_started_at = EXCLUDED.window_started_at,
+      reservation_count = EXCLUDED.reservation_count,
+      updated_at = EXCLUDED.updated_at;
 
   INSERT INTO public.board_image_objects (
     id, bucket_id, storage_key, owner_user_id, status, expected_mime_type, max_bytes, expires_at
@@ -65,7 +119,7 @@ BEGIN
     v_image_id, 'board-images-v2', v_image_id::text, p_owner_user_id, 'pending',
     p_expected_mime_type, p_max_bytes, now() + interval '24 hours'
   );
-  RETURN QUERY SELECT v_image_id, 'board-images-v2'::text, v_image_id::text;
+  RETURN QUERY SELECT 'ok'::text, v_image_id, 'board-images-v2'::text, v_image_id::text;
 END;
 $$;
 
@@ -95,7 +149,8 @@ BEGIN
     OR v_size IS NULL OR v_size > v_image.max_bytes THEN RETURN false; END IF;
 
   UPDATE public.board_image_objects AS image_row
-  SET status = 'ready', expires_at = NULL, updated_at = now()
+  -- 미참조 ready 객체는 reserve 시점의 24시간 TTL을 유지하여 worker가 수거한다.
+  SET status = 'ready', updated_at = now()
   WHERE image_row.id = v_image.id;
   RETURN true;
 END;
@@ -190,6 +245,17 @@ BEGIN
     VALUES (v_new_post_id, p_thumbnail_image_id, 'thumbnail') ON CONFLICT DO NOTHING;
   END IF;
 
+  -- 실제로 이 write에서 참조된 ready 객체만 TTL을 제거한다.
+  UPDATE public.board_image_objects AS image_row
+  SET expires_at = NULL, updated_at = now()
+  WHERE image_row.status = 'ready'
+    AND image_row.id = ANY(COALESCE(p_content_image_ids, ARRAY[]::uuid[]) ||
+      CASE WHEN p_thumbnail_image_id IS NULL THEN ARRAY[]::uuid[] ELSE ARRAY[p_thumbnail_image_id] END)
+    AND EXISTS (
+      SELECT 1 FROM public.board_post_image_refs AS ref_row
+      WHERE ref_row.post_id = v_new_post_id AND ref_row.image_id = image_row.id
+    );
+
   UPDATE public.board_image_objects AS image_row
   SET status = 'delete_pending', delete_after = now(), delete_lease_until = NULL,
       delete_lease_token = NULL, updated_at = now()
@@ -228,7 +294,7 @@ BEGIN
     FROM public.board_image_objects AS object_row
     WHERE ((object_row.status = 'delete_pending' AND object_row.delete_after <= p_now)
       OR (object_row.status = 'deleting' AND object_row.delete_lease_until <= p_now)
-      OR (object_row.status = 'pending' AND object_row.expires_at <= p_now))
+      OR (object_row.status IN ('pending', 'ready') AND object_row.expires_at <= p_now))
       AND NOT EXISTS (
         SELECT 1 FROM public.board_post_image_refs AS ref_row
         WHERE ref_row.image_id = object_row.id
