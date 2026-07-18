@@ -18,6 +18,9 @@
 - 캐시 본문 identity가 요청 identity와 완전히 일치할 때만 presigned URL을 반환한다.
 - 브라우저는 API envelope와 R2 payload를 모두 검증하고 두 fetch에 같은 AbortSignal을 사용한다.
 - `telemetry_map_cache_entries`는 RLS를 활성화하고 공개 정책을 만들지 않는다.
+- `telemetry_map_cache_entries`는 `anon`, `authenticated` 권한을 명시 회수하고 `service_role`에 필요한 CRUD 권한만 명시 부여한다.
+- 배포 순서는 Supabase migration 적용 후 애플리케이션 배포다. migration 미적용 상태에서 신규 코드나 cleanup을 먼저 실행하지 않는다.
+- registry 조회·upsert 오류 또는 테이블 부재는 fail-closed한다. cleanup은 registry 조회가 실패하면 어떤 DB row나 R2 객체도 삭제하지 않는다.
 - service-role key, PUBG API key, signed URL, accountId, 외부 오류 stack을 사용자 응답·브라우저 로그에 남기지 않는다.
 - 운영 migration 적용, 운영 cleanup 실행, 기존 R2 삭제는 수행하지 않는다.
 - 전술 점수, 티어, `RESULT_VERSION`, `TELEMETRY_VERSION` 값은 변경하지 않는다.
@@ -152,6 +155,7 @@ describe("telemetry identity", () => {
     expect(sql).toContain("enable row level security");
     expect(sql).not.toMatch(/create policy/i);
     expect(sql).toContain("revoke all on table public.telemetry_map_cache_entries from anon, authenticated");
+    expect(sql).toContain("grant select, insert, update, delete on table public.telemetry_map_cache_entries to service_role");
   });
 });
 ```
@@ -274,9 +278,10 @@ create index if not exists telemetry_map_cache_entries_updated_at_idx
 
 alter table public.telemetry_map_cache_entries enable row level security;
 revoke all on table public.telemetry_map_cache_entries from anon, authenticated;
+grant select, insert, update, delete on table public.telemetry_map_cache_entries to service_role;
 ```
 
-운영 DB에는 적용하지 않는다.
+운영 DB에는 적용하지 않는다. 실제 배포 시에는 이 migration을 먼저 적용한 뒤 애플리케이션을 배포해야 한다.
 
 - [ ] **Step 5: GREEN과 정적 검증**
 
@@ -736,6 +741,7 @@ describe("telemetry cleanup registry", () => {
 ```
 
 source boundary로 `scripts/cleanup_telemetry.ts`가 신규 테이블을 조회하고 신규 registry row 삭제 오류를 검사하며, `smartCleanup()`을 import 시 실행하지 않는 direct-run guard를 갖는지 검증한다.
+또한 registry 전체 조회 또는 match별 조회가 오류를 반환하면 cleanup이 예외로 중단되고, R2 삭제와 master·registry row 삭제가 모두 0회인지 검증한다.
 
 - [ ] **Step 2: RED 확인**
 
@@ -785,6 +791,7 @@ export function selectTelemetryCachePathsForMatches(
 3. R2 삭제 후 registry rows를 `match_id.in(...)`으로 삭제하고 error 검사
 4. orphan scan 활성 경로는 master와 registry 전체 경로 합집합
 5. 환경변수 검증과 실행은 `runTelemetryCleanup()` 함수로 분리하고 direct-run에서만 호출
+6. registry 전체 조회와 match별 조회를 모든 삭제보다 먼저 수행하고, 어느 하나라도 실패하면 예외를 전파해 R2·DB 삭제를 전부 건너뜀
 
 테스트에서는 실제 deletion 함수를 호출하지 않는다.
 
@@ -863,6 +870,7 @@ API {downloadUrl, identity} → R2 payload → schema/identity 검증
 - Kakao platform 필수 전달
 - registry·cleanup 정합성
 - 운영 migration 미적용·운영 삭제 없음
+- 운영 적용 순서는 migration 선적용 후 애플리케이션 배포이며 registry 조회 실패 시 cleanup 전체 중단
 
 기존 미해결 P1 11건에서 해결 3건을 차감해 실제 미해결 P1을 8건으로 기록한다. 다른 P1/P2는 해결 처리하지 않는다.
 
@@ -917,6 +925,7 @@ git commit -m "docs: 텔레메트리 P1 조치 결과 반영"
 - Kakao platform은 MatchCard URL부터 MapShell, hook, 공용 fetch, API까지 전 경로를 포함했다.
 - Task 4 테스트는 운영 cleanup을 실행하지 않고 순수 helper와 source boundary만 검증한다.
 - migration은 local 파일만 생성하며 운영 적용·삭제 명령을 포함하지 않는다.
+- registry 권한은 공개 role을 명시 폐쇄하고 service role만 명시 허용하며, cleanup은 registry 조회 실패 시 삭제를 시작하지 않는다.
 - 신규 테스트 5개가 Task 5의 `verify:analysis`에 편입된다.
 - P1 미해결 수는 11건에서 세 항목만 차감한 8건이며 다른 항목은 유지한다.
 - placeholder, 미정 요구사항, 다른 Task의 정의에 의존하는 불명확한 함수 시그니처가 없다.

@@ -19,6 +19,7 @@ PUBG 텔레메트리 리플레이의 서버 응답, R2 캐시, 2D·3D 소비자 
 - 신규 요청과 재분석은 새 identity 키에만 저장한다.
 - 기존 객체는 현재 운영 보존·정리 정책에 따라 자연 정리한다.
 - 운영 데이터 삭제 명령과 대량 R2 migration은 실행하지 않는다.
+- 배포 순서는 Supabase migration 적용 후 애플리케이션 배포이며, migration 미적용 상태에서 신규 코드나 cleanup을 먼저 실행하지 않는다.
 
 ## 3. 검토한 접근 방식
 
@@ -114,7 +115,7 @@ type TelemetryPayload = {
 - unique identity:
   - `(match_id, platform, player_id, mode, telemetry_version)`
 
-RLS를 활성화하고 공개 정책을 만들지 않는다. 브라우저가 테이블에 직접 접근하지 않으며 service-role 서버 경로만 사용한다.
+RLS를 활성화하고 공개 정책을 만들지 않는다. `anon`, `authenticated` 권한은 명시적으로 회수하고 `service_role`에는 서버가 필요한 `select`, `insert`, `update`, `delete`만 명시적으로 부여한다. 이는 2026년 Supabase의 신규 테이블 Data API 명시 grant 전환과 기존 프로젝트의 자동 grant 양쪽에서 동일하게 동작하게 하기 위한 계약이다. 브라우저가 테이블에 직접 접근하지 않으며 service-role 서버 경로만 사용한다.
 
 `match_master_telemetry`는 매치 메타데이터의 기존 기준으로 유지한다. 새 플레이어별 지도 캐시는 별도 registry에서 관리해 한 match row의 `storage_path`가 여러 플레이어 객체를 대표하는 문제를 만들지 않는다.
 
@@ -126,6 +127,8 @@ RLS를 활성화하고 공개 정책을 만들지 않는다. 브라우저가 테
 - 신규 `telemetry_map_cache_entries.storage_path`
 
 매치 master row를 만료 처리할 때 해당 `match_id`의 registry 경로를 함께 조회하고 파생 지도 캐시를 삭제 대상으로 포함한다. R2 삭제 성공 여부와 DB row 삭제 오류를 구분해 보고한다.
+
+registry 전체 조회나 match별 조회가 실패하거나 테이블이 아직 없으면 fail-closed로 정리 작업 전체를 중단한다. 이 상태에서는 master·registry DB row와 R2 객체를 하나도 삭제하지 않는다. registry upsert 실패도 캐시 쓰기 성공으로 숨기지 않는다.
 
 이번 구현과 검증에서는 cleanup을 실제 실행하지 않는다.
 
