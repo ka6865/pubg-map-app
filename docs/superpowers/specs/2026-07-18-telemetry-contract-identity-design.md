@@ -155,9 +155,13 @@ RLS를 활성화하고 공개 정책을 만들지 않는다. `anon`, `authentica
 - 기존 `match_master_telemetry.storage_path`
 - 신규 `telemetry_map_cache_entries.storage_path`
 
-매치 master row를 만료 처리할 때 해당 `match_id`의 registry 경로를 함께 조회하고 파생 지도 캐시를 삭제 대상으로 포함한다. R2 삭제 성공 여부와 DB row 삭제 오류를 구분해 보고한다.
+매치 master row를 만료 처리할 때 해당 `match_id`의 registry 최근 갱신 여부를 트랜잭션 내에서 재검증한다. cleanup RPC는 registry 테이블에 `SHARE ROW EXCLUSIVE` lock을 적용해 신규 writer를 잠시 대기시키고, 최근 registry가 없는 만료 match만 `match_stats_raw → processed_match_telemetry → telemetry_map_cache_entries → match_master_telemetry` 순서로 삭제한다. master 삭제 직전에 만료 조건과 남은 registry 부재를 다시 확인한다.
 
-registry 전체 조회나 match별 조회가 실패하거나 테이블이 아직 없으면 fail-closed로 정리 작업 전체를 중단한다. 이 상태에서는 master·registry DB row와 R2 객체를 하나도 삭제하지 않는다. registry upsert 실패도 캐시 쓰기 성공으로 숨기지 않는다.
+master 만료 후보 조회가 실패하면 모든 cleanup RPC 전에 fail-closed로 중단한다. cleanup RPC가 실패하거나 테이블·함수가 아직 없으면 해당 최대 50개 match batch가 트랜잭션으로 rollback되고 후속 batch를 중단한다. 이미 성공해 commit된 이전 batch까지 되돌린다고 기록하지 않는다. registry upsert 실패도 캐시 쓰기 성공으로 숨기지 않는다.
+
+만료 match는 Supabase 트랜잭션 RPC에서 master·registry 상태를 잠그고 만료 조건과 registry `updated_at` cutoff를 다시 검증한 뒤 관련 DB row를 한 번에 정리한다.
+
+애플리케이션 cleanup의 R2 자동 삭제는 이번 배포에서 전면 비활성화한다. `ListObjectsV2` 스냅샷 후 같은 deterministic key가 재업로드되면 과거 `LastModified`를 근거로 신규 객체를 삭제할 수 있고, 현재 Cloudflare R2 S3 계약에서 batch conditional delete를 입증하지 못했기 때문이다. R2 객체는 보존하고 `r2DeletionDeferred: true`를 보고한다. 무료 R2 저장량 누적은 운영 모니터링 대상으로 두며, immutable generation key 또는 공식적으로 검증된 conditional delete를 도입한 후 자동 삭제를 별도 활성화한다.
 
 이번 구현과 검증에서는 cleanup을 실제 실행하지 않는다.
 

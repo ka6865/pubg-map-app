@@ -4,14 +4,14 @@
 - 기준 문서: `README.md`, `docs/tactical_score_guide.md`, `docs-private/.project_context.md`, 텔레메트리·티어 개발 문서
 - 범위: 지도·전술 도구·리플레이·모바일 UI, PUBG 전적·분석·AI, 게시판·인증·관리자·Supabase/R2
 - 방식: 기능 영역별 읽기 전용 병렬 리뷰, 정적 분석, 관련 테스트, 프로덕션 의존성 감사
-- 조치 범위: P0 ingest 공개 경계 제거, 서버 내부 저장 전환, 회귀 게이트 추가
+- 조치 범위: P0 ingest 공개 경계 제거, Hotdrop GitHub Actions 전환, 텔레메트리 공용 계약·identity·cleanup 통합, 회귀 게이트 확장
 - 운영 데이터 변경: 없음
 
 ## 1. 결론
 
-최초 리뷰에서 P0 1건, P1 12건, P2 15건을 확인했다. P0은 공개 `/api/pubg/ingest` route를 제거하고 `/api/pubg/match`가 검증된 PUBG 분석 결과를 서버 저장 함수에 직접 전달하도록 전환해 해결했다. 최종 리뷰에서 확인한 `source=scraper`와 `force=true` 위조 경로도 서로 독립된 timing-safe header 인증으로 차단했다. P1은 Hotdrop 1건을 해결해 실제 미해결 항목이 11건이며, P2 15건의 우선순위는 유지한다.
+최초 리뷰에서 P0 1건, P1 12건, P2 15건을 확인했다. P0은 공개 `/api/pubg/ingest` route를 제거하고 `/api/pubg/match`가 검증된 PUBG 분석 결과를 서버 저장 함수에 직접 전달하도록 전환해 해결했다. 최종 리뷰에서 확인한 `source=scraper`와 `force=true` 위조 경로도 서로 독립된 timing-safe header 인증으로 차단했다. P1은 Hotdrop 1건과 텔레메트리 3건을 해결해 실제 미해결 항목이 8건이다. P2는 보안 테스트 계약 복구와 리플레이 요청 전환 경쟁 2건을 해결해 실제 미해결 항목이 13건이다.
 
-그다음 우선순위는 텔레메트리 계약 통합이다. 현재 presigned URL 응답 계약, 플레이어·플랫폼 캐시 identity, 2D/3D 소비자 구현이 서로 어긋나 리플레이 실패와 다른 팀 관점 데이터 혼선이 동시에 발생할 수 있다.
+텔레메트리 공용 fetch SDK, 플레이어·플랫폼 cache identity, 2D/3D 소비자, registry cleanup 계약을 통합했다. 운영 DB migration과 cleanup은 실행하지 않았으며, 배포는 migration을 먼저 적용한 뒤 애플리케이션을 반영해야 한다.
 
 보안 측면에서는 Storage 객체 삭제 BOLA, 승인 작업 중복 실행, CAPTCHA 우회, 공개 analytics 오염, 제보 알림 임계값 우회가 즉시 수정 대상이다.
 
@@ -19,16 +19,18 @@
 
 | 검증 | 결과 |
 |---|---|
-| `npm run verify:core` | 통과: ESLint 오류 0·기존 경고 70, TypeScript 오류 0 |
-| `npm run verify:analysis` | 통과: 10개 파일, 112개 테스트 |
+| `npm run verify:core` | 통과: ESLint 오류 0·경고 62, TypeScript 오류 0 |
+| `npm run verify:analysis` | 통과: 17개 파일, 170개 테스트 |
 | `npm run verify:admin` | 통과: 5개 파일, 90개 테스트 |
-| `npm test -- --runInBand` | 통과: Jest 2개 suite, 4개 테스트 |
-| `env DOTENV_CONFIG_PATH=.env.local node --require ./node_modules/dotenv/config node_modules/vitest/vitest.mjs run` | 통과: 26개 파일 통과·1개 스킵, 265개 테스트 통과·6개 스킵 |
+| `npm test -- --runInBand` | 통과: Jest 1개 suite, 2개 테스트 |
+| `env DOTENV_CONFIG_PATH=.env.local node --require ../../node_modules/dotenv/config ../../node_modules/vitest/vitest.mjs run` | 통과: 33개 파일 통과·1개 스킵, 323개 테스트 통과·6개 스킵 |
 | `npm audit --omit=dev` | 이번 조치에서 재실행하지 않음. 최초 리뷰 결과는 10건(High 3, Moderate 5, Low 2) |
 
-`tests/security.test.ts`는 현재 `withOptionalAuth` 계약과 Shadow Draft의 `parent_id` 삭제 조건으로 복구해 `verify:admin`에 포함했다. 전체 Vitest 명령의 최초 실행은 worktree에 `node_modules/dotenv`, `node_modules/vitest`, `.env.local`이 배치되지 않아 테스트 실행 전 종료 코드 1로 종료됐다. 기본 checkout의 기존 파일을 worktree의 추적되지 않는 경로에 심볼릭 링크한 후 같은 명령을 재실행해 전체 통과했다.
+`tests/security.test.ts`는 현재 `withOptionalAuth` 계약과 Shadow Draft의 `parent_id` 삭제 조건으로 복구해 `verify:admin`에 포함했다. worktree에는 독립 `node_modules/dotenv`, `node_modules/vitest`가 없어 `./node_modules` 직접 경로 명령은 테스트 시작 전 종료 코드 1로 종료됐다. `.env.local`은 기본 checkout을 가리키는 추적 제외 심볼릭 링크로 유지하고, 기본 checkout의 의존성 경로를 명시해 전체 Vitest를 재실행한 결과 통과했다. 환경변수 값은 출력하지 않았다.
 
-`verify:core`의 기존 ESLint 경고 70개는 다음 34개 파일에서 발생했다: `app/admin/dashboard/page.tsx`, `app/api/bluezone/route.ts`, `app/api/board/posts/route.ts`, `app/api/cron/patch-notes/route.ts`, `app/api/pubg/telemetry/route.ts`, `app/crates/CrateModals.tsx`, `app/crates/CratesClient.tsx`, `app/crates/useCratesState.ts`, `app/replay/3d/page.tsx`, `app/test-coordinate/page.tsx`, `components/admin/AdminAgentChat.tsx`, `components/board/BoardListClient.tsx`, `components/board/BoardWriteClient.tsx`, `components/board/PostItem.tsx`, `components/common/PromptModal.tsx`, `components/map/HotDropLayer.tsx`, `components/map/MapShell.tsx`, `components/map/MapView.tsx`, `components/map/MobileBottomSheet.tsx`, `components/map/ReportForm.tsx`, `components/map/SimulatorPanel.tsx`, `components/map/telemetry/TelemetryCanvasLayer.tsx`, `components/map/telemetry/TelemetrySidebar.tsx`, `components/mypage/MyPage.tsx`, `components/stat/MatchTimeline.tsx`, `components/stat/StatSummaryCard.tsx`, `lib/pubg-analysis/handlers/CombatHandler.ts`, `lib/pubg-analysis/handlers/MapReplayHandler.ts`, `lib/pubg-analysis/handlers/PositionHandler.ts`, `lib/pubg-analysis/handlers/ZoneHandler.ts`, `scripts/cleanup_failed_sync.ts`, `scripts/extract_bluezone.ts`, `scripts/sync_all_db_assets.ts`, `scripts/test_gemini_posts.js`.
+운영과 분리된 임시 PostgreSQL 15에 migration을 실제 적용해 cleanup RPC 문법·권한·행위를 검증했다. 오래된 match는 4개 관련 테이블에서 정리됐고 최근 registry writer가 있는 match의 master·cache·stats·processed row는 모두 보존됐다. RPC `EXECUTE`는 `anon=false`, `authenticated=false`, `service_role=true`를 확인했다.
+
+`verify:core`의 ESLint 경고는 32개 파일에서 62개가 발생했다. 오류는 0개이고 TypeScript는 통과했으며, 이번 텔레메트리 변경 파일에서 신규 unused import·`console.log`는 확인되지 않았다. 기존 경고는 본 문서 7장의 유지보수 부채로 유지한다.
 
 ## 3. P0 — 즉시 차단
 
@@ -63,17 +65,38 @@
 
 #### 1) 3D 및 스쿼드 2D 리플레이가 현재 텔레메트리 응답 계약을 처리하지 못함
 
+> 조치 상태: 해결됨
+>
+> - API envelope의 `{ downloadUrl, identity }`를 검증한 뒤 같은 `AbortSignal`로 R2 payload를 다운로드하는 공용 `fetchTelemetryPayload` 적용
+> - hook, 3D, 스쿼드 2D의 직접 fetch 제거 및 schema·identity 검증 통일
+> - 자동·수동 3D 요청과 화면 전환 요청에 latest-request abort 경계 적용
+
 - 근거: `app/api/pubg/telemetry/route.ts:63-68,94-98`, `app/replay/3d/page.tsx:342-349`, `components/stat/Squad2DMap.tsx:254-263`, 정상 구현 `hooks/useTelemetry.ts:83-88`
 - 영향: API는 `{ downloadUrl }`을 반환하지만 두 소비자는 첫 응답의 `events`를 읽어 유효 데이터가 있어도 오류 또는 빈 지도를 만든다.
 - 조치: API 호출, presigned URL 다운로드, schema 검증, abort를 담당하는 공용 `fetchTelemetryPayload`를 만들고 모든 소비자가 공유한다.
 
 #### 2) 플레이어별 텔레메트리 결과를 matchId+mode 캐시로 공유
 
+> 조치 상태: 해결됨
+>
+> - R2 identity를 `matchId + platform + playerId(accountId) + mode + TELEMETRY_VERSION`로 분리
+> - 브라우저에는 `sha256(accountId)[0:32]` 기반 `playerKey`만 공개하고 원본 account/player ID는 응답에서 제거
+> - R2 payload identity를 서버 cache hit와 브라우저 다운로드 양쪽에서 재검증
+> - `telemetry_map_cache_entries` registry, RLS·grant, table lock·cutoff 재검증 cleanup RPC 추가
+> - stale R2 목록으로 동일 key의 신규 업로드를 지우지 않도록 애플리케이션 R2 자동 삭제 비활성화·`r2DeletionDeferred: true` 보고
+> - 운영 migration·R2 cleanup은 미실행. migration 선적용 후 앱 배포 필수
+
 - 근거: `app/api/pubg/telemetry/route.ts:55-60,76-96`, `lib/pubg-analysis/AnalysisEngine.ts:244-276,501-506`
 - 영향: 첫 생성자의 `teamNames`, `isTeam`, 적 샘플링 결과가 같은 매치의 다른 팀 플레이어에게 반환되어 아군·적군 분류가 틀어진다.
 - 조치: 키를 `matchId + platform + accountId/rosterId + mode + TELEMETRY_VERSION`으로 바꾸고 캐시 본문 identity도 반환 전에 검증한다.
 
 #### 3) 카카오 2D 리플레이가 steam으로 조회됨
+
+> 조치 상태: 해결됨
+>
+> - `MatchCard → MapShell → useTelemetry → API` 전 구간에 `platform` 전달
+> - `steam | kakao` allowlist를 URL·hook·API 경계에 적용하고 일부 query는 fail-closed
+> - 나머지 query가 없는 `/replay/3d`만 명시적 Steam demo로 유지
 
 - 근거: `components/stat/MatchCard.tsx:810-820,2019-2031`, `components/map/MapShell.tsx:63-72`, `hooks/useTelemetry.ts:71-78`, `app/api/pubg/telemetry/route.ts:18`
 - 영향: 2D 링크와 hook이 platform을 전달하지 않고 서버 기본값이 `steam`이라 kakao 매치가 실패한다.
@@ -153,7 +176,7 @@
 | 영역 | 항목 | 근거 | 권고 |
 |---|---|---|---|
 | 제보 | 투표 read-modify-write 경쟁으로 동시 표 유실 | `app/api/report/vote/route.ts:27-84` | `(marker_id,user_id)` unique vote 테이블과 DB RPC 사용 |
-| 리플레이 | 요청 전환 시 이전 응답이 최신 상태를 덮을 수 있음 | `hooks/useTelemetry.ts:71-138` | 두 fetch에 동일 AbortSignal과 request identity 검사 적용 |
+| 리플레이 | 해결됨: 요청 전환 시 이전 응답이 최신 상태를 덮는 경쟁 차단 | `hooks/useTelemetry.ts`, `hooks/useLatestTelemetryRequest.ts`, `lib/pubg-analysis/fetchTelemetryPayload.ts` | API·R2 두 fetch에 동일 AbortSignal, latest request identity, 전환 시 상태 reset 적용 |
 | 리플레이 | 대상 nickname 미전달로 내 플레이어 강조 실패 | `MapShell.tsx:404-407`, `MapView.tsx:740-744`, `TelemetryCanvasLayer.tsx:453-532` | playback nickname을 명시적으로 전달하고 정규화 비교 |
 | 지도 | 잘못된 `/maps/:mapId`가 404 대신 혼합 상태 생성 | `app/maps/[mapId]/page.tsx:15-32`, `components/map/Map.tsx:42-60,154-158` | 서버 registry 검증 후 `notFound()` 또는 canonical redirect |
 | 시뮬레이터 | 실제 표본 수와 무관하게 `100+ matches` 표시 | `components/map/SimulatorPanel.tsx:201-206` | 실제 필터 후 표본 수·시즌·표본 부족 경고 표시 |
@@ -196,8 +219,8 @@
 
 ### 다음 배포
 
-1. 텔레메트리 공용 fetch SDK와 cache identity migration
-2. kakao platform 전달과 2D/3D 계약 테스트
+1. [x] 텔레메트리 공용 fetch SDK와 cache identity migration 코드·테스트 작성
+2. [x] kakao platform 전달과 2D/3D 계약 테스트
 3. AI squad 실패 계약 교체
 4. 승인 작업 원자적 claim
 5. PUBG refresh, telemetry, analytics rate limit
@@ -214,6 +237,12 @@
 
 ## 9. 아직 확인하지 못한 운영 항목
 
+- 기준 문서로 기록된 `docs-private/.project_context.md`와 `docs-private/.pubg-telemetry-guide.md`는 현재 checkout과 Git 추적 목록에 존재하지 않아 이번 작업에서 갱신하지 못했다. 현재 캐시 계약은 공개 설계·구현 계획·본 리뷰 문서에 동기화했다.
+- `telemetry_map_cache_entries`와 cleanup RPC migration은 운영 Supabase에 적용하지 않았고, 운영 R2 cleanup도 실행하지 않았다.
+- R2 자동 삭제는 deterministic key 재업로드 TOCTOU 방지를 위해 비활성화했다. 무료 R2 저장량을 모니터링하고 immutable generation key 또는 Cloudflare가 공식 보장하는 conditional delete 도입 후 자동 정리를 재개해야 한다.
+- 실제 Chrome에서 `/stats`, Steam `KangHeeSung_` 검색, `/maps/erangel` 렌더는 통과했지만 최근 match 20건은 모두 HTTP 500으로 실패했다. sanitized 오류만 확인해 정확한 실패 단계는 미확정이며, 무료 PUBG API 예산과 Discord 중복 알림을 막기 위해 실데이터 재시도를 중단했다.
+- 2026-07-18 최종 로컬 Chrome 회귀에서 `/stats`, `/maps/erangel`, 불완전 query의 `/replay/3d?matchId=qa-no-external-call`은 모두 HTTP 200으로 렌더됐고 브라우저 console error는 0건이었다. 불완전 3D query는 외부 telemetry 요청 없이 `3D 리플레이 query가 누락되었거나 지원되지 않습니다.` 오류로 fail-closed 처리됐다.
+- migration 선적용·애플리케이션 배포 후 Steam/Kakao 2D·3D 실데이터 회귀 QA가 남아 있다.
 - 운영 DB의 `pending_markers` 실제 RLS 정책은 저장소 migration만으로 확인할 수 없었다.
 - Vercel/프록시가 Host 헤더를 고정하는지는 로컬 코드만으로 확인할 수 없었다.
 - iOS Safari, Android WebView, Capacitor 실기기 동작은 실행하지 않았다.
