@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { describe, beforeEach, expect, it, vi } from "vitest";
+import { afterEach, describe, beforeEach, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   withOptionalAuth: vi.fn(),
@@ -10,6 +10,7 @@ const mocks = vi.hoisted(() => ({
   verifyTurnstile: vi.fn(),
   genSalt: vi.fn(async () => "salt"),
   hash: vi.fn(async () => "password-hash"),
+  externalFetch: vi.fn(),
 }));
 
 vi.mock("../utils/supabase/guard", () => ({
@@ -42,6 +43,22 @@ vi.mock("bcryptjs", () => ({
 
 import { POST as postsWritePOST } from "../app/api/posts/write/route";
 import { POST as guestPostsPOST } from "../app/api/board/posts/route";
+
+const BODY_DERIVED_SINK_CHECKLIST = [
+  "title",
+  "content",
+  "category",
+  "image_url",
+  "is_notice",
+  "author",
+  "user_id",
+  "password",
+  "editingPostId",
+  "discord_url",
+  "discord_channel_id",
+  "clan_info",
+  "turnstileToken",
+] as const;
 
 function createWriteAdmin(options?: {
   role?: "user" | "admin";
@@ -155,6 +172,26 @@ describe("게시글 쓰기 Turnstile 저장 경계", () => {
     mocks.verifyTurnstile.mockResolvedValue({ ok: true });
     mocks.genSalt.mockResolvedValue("salt");
     mocks.hash.mockResolvedValue("password-hash");
+    vi.stubGlobal("fetch", mocks.externalFetch);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("request body에서 구조 분해한 모든 sink 필드를 검증 체크리스트에 고정한다", () => {
+    const routeSource = readFileSync(
+      new URL("../app/api/posts/write/route.ts", import.meta.url),
+      "utf8",
+    );
+    const bodyDestructure = routeSource.match(/const\s*{([\s\S]*?)}\s*=\s*body;/);
+    expect(bodyDestructure).not.toBeNull();
+    const destructuredFields = bodyDestructure?.[1]
+      .split(",")
+      .map((field) => field.trim())
+      .filter(Boolean);
+
+    expect(destructuredFields).toEqual(BODY_DERIVED_SINK_CHECKLIST);
   });
 
   it("잘못된 JSON은 인증과 quota 전에 400으로 거부한다", async () => {
@@ -180,6 +217,29 @@ describe("게시글 쓰기 Turnstile 저장 경계", () => {
     ["비회원 닉네임 길이 초과", { author: "닉".repeat(21) }],
     ["비회원 비밀번호 공백", { password: "    " }],
     ["비회원 비밀번호 길이 초과", { password: "p".repeat(21) }],
+    ["이미지 URL 객체", { image_url: { url: "https://example.com/image.png" } }],
+    ["이미지 URL 길이 초과", { image_url: "i".repeat(2049) }],
+    ["디스코드 채널 ID 배열", { discord_channel_id: ["123"] }],
+    ["디스코드 채널 ID 길이 초과", { discord_channel_id: "1".repeat(65) }],
+    ["클랜 정보 배열", { clan_info: [] }],
+    ["클랜 정보 허용 외 key", { clan_info: {
+      id: "clan-a", name: "Clan", tag: "TAG", level: 1, memberCount: 10, nested: {},
+    } }],
+    ["클랜 정보 문자열 타입 오류", { clan_info: {
+      id: "clan-a", name: { nested: true }, tag: "TAG", level: 1, memberCount: 10,
+    } }],
+    ["클랜 정보 직렬화 크기 초과", { clan_info: {
+      id: "clan-a", name: "c".repeat(1025), tag: "TAG", level: 1, memberCount: 10,
+    } }],
+    ["클랜 멤버 수 범위 초과", { clan_info: {
+      id: "clan-a", name: "Clan", tag: "TAG", level: 1, memberCount: 101,
+    } }],
+    ["클랜 정보 prototype key", { clan_info: JSON.parse(
+      '{"id":"clan-a","name":"Clan","tag":"TAG","level":1,"memberCount":10,"__proto__":{"polluted":true}}',
+    ) }],
+    ["공지 플래그 객체", { is_notice: { value: true } }],
+    ["사용자 ID 객체", { user_id: { id: "user-a" } }],
+    ["Turnstile token 객체", { turnstileToken: { token: "token" } }],
   ])("%s payload는 인증·quota·Siteverify·bcrypt·DB 전에 400으로 거부한다", async (_caseName, overrides) => {
     const admin = createWriteAdmin();
     mocks.withOptionalAuth.mockResolvedValue({ user: null, supabaseAdmin: admin.supabaseAdmin });
@@ -192,6 +252,8 @@ describe("게시글 쓰기 Turnstile 저장 경계", () => {
     expect(mocks.verifyTurnstile).not.toHaveBeenCalled();
     expect(mocks.hash).not.toHaveBeenCalled();
     expect(admin.insert).not.toHaveBeenCalled();
+    expect(admin.update).not.toHaveBeenCalled();
+    expect(mocks.externalFetch).not.toHaveBeenCalled();
   });
 
   it("비회원 신규 글은 token 없이 quota, bcrypt, insert에 도달하지 않는다", async () => {
@@ -274,6 +336,34 @@ describe("게시글 쓰기 Turnstile 저장 경계", () => {
       token: "token",
     });
     expect(admin.insert).toHaveBeenCalledTimes(1);
+  });
+
+  it("실제 client의 이미지·디스코드·클랜 payload는 허용 key만 저장한다", async () => {
+    const admin = createWriteAdmin();
+    const clanInfo = {
+      id: "clan-a",
+      name: "BGMS Clan",
+      tag: "BGMS",
+      level: 12,
+      memberCount: 45,
+    };
+    mocks.withOptionalAuth.mockResolvedValue({ user: null, supabaseAdmin: admin.supabaseAdmin });
+
+    const response = await postsWritePOST(makePostRequest({
+      turnstileToken: "token",
+      image_url: "https://example.com/image.png",
+      discord_channel_id: "123456789012345678",
+      clan_info: clanInfo,
+    }));
+
+    expect(response.status).toBe(200);
+    expect(admin.insert).toHaveBeenCalledWith([
+      expect.objectContaining({
+        image_url: "https://example.com/image.png",
+        discord_channel_id: "123456789012345678",
+        clan_info: clanInfo,
+      }),
+    ]);
   });
 
   it("회원 신규 글은 user quota를 사용하고 Turnstile을 호출하지 않는다", async () => {

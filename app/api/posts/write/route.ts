@@ -5,6 +5,7 @@ import { checkProfanity } from "@/lib/board/profanityFilter";
 import { consumeBoardWriteQuota } from "@/lib/board/writeQuota.server";
 import { verifyTurnstileToken } from "@/lib/board/turnstile.server";
 import { TURNSTILE_ACTIONS } from "@/lib/board/turnstileContract";
+import type { ClanInfo } from "@/types/board";
 import bcrypt from "bcryptjs";
 
 /**
@@ -19,6 +20,62 @@ const GUEST_AUTHOR_MAX_LENGTH = 20;
 const GUEST_PASSWORD_MIN_LENGTH = 4;
 const GUEST_PASSWORD_MAX_LENGTH = 20;
 const DISCORD_URL_MAX_LENGTH = 2048;
+const IMAGE_URL_MAX_LENGTH = 2048;
+const DISCORD_CHANNEL_ID_MAX_LENGTH = 64;
+const USER_ID_MAX_LENGTH = 128;
+const CLAN_INFO_MAX_SERIALIZED_LENGTH = 1024;
+const CLAN_MEMBER_COUNT_MAX = 100;
+const CLAN_INFO_KEYS = new Set<keyof ClanInfo>([
+  "id",
+  "name",
+  "tag",
+  "level",
+  "memberCount",
+]);
+
+function isOptionalBoundedString(value: unknown, maxLength: number): boolean {
+  return value == null || (typeof value === "string" && value.length <= maxLength);
+}
+
+function isValidClanInfo(value: unknown): value is ClanInfo {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  if (prototype !== Object.prototype && prototype !== null) {
+    return false;
+  }
+
+  const record = value as Record<string, unknown>;
+  const keys = Object.keys(record);
+  if (
+    keys.length !== CLAN_INFO_KEYS.size
+    || !keys.every((key) => CLAN_INFO_KEYS.has(key as keyof ClanInfo))
+  ) {
+    return false;
+  }
+  if (
+    typeof record.id !== "string"
+    || !record.id.trim()
+    || typeof record.name !== "string"
+    || typeof record.tag !== "string"
+    || typeof record.level !== "number"
+    || !Number.isFinite(record.level)
+    || record.level < 0
+    || typeof record.memberCount !== "number"
+    || !Number.isFinite(record.memberCount)
+    || record.memberCount < 0
+    || record.memberCount > CLAN_MEMBER_COUNT_MAX
+  ) {
+    return false;
+  }
+
+  try {
+    return JSON.stringify(record).length <= CLAN_INFO_MAX_SERIALIZED_LENGTH;
+  } catch {
+    return false;
+  }
+}
 
 async function validateDiscordUrl(url: string): Promise<boolean> {
   if (!url) return true;
@@ -100,6 +157,38 @@ export async function POST(request: Request) {
     ) {
       return NextResponse.json({ error: "디스코드 링크가 올바르지 않습니다." }, { status: 400 });
     }
+    if (!isOptionalBoundedString(image_url, IMAGE_URL_MAX_LENGTH)) {
+      return NextResponse.json({ error: "이미지 URL이 올바르지 않습니다." }, { status: 400 });
+    }
+    if (!isOptionalBoundedString(discord_channel_id, DISCORD_CHANNEL_ID_MAX_LENGTH)) {
+      return NextResponse.json({ error: "디스코드 채널 ID가 올바르지 않습니다." }, { status: 400 });
+    }
+    if (is_notice != null && typeof is_notice !== "boolean") {
+      return NextResponse.json({ error: "공지 설정이 올바르지 않습니다." }, { status: 400 });
+    }
+    if (
+      user_id != null
+      && (
+        typeof user_id !== "string"
+        || !user_id.trim()
+        || user_id.length > USER_ID_MAX_LENGTH
+      )
+    ) {
+      return NextResponse.json({ error: "사용자 ID가 올바르지 않습니다." }, { status: 400 });
+    }
+    if (
+      turnstileToken != null
+      && (
+        typeof turnstileToken !== "string"
+        || !turnstileToken.trim()
+        || turnstileToken.length > TURNSTILE_TOKEN_MAX_LENGTH
+      )
+    ) {
+      return NextResponse.json({ error: "보안 인증 토큰이 올바르지 않습니다." }, { status: 400 });
+    }
+    if (clan_info != null && !isValidClanInfo(clan_info)) {
+      return NextResponse.json({ error: "클랜 정보가 올바르지 않습니다." }, { status: 400 });
+    }
     if (
       editingPostId != null
       && (
@@ -135,6 +224,15 @@ export async function POST(request: Request) {
     }
     const discordUrl = typeof discord_url === "string" ? discord_url : "";
     const guestPassword = typeof password === "string" ? password : "";
+    const safeClanInfo = clan_info == null
+      ? clan_info
+      : {
+          id: clan_info.id,
+          name: clan_info.name,
+          tag: clan_info.tag,
+          level: clan_info.level,
+          memberCount: clan_info.memberCount,
+        };
 
     const auth = await withOptionalAuth();
     if (auth.error) return auth.error;
@@ -250,7 +348,7 @@ export async function POST(request: Request) {
           ...(isRequesterAdmin ? { is_notice: is_notice === true } : {}),
           discord_url,
           discord_channel_id,
-          clan_info,
+          clan_info: safeClanInfo,
         })
         .eq("id", editingPostId)
         .select();
@@ -332,7 +430,7 @@ export async function POST(request: Request) {
             discord_url,
             discord_channel_id,
             is_notice: isRequesterAdmin ? is_notice === true : false,
-            clan_info,
+            clan_info: safeClanInfo,
             password_hash: passwordHash,
             ip_address: clientIp,
           },
