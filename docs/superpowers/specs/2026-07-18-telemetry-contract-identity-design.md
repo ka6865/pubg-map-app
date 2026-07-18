@@ -31,12 +31,16 @@ PUBG 텔레메트리 리플레이의 서버 응답, R2 캐시, 2D·3D 소비자 
 
 - 서버 identity는 원본 accountId를 `playerId`로 보유하며 R2 key 생성과 Supabase registry 저장에만 사용한다.
 - 공개 identity는 원본 accountId를 포함하지 않고 `playerKey = sha256(accountId).slice(0, 32)`만 포함한다.
-- API envelope와 R2 payload에는 공개 identity만 포함한다.
+- API envelope와 브라우저에 서명해 전달하는 R2 지도 payload에는 공개 identity만 포함한다.
+- 서버 전용 `_analyze.json` 중간 캐시는 AnalysisEngine의 raw identity 비교에 필요하므로 private R2에 유지하되 signed URL이나 API 응답으로 반환하지 않는다.
 - 브라우저는 `matchId + platform + playerKey + mode + telemetryVersion`을 검증한다.
 - R2 본문 파싱·identity 오류만 cache miss로 취급한다. presigned URL 발급 장애는 인프라 오류로 전파한다.
 - telemetry map cache 쓰기는 R2 필수 설정이 없으면 성공으로 처리하지 않고 fail-closed한다.
+- 유효한 기존 분석 캐시는 먼저 반환하되, 새 분석이 필요한 요청은 R2 미설정을 PUBG telemetry fetch와 AnalysisEngine 실행 전에 503으로 차단한다.
 - `/api/pubg/match` 분석 엔진은 요청 문자열이 아니라 PUBG participant의 canonical nickname을 사용한다.
-- background 재분석 실패는 사용자 응답에 원본 오류를 노출하지 않되 운영 오류 기록을 남긴다.
+- background 재분석은 Next.js `after()`로 응답 이후 생명주기를 보장하고, 실패 시 사용자 응답에 원본 오류를 노출하지 않되 운영 오류 기록을 남긴다.
+- 공개 payload 가명 처리는 raw accountId 형식과 무관하게 항상 SHA-256을 적용하며, 값 형태로 raw/public 상태를 추론하지 않는다.
+- `/api/pubg/match`의 신규 분석 응답은 R2 공개 payload와 별도로 raw `mapData`를 반환하지 않는다.
 
 ## 3. 검토한 접근 방식
 
@@ -226,7 +230,8 @@ fetchTelemetryPayload(
 
 - `matchId`, `nickname`, `platform`, `mode`는 서버와 클라이언트 양쪽에서 검증한다.
 - nickname은 정규화 비교하지만 payload에는 PUBG API의 canonical name을 사용한다.
-- accountId 원문은 R2 key, signed URL, API envelope, R2 payload에 넣지 않는다.
+- accountId 원문은 R2 key, signed URL, API envelope, 브라우저 전달용 R2 지도 payload에 넣지 않는다.
+- private `_analyze.json`은 서버 분석 전용이며 공개 URL과 API 응답 계약에서 제외한다.
 - cache identity mismatch는 cache miss로 재생성하며 잘못된 payload를 반환하지 않는다.
 - API key, R2 signed URL, accountId, 외부 오류 stack을 사용자 응답이나 브라우저 로그에 남기지 않는다.
 - route의 운영 오류 기록은 제한된 분류 코드와 endpoint 기준으로 남긴다.

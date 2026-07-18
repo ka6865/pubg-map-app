@@ -17,7 +17,8 @@
 - 기존 R2 객체를 복사·일괄 삭제하지 않고 현재 보존 정책에 맡긴다.
 - 신규 R2 key는 `telemetry-map/v{TELEMETRY_VERSION}/{platform}/{matchId}/{playerHash}/{mode}.json` 형식을 사용한다.
 - `playerHash`는 accountId SHA-256의 앞 32자이며 accountId 평문을 signed URL에 노출하지 않는다.
-- API envelope와 R2 payload는 원본 accountId/`playerId` 대신 동일한 SHA-256 앞 32자인 `playerKey`만 포함한다.
+- API envelope와 브라우저 전달용 R2 지도 payload는 원본 accountId/`playerId` 대신 동일한 SHA-256 앞 32자인 `playerKey`만 포함한다.
+- 서버 전용 private `_analyze.json` 중간 캐시는 raw identity를 유지할 수 있지만 signed URL이나 API 응답으로 반환하지 않는다.
 - 지원 platform은 `steam | kakao`, mode는 `lite | full`뿐이며 누락·미지원 값은 fail-closed한다.
 - 캐시 본문 identity가 요청 identity와 완전히 일치할 때만 presigned URL을 반환한다.
 - 브라우저는 API envelope와 R2 payload를 모두 검증하고 두 fetch에 같은 AbortSignal을 사용한다.
@@ -27,7 +28,9 @@
 - registry 조회·upsert 오류 또는 테이블 부재는 fail-closed한다. cleanup은 registry 조회가 실패하면 어떤 DB row나 R2 객체도 삭제하지 않는다.
 - R2 payload 파싱·공개 identity 불일치만 cache miss로 처리하며 signer 실패는 전파한다.
 - telemetry map cache write는 R2 필수 설정이 없으면 fail-closed한다.
-- 분석 엔진은 PUBG participant의 canonical nickname을 사용하고 background 재분석 실패는 sanitized 운영 기록을 남긴다.
+- 유효한 기존 분석 캐시는 먼저 반환하되, 새 분석은 R2 미설정을 PUBG telemetry fetch·AnalysisEngine 실행 전에 503으로 차단한다.
+- 분석 엔진은 PUBG participant의 canonical nickname을 사용하고 background 재분석은 Next.js `after()`로 등록하며 실패를 sanitized 운영 기록으로 남긴다.
+- raw accountId는 값 형식과 무관하게 항상 해시하고, 신규 match 응답에는 raw `mapData`를 포함하지 않는다.
 - service-role key, PUBG API key, signed URL, accountId, 외부 오류 stack을 사용자 응답·브라우저 로그에 남기지 않는다.
 - 운영 migration 적용, 운영 cleanup 실행, 기존 R2 삭제는 수행하지 않는다.
 - 전술 점수, 티어, `RESULT_VERSION`, `TELEMETRY_VERSION` 값은 변경하지 않는다.
