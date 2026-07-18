@@ -36,4 +36,10 @@ describe("board image cleanup", () => {
     expect(getContentUploadedBoardImageIds([image], content)).toEqual([image.imageId]);
     expect(getUnusedUploadedBoardImageIds([image], content, image.publicUrl)).toEqual([]);
   });
+
+  it("unquoted img src도 사용 중인 업로드 파일로 보존한다", () => {
+    const image = { imageId: "11111111-1111-4111-8111-111111111111", publicUrl: "https://example.test/used.jpeg" };
+
+    expect(getContentUploadedBoardImageIds([image], `<img src=${image.publicUrl}>`)).toEqual([image.imageId]);
+  });
 });

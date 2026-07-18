@@ -6,6 +6,7 @@ import { consumeBoardWriteQuota } from "@/lib/board/writeQuota.server";
 import { verifyTurnstileToken } from "@/lib/board/turnstile.server";
 import { TURNSTILE_ACTIONS } from "@/lib/board/turnstileContract";
 import { isUuid } from "@/lib/board/imageStorageContract";
+import { parseBoardImageSrcs } from "@/lib/board/imageHtml";
 import type { ClanInfo } from "@/types/board";
 import bcrypt from "bcryptjs";
 
@@ -596,18 +597,23 @@ async function getRetainedImageIds(input: {
   imageUrl: string | null;
 }): Promise<NextResponse | { contentImageIds: string[]; thumbnailImageId: string | null }> {
   try {
+    const parsedContentImageSrcs = parseBoardImageSrcs(input.content);
+    if (!parsedContentImageSrcs.ok) {
+      return NextResponse.json({ error: "게시글을 저장하지 못했습니다." }, { status: 503 });
+    }
     const result: EditQueryResult = await (input.supabaseAdmin.from("board_post_image_refs")
       .select("image_id, usage, board_image_objects(bucket_id, storage_key, status)")
       .eq("post_id", input.postId) as PromiseLike<EditQueryResult>);
     if (result.error || !Array.isArray(result.data)) {
       return NextResponse.json({ error: "게시글을 저장하지 못했습니다." }, { status: 503 });
     }
-    const contentUrls = new Set(Array.from(input.content.matchAll(/<img\b[^>]*\bsrc\s*=\s*(["'])(.*?)\1/gi), (match) => match[2]));
+    const contentUrls = new Set(parsedContentImageSrcs.srcs);
     const contentImageIds: string[] = [];
     let thumbnailImageId: string | null = null;
     for (const row of result.data) {
-      const ref = parseManagedPostImageRef(row);
-      if (!ref) continue;
+      const ref = parseRetainedPostImageRef(row);
+      if (!ref) return NextResponse.json({ error: "게시글을 저장하지 못했습니다." }, { status: 503 });
+      if (ref.kind === "legacy") continue;
       const canonicalUrl = toBoardImagePublicUrl(ref.storageKey);
       if (contentUrls.has(canonicalUrl)) contentImageIds.push(ref.imageId);
       if (input.imageUrl === canonicalUrl) thumbnailImageId = ref.imageId;
@@ -618,19 +624,35 @@ async function getRetainedImageIds(input: {
   }
 }
 
-function parseManagedPostImageRef(value: unknown): { imageId: string; usage: "content" | "thumbnail"; storageKey: string } | null {
+type RetainedPostImageRef =
+  | { kind: "managed"; imageId: string; usage: "content" | "thumbnail"; storageKey: string }
+  | { kind: "legacy" };
+
+function parseRetainedPostImageRef(value: unknown): RetainedPostImageRef | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const row = value as Record<string, unknown>;
   const image = row.board_image_objects;
   if (!image || typeof image !== "object" || Array.isArray(image)) return null;
   const object = image as Record<string, unknown>;
-  return typeof row.image_id === "string" && isUuid(row.image_id)
-    && (row.usage === "content" || row.usage === "thumbnail")
-    && object.bucket_id === "board-images-v2"
+  if (typeof row.image_id !== "string" || !isUuid(row.image_id) || (row.usage !== "content" && row.usage !== "thumbnail")) {
+    return null;
+  }
+  if (
+    object.bucket_id === "board-images-v2"
     && object.storage_key === row.image_id
     && object.status === "ready"
-    ? { imageId: row.image_id, usage: row.usage, storageKey: object.storage_key }
-    : null;
+  ) {
+    return { kind: "managed", imageId: row.image_id, usage: row.usage, storageKey: object.storage_key };
+  }
+  if (
+    object.bucket_id === "images"
+    && typeof object.storage_key === "string"
+    && object.storage_key.length > 0
+    && object.status === "legacy_retained"
+  ) {
+    return { kind: "legacy" };
+  }
+  return null;
 }
 
 function mergeImageIds(clientImageIds: string[], retainedImageIds: string[]): string[] {

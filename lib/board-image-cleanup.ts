@@ -1,3 +1,5 @@
+import { parseBoardImageSrcs } from "@/lib/board/imageHtml";
+
 export type UploadedBoardImage = {
   imageId: string;
   publicUrl: string;
@@ -8,10 +10,12 @@ export function getUnusedUploadedBoardImageIds(
   content: string,
   thumbnailUrl = ""
 ): string[] {
-  const contentImageIds = new Set(getContentUploadedBoardImageIds(uploadedImages, content));
+  const contentImageSrcs = parseBoardImageSrcs(content);
+  if (!contentImageSrcs.ok) return [];
+  const contentUrls = new Set(contentImageSrcs.srcs);
   return uploadedImages.flatMap((image) => {
     if (!image.imageId || !image.publicUrl) return [];
-    return contentImageIds.has(image.imageId) || thumbnailUrl === image.publicUrl
+    return contentUrls.has(image.publicUrl) || thumbnailUrl === image.publicUrl
       ? []
       : [image.imageId];
   });
@@ -21,9 +25,9 @@ export function getContentUploadedBoardImageIds(
   uploadedImages: UploadedBoardImage[],
   content: string,
 ): string[] {
-  const contentUrls = new Set(
-    Array.from(content.matchAll(/<img\b[^>]*\bsrc\s*=\s*(["'])(.*?)\1/gi), (match) => match[2]),
-  );
+  const contentImageSrcs = parseBoardImageSrcs(content);
+  if (!contentImageSrcs.ok) return [];
+  const contentUrls = new Set(contentImageSrcs.srcs);
   return [...new Set(uploadedImages.flatMap((image) => (
     image.imageId && image.publicUrl && contentUrls.has(image.publicUrl) ? [image.imageId] : []
   )))];

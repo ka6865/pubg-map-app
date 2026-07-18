@@ -523,6 +523,42 @@ describe("게시글 쓰기 Turnstile 저장 경계", () => {
     }));
   });
 
+  it.each([
+    ["null row", null],
+    ["array row", []],
+    ["nested object 누락", { image_id: "22222222-2222-4222-8222-222222222222", usage: "content" }],
+    ["unknown bucket", { image_id: "22222222-2222-4222-8222-222222222222", usage: "content", board_image_objects: { bucket_id: "unknown", storage_key: "22222222-2222-4222-8222-222222222222", status: "ready" } }],
+    ["key mismatch", { image_id: "22222222-2222-4222-8222-222222222222", usage: "content", board_image_objects: { bucket_id: "board-images-v2", storage_key: "other", status: "ready" } }],
+    ["unknown status", { image_id: "22222222-2222-4222-8222-222222222222", usage: "content", board_image_objects: { bucket_id: "board-images-v2", storage_key: "22222222-2222-4222-8222-222222222222", status: "unexpected" } }],
+  ])("수정의 기존 이미지 ref가 %s이면 fail-closed로 503 반환하고 write RPC를 호출하지 않는다", async (_label, malformedRef) => {
+    const admin = createWriteAdmin({ existingRefs: [malformedRef] });
+    mocks.withOptionalAuth.mockResolvedValue({ user: { id: "user-a" }, supabaseAdmin: admin.supabaseAdmin });
+
+    const response = await postsWritePOST(makePostRequest({
+      editingPostId: 41, expectedRevision: 0, author: "회원", password: null, user_id: "user-a",
+    }));
+
+    expect(response.status).toBe(503);
+    expect(admin.rpc).not.toHaveBeenCalled();
+  });
+
+  it("유효한 legacy ref는 managed ID에 병합하지 않고 수정 RPC를 진행한다", async () => {
+    const legacyImageId = "22222222-2222-4222-8222-222222222222";
+    const admin = createWriteAdmin({
+      existingRefs: [{ image_id: legacyImageId, usage: "content", board_image_objects: { bucket_id: "images", storage_key: "legacy/path.png", status: "legacy_retained" } }],
+    });
+    mocks.withOptionalAuth.mockResolvedValue({ user: { id: "user-a" }, supabaseAdmin: admin.supabaseAdmin });
+
+    const response = await postsWritePOST(makePostRequest({
+      editingPostId: 41, expectedRevision: 0, author: "회원", password: null, user_id: "user-a",
+    }));
+
+    expect(response.status).toBe(200);
+    expect(admin.rpc).toHaveBeenCalledWith("write_board_post_with_images", expect.objectContaining({
+      p_content_image_ids: [], p_thumbnail_image_id: null,
+    }));
+  });
+
   it("기존 ref의 usage와 무관하게 실제 URL 위치에 따라 content·thumbnail usage를 전환하고 ID를 중복하지 않는다", async () => {
     const imageId = "22222222-2222-4222-8222-222222222222";
     const baseUrl = "https://example.supabase.co";
