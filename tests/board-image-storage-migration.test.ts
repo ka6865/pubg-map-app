@@ -118,36 +118,97 @@ describe("게시판 이미지 Storage 소유권 마이그레이션", () => {
     expect(script).toContain("last-ref-delete-pending");
     expect(script).toContain("anon-table-denied");
     expect(script).toContain("authenticated-table-denied");
-    expect(script).toContain("attach-vs-detach-result");
+    expect(script).toContain("attach-detach-result");
     expect(script).toContain("concurrent-worker-claim");
-    expect(script).toContain("legacy-backfill");
+    expect(script).toContain("legacy-canonical-ref-count");
   });
 
   it("검증 fixture는 성공 revision과 실제 경쟁 결과를 보존하고 finally에서 정리한다", () => {
     const script = readFileSync(resolve(process.cwd(), "scripts/verify_board_image_storage_migration.ts"), "utf8");
 
-    expect(script).toContain("let currentRevision");
-    expect(script).toContain("other-owner-pending");
-    expect(script).toContain("legacy-backfill");
+    expect(script).toContain("const currentRevision");
+    expect(script).toContain("other-owner-complete");
+    expect(script).toContain("legacy-canonical-ref-count");
     expect(script).toContain("finally");
     expect(script).toContain("workerOneIds");
     expect(script).toContain("workerTwoIds");
-    expect(script).toContain("attach-vs-detach-result");
+    expect(script).toContain("attach-detach-result");
   });
 
   it("검증 script는 시나리오별 fresh fixture를 소유하고 재사용하지 않는다", () => {
     const script = readFileSync(resolve(process.cwd(), "scripts/verify_board_image_storage_migration.ts"), "utf8");
 
     expect(script).toContain("verifyAclAndOwnership");
-    expect(script).toContain("verifyReferenceTransitions");
-    expect(script).toContain("verifyAttachDetachRace");
-    expect(script).toContain("verifyConcurrentClaims");
+    expect(script).toContain("verifyUploadValidationAndReferences");
+    expect(script).toContain("verifyRevisionAndAttachDetachRace");
+    expect(script).toContain("verifyClaimsAndRecovery");
     expect(script).toContain("verifyLegacyBackfill");
-    expect(script).toContain("verifyLeaseRecovery");
     expect(script).toContain("createFixture");
-    expect(script).toContain("fixture.cleanup()");
+    expect(script).toContain("await fixture.cleanup();");
     expect(script).toContain("runAllScenarios");
     expect(script).toContain("runId");
     expect(script).not.toContain('const prefix = "verify-board-image-storage-"');
+  });
+
+  it("UUID 배열은 비어 있어도 명시적으로 uuid 배열로 캐스팅한다", () => {
+    const script = readFileSync(resolve(process.cwd(), "scripts/verify_board_image_storage_migration.ts"), "utf8");
+
+    expect(script).toContain('return "ARRAY[]::uuid[]"');
+    expect(script).toContain('return `ARRAY[${ids.map((id) => `${quote(id)}::uuid`).join(",")}]::uuid[]`');
+    expect(script).not.toMatch(/ARRAY\[\$\{imageIds\.map/);
+  });
+
+  it("attach와 detach 경쟁은 allSettled 뒤 정확히 허용한 사후 상태만 인정한다", () => {
+    const script = readFileSync(resolve(process.cwd(), "scripts/verify_board_image_storage_migration.ts"), "utf8");
+
+    expect(script).toContain("Promise.allSettled");
+    expect(script).toContain("attach-detach-unexpected-settlement");
+    expect(script).toContain("attach-detach-invalid-post-a-ref-count");
+    expect(script).toContain("attach-detach-invalid-post-b-ref-count");
+    expect(script).toContain("attach-detach-invalid-status");
+    expect(script).not.toContain("await Promise.all([\n      sql(`SET ROLE service_role; SELECT * FROM public.write_board_post_with_images");
+  });
+
+  it("fixture cleanup은 추적한 ID와 runId key를 삭제하고 잔존 행을 검증한다", () => {
+    const script = readFileSync(resolve(process.cwd(), "scripts/verify_board_image_storage_migration.ts"), "utf8");
+
+    expect(script).toContain("image_row.id = ANY(${uuidArray(imageIds)})");
+    expect(script).toContain("storage_object.name = ANY(${textArray(storageKeys)})");
+    expect(script).toContain("cleanup-post-residue");
+    expect(script).toContain("cleanup-image-residue");
+    expect(script).toContain("cleanup-storage-residue");
+    expect(script).toContain("await fixture.cleanup();\n  try {");
+  });
+
+  it("legacy fixture는 정규·percent·외부·lookalike URL을 함께 검증한다", () => {
+    const script = readFileSync(resolve(process.cwd(), "scripts/verify_board_image_storage_migration.ts"), "utf8");
+
+    expect(script).toContain("legacy-canonical-ref-count");
+    expect(script).toContain("legacy-percent-encoded-ref-count");
+    expect(script).toContain("legacy-external-ref-count");
+    expect(script).toContain("legacy-lookalike-ref-count");
+    expect(script).toContain("%2D");
+    expect(script).toContain("not-supabase.co");
+  });
+
+  it("독립 검증 시나리오가 MIME·size·revision·참조 보존·lease 복구를 모두 포함한다", () => {
+    const script = readFileSync(resolve(process.cwd(), "scripts/verify_board_image_storage_migration.ts"), "utf8");
+
+    for (const scenario of [
+      "mime-violation", "size-violation", "revision-conflict", "content-thumbnail-preserved",
+      "two-posts-preserved", "last-ref-delete-pending", "legacy-retained-preserved",
+      "expired-deleting-reclaim", "expired-pending-claim", "finalize-false-recovery",
+    ]) expect(script).toContain(scenario);
+  });
+
+  it("RLS와 모든 public 역할의 RPC 실행 거부를 실제 검증한다", () => {
+    const script = readFileSync(resolve(process.cwd(), "scripts/verify_board_image_storage_migration.ts"), "utf8");
+
+    expect(script).toContain("board-image-objects-rls");
+    expect(script).toContain("board-post-image-refs-rls");
+    expect(script).toContain("public-rpc-denied");
+    expect(script).toContain("anon-rpc-denied");
+    expect(script).toContain("authenticated-rpc-denied");
+    expect(script).toContain("service-role-execute");
   });
 });
