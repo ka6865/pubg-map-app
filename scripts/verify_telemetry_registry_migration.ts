@@ -86,6 +86,49 @@ async function verifyRegistryOnlyCleanup(): Promise<void> {
   expectCounts(count, "0", "registry-only-row-reduction");
 }
 
+async function verifyExpiredPendingCleanup(): Promise<void> {
+  await executeSql(`
+    delete from public.match_stats_raw where match_id = 'verify-expired-pending';
+    delete from public.processed_match_telemetry where match_id = 'verify-expired-pending';
+    delete from public.telemetry_map_cache_entries where match_id = 'verify-expired-pending';
+    delete from public.match_master_telemetry where match_id = 'verify-expired-pending';
+    insert into public.match_master_telemetry (
+      match_id, map_name, game_mode, telemetry_version, storage_path, created_at
+    ) values (
+      'verify-expired-pending', 'Baltic_Main', 'squad', 58,
+      'old/verify-expired-pending.json', now() - interval '30 days'
+    );
+    insert into public.match_stats_raw (match_id) values ('verify-expired-pending');
+    insert into public.processed_match_telemetry (match_id, platform, player_id, data)
+      values ('verify-expired-pending', 'steam', 'player', '{}');
+    insert into public.telemetry_map_cache_entries (
+      match_id, platform, player_id, mode, telemetry_version,
+      storage_path, status, lease_expires_at, updated_at
+    ) values (
+      'verify-expired-pending', 'steam', 'player', 'lite', 58,
+      'telemetry-map/verify-expired-pending.json', 'pending',
+      now() - interval '1 minute', now()
+    );
+    set role service_role;
+    select public.cleanup_expired_telemetry_matches(
+      array['verify-expired-pending'], now() - interval '1 day', 59
+    );
+  `);
+
+  const counts = await executeSql(`
+    select
+      (select count(*) from public.match_master_telemetry
+        where match_id = 'verify-expired-pending'),
+      (select count(*) from public.match_stats_raw
+        where match_id = 'verify-expired-pending'),
+      (select count(*) from public.processed_match_telemetry
+        where match_id = 'verify-expired-pending'),
+      (select count(*) from public.telemetry_map_cache_entries
+        where match_id = 'verify-expired-pending');
+  `);
+  expectCounts(counts, "0|0|0|0", "expired-pending-atomic-cleanup");
+}
+
 async function verifyWriterFirst(): Promise<void> {
   await executeSql(`
     delete from public.match_stats_raw where match_id = 'verify-writer-first';
@@ -213,11 +256,83 @@ async function verifyCleanupFirst(): Promise<void> {
   expectCounts(counts, "1|1|1|0", "cleanup-first-full-lifecycle");
 }
 
+async function verifyFinalizeFirst(): Promise<void> {
+  await executeSql(`
+    delete from public.match_stats_raw where match_id = 'verify-finalize-first';
+    delete from public.processed_match_telemetry where match_id = 'verify-finalize-first';
+    delete from public.telemetry_map_cache_entries where match_id = 'verify-finalize-first';
+    delete from public.match_master_telemetry where match_id = 'verify-finalize-first';
+    insert into public.match_master_telemetry (
+      match_id, map_name, game_mode, telemetry_version, storage_path, created_at
+    ) values (
+      'verify-finalize-first', 'Baltic_Main', 'squad', 58,
+      'old/verify-finalize-first.json', now() - interval '30 days'
+    );
+    insert into public.match_stats_raw (match_id) values ('verify-finalize-first');
+    insert into public.telemetry_map_cache_entries (
+      match_id, platform, player_id, mode, telemetry_version,
+      storage_path, status, updated_at
+    ) values (
+      'verify-finalize-first', 'steam', 'old-player', 'lite', 58,
+      'telemetry-map/verify-finalize-first-old.json', 'ready', now() - interval '30 days'
+    );
+  `);
+
+  const writer = executeSql(`
+    begin;
+    set statement_timeout = '4s';
+    set role service_role;
+    select public.finalize_telemetry_cache_write(
+      'verify-finalize-first',
+      'Baltic_Main',
+      'squad',
+      60,
+      'telemetry-map/verify-finalize-first-new.json',
+      'steam',
+      'new-player',
+      'lite',
+      60,
+      now(),
+      'new-player',
+      'steam',
+      '{}',
+      now()
+    );
+    select pg_sleep(1.5);
+    commit;
+  `);
+  await delay(250);
+  const cleanup = executeSql(`
+    set statement_timeout = '4s';
+    set role service_role;
+    select public.cleanup_expired_telemetry_matches(
+      array['verify-finalize-first'], now() - interval '1 day', 59
+    );
+  `);
+  await Promise.all([writer, cleanup]);
+
+  const counts = await executeSql(`
+    select
+      (select count(*) from public.match_master_telemetry
+        where match_id = 'verify-finalize-first' and telemetry_version = 60),
+      (select count(*) from public.processed_match_telemetry
+        where match_id = 'verify-finalize-first' and player_id = 'new-player'),
+      (select count(*) from public.telemetry_map_cache_entries
+        where match_id = 'verify-finalize-first' and player_id = 'new-player'
+          and status = 'ready'),
+      (select count(*) from public.match_stats_raw
+        where match_id = 'verify-finalize-first');
+  `);
+  expectCounts(counts, "1|1|1|1", "finalize-first-no-deadlock");
+}
+
 async function main(): Promise<void> {
   await verifyServiceRoleSequence();
   await verifyRegistryOnlyCleanup();
+  await verifyExpiredPendingCleanup();
   await verifyWriterFirst();
   await verifyCleanupFirst();
+  await verifyFinalizeFirst();
   process.stdout.write("telemetry-registry-migration: ok\n");
 }
 

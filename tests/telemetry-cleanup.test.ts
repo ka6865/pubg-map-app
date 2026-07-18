@@ -200,6 +200,61 @@ describe("telemetry cleanup registry", () => {
     expect(cleanupExpiredMatches).not.toHaveBeenCalled();
   });
 
+  it("lease가 만료된 pending row는 updated_at이 cutoff 이후여도 inventory와 cleanup 후보에 포함한다", async () => {
+    const registryRow: TelemetryCleanupRegistryRow = {
+      match_id: "expired-writer",
+      storage_path: "telemetry-map/expired-writer.json",
+      status: "pending",
+      lease_expires_at: "2026-07-17T23:59:00.000Z",
+      updated_at: "2026-07-17T12:00:00.000Z",
+    };
+    const archiveObjectInventory = vi.fn().mockResolvedValue(undefined);
+    const cleanupExpiredMatches = vi.fn().mockResolvedValue(["expired-writer"]);
+
+    const result = await runTelemetryStorageCleanup({
+      cutoff: new Date("2026-07-17T00:00:00.000Z"),
+      targetVersion: 59,
+    }, createDependencies({
+      listMasterRows: vi.fn().mockResolvedValue([{
+        match_id: "expired-writer",
+        storage_path: "old/master.json",
+        telemetry_version: 58,
+        created_at: "2026-07-01T00:00:00.000Z",
+      }]),
+      listRegistryRows: vi.fn().mockResolvedValue([registryRow]),
+      archiveObjectInventory,
+      cleanupExpiredMatches,
+    }));
+
+    expect(archiveObjectInventory).toHaveBeenCalledWith([registryRow]);
+    expect(cleanupExpiredMatches).toHaveBeenCalledOnce();
+    expect(result.archivedObjectCount).toBe(1);
+  });
+
+  it("archive 후보가 많아도 실제 cleanup 완료 match의 object만 완료 counter에 포함한다", async () => {
+    const rows: TelemetryCleanupRegistryRow[] = ["cleaned", "protected"].map((matchId) => ({
+      match_id: matchId,
+      storage_path: `telemetry-map/${matchId}.json`,
+      status: "ready" as const,
+      lease_expires_at: null,
+      updated_at: "2026-07-01T00:00:00.000Z",
+    }));
+
+    const result = await runTelemetryStorageCleanup({
+      cutoff: new Date("2026-07-17T00:00:00.000Z"),
+      targetVersion: 59,
+    }, createDependencies({
+      listRegistryRows: vi.fn().mockResolvedValue(rows),
+      cleanupExpiredMatches: vi.fn().mockResolvedValue(["cleaned"]),
+    }));
+
+    expect(result).toMatchObject({
+      deletedMatchCount: 1,
+      archivedObjectCount: 1,
+      inventoryManifestCount: 1,
+    });
+  });
+
   it("50개를 넘는 만료 match를 RPC 입력 상한에 맞게 나눈다", async () => {
     const rows = Array.from({ length: 51 }, (_, index) => ({
       match_id: `m${index}`,
@@ -289,6 +344,8 @@ describe("telemetry cleanup registry", () => {
     expect(migration).toContain("cache.updated_at >= p_cutoff");
     expect(migration).toContain("cache.updated_at < p_cutoff");
     expect(migration).toContain("lease_expires_at >= statement_timestamp()");
+    expect(migration).toContain("lease_expires_at < statement_timestamp()");
+    expect(migration).toContain("telemetry-cleanup-postcondition-failed");
     expect(migration).toContain("master.match_id is null");
     expect(migration).toContain("not exists");
     expect(migration).toContain("delete from public.match_stats_raw");

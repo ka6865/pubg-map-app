@@ -63,7 +63,7 @@ const MapShell = memo(({
     const playbackId = searchParams?.get("playback") || null;
     const playbackNickname = searchParams?.get("nickname") || null;
     const playbackPlatformParam = searchParams?.get("platform") || null;
-    const playbackModeParam = searchParams?.get("mode") || null;
+    const playbackModeParam = searchParams?.get("mode") ?? null;
     const playbackPlatform: TelemetryPlatform | null =
       playbackPlatformParam === "steam" || playbackPlatformParam === "kakao"
         ? playbackPlatformParam

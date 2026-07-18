@@ -98,24 +98,8 @@ begin
     raise exception 'telemetry-finalize-invalid-input' using errcode = '22023';
   end if;
 
-  if p_processed_data is not null then
-    insert into public.processed_match_telemetry (
-      match_id,
-      platform,
-      player_id,
-      data,
-      updated_at
-    ) values (
-      p_match_id,
-      p_processed_platform,
-      p_processed_player_id,
-      p_processed_data,
-      p_processed_updated_at
-    )
-    on conflict (match_id, platform, player_id) do update set
-      data = excluded.data,
-      updated_at = excluded.updated_at;
-  end if;
+  lock table public.telemetry_map_cache_entries
+    in row exclusive mode;
 
   insert into public.match_master_telemetry (
     match_id,
@@ -135,6 +119,25 @@ begin
     game_mode = excluded.game_mode,
     telemetry_version = excluded.telemetry_version,
     storage_path = excluded.storage_path;
+
+  if p_processed_data is not null then
+    insert into public.processed_match_telemetry (
+      match_id,
+      platform,
+      player_id,
+      data,
+      updated_at
+    ) values (
+      p_match_id,
+      p_processed_platform,
+      p_processed_player_id,
+      p_processed_data,
+      p_processed_updated_at
+    )
+    on conflict (match_id, platform, player_id) do update set
+      data = excluded.data,
+      updated_at = excluded.updated_at;
+  end if;
 
   insert into public.telemetry_map_cache_entries (
     match_id,
@@ -232,10 +235,18 @@ begin
           select 1
           from public.telemetry_map_cache_entries as orphan_cache
           where orphan_cache.match_id = requested.match_id
-            and orphan_cache.updated_at < p_cutoff
-            and not (
-              orphan_cache.status = 'pending'
-              and orphan_cache.lease_expires_at >= statement_timestamp()
+            and (
+              (
+                orphan_cache.status = 'ready'
+                and orphan_cache.updated_at < p_cutoff
+              )
+              or (
+                orphan_cache.status = 'pending'
+                and (
+                  orphan_cache.lease_expires_at is null
+                  or orphan_cache.lease_expires_at < statement_timestamp()
+                )
+              )
             )
         )
       )
@@ -265,10 +276,15 @@ begin
 
   delete from public.telemetry_map_cache_entries as cache
   where cache.match_id = any(eligible_match_ids)
-    and cache.updated_at < p_cutoff
-    and not (
-      cache.status = 'pending'
-      and cache.lease_expires_at >= statement_timestamp()
+    and (
+      (cache.status = 'ready' and cache.updated_at < p_cutoff)
+      or (
+        cache.status = 'pending'
+        and (
+          cache.lease_expires_at is null
+          or cache.lease_expires_at < statement_timestamp()
+        )
+      )
     );
 
   delete from public.match_master_telemetry as master
@@ -283,6 +299,18 @@ begin
       where cache.match_id = master.match_id
     )
   ;
+
+  if exists (
+    select 1
+    from public.telemetry_map_cache_entries as cache
+    where cache.match_id = any(eligible_match_ids)
+  ) or exists (
+    select 1
+    from public.match_master_telemetry as master
+    where master.match_id = any(eligible_match_ids)
+  ) then
+    raise exception 'telemetry-cleanup-postcondition-failed' using errcode = '40001';
+  end if;
 
   return query
   select eligible.match_id

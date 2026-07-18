@@ -11,7 +11,7 @@
 
 최초 리뷰에서 P0 1건, P1 12건, P2 15건을 확인했다. P0은 공개 `/api/pubg/ingest` route를 제거하고 `/api/pubg/match`가 검증된 PUBG 분석 결과를 서버 저장 함수에 직접 전달하도록 전환해 해결했다. 최종 리뷰에서 확인한 `source=scraper`와 `force=true` 위조 경로도 서로 독립된 timing-safe header 인증으로 차단했다. P1은 Hotdrop 1건과 텔레메트리 3건을 해결해 실제 미해결 항목이 8건이다. P2는 보안 테스트 계약 복구와 리플레이 요청 전환 경쟁 2건을 해결해 실제 미해결 항목이 13건이다.
 
-텔레메트리 공용 fetch SDK, 플레이어·플랫폼 cache identity, 2D/3D 소비자, registry cleanup 계약을 통합했다. 최종 재검토의 Important 5건은 identity sequence 최소 권한, reserve→upload→원자 finalize, cache hit registry 복구, registry-only inventory manifest, 2D mode·nickname fail-closed로 보완했다. 운영 DB migration과 cleanup은 실행하지 않았으며, 배포는 migration을 먼저 적용한 뒤 애플리케이션을 반영해야 한다.
+텔레메트리 공용 fetch SDK, 플레이어·플랫폼 cache identity, 2D/3D 소비자, registry cleanup 계약을 통합했다. 최종 재검토의 Important 5건은 identity sequence 최소 권한, reserve→upload→원자 finalize, cache hit registry 복구, registry-only inventory manifest, 2D mode·nickname fail-closed로 보완했다. 추가 재검토의 만료 pending 부분 삭제·finalize/cleanup 교착 교착 문제는 정확한 lease 조건, 삭제 후 rollback postcondition, 공통 lock 순서로 보완했다. 빈 `mode` query도 이제 유효하지 않다. 운영 DB migration과 cleanup은 실행하지 않았으며, 배포는 migration을 먼저 적용한 뒤 애플리케이션을 반영해야 한다.
 
 보안 측면에서는 Storage 객체 삭제 BOLA, 승인 작업 중복 실행, CAPTCHA 우회, 공개 analytics 오염, 제보 알림 임계값 우회가 즉시 수정 대상이다.
 
@@ -20,16 +20,16 @@
 | 검증 | 결과 |
 |---|---|
 | `npm run verify:core` | 통과: ESLint 오류 0·경고 62, TypeScript 오류 0 |
-| `npm run verify:analysis` | 통과: 17개 파일, 179개 테스트 |
+| `npm run verify:analysis` | 통과: 17개 파일, 181개 테스트 |
 | `npm run verify:admin` | 통과: 5개 파일, 90개 테스트 |
 | `npm test -- --runInBand` | 통과: Jest 1개 suite, 2개 테스트 |
-| `env DOTENV_CONFIG_PATH=.env.local node --require ../../node_modules/dotenv/config ../../node_modules/vitest/vitest.mjs run` | 통과: 33개 파일 통과·1개 스킵, 332개 테스트 통과·6개 스킵 |
-| `npm run verify:telemetry-db` | 통과: 임시 PostgreSQL 15 service-role sequence, registry-only row 감소, 두 세션 경합, 원자 finalize |
+| `env DOTENV_CONFIG_PATH=.env.local node --require ../../node_modules/dotenv/config ../../node_modules/vitest/vitest.mjs run` | 통과: 33개 파일 통과·1개 스킵, 334개 테스트 통과·6개 스킵 |
+| `npm run verify:telemetry-db` | 통과: 임시 PostgreSQL 15 service-role sequence, registry-only row 감소, 만료 pending 원자 정리, 양방향 두 세션 교착, 원자 finalize |
 | `npm audit --omit=dev` | 이번 조치에서 재실행하지 않음. 최초 리뷰 결과는 10건(High 3, Moderate 5, Low 2) |
 
 `tests/security.test.ts`는 현재 `withOptionalAuth` 계약과 Shadow Draft의 `parent_id` 삭제 조건으로 복구해 `verify:admin`에 포함했다. worktree에는 독립 `node_modules/dotenv`, `node_modules/vitest`가 없어 `./node_modules` 직접 경로 명령은 테스트 시작 전 종료 코드 1로 종료됐다. `.env.local`은 기본 checkout을 가리키는 추적 제외 심볼릭 링크로 유지하고, 기본 checkout의 의존성 경로를 명시해 전체 Vitest를 재실행한 결과 통과했다. 환경변수 값은 출력하지 않았다.
 
-운영과 분리된 임시 PostgreSQL 15에 migration을 실제 적용해 RPC 문법·권한·행위를 검증했다. `SET ROLE service_role` identity INSERT/UPSERT가 성공했고 registry-only row는 1건에서 0건으로 감소했다. writer-first에서는 active pending lease가 master·stats를 보호했고, cleanup-first에서는 대기한 writer가 원자 finalize RPC로 master·processed·ready registry를 각각 1건 재구축했다. RPC는 `SECURITY INVOKER`, 빈 `search_path`, service-role 전용 `EXECUTE`를 유지한다.
+운영과 분리된 임시 PostgreSQL 15에 migration을 실제 적용해 RPC 문법·권한·행위를 검증했다. `SET ROLE service_role` identity INSERT/UPSERT가 성공했고 registry-only row는 1건에서 0건으로 감소했다. 최신 `updated_at`을 가지면서 lease가 만료된 pending match는 master·stats·processed·registry가 모두 0건으로 원자 정리됐다. writer-first에서는 active pending lease가 master·stats를 보호했고, cleanup-first에서는 대기한 writer가 원자 finalize RPC로 master·processed·ready registry를 재구축했다. finalize-first에서는 4초 statement timeout 내에 cleanup이 교착 완료되어 deadlock이 없음을 확인했다. RPC는 `SECURITY INVOKER`, 빈 `search_path`, service-role 전용 `EXECUTE`를 유지한다.
 
 `verify:core`의 ESLint 경고는 32개 파일에서 62개가 발생했다. 오류는 0개이고 TypeScript는 통과했으며, 이번 텔레메트리 변경 파일에서 신규 unused import·`console.log`는 확인되지 않았다. 기존 경고는 본 문서 7장의 유지보수 부채로 유지한다.
 

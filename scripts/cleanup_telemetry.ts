@@ -127,10 +127,10 @@ function isExpiredRegistryRow(
   ) {
     throw new Error("telemetry-cleanup-invalid-registry-row");
   }
-  const hasActiveLease = row.status === "pending"
-    && leaseExpiresAt !== null
-    && leaseExpiresAt >= now.getTime();
-  return updatedAt < cutoff.getTime() && !hasActiveLease;
+  if (row.status === "pending") {
+    return leaseExpiresAt === null || leaseExpiresAt < now.getTime();
+  }
+  return updatedAt < cutoff.getTime();
 }
 
 function validateCleanedMatchIds(
@@ -182,7 +182,6 @@ export async function runTelemetryStorageCleanup(
     const inventoryRows = expiredRegistryRows.filter((row) => matchIdSet.has(row.match_id));
     if (inventoryRows.length > 0) {
       await dependencies.archiveObjectInventory(inventoryRows);
-      archivedObjectCount += inventoryRows.length;
       inventoryManifestCount += 1;
     }
     const cleanedMatchIds = await dependencies.cleanupExpiredMatches(
@@ -190,7 +189,12 @@ export async function runTelemetryStorageCleanup(
       config.cutoff,
       config.targetVersion,
     );
-    deletedMatchCount += validateCleanedMatchIds(matchIds, cleanedMatchIds).length;
+    const validatedMatchIds = validateCleanedMatchIds(matchIds, cleanedMatchIds);
+    const cleanedMatchIdSet = new Set(validatedMatchIds);
+    deletedMatchCount += validatedMatchIds.length;
+    archivedObjectCount += inventoryRows.filter((row) => (
+      cleanedMatchIdSet.has(row.match_id)
+    )).length;
   }
 
   return {

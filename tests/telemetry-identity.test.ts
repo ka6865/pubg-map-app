@@ -114,7 +114,10 @@ describe("telemetry identity", () => {
     expect(sql).toMatch(/revoke all on sequence[\s\S]*from public, anon, authenticated/i);
     expect(sql).toMatch(/grant usage, select on sequence[\s\S]*to service_role/i);
     expect(sql).toContain("finalize_telemetry_cache_write");
-    expect(sql).toMatch(/insert into public\.processed_match_telemetry[\s\S]*insert into public\.match_master_telemetry[\s\S]*insert into public\.telemetry_map_cache_entries/);
     expect(sql).toMatch(/revoke all on function public\.finalize_telemetry_cache_write[\s\S]*from public, anon, authenticated/);
+    expect(sql.indexOf("lock table public.telemetry_map_cache_entries"))
+      .toBeLessThan(sql.indexOf("insert into public.match_master_telemetry"));
+    expect(sql.indexOf("insert into public.match_master_telemetry"))
+      .toBeLessThan(sql.indexOf("insert into public.processed_match_telemetry"));
   });
 });
