@@ -14,7 +14,10 @@ vi.mock("@aws-sdk/client-s3", async (importOriginal) => {
   };
 });
 
-import { deleteMultipleFromR2 } from "../lib/pubg-analysis/r2Service";
+import {
+  deleteMultipleFromR2,
+  listR2Files,
+} from "../lib/pubg-analysis/r2Service";
 
 describe("R2 batch delete boundary", () => {
   const originalEnv = { ...process.env };
@@ -59,5 +62,23 @@ describe("R2 batch delete boundary", () => {
 
     await expect(deleteMultipleFromR2(["first.json"])).resolves.toBeUndefined();
     expect(sendMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("R2 목록의 LastModified를 cleanup grace 판단에 전달한다", async () => {
+    const lastModified = new Date("2026-07-01T00:00:00.000Z");
+    sendMock.mockResolvedValue({
+      Contents: [{
+        Key: "telemetry-map/old.json",
+        Size: 123,
+        LastModified: lastModified,
+      }],
+      IsTruncated: false,
+    });
+
+    await expect(listR2Files(1_000)).resolves.toEqual([{
+      key: "telemetry-map/old.json",
+      size: 123,
+      lastModified,
+    }]);
   });
 });

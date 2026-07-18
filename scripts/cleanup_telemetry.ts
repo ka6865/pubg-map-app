@@ -28,6 +28,7 @@ export type TelemetryCleanupCacheRow = {
 type R2File = {
   key: string;
   size: number;
+  lastModified?: Date | null;
 };
 
 type RangePage<T> = {
@@ -59,7 +60,7 @@ export type TelemetryCleanupResult = {
 
 const QUERY_PAGE_SIZE = 500;
 const DELETE_BATCH_SIZE = 50;
-const PERMANENT_R2_PREFIXES = ["crates/", "weapons/"] as const;
+const PERMANENT_R2_PREFIXES = ["attachments/", "crates/", "weapons/"] as const;
 
 export async function fetchAllRowsByRange<T>(
   fetchPage: (from: number, to: number) => Promise<RangePage<T>>,
@@ -75,8 +76,11 @@ export async function fetchAllRowsByRange<T>(
     if (page.error) {
       throw new Error(page.error.message || "telemetry-cleanup-page-read-failed");
     }
+    if (page.data === null) {
+      throw new Error("telemetry-cleanup-page-data-missing");
+    }
 
-    const data = page.data ?? [];
+    const data = page.data;
     rows.push(...data);
     if (data.length < pageSize) return rows;
   }
@@ -124,6 +128,12 @@ function isPermanentR2Asset(storagePath: string): boolean {
   return PERMANENT_R2_PREFIXES.some((prefix) => storagePath.startsWith(prefix));
 }
 
+function isPastCleanupGrace(file: R2File, cutoff: Date): boolean {
+  return file.lastModified instanceof Date
+    && Number.isFinite(file.lastModified.getTime())
+    && file.lastModified.getTime() < cutoff.getTime();
+}
+
 export async function runTelemetryStorageCleanup(
   config: TelemetryCleanupConfig,
   dependencies: TelemetryCleanupDependencies,
@@ -168,12 +178,13 @@ export async function runTelemetryStorageCleanup(
 
   const orphanedPaths = uniqueValues(
     bucketFiles
-      .map((file) => file.key)
-      .filter((storagePath) => (
-        storagePath.length > 0
-        && !isPermanentR2Asset(storagePath)
-        && !activePaths.has(storagePath)
-      )),
+      .filter((file) => (
+        file.key.length > 0
+        && !isPermanentR2Asset(file.key)
+        && !activePaths.has(file.key)
+        && isPastCleanupGrace(file, config.cutoff)
+      ))
+      .map((file) => file.key),
   );
   if (orphanedPaths.length > 0) {
     await dependencies.deleteR2Paths(orphanedPaths);

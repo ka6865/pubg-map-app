@@ -64,6 +64,13 @@ describe("telemetry cleanup registry", () => {
     ]);
   });
 
+  it("Supabase가 error 없이 null data를 반환해도 fail-closed한다", async () => {
+    await expect(fetchAllRowsByRange(async () => ({
+      data: null,
+      error: null,
+    }))).rejects.toThrow("telemetry-cleanup-page-data-missing");
+  });
+
   it("registry 전체 조회가 실패하면 어떤 삭제도 시작하지 않는다", async () => {
     const deleteR2Paths = vi.fn().mockResolvedValue(undefined);
     const deleteMatchRows = vi.fn().mockResolvedValue(undefined);
@@ -130,11 +137,11 @@ describe("telemetry cleanup registry", () => {
         { match_id: "m2", storage_path: "map/m2/player-c/lite.json" },
       ]),
       listR2Files: vi.fn().mockResolvedValue([
-        { key: "master/m1.json", size: 10 },
-        { key: "map/m1/player-a/lite.json", size: 10 },
-        { key: "map/m1/player-b/full.json", size: 10 },
-        { key: "master/m2.json", size: 10 },
-        { key: "map/m2/player-c/lite.json", size: 10 },
+        { key: "master/m1.json", size: 10, lastModified: new Date("2026-07-01T00:00:00.000Z") },
+        { key: "map/m1/player-a/lite.json", size: 10, lastModified: new Date("2026-07-01T00:00:00.000Z") },
+        { key: "map/m1/player-b/full.json", size: 10, lastModified: new Date("2026-07-01T00:00:00.000Z") },
+        { key: "master/m2.json", size: 10, lastModified: new Date("2026-07-01T00:00:00.000Z") },
+        { key: "map/m2/player-c/lite.json", size: 10, lastModified: new Date("2026-07-01T00:00:00.000Z") },
       ]),
       deleteR2Paths,
       deleteMatchRows,
@@ -220,11 +227,12 @@ describe("telemetry cleanup registry", () => {
   it("orphan 스캔은 master와 registry 활성 경로를 모두 보존하고 R2를 한 번만 조회한다", async () => {
     const deleteR2Paths = vi.fn().mockResolvedValue(undefined);
     const listR2Files = vi.fn().mockResolvedValue([
-      { key: "master/active.json", size: 10 },
-      { key: "map/active.json", size: 20 },
-      { key: "orphan.json", size: 30 },
-      { key: "crates/permanent.png", size: 40 },
-      { key: "weapons/permanent.png", size: 50 },
+      { key: "master/active.json", size: 10, lastModified: new Date("2026-07-01T00:00:00.000Z") },
+      { key: "map/active.json", size: 20, lastModified: new Date("2026-07-01T00:00:00.000Z") },
+      { key: "orphan.json", size: 30, lastModified: new Date("2026-07-01T00:00:00.000Z") },
+      { key: "crates/permanent.png", size: 40, lastModified: new Date("2026-07-01T00:00:00.000Z") },
+      { key: "weapons/permanent.png", size: 50, lastModified: new Date("2026-07-01T00:00:00.000Z") },
+      { key: "attachments/permanent.png", size: 60, lastModified: new Date("2026-07-01T00:00:00.000Z") },
     ]);
     const dependencies = createDependencies({
       listMasterRows: vi.fn().mockResolvedValue([{
@@ -249,6 +257,40 @@ describe("telemetry cleanup registry", () => {
     expect(listR2Files).toHaveBeenCalledTimes(1);
     expect(deleteR2Paths).toHaveBeenCalledTimes(1);
     expect(deleteR2Paths).toHaveBeenCalledWith(["orphan.json"]);
+  });
+
+  it("스냅샷 후 생성된 최근 object와 timestamp 미확정 object는 보존한다", async () => {
+    const deleteR2Paths = vi.fn().mockResolvedValue(undefined);
+    const dependencies = createDependencies({
+      listR2Files: vi.fn().mockResolvedValue([
+        {
+          key: "orphan/old.json",
+          size: 10,
+          lastModified: new Date("2026-07-01T00:00:00.000Z"),
+        },
+        {
+          key: "telemetry-map/recent-upload.json",
+          size: 20,
+          lastModified: new Date("2026-07-18T00:00:00.000Z"),
+        },
+        { key: "orphan/missing-timestamp.json", size: 30 },
+        {
+          key: "orphan/invalid-timestamp.json",
+          size: 40,
+          lastModified: new Date("invalid"),
+        },
+      ]),
+      deleteR2Paths,
+    });
+
+    await runTelemetryStorageCleanup({
+      cutoff: new Date("2026-07-17T00:00:00.000Z"),
+      targetVersion: 59,
+      r2ScanLimit: 1_000,
+    }, dependencies);
+
+    expect(deleteR2Paths).toHaveBeenCalledTimes(1);
+    expect(deleteR2Paths).toHaveBeenCalledWith(["orphan/old.json"]);
   });
 
   it("cleanup script는 import 시 실행하지 않고 direct-run guard만 사용한다", () => {

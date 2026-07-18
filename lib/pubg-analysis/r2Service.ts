@@ -190,13 +190,17 @@ export async function deleteMultipleFromR2(keys: string[]): Promise<void> {
  * Lists all objects stored inside the Cloudflare R2 Bucket
  * @param limit Maximum number of files to return (default: 1000)
  */
-export async function listR2Files(limit: number = 1000): Promise<{ key: string; size: number }[]> {
+export async function listR2Files(limit: number = 1000): Promise<{
+  key: string;
+  size: number;
+  lastModified: Date | null;
+}[]> {
   if (!cleanEnv(process.env.CLOUDFLARE_R2_ENDPOINT)) {
     console.warn('[R2 Warning] Cloudflare R2 Credentials are not configured. Returning empty file list.');
     return [];
   }
 
-  const files: { key: string; size: number }[] = [];
+  const files: { key: string; size: number; lastModified: Date | null }[] = [];
   let continuationToken: string | undefined;
   try {
     do {
@@ -210,7 +214,11 @@ export async function listR2Files(limit: number = 1000): Promise<{ key: string; 
       const response = await getR2Client().send(command);
       response.Contents?.forEach(item => {
         if (!item.Key || files.length >= limit) return;
-        files.push({ key: item.Key, size: item.Size || 0 });
+        files.push({
+          key: item.Key,
+          size: item.Size || 0,
+          lastModified: item.LastModified ?? null,
+        });
       });
       continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
     } while (continuationToken);
