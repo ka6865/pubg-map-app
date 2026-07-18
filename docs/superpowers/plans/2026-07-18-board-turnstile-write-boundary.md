@@ -735,6 +735,8 @@ git add app/api/board/comments/route.ts components/board/BoardDetailClient.tsx t
 git commit -m "fix: 댓글 Turnstile 및 회원 저장 경계 서버 통합"
 ```
 
+리뷰 보강으로 parent 댓글을 quota·guest Siteverify 후, 비속어·bcrypt·insert 전에 서버 조회한다. parent가 없으면 404, 게시글이 다르면 400, 조회 장애는 503으로 고정하고 알림 대상에 같은 조회 결과를 재사용한다. 기존 회원 대댓글의 `@parent.author ` 접두어는 서버 권위 author로 복원하고 중복을 막으며, guest 대댓글은 기존 무접두 저장 계약을 유지한다.
+
 ---
 
 ### Task 5: 필수 gate·보고서·배포 검증 문서 갱신

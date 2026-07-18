@@ -9,6 +9,10 @@ const writeSource = readFileSync(
   new URL("../components/board/BoardWriteClient.tsx", import.meta.url),
   "utf8",
 );
+const commentSectionSource = readFileSync(
+  new URL("../components/CommentSection.tsx", import.meta.url),
+  "utf8",
+);
 const sessionVerificationFlag = ["turnstile", "verified"].join("_");
 const standaloneVerifyRoute = ["/api/board", "turnstile"].join("/");
 const obsoleteCaptchaState = ["captcha", "Verified"].join("");
@@ -41,5 +45,10 @@ describe("게시판 Turnstile client 저장 경계", () => {
     expect(detailSource).toContain("비회원 댓글을 등록하려면 보안 인증을 완료해주세요.");
     expect(detailSource).not.toContain("같은 탭");
     expect(detailSource).not.toContain("한 번만 인증");
+  });
+
+  it("새로고침 후에도 서버에 저장된 대댓글 content를 그대로 렌더링한다", () => {
+    expect(commentSectionSource).toContain("{c.content}");
+    expect(detailSource).not.toContain("finalComment");
   });
 });

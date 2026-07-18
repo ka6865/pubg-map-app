@@ -24,6 +24,14 @@ type CommentBody = {
   turnstileToken: string | null;
 };
 
+type ParentCommentTarget = {
+  id: number;
+  post_id: number;
+  user_id: string | null;
+  author: string;
+  content: string;
+};
+
 function jsonError(error: string, status: number) {
   return NextResponse.json({ error }, { status });
 }
@@ -133,9 +141,50 @@ export async function POST(request: Request) {
       return jsonError(quota.error, quota.status);
     }
 
+    if (!user) {
+      const turnstile = await verifyTurnstileToken({
+        token: body.turnstileToken,
+        remoteIp: clientIp,
+        expectedAction: TURNSTILE_ACTIONS.comment,
+      });
+      if (!turnstile.ok) {
+        return jsonError(turnstile.error, turnstile.status);
+      }
+    }
+
+    let parentTarget: ParentCommentTarget | null = null;
+    if (body.parent_id) {
+      const { data: parent, error: parentError } = await supabaseAdmin
+        .from("comments")
+        .select("id, post_id, user_id, author, content")
+        .eq("id", body.parent_id)
+        .maybeSingle();
+      if (parentError) {
+        return jsonError("부모 댓글을 확인하지 못했습니다.", 503);
+      }
+      if (!parent) {
+        return jsonError("부모 댓글을 찾을 수 없습니다.", 404);
+      }
+      if (
+        !isPositiveSafeInteger(parent.id)
+        || !isPositiveSafeInteger(parent.post_id)
+        || typeof parent.author !== "string"
+        || !parent.author.trim()
+        || typeof parent.content !== "string"
+        || (parent.user_id !== null && typeof parent.user_id !== "string")
+      ) {
+        return jsonError("부모 댓글을 확인하지 못했습니다.", 503);
+      }
+      if (parent.post_id !== body.post_id) {
+        return jsonError("부모 댓글이 게시글과 일치하지 않습니다.", 400);
+      }
+      parentTarget = parent;
+    }
+
     let author: string;
     let passwordHash: string | null = null;
     let ipAddress: string | null = null;
+    let storedContent = body.content;
 
     if (user) {
       if (checkProfanity(body.content).blocked) {
@@ -152,16 +201,16 @@ export async function POST(request: Request) {
       author = typeof profile?.nickname === "string" && profile.nickname.trim()
         ? profile.nickname.trim()
         : "익명";
-    } else {
-      const turnstile = await verifyTurnstileToken({
-        token: body.turnstileToken,
-        remoteIp: clientIp,
-        expectedAction: TURNSTILE_ACTIONS.comment,
-      });
-      if (!turnstile.ok) {
-        return jsonError(turnstile.error, turnstile.status);
+      if (parentTarget) {
+        const replyPrefix = `@${parentTarget.author.trim()} `;
+        if (!storedContent.startsWith(replyPrefix)) {
+          storedContent = `${replyPrefix}${storedContent}`;
+        }
+        if (storedContent.length > CONTENT_MAX_LENGTH) {
+          return jsonError("댓글은 5,000자 이하로 작성해주세요.", 400);
+        }
       }
-
+    } else {
       author = body.author!.trim();
       if (checkProfanity(author).blocked) {
         return jsonError("닉네임에 부적절한 표현이 포함되어 있습니다.", 400);
@@ -179,7 +228,7 @@ export async function POST(request: Request) {
         post_id: body.post_id,
         user_id: user?.id ?? null,
         author,
-        content: body.content,
+        content: storedContent,
         parent_id: body.parent_id,
         password_hash: passwordHash,
         ip_address: ipAddress,
@@ -192,12 +241,8 @@ export async function POST(request: Request) {
     }
 
     if (user) {
-      const targetResult = body.parent_id
-        ? await supabaseAdmin
-            .from("comments")
-            .select("user_id, content, post_id")
-            .eq("id", body.parent_id)
-            .single()
+      const targetResult = parentTarget
+        ? { data: parentTarget, error: null }
         : await supabaseAdmin
             .from("posts")
             .select("user_id, title")
@@ -211,8 +256,7 @@ export async function POST(request: Request) {
           title?: string;
           post_id?: number;
         };
-        const targetMatchesPost = !body.parent_id || target.post_id === body.post_id;
-        if (targetMatchesPost && target.user_id && target.user_id !== user.id) {
+        if (target.user_id && target.user_id !== user.id) {
           const { error: notificationError } = await supabaseAdmin
             .from("notifications")
             .insert([{
