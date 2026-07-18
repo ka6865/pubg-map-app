@@ -252,7 +252,7 @@ git commit -m "fix: Turnstile 서버 쓰기 검증 기반 구축"
 - Produces: `consumeBoardWriteQuota({ supabaseAdmin, scope, actor }): Promise<BoardWriteQuotaResult>`
 - Consumes: server-only Supabase admin client
 
-- [ ] **Step 1: migration·helper 실패 테스트 작성**
+- [x] **Step 1: migration·helper 실패 테스트 작성**
 
 `tests/board-write-quota.test.ts`:
 
@@ -298,13 +298,13 @@ it("migration은 공개 권한을 닫고 원자적 조건부 upsert를 사용한
 });
 ```
 
-- [ ] **Step 2: RED 확인**
+- [x] **Step 2: RED 확인**
 
 Run: `npx vitest run tests/board-write-quota.test.ts`
 
 Expected: helper 미존재와 빈 migration으로 실패한다.
 
-- [ ] **Step 3: migration 구현**
+- [x] **Step 3: migration 구현**
 
 `supabase/migrations/20260718122322_board_turnstile_write_boundary.sql`에 다음 객체를 작성한다.
 
@@ -377,7 +377,7 @@ GRANT EXECUTE ON FUNCTION public.consume_board_write_quota(text, text, integer, 
   TO service_role;
 ```
 
-- [ ] **Step 4: server helper 구현**
+- [x] **Step 4: server helper 구현**
 
 `lib/board/writeQuota.server.ts`는 `node:crypto` SHA-256과 다음 고정 설정을 사용한다.
 
@@ -418,7 +418,7 @@ export async function consumeBoardWriteQuota(input: {
 }
 ```
 
-- [ ] **Step 5: GREEN·migration 정적 검증·커밋**
+- [x] **Step 5: GREEN·migration 정적 검증·커밋**
 
 Run:
 
