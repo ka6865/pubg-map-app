@@ -7,8 +7,10 @@ import { useAuth } from "../AuthProvider";
 import { supabase } from "@/lib/supabase";
 import { validatePost, extractImageUrl, sanitizeTitle } from "@/lib/board-utils";
 import { toast } from "sonner";
-import type { Post, ClanInfo } from "@/types/board";
+import type { ClanInfo } from "@/types/board";
 import { trackEvent } from "@/lib/analytics";
+import TurnstileWidget from "./TurnstileWidget";
+import { TURNSTILE_ACTIONS } from "@/lib/board/turnstileContract";
 
 export default function BoardWriteClient() {
   const router = useRouter();
@@ -29,6 +31,8 @@ export default function BoardWriteClient() {
   const [guestNickname, setGuestNickname] = useState("");
   const [guestPassword, setGuestPassword] = useState("");
   const [thumbnailUrl, setThumbnailUrl] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [turnstileGeneration, setTurnstileGeneration] = useState(0);
 
   const [isAdmin, setIsAdmin] = useState(false);
   const [displayName, setDisplayName] = useState("익명");
@@ -77,6 +81,10 @@ export default function BoardWriteClient() {
       toast.error(validationError);
       return false;
     }
+    if (!user && !editPostId && !turnstileToken) {
+      toast.warning("비회원 글쓰기를 위해 보안 인증을 완료해주세요.");
+      return false;
+    }
 
     setIsLoading(true);
 
@@ -100,6 +108,7 @@ export default function BoardWriteClient() {
         discord_url: newDiscordUrl,
         discord_channel_id: newDiscordChannelId,
         clan_info: newClanInfo, // 🌟 추가
+        turnstileToken: user || editPostId ? null : turnstileToken,
       };
 
       const response = await fetch("/api/posts/write", {
@@ -147,6 +156,10 @@ export default function BoardWriteClient() {
       return false;
     } finally {
       setIsLoading(false);
+      if (!user && !editPostId) {
+        setTurnstileToken(null);
+        setTurnstileGeneration((value) => value + 1);
+      }
     }
   };
 
@@ -159,6 +172,19 @@ export default function BoardWriteClient() {
   return (
     <div className="w-full flex justify-center pb-6 pt-3 bg-[#121212] min-h-[calc(100vh-56px)]">
       <div className="w-full max-w-[900px]">
+        {!user && !editPostId && (
+          <section
+            aria-label="비회원 보안 인증"
+            className="mb-3 rounded-lg border border-white/10 bg-[#1a1a1a] p-3"
+          >
+            <TurnstileWidget
+              key={turnstileGeneration}
+              action={TURNSTILE_ACTIONS.post}
+              onVerify={setTurnstileToken}
+              onError={() => setTurnstileToken(null)}
+            />
+          </section>
+        )}
         <BoardWrite
           newTitle={newTitle}
           setNewTitle={setNewTitle}
@@ -365,4 +391,3 @@ function restoreAiSummaryHtml(content: string): string {
     return content;
   }
 }
-

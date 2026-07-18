@@ -1,7 +1,13 @@
+// @vitest-environment jsdom
+
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
+import { createElement } from "react";
+import { cleanup, render } from "@testing-library/react";
 import { checkProfanity } from "../lib/board/profanityFilter";
 import { extractClientIp, maskIp } from "../lib/board/ipUtils";
-import { POST as verifyTurnstile } from "../app/api/board/turnstile/route";
+import { verifyTurnstileToken } from "../lib/board/turnstile.server";
+import TurnstileWidget from "../components/board/TurnstileWidget";
+import { TURNSTILE_ACTIONS } from "../lib/board/turnstileContract";
 
 describe("비속어 필터 (profanityFilter)", () => {
   it("정상적인 텍스트는 차단되지 않아야 한다", () => {
@@ -84,90 +90,301 @@ describe("IP 유틸리티 (ipUtils)", () => {
   });
 });
 
-describe("Cloudflare Turnstile API 검증 (POST /api/board/turnstile)", () => {
-  const originalEnv = process.env;
+describe("Cloudflare Turnstile Siteverify 검증", () => {
+  const originalSecret = process.env.TURNSTILE_SECRET_KEY;
+  const originalHostnames = process.env.TURNSTILE_ALLOWED_HOSTNAMES;
 
   beforeEach(() => {
-    vi.resetModules();
-    process.env = { ...originalEnv };
+    delete process.env.TURNSTILE_SECRET_KEY;
+    delete process.env.TURNSTILE_ALLOWED_HOSTNAMES;
   });
 
   afterEach(() => {
-    process.env = originalEnv;
+    if (originalSecret === undefined) {
+      delete process.env.TURNSTILE_SECRET_KEY;
+    } else {
+      process.env.TURNSTILE_SECRET_KEY = originalSecret;
+    }
+    if (originalHostnames === undefined) {
+      delete process.env.TURNSTILE_ALLOWED_HOSTNAMES;
+    } else {
+      process.env.TURNSTILE_ALLOWED_HOSTNAMES = originalHostnames;
+    }
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
-  it("토큰이 누락된 요청의 경우 400 에러를 반환해야 한다", async () => {
-    const req = new Request("https://example.com/api/board/turnstile", {
-      method: "POST",
-      body: JSON.stringify({}),
+  it("secret 누락 시 외부 호출 전에 503으로 차단한다", async () => {
+    const fetchImpl = vi.fn();
+    const result = await verifyTurnstileToken({
+      token: "token",
+      remoteIp: "203.0.113.10",
+      expectedAction: "guest_post",
+      fetchImpl,
     });
-    const res = await verifyTurnstile(req);
-    expect(res.status).toBe(400);
-    const data = await res.json();
-    expect(data.success).toBe(false);
-    expect(data.error).toBe("토큰이 없습니다.");
+    expect(result).toEqual({ ok: false, status: 503, error: "보안 인증을 사용할 수 없습니다." });
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it("서버에 SECRET KEY 설정이 누락되었을 경우 500 에러를 반환해야 한다", async () => {
-    delete process.env.TURNSTILE_SECRET_KEY;
-    const req = new Request("https://example.com/api/board/turnstile", {
-      method: "POST",
-      body: JSON.stringify({ token: "test-token" }),
+  it.each([undefined, null, "", "   ", "x".repeat(2049)])("잘못된 token %j을 외부 호출 전에 거부한다", async (token) => {
+    process.env.TURNSTILE_SECRET_KEY = "test-secret";
+    const fetchImpl = vi.fn();
+    const result = await verifyTurnstileToken({
+      token,
+      remoteIp: "203.0.113.10",
+      expectedAction: "guest_post",
+      fetchImpl,
     });
-    const res = await verifyTurnstile(req);
-    expect(res.status).toBe(500);
-    const data = await res.json();
-    expect(data.success).toBe(false);
-    expect(data.error).toBe("서버 설정 오류");
+    expect(result).toEqual({ ok: false, status: 400, error: "보안 인증 토큰이 올바르지 않습니다." });
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 
-  it("Turnstile 검증이 성공했을 때 success: true를 반환해야 한다", async () => {
-    process.env.TURNSTILE_SECRET_KEY = "test-secret-key";
-
-    // fetch mocking
-    const mockFetch = vi.fn().mockImplementation(() =>
-      Promise.resolve({
-        json: () => Promise.resolve({ success: true }),
-      })
-    );
-    vi.stubGlobal("fetch", mockFetch);
-
-    const req = new Request("https://example.com/api/board/turnstile", {
-      method: "POST",
-      body: JSON.stringify({ token: "valid-token" }),
+  it("success와 action이 일치할 때만 통과하고 trim token과 remoteip을 전달한다", async () => {
+    process.env.TURNSTILE_SECRET_KEY = "test-secret";
+    const timeoutSpy = vi.spyOn(AbortSignal, "timeout");
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      success: true,
+      action: "guest_comment",
+    }), { status: 200 }));
+    const result = await verifyTurnstileToken({
+      token: "  valid-token  ",
+      remoteIp: "203.0.113.10",
+      expectedAction: "guest_comment",
+      fetchImpl,
     });
-
-    const res = await verifyTurnstile(req);
-    expect(res.status).toBe(200);
-    const data = await res.json();
-    expect(data.success).toBe(true);
-    expect(mockFetch).toHaveBeenCalledWith(
-      "https://challenges.cloudflare.com/turnstile/v0/siteverify",
-      expect.any(Object)
-    );
+    expect(result).toEqual({ ok: true });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    const options = fetchImpl.mock.calls[0][1] as RequestInit;
+    const body = options.body as FormData;
+    expect(body.get("secret")).toBe("test-secret");
+    expect(body.get("response")).toBe("valid-token");
+    expect(body.get("remoteip")).toBe("203.0.113.10");
+    expect(options.signal).toBeInstanceOf(AbortSignal);
+    expect(timeoutSpy).toHaveBeenCalledOnce();
+    expect(timeoutSpy).toHaveBeenCalledWith(5000);
   });
 
-  it("Turnstile 검증이 실패했을 때 400 에러를 반환해야 한다", async () => {
-    process.env.TURNSTILE_SECRET_KEY = "test-secret-key";
+  it("remoteIp가 빈 경우 remoteip 필드를 전송하지 않는다", async () => {
+    process.env.TURNSTILE_SECRET_KEY = "test-secret";
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(JSON.stringify({ success: true, action: "guest_post" })));
+    await verifyTurnstileToken({ token: "token", expectedAction: "guest_post", fetchImpl });
+    const body = (fetchImpl.mock.calls[0][1] as RequestInit).body as FormData;
+    expect(body.has("remoteip")).toBe(false);
+  });
 
-    // fetch mocking
-    const mockFetch = vi.fn().mockImplementation(() =>
-      Promise.resolve({
-        json: () => Promise.resolve({ success: false, "error-codes": ["invalid-input-response"] }),
-      })
-    );
-    vi.stubGlobal("fetch", mockFetch);
+  it("allowlist가 설정되면 hostname 일치 성공 응답만 통과시킨다", async () => {
+    process.env.TURNSTILE_SECRET_KEY = "test-secret";
+    process.env.TURNSTILE_ALLOWED_HOSTNAMES = "bgms.gg, preview.bgms.gg";
 
-    const req = new Request("https://example.com/api/board/turnstile", {
-      method: "POST",
-      body: JSON.stringify({ token: "invalid-token" }),
+    const result = await verifyTurnstileToken({
+      token: "token",
+      expectedAction: "guest_post",
+      fetchImpl: vi.fn().mockResolvedValue(new Response(JSON.stringify({
+        success: true,
+        action: "guest_post",
+        hostname: "preview.bgms.gg",
+      }))),
     });
 
-    const res = await verifyTurnstile(req);
-    expect(res.status).toBe(400);
-    const data = await res.json();
-    expect(data.success).toBe(false);
-    expect(data.error).toContain("보안 인증에 실패했습니다");
+    expect(result).toEqual({ ok: true });
+  });
+
+  it.each(["evil.example", undefined])("allowlist hostname 불일치(%j)는 고정 메시지로 fail-closed 처리한다", async (hostname) => {
+    process.env.TURNSTILE_SECRET_KEY = "test-secret";
+    process.env.TURNSTILE_ALLOWED_HOSTNAMES = "bgms.gg";
+
+    const result = await verifyTurnstileToken({
+      token: "token",
+      expectedAction: "guest_post",
+      fetchImpl: vi.fn().mockResolvedValue(new Response(JSON.stringify({
+        success: true,
+        action: "guest_post",
+        ...(hostname === undefined ? {} : { hostname }),
+      }))),
+    });
+
+    expect(result).toEqual({ ok: false, status: 400, error: "보안 인증 도메인이 일치하지 않습니다." });
+  });
+
+  it("allowlist 설정이 없으면 기존 배포 호환성을 위해 hostname 검증 없이 성공 응답을 허용한다", async () => {
+    process.env.TURNSTILE_SECRET_KEY = "test-secret";
+
+    const result = await verifyTurnstileToken({
+      token: "token",
+      expectedAction: "guest_post",
+      fetchImpl: vi.fn().mockResolvedValue(new Response(JSON.stringify({
+        success: true,
+        action: "guest_post",
+        hostname: "unknown.local",
+      }))),
+    });
+
+    expect(result).toEqual({ ok: true });
+  });
+
+  it.each([
+    { success: false, "error-codes": ["timeout-or-duplicate"] },
+    { success: true, action: "guest_post" },
+  ])("duplicate 또는 action mismatch를 고정 400으로 거부한다", async (outcome) => {
+    process.env.TURNSTILE_SECRET_KEY = "test-secret";
+    const result = await verifyTurnstileToken({
+      token: "token",
+      remoteIp: "203.0.113.10",
+      expectedAction: "guest_comment",
+      fetchImpl: vi.fn().mockResolvedValue(new Response(JSON.stringify(outcome), { status: 200 })),
+    });
+    expect(result).toEqual({ ok: false, status: 400, error: "보안 인증에 실패했습니다. 다시 시도해주세요." });
+  });
+
+  it.each([
+    vi.fn().mockRejectedValue(new Error("network")),
+    vi.fn().mockResolvedValue(new Response("bad", { status: 502 })),
+    vi.fn().mockResolvedValue(new Response("not-json", { status: 200 })),
+  ])("Siteverify 장애를 고정 503으로 처리한다", async (fetchImpl) => {
+    process.env.TURNSTILE_SECRET_KEY = "test-secret";
+    const result = await verifyTurnstileToken({
+      token: "token",
+      remoteIp: "203.0.113.10",
+      expectedAction: "guest_post",
+      fetchImpl,
+    });
+    expect(result).toEqual({ ok: false, status: 503, error: "보안 인증 서버에 연결하지 못했습니다." });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("Siteverify 요청이 abort되면 retry 없이 고정 503을 반환한다", async () => {
+    process.env.TURNSTILE_SECRET_KEY = "test-secret";
+    const fetchImpl = vi.fn().mockRejectedValue(new DOMException("aborted", "AbortError"));
+
+    const result = await verifyTurnstileToken({
+      token: "token",
+      remoteIp: "203.0.113.10",
+      expectedAction: "guest_post",
+      fetchImpl,
+    });
+
+    expect(result).toEqual({ ok: false, status: 503, error: "보안 인증 서버에 연결하지 못했습니다." });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("Cloudflare Turnstile 위젯", () => {
+  const originalSiteKey = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+
+  beforeEach(() => {
+    process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY = "test-site-key";
+  });
+
+  afterEach(() => {
+    cleanup();
+    delete window.turnstile;
+    if (originalSiteKey === undefined) {
+      delete process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
+    } else {
+      process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY = originalSiteKey;
+    }
+  });
+
+  it("게스트 action을 Turnstile render 설정에 전달한다", () => {
+    const renderTurnstile = vi.fn().mockReturnValue("widget-a");
+    window.turnstile = {
+      render: renderTurnstile,
+      reset: vi.fn(),
+      remove: vi.fn(),
+    };
+
+    render(createElement(TurnstileWidget, {
+      action: TURNSTILE_ACTIONS.comment,
+      onVerify: vi.fn(),
+    }));
+
+    expect(renderTurnstile).toHaveBeenCalledWith(expect.any(HTMLElement), expect.objectContaining({
+      sitekey: "test-site-key",
+      action: "guest_comment",
+    }));
+  });
+
+  it("부모 callback이 바뀌어도 widget을 재생성하지 않고 최신 callback을 호출한다", () => {
+    const renderTurnstile = vi.fn().mockReturnValue("widget-a");
+    window.turnstile = {
+      render: renderTurnstile,
+      reset: vi.fn(),
+      remove: vi.fn(),
+    };
+    const firstCallback = vi.fn();
+    const latestCallback = vi.fn();
+    const view = render(createElement(TurnstileWidget, {
+      action: TURNSTILE_ACTIONS.post,
+      onVerify: firstCallback,
+    }));
+
+    view.rerender(createElement(TurnstileWidget, {
+      action: TURNSTILE_ACTIONS.post,
+      onVerify: latestCallback,
+    }));
+    const options = renderTurnstile.mock.calls[0][1] as { callback: (token: string) => void };
+    options.callback("fresh-token");
+
+    expect(renderTurnstile).toHaveBeenCalledTimes(1);
+    expect(firstCallback).not.toHaveBeenCalled();
+    expect(latestCallback).toHaveBeenCalledWith("fresh-token");
+  });
+
+  it("토큰이 만료되면 부모 token을 지운 후 widget을 reset한다", () => {
+    const renderTurnstile = vi.fn().mockReturnValue("widget-a");
+    const callbackOrder: string[] = [];
+    const resetTurnstile = vi.fn(() => {
+      callbackOrder.push("reset");
+    });
+    window.turnstile = {
+      render: renderTurnstile,
+      reset: resetTurnstile,
+      remove: vi.fn(),
+    };
+    let parentToken: string | null = null;
+
+    render(createElement(TurnstileWidget, {
+      action: TURNSTILE_ACTIONS.post,
+      onVerify: (token) => {
+        parentToken = token;
+      },
+      onError: () => {
+        parentToken = null;
+        callbackOrder.push("clear");
+      },
+    }));
+
+    const options = renderTurnstile.mock.calls[0][1] as {
+      callback: (token: string) => void;
+      "expired-callback": () => void;
+    };
+    options.callback("stale-token");
+    expect(parentToken).toBe("stale-token");
+
+    options["expired-callback"]();
+
+    expect(parentToken).toBeNull();
+    expect(resetTurnstile).toHaveBeenCalledWith("widget-a");
+    expect(callbackOrder).toEqual(["clear", "reset"]);
+  });
+
+  it("site key가 비어 있으면 render 없이 onError를 호출한다", () => {
+    process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY = " ";
+    const renderTurnstile = vi.fn().mockReturnValue("widget-a");
+    window.turnstile = {
+      render: renderTurnstile,
+      reset: vi.fn(),
+      remove: vi.fn(),
+    };
+    const onError = vi.fn();
+
+    render(createElement(TurnstileWidget, {
+      action: TURNSTILE_ACTIONS.post,
+      onVerify: vi.fn(),
+      onError,
+    }));
+
+    expect(renderTurnstile).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledTimes(1);
   });
 });
