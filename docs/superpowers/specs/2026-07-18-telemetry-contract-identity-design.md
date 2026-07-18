@@ -36,9 +36,9 @@ PUBG 텔레메트리 리플레이의 서버 응답, R2 캐시, 2D·3D 소비자 
 
 ## 4. 아키텍처
 
-### 4.1 공용 identity 모듈
+### 4.1 공용 identity 계약
 
-`lib/pubg-analysis/telemetryIdentity.ts`를 추가한다.
+`lib/pubg-analysis/telemetryIdentity.ts`를 추가한다. 이 파일은 브라우저에서도 사용하는 타입, platform·mode 파서, identity 비교만 제공하며 Node 전용 모듈을 import하지 않는다.
 
 - 지원 플랫폼: `steam | kakao`
 - 지원 모드: `lite | full`
@@ -48,14 +48,18 @@ PUBG 텔레메트리 리플레이의 서버 응답, R2 캐시, 2D·3D 소비자 
   - `playerId`
   - `mode`
   - `telemetryVersion`
-- R2 key:
-  - `telemetry-map/v{TELEMETRY_VERSION}/{platform}/{matchId}/{playerHash}/{mode}.json`
-  - `playerHash`는 accountId의 SHA-256 앞 32자를 사용해 signed URL에 원본 accountId가 노출되지 않게 한다.
 - 모든 문자열은 허용 형식과 길이를 검증하고, 허용되지 않는 값은 fail-closed한다.
 
-`app/api/pubg/match/route.ts`와 `app/api/pubg/telemetry/route.ts`는 이 모듈만 사용해 키를 만든다. 호출부마다 키 문자열을 조립하지 않는다.
+### 4.2 서버 전용 R2 key 모듈
 
-### 4.2 payload 계약
+`lib/pubg-analysis/telemetryCacheKey.server.ts`를 추가한다.
+
+- 파일 첫 줄에서 `server-only`를 import한다.
+- R2 key는 `telemetry-map/v{TELEMETRY_VERSION}/{platform}/{matchId}/{playerHash}/{mode}.json`이다.
+- `playerHash`는 accountId의 SHA-256 앞 32자를 사용해 signed URL에 원본 accountId가 노출되지 않게 한다.
+- `app/api/pubg/match/route.ts`와 `app/api/pubg/telemetry/route.ts`는 이 모듈만 사용해 키를 만든다. 호출부마다 키 문자열을 조립하지 않는다.
+
+### 4.3 payload 계약
 
 `lib/pubg-analysis/telemetryPayload.ts`를 추가하고 서버와 브라우저가 공유한다.
 
@@ -79,7 +83,7 @@ type TelemetryPayload = {
 
 공용 validator는 객체 형태, identity 완전 일치, 필수 배열, 문자열 필드를 검사한다. identity가 없거나 요청 identity와 다르면 캐시 hit로 인정하지 않는다.
 
-### 4.3 서버 캐시 서비스
+### 4.4 서버 캐시 서비스
 
 `lib/pubg-analysis/telemetryMapCache.ts`를 추가한다.
 
@@ -95,7 +99,7 @@ type TelemetryPayload = {
 
 서버 route는 캐시 본문을 검증한 뒤에만 presigned URL을 반환한다. 브라우저도 직접 다운로드한 payload를 다시 검증해 잘못된 signed object나 구 캐시를 표시하지 않는다.
 
-### 4.4 Supabase registry
+### 4.5 Supabase registry
 
 새 migration으로 `telemetry_map_cache_entries`를 추가한다.
 
@@ -114,7 +118,7 @@ RLS를 활성화하고 공개 정책을 만들지 않는다. 브라우저가 테
 
 `match_master_telemetry`는 매치 메타데이터의 기존 기준으로 유지한다. 새 플레이어별 지도 캐시는 별도 registry에서 관리해 한 match row의 `storage_path`가 여러 플레이어 객체를 대표하는 문제를 만들지 않는다.
 
-### 4.5 cleanup 정합성
+### 4.6 cleanup 정합성
 
 `scripts/cleanup_telemetry.ts`는 활성 R2 경로를 계산할 때 다음 두 집합을 합친다.
 
