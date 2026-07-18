@@ -14,7 +14,7 @@ if (!new Set(["127.0.0.1", "::1", "localhost"]).has(new URL(databaseUrl).hostnam
 
 function sql(statement: string): Promise<string> {
   return new Promise((resolvePromise, reject) => {
-    const child = spawn(process.env.PSQL_BIN?.trim() || "psql", ["-X", databaseUrl, "-v", "ON_ERROR_STOP=1", "-At", "-c", statement], { stdio: "pipe" });
+    const child = spawn(process.env.PSQL_BIN?.trim() || "psql", ["-X", databaseUrl, "-v", "ON_ERROR_STOP=1", "-qAt", "-c", statement], { stdio: "pipe" });
     let stdout = "";
     let stderr = "";
     child.stdout?.on("data", (chunk: Buffer) => { stdout += String(chunk); });

@@ -231,4 +231,12 @@ describe("게시판 이미지 Storage 소유권 마이그레이션", () => {
     expect(script).not.toContain('has_function_privilege(${quote("PUBLIC")}');
     expect(script).not.toContain('["PUBLIC", "public-rpc-denied"]');
   });
+
+  it("psql은 quiet tuples-only 모드로 command tag 오염 없이 scalar를 반환한다", () => {
+    const script = readFileSync(resolve(process.cwd(), "scripts/verify_board_image_storage_migration.ts"), "utf8");
+
+    expect(script).toContain('"-qAt"');
+    expect(script).not.toContain('"-At"');
+    expect(script).not.toMatch(/filter\([^)]*INSERT|filter\([^)]*UPDATE/);
+  });
 });
