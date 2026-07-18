@@ -22,7 +22,12 @@ export async function POST(request: Request) {
     mimeType: body.mimeType,
     byteSize: body.byteSize,
   });
-  if (!result.ok) return NextResponse.json({ error: "이미지 업로드를 준비하지 못했습니다." }, { status: result.status });
+  if (!result.ok) {
+    const error = result.status === 429
+      ? "이미지 업로드 한도를 초과했습니다."
+      : "이미지 업로드를 준비하지 못했습니다.";
+    return NextResponse.json({ error }, { status: result.status });
+  }
   return NextResponse.json(result.data);
 }
 

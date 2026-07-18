@@ -37,7 +37,7 @@ function createAdmin(options?: {
   const rpc = vi.fn((name: string) => {
     if (name === "reserve_board_image_upload") {
       return Promise.resolve(options?.reserve ?? {
-        data: [{ image_id: IMAGE_ID, bucket_id: "board-images-v2", storage_key: IMAGE_ID }],
+        data: [{ result_code: "ok", image_id: IMAGE_ID, bucket_id: "board-images-v2", storage_key: IMAGE_ID }],
         error: null,
       });
     }
@@ -122,10 +122,38 @@ describe("게시판 이미지 signed upload API", () => {
   });
 
   it.each([
-    ["다른 bucket", { image_id: IMAGE_ID, bucket_id: "other-bucket", storage_key: IMAGE_ID }],
-    ["UUID가 아닌 image_id", { image_id: "not-a-uuid", bucket_id: "board-images-v2", storage_key: "not-a-uuid" }],
-    ["image_id와 다른 storage_key", { image_id: IMAGE_ID, bucket_id: "board-images-v2", storage_key: "other-key" }],
+    ["다른 bucket", { result_code: "ok", image_id: IMAGE_ID, bucket_id: "other-bucket", storage_key: IMAGE_ID }],
+    ["UUID가 아닌 image_id", { result_code: "ok", image_id: "not-a-uuid", bucket_id: "board-images-v2", storage_key: "not-a-uuid" }],
+    ["image_id와 다른 storage_key", { result_code: "ok", image_id: IMAGE_ID, bucket_id: "board-images-v2", storage_key: "other-key" }],
   ])("reserve는 RPC 반환 %s 계약 위반 시 signed URL을 생성하지 않고 503을 반환한다", async (_name, row) => {
+    const admin = createAdmin({ reserve: { data: [row], error: null } });
+    mocks.withAuthGuard.mockResolvedValue({ user: { id: USER_ID }, supabaseAdmin: admin.supabaseAdmin });
+
+    const response = await reservePOST(request("/api/board/images/reserve", { mimeType: "image/png", byteSize: 10 }));
+
+    expect(response.status).toBe(503);
+    expect(admin.createSignedUploadUrl).not.toHaveBeenCalled();
+  });
+
+  it("reserve는 quota_exceeded의 null 단일 행을 429 고정 오류로 반환하고 signed URL을 만들지 않는다", async () => {
+    const admin = createAdmin({ reserve: {
+      data: [{ result_code: "quota_exceeded", image_id: null, bucket_id: null, storage_key: null }],
+      error: null,
+    } });
+    mocks.withAuthGuard.mockResolvedValue({ user: { id: USER_ID }, supabaseAdmin: admin.supabaseAdmin });
+
+    const response = await reservePOST(request("/api/board/images/reserve", { mimeType: "image/png", byteSize: 10 }));
+
+    expect(response.status).toBe(429);
+    expect(await response.json()).toEqual({ error: "이미지 업로드 한도를 초과했습니다." });
+    expect(admin.createSignedUploadUrl).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["알 수 없는 result_code", { result_code: "unexpected", image_id: IMAGE_ID, bucket_id: "board-images-v2", storage_key: IMAGE_ID }],
+    ["값이 포함된 quota_exceeded", { result_code: "quota_exceeded", image_id: IMAGE_ID, bucket_id: null, storage_key: null }],
+    ["식별자가 없는 ok", { result_code: "ok", image_id: null, bucket_id: null, storage_key: null }],
+  ])("reserve는 %s 계약 위반 시 signed URL을 생성하지 않고 503을 반환한다", async (_name, row) => {
     const admin = createAdmin({ reserve: { data: [row], error: null } });
     mocks.withAuthGuard.mockResolvedValue({ user: { id: USER_ID }, supabaseAdmin: admin.supabaseAdmin });
 

@@ -35,7 +35,7 @@ type ClaimedImageRow = ReservedImageRow & {
 
 export type ImageStorageResult<T> =
   | { ok: true; data: T }
-  | { ok: false; status: 404 | 503 };
+  | { ok: false; status: 404 | 429 | 503 };
 
 export async function reserveBoardImageUpload(input: {
   supabaseAdmin: BoardImageStorageAdmin;
@@ -59,8 +59,11 @@ export async function reserveBoardImageUpload(input: {
   } catch {
     return { ok: false, status: 503 };
   }
-  const row = getFirstReservedImage(reservation.data);
-  if (reservation.error || !row) return { ok: false, status: 503 };
+  if (reservation.error) return { ok: false, status: 503 };
+  const reservationResult = getReservationResult(reservation.data);
+  if (!reservationResult) return { ok: false, status: 503 };
+  if (reservationResult.status === 429) return { ok: false, status: 429 };
+  const row = reservationResult.row;
 
   let signedResult: { data: { token?: string } | null; error: unknown };
   try {
@@ -163,13 +166,22 @@ export async function releaseBoardImages(input: {
   return { ok: true, data: { released, deferred: requestedImageIds.size - released } };
 }
 
-function getFirstReservedImage(value: unknown): ReservedImageRow | null {
+function getReservationResult(value: unknown): { status: 429 } | { status: 200; row: ReservedImageRow } | null {
   if (!Array.isArray(value) || value.length !== 1) return null;
   const row = value[0];
-  if (!isRecord(row) || typeof row.image_id !== "string" || typeof row.bucket_id !== "string"
+  if (!isRecord(row) || typeof row.result_code !== "string") return null;
+  if (row.result_code === "quota_exceeded") {
+    return row.image_id === null && row.bucket_id === null && row.storage_key === null
+      ? { status: 429 }
+      : null;
+  }
+  if (row.result_code !== "ok" || typeof row.image_id !== "string" || typeof row.bucket_id !== "string"
     || typeof row.storage_key !== "string" || row.bucket_id !== BOARD_IMAGE_BUCKET
     || !isUuid(row.image_id) || row.storage_key !== row.image_id) return null;
-  return { image_id: row.image_id, bucket_id: row.bucket_id, storage_key: row.storage_key };
+  return {
+    status: 200,
+    row: { image_id: row.image_id, bucket_id: row.bucket_id, storage_key: row.storage_key },
+  };
 }
 
 function getClaimedImages(value: unknown, requestedImageIds: Set<string>): ClaimedImageRow[] | null {
