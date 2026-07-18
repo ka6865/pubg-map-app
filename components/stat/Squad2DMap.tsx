@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useCallback, useState, useEffect, useMemo } from "react";
 import {
   MapContainer,
   TileLayer,
@@ -13,6 +13,8 @@ import L, { CRS } from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { Loader2, ShieldAlert, Play, Pause, RotateCcw, Eye, EyeOff } from "lucide-react";
 import { getTranslatedWeaponName } from "@/lib/pubg-analysis/constants";
+import { fetchTelemetryPayload } from "@/lib/pubg-analysis/fetchTelemetryPayload";
+import { parseTelemetryPlatform } from "@/lib/pubg-analysis/telemetryIdentity";
 
 // Marker Icons custom styling
 const groggyIcon = L.divIcon({
@@ -233,6 +235,13 @@ export default function Squad2DMap({ matchId, nickname, platform, mapName, focus
   const [showNames, setShowNames] = useState<boolean>(true); // 기본적으로 이름 툴팁 활성화
   const [hoveredChar, setHoveredChar] = useState<string | null>(null);
 
+  const resetSquadReplayState = useCallback(() => {
+    setTelemetry(null);
+    setIsPlaying(false);
+    setPlaybackTimeMs(0);
+    setSelectedKnockIdx(0);
+  }, []);
+
   // Check if mobile device
   useEffect(() => {
     const checkMobile = () => {
@@ -246,24 +255,27 @@ export default function Squad2DMap({ matchId, nickname, platform, mapName, focus
   // Fetch telemetry caching data
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
     async function loadTelemetry() {
+      resetSquadReplayState();
       try {
         setLoading(true);
         setError(null);
-        setSelectedKnockIdx(0); // Reset index on match change
-        const res = await fetch(
-          `/api/pubg/telemetry?matchId=${matchId}&nickname=${encodeURIComponent(nickname)}&platform=${platform}&mode=full`
-        );
-        if (!res.ok) {
-          throw new Error("리플레이 궤적 데이터를 불러오지 못했습니다.");
-        }
-        const data = await res.json();
+        const telemetryPlatform = parseTelemetryPlatform(platform);
+        const data = await fetchTelemetryPayload({
+          matchId,
+          nickname,
+          platform: telemetryPlatform,
+          mapName,
+          mode: "full",
+        }, { signal: controller.signal });
         if (active) {
           setTelemetry(data);
         }
-      } catch (err: any) {
+      } catch (error: unknown) {
+        if (controller.signal.aborted) return;
         if (active) {
-          setError(err.message || "오류가 발생했습니다.");
+          setError(error instanceof Error ? error.message : "리플레이 궤적 데이터를 불러오지 못했습니다.");
         }
       } finally {
         if (active) {
@@ -274,8 +286,9 @@ export default function Squad2DMap({ matchId, nickname, platform, mapName, focus
     loadTelemetry();
     return () => {
       active = false;
+      controller.abort();
     };
-  }, [matchId, nickname, platform]);
+  }, [matchId, nickname, platform, mapName, resetSquadReplayState]);
 
   // Sync selectedKnockIdx with focusTimeMs when telemetry or focusTimeMs changes
   useEffect(() => {

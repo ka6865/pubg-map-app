@@ -1,6 +1,7 @@
 // BGMS Refreshed V2
 import { useState, useEffect, useRef, useCallback } from "react";
-import getApiUrl from "../lib/api-config";
+import { fetchTelemetryPayload } from "../lib/pubg-analysis/fetchTelemetryPayload";
+import type { TelemetryMode, TelemetryPlatform } from "../lib/pubg-analysis/telemetryIdentity";
 
 export interface TelemetryEvent {
   type: "position" | "enemy_position" | "ride" | "leave" | "kill" | "groggy" | "took_damage" | "shot" | "revive" | "create" | "throw" | "throw_explode" | "grenade" | "smoke" | "damage";
@@ -53,7 +54,13 @@ const TEAM_COLORS = [
   "#f97316", "#10b981", "#3b82f6", "#f43f5e", "#fbbf24", "#22c55e", "#6366f1", "#d946ef"
 ];
 
-export function useTelemetry(matchId: string | null, nickname: string | null, mapName: string) {
+export function useTelemetry(
+  matchId: string | null,
+  nickname: string | null,
+  playbackPlatform: TelemetryPlatform | null,
+  playbackMode: TelemetryMode | null,
+  mapName: string,
+) {
   const [events, setEvents] = useState<TelemetryEvent[]>([]);
   const [teammates, setTeammates] = useState<string[]>([]);
   const [teamNames, setTeamNames] = useState<string[]>([]); 
@@ -67,32 +74,55 @@ export function useTelemetry(matchId: string | null, nickname: string | null, ma
   const [maxTimeMs, setMaxTimeMs] = useState(0);
   const [isFullMode, setIsFullMode] = useState(false);
   const teamColorMapRef = useRef<Record<number, string>>({});
+  const lastUpdateRef = useRef<number>(0);
+  const timerRef = useRef<number | null>(null);
+  const statesRef = useRef<Record<string, PlayerState>>({});
+  const lastProcessedTimeRef = useRef<number>(-1);
+  const lastEventIndexRef = useRef<number>(0);
+  const historyPosRef = useRef<Record<string, { x: number, y: number, time: number, health: number }>>({});
+  const futurePosRef = useRef<Record<string, { x: number, y: number, time: number, health: number } | null>>({});
+  const [currentStates, setCurrentStates] = useState<Record<string, PlayerState>>({});
 
-  const fetchTelemetry = useCallback(async (full: boolean = false) => {
-    if (!matchId || !nickname || !mapName) return;
-    setLoading(true);
+  const resetTelemetryState = useCallback(() => {
+    if (timerRef.current !== null) cancelAnimationFrame(timerRef.current);
+    timerRef.current = null;
+    setEvents([]);
+    setTeammates([]);
+    setTeamNames([]);
+    setZoneEvents([]);
+    setLoading(false);
     setError(null);
+    setIsPlaying(false);
+    setCurrentTimeMs(0);
+    setMaxTimeMs(0);
+    setIsFullMode(false);
+    setCurrentStates({});
+    teamColorMapRef.current = {};
+    statesRef.current = {};
+    lastProcessedTimeRef.current = -1;
+    lastEventIndexRef.current = 0;
+    historyPosRef.current = {};
+    futurePosRef.current = {};
+  }, []);
+
+  const fetchTelemetry = useCallback(async (
+    full: boolean = false,
+    controller: AbortController,
+  ) => {
+    resetTelemetryState();
+    if (!matchId || !nickname || !playbackPlatform || !playbackMode || !mapName) return;
+    setLoading(true);
     try {
-      const modeParam = full ? "&mode=full" : "&mode=lite";
-      const apiUrl = getApiUrl(`/api/pubg/telemetry?matchId=${matchId}&nickname=${nickname}&mapName=${mapName}${modeParam}`);
-      const res = await fetch(apiUrl);
-      let data = await res.json();
-      
-      if (!res.ok) throw new Error(data.error || "Failed to fetch telemetry");
+      const data = await fetchTelemetryPayload({
+        matchId,
+        nickname,
+        platform: playbackPlatform,
+        mapName,
+        mode: full ? "full" : playbackMode,
+      }, { signal: controller.signal });
+      if (controller.signal.aborted) return;
 
-      // [V26.0] R2 Presigned URL 직배송 다운로드 대응
-      if (data.downloadUrl) {
-        const directRes = await fetch(data.downloadUrl);
-        if (!directRes.ok) throw new Error("R2에서 직접 텔레메트리 데이터를 로드하는데 실패했습니다.");
-        data = await directRes.json();
-      }
-
-      // 구버전 캐시 복원: mapName 필드가 누락된 경우 쿼리 파라미터 또는 기본값으로 보완
-      if (data && !data.mapName) {
-        data.mapName = mapName || "Erangel";
-      }
-
-      const evs = data.events || [];
+      const evs = data.events as TelemetryEvent[];
       setEvents(evs);
       setTeammates(data.teammates || []);
       setTeamNames(data.teamNames || []);
@@ -120,25 +150,19 @@ export function useTelemetry(matchId: string | null, nickname: string | null, ma
       } else {
         setMaxTimeMs(0);
       }
-    } catch (err: any) {
-      console.error("Telemetry fetch error:", err);
-      setError(err.message);
+    } catch (error: unknown) {
+      if (controller.signal.aborted) return;
+      setError(error instanceof Error ? error.message : "텔레메트리 요청에 실패했습니다.");
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted) setLoading(false);
     }
-  }, [matchId, nickname, mapName]);
-
-  // ✅ 시작 시점의 mode 파람리터를 ref로 고정하여 리렌더 시 불필요한 re-fetch 방지
-  const initialModeRef = useRef<string | null>(
-    typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("mode") : null
-  );
+  }, [matchId, nickname, playbackPlatform, playbackMode, mapName, resetTelemetryState]);
 
   useEffect(() => {
-    fetchTelemetry(initialModeRef.current === "full");
-  }, [fetchTelemetry]);
-
-  const lastUpdateRef = useRef<number>(0);
-  const timerRef = useRef<number | null>(null);
+    const controller = new AbortController();
+    void fetchTelemetry(playbackMode === "full", controller);
+    return () => controller.abort();
+  }, [fetchTelemetry, playbackMode]);
 
   // 🎯 React 19 대응: 마운트 시점에 안전하게 초기값 할당 (Purity 보장)
   useEffect(() => {
@@ -165,16 +189,6 @@ export function useTelemetry(matchId: string | null, nickname: string | null, ma
     timerRef.current = requestAnimationFrame(loop);
     return () => { if (timerRef.current) cancelAnimationFrame(timerRef.current); };
   }, [isPlaying, playbackSpeed, maxTimeMs]);
-
-  // 🚀 변수명 변경 및 위치 조정 (IDE 유령 에러 해결용)
-  const statesRef = useRef<Record<string, PlayerState>>({});
-  const lastProcessedTimeRef = useRef<number>(-1);
-  const lastEventIndexRef = useRef<number>(0);
-  const historyPosRef = useRef<Record<string, { x: number, y: number, time: number, health: number }>>({});
-  const futurePosRef = useRef<Record<string, { x: number, y: number, time: number, health: number } | null>>({});
-
-  // 🎯 React 19 대응: currentStates를 상태로 관리하고 useEffect에서 안전하게 업데이트 (Cascading Render 방지)
-  const [currentStates, setCurrentStates] = useState<Record<string, PlayerState>>({});
 
   useEffect(() => {
     if (events.length === 0) {
@@ -324,6 +338,5 @@ export function useTelemetry(matchId: string | null, nickname: string | null, ma
     maxTimeMs,
     currentStates,
     isFullMode,
-    fetchTelemetry,
   };
 }

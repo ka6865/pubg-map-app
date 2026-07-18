@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command, HeadObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, ListObjectsV2Command, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 let r2ClientInstance: S3Client | null = null;
@@ -35,6 +35,14 @@ function getR2Client(): S3Client {
 
 function getBucketName(): string {
   return cleanEnv(process.env.CLOUDFLARE_R2_BUCKET_NAME) || 'telemetry';
+}
+
+export function isR2Configured(): boolean {
+  return Boolean(
+    cleanEnv(process.env.CLOUDFLARE_R2_ENDPOINT)
+      && cleanEnv(process.env.CLOUDFLARE_R2_ACCESS_KEY_ID)
+      && cleanEnv(process.env.CLOUDFLARE_R2_SECRET_ACCESS_KEY),
+  );
 }
 
 /**
@@ -114,98 +122,6 @@ export async function downloadFromR2(key: string): Promise<string | null> {
       return null;
     }
     console.error(`[R2 Error] Failed to download file from R2: ${key}`, error);
-    throw error;
-  }
-}
-
-/**
- * Deletes a single object from Cloudflare R2 bucket
- * @param key The filename/key of the file to remove
- */
-export async function deleteFromR2(key: string): Promise<void> {
-  if (!cleanEnv(process.env.CLOUDFLARE_R2_ENDPOINT)) {
-    console.warn('[R2 Warning] Cloudflare R2 Credentials are not configured. Skipping delete.');
-    return;
-  }
-
-  const command = new DeleteObjectCommand({
-    Bucket: getBucketName(),
-    Key: key,
-  });
-
-  try {
-    await getR2Client().send(command);
-  } catch (error) {
-    console.error(`[R2 Error] Failed to delete file from R2: ${key}`, error);
-    throw error;
-  }
-}
-
-/**
- * Deletes multiple objects in a single API request from Cloudflare R2 bucket
- * @param keys Array of filenames/keys of the files to remove
- */
-export async function deleteMultipleFromR2(keys: string[]): Promise<void> {
-  if (!cleanEnv(process.env.CLOUDFLARE_R2_ENDPOINT) || keys.length === 0) {
-    return;
-  }
-
-  // AWS S3 standard limit for DeleteObjects is 1000 items per request
-  const chunks = [];
-  for (let i = 0; i < keys.length; i += 1000) {
-    chunks.push(keys.slice(i, i + 1000));
-  }
-
-  for (const chunk of chunks) {
-    const { DeleteObjectsCommand } = await import('@aws-sdk/client-s3');
-    const command = new DeleteObjectsCommand({
-      Bucket: getBucketName(),
-      Delete: {
-        Objects: chunk.map(key => ({ Key: key })),
-        Quiet: true,
-      },
-    });
-
-    try {
-      await getR2Client().send(command);
-    } catch (error) {
-      console.error('[R2 Error] Failed to batch delete files from R2', error);
-      throw error;
-    }
-  }
-}
-
-/**
- * Lists all objects stored inside the Cloudflare R2 Bucket
- * @param limit Maximum number of files to return (default: 1000)
- */
-export async function listR2Files(limit: number = 1000): Promise<{ key: string; size: number }[]> {
-  if (!cleanEnv(process.env.CLOUDFLARE_R2_ENDPOINT)) {
-    console.warn('[R2 Warning] Cloudflare R2 Credentials are not configured. Returning empty file list.');
-    return [];
-  }
-
-  const files: { key: string; size: number }[] = [];
-  let continuationToken: string | undefined;
-  try {
-    do {
-      const remaining = Math.max(limit - files.length, 0);
-      if (remaining === 0) break;
-      const command = new ListObjectsV2Command({
-        Bucket: getBucketName(),
-        MaxKeys: Math.min(remaining, 1000),
-        ContinuationToken: continuationToken,
-      });
-      const response = await getR2Client().send(command);
-      response.Contents?.forEach(item => {
-        if (!item.Key || files.length >= limit) return;
-        files.push({ key: item.Key, size: item.Size || 0 });
-      });
-      continuationToken = response.IsTruncated ? response.NextContinuationToken : undefined;
-    } while (continuationToken);
-    return files;
-  } catch (error) {
-    console.error('[R2 Error] Failed to list files from R2 Bucket', error);
     throw error;
   }
 }
@@ -330,4 +246,3 @@ export async function checkObjectExists(key: string): Promise<boolean> {
     return false;
   }
 }
-

@@ -1,5 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { unstable_cache } from "next/cache"; // [ISR V1.0] Next.js 16 캐싱 API
 import { AnalysisEngine } from "@/lib/pubg-analysis/AnalysisEngine";
@@ -8,7 +8,27 @@ import { normalizeName } from "@/lib/pubg-analysis/utils";
 import { adaptBenchmark } from "@/lib/pubg-analysis/benchmarkAdapter";
 import { fetchTierBenchmarkStats } from "@/lib/pubg-analysis/benchmarkLookup";
 import { buildProcessedTelemetryUpsert, getValidFullResult, normalizePlatform } from "@/lib/pubg-analysis/cacheIdentity";
-import { uploadToR2, downloadFromR2 } from "@/lib/pubg-analysis/r2Service";
+import {
+  downloadFromR2,
+  getPresignedUrlFromR2,
+  isR2Configured,
+  uploadToR2,
+} from "@/lib/pubg-analysis/r2Service";
+import {
+  reserveTelemetryMapCache,
+  writeTelemetryMapCache,
+} from "@/lib/pubg-analysis/telemetryMapCache";
+import {
+  finalizeTelemetryMapCacheLifecycle,
+  upsertTelemetryMapCacheReservation,
+} from "@/lib/pubg-analysis/telemetryRegistry.server";
+import { createTelemetryIdentity } from "@/lib/pubg-analysis/telemetryIdentity";
+import {
+  buildTelemetryPublicIdentity,
+  pseudonymizeTelemetryAccountIds,
+  pseudonymizeTelemetryTeammates,
+} from "@/lib/pubg-analysis/telemetryCacheKey.server";
+import { createTelemetryPayload } from "@/lib/pubg-analysis/telemetryPayload";
 import { trackPubgRateLimit } from "@/lib/pubg-analysis/pubgApiTracker";
 import {
   persistMatchAnalysis,
@@ -98,11 +118,34 @@ function getBearerToken(request: NextRequest): string | null {
   return authorization.slice("Bearer ".length) || null;
 }
 
+async function reportBackgroundReanalysisFailure(): Promise<void> {
+  try {
+    await reportPubgApiError(
+      "/api/pubg/match/revalidate",
+      500,
+      "Background match reanalysis failed",
+      "Sanitized background error",
+    );
+  } catch {
+    console.error("[MATCH] 백그라운드 오류 기록 실패");
+  }
+}
+
+function createTacticalResponse(result: any) {
+  const tacticalResult = { ...result };
+  delete tacticalResult.mapData;
+  return pseudonymizeTelemetryAccountIds(tacticalResult);
+}
+
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const matchId = searchParams.get("matchId");
   const nickname = searchParams.get("nickname");
-  const platformParam = normalizePlatform(searchParams.get("platform") || "steam");
+  const platformValue = searchParams.get("platform");
+  if (!platformValue) {
+    return NextResponse.json({ error: "Invalid platform" }, { status: 400 });
+  }
+  const platformParam = normalizePlatform(platformValue);
   const lowerNickname = normalizeName(nickname || "");
   const force = searchParams.get("force") === "true";
   const sourceParam = searchParams.get("source") || "user";
@@ -157,13 +200,24 @@ export async function GET(request: NextRequest) {
 
   try {
     const shouldForce = force;
+    let cachedFullResult: any = null;
 
     if (!shouldForce) {
       const cachedData = await getCachedMatchTelemetry(matchId, lowerNickname, platform) as any;
-      const cachedFullResult = getValidFullResult(cachedData, lowerNickname, platform);
-      if (cachedFullResult && (cachedFullResult.v || 0) >= RESULT_VERSION) {
-        return NextResponse.json(cachedFullResult);
+      cachedFullResult = getValidFullResult(cachedData, lowerNickname, platform);
+      if (cachedFullResult && (
+        (cachedFullResult.v || 0) >= RESULT_VERSION
+        || !isR2Configured()
+      )) {
+        return NextResponse.json(createTacticalResponse(cachedFullResult));
       }
+    }
+
+    if (!isR2Configured()) {
+      return NextResponse.json(
+        { error: "텔레메트리 캐시 저장소를 사용할 수 없습니다." },
+        { status: 503 },
+      );
     }
 
     const apiKey = (process.env.PUBG_API_KEY || "").split(" ")[0];
@@ -193,6 +247,10 @@ export async function GET(request: NextRequest) {
     if (!myParticipant) throw new Error(`Player ${nickname} not found in match participants`);
 
     const myAccountId = myParticipant.attributes.stats.playerId || myParticipant.attributes.accountId;
+    if (!myAccountId) {
+      return NextResponse.json({ error: "Player account identifier is unavailable" }, { status: 404 });
+    }
+    const canonicalNickname = myParticipant.attributes.stats.name;
 
     // [V55.0] 닉네임 캐시 최적화: 분석 대상 플레이어 1명만 즉시 업데이트 (데드락 방지)
     const myCacheEntry = {
@@ -221,48 +279,43 @@ export async function GET(request: NextRequest) {
     const myDamageRank = sortedByDamage.findIndex((s: any) => normalizeName(s.name) === lowerNickname) + 1;
     const rankPct = humanParticipants.length > 0 ? myDamageRank / humanParticipants.length : 1;
 
-    // [ISR V1.0] unstable_cache 프록시를 통한 DB 캐시 조회
-    let cachedData = null;
-    if (!shouldForce) {
-      cachedData = await getCachedMatchTelemetry(matchId, lowerNickname, platform) as any;
-      const cachedFullResult = getValidFullResult(cachedData, lowerNickname, platform);
-      if (cachedFullResult) {
-        const cachedVersion = cachedFullResult.v || 0;
+    if (!shouldForce && cachedFullResult) {
+      const cachedVersion = cachedFullResult.v || 0;
         
-        // [Stale-While-Revalidate] 캐시 데이터 버전이 낮으면 백그라운드 재분석 기동
-        if (cachedVersion < RESULT_VERSION) {
-          const reanalyzePromise = reanalyzeAndSave(
-            matchId, nickname, platform, lowerNickname, matchData, teamNames, teamAccountIds,
-            myRosterId, myParticipant, teamStats, rankPct, matchAttr, rosters, participants,
-            true, source
-          ).catch(() => undefined);
-
-          // Next.js request.waitUntil 이 지원되면 백그라운드 작업 생명주기 관리
-          if (typeof (request as any).waitUntil === 'function') {
-            (request as any).waitUntil(reanalyzePromise);
+      // [Stale-While-Revalidate] 캐시 데이터 버전이 낮으면 백그라운드 재분석 기동
+      if (cachedVersion < RESULT_VERSION) {
+        after(async () => {
+          try {
+            await reanalyzeAndSave(
+              matchId, canonicalNickname, platform, lowerNickname, matchData, teamNames, teamAccountIds,
+              myRosterId, myParticipant, myAccountId, teamStats, rankPct, matchAttr, rosters, participants,
+              true, source,
+            );
+          } catch {
+            await reportBackgroundReanalysisFailure();
           }
-        }
-
-        // 샘플 참가자 추출 (기존 response 형식 호환)
-        const allParticipantNames = participants
-          .filter((p: any) => !p.attributes.stats.playerId?.startsWith("ai."))
-          .map((p: any) => p.attributes.stats.name)
-          .filter((name: string) => normalizeName(name) !== lowerNickname);
-        const sampleParticipants = allParticipantNames
-          .sort(() => 0.5 - Math.random())
-          .slice(0, 5);
-
-        return NextResponse.json({
-          ...cachedFullResult,
-          sampleParticipants
         });
       }
+
+      // 샘플 참가자 추출 (기존 response 형식 호환)
+      const allParticipantNames = participants
+        .filter((p: any) => !p.attributes.stats.playerId?.startsWith("ai."))
+        .map((p: any) => p.attributes.stats.name)
+        .filter((name: string) => normalizeName(name) !== lowerNickname);
+      const sampleParticipants = allParticipantNames
+        .sort(() => 0.5 - Math.random())
+        .slice(0, 5);
+
+      return NextResponse.json({
+        ...createTacticalResponse(cachedFullResult),
+        sampleParticipants
+      });
     }
 
     // 캐시가 없거나 강제 업데이트가 필요한 경우 동기식 분석 실행
     const finalResponse = await reanalyzeAndSave(
-      matchId, nickname, platform, lowerNickname, matchData, teamNames, teamAccountIds,
-      myRosterId, myParticipant, teamStats, rankPct, matchAttr, rosters, participants,
+      matchId, canonicalNickname, platform, lowerNickname, matchData, teamNames, teamAccountIds,
+      myRosterId, myParticipant, myAccountId, teamStats, rankPct, matchAttr, rosters, participants,
       shouldForce, source
     );
 
@@ -273,7 +326,7 @@ export async function GET(request: NextRequest) {
     const status = isRateLimit ? 429 : 500;
     const errorMsg = isRateLimit
       ? "PUBG API 호출 한도가 일시적으로 초과되었습니다. 약 1분 후 다시 시도해 주세요."
-      : err.message;
+      : "매치 데이터를 처리할 수 없습니다.";
 
     // [MONITORING] PUBG API 에러 감지 및 기록
     await reportPubgApiError(
@@ -292,7 +345,7 @@ export async function GET(request: NextRequest) {
  */
 async function reanalyzeAndSave(
   matchId: string,
-  nickname: string,
+  canonicalNickname: string,
   platform: PubgPlatform,
   lowerNickname: string,
   matchData: any,
@@ -300,6 +353,7 @@ async function reanalyzeAndSave(
   teamAccountIds: Set<string>,
   myRosterId: string,
   myParticipant: any,
+  myAccountId: string,
   teamStats: any[],
   rankPct: number,
   matchAttr: any,
@@ -308,6 +362,19 @@ async function reanalyzeAndSave(
   force: boolean = false,
   source: AnalysisSource = 'user'
 ) {
+  const telemetryIdentity = createTelemetryIdentity({
+    matchId,
+    platform,
+    playerId: myAccountId,
+    mode: "lite",
+    telemetryVersion: TELEMETRY_VERSION,
+  });
+  await reserveTelemetryMapCache(telemetryIdentity, {
+    isConfigured: isR2Configured,
+    reserve: (row) => upsertTelemetryMapCacheReservation(supabase, row),
+    now: () => new Date(),
+  });
+
   const telemetryAsset = matchData.included.find((it: any) => it.type === "asset");
   let telData: any[] = [];
 
@@ -421,7 +488,7 @@ async function reanalyzeAndSave(
   const bench = adaptBenchmark(tierStats);
 
   const engine = new AnalysisEngine(
-    nickname, myParticipant.attributes.stats.playerId || myParticipant.attributes.accountId, teamNames, teamAccountIds,
+    canonicalNickname, myAccountId, teamNames, teamAccountIds,
     new Set<string>(), new Set<string>(),
     myRosterId
   );
@@ -464,29 +531,40 @@ async function reanalyzeAndSave(
   };
 
   const { mapData, ...tacticalResult } = fullResult;
-  const mapCachePath = `${matchId}_v${TELEMETRY_VERSION}_map.json`;
-
+  const telemetryPayload = createTelemetryPayload({
+    identity: buildTelemetryPublicIdentity(telemetryIdentity),
+    startTime: matchAttr.createdAt,
+    teammates: pseudonymizeTelemetryTeammates(mapData?.teammates || []),
+    teamNames: mapData?.teamNames || [myParticipant.attributes.stats.name],
+    events: pseudonymizeTelemetryAccountIds(mapData?.events || []),
+    zoneEvents: pseudonymizeTelemetryAccountIds(mapData?.zoneEvents || []),
+    mapName: result.mapName || matchAttr.mapName || matchAttr.mapId,
+  });
   const processedTelemetryRecord = buildProcessedTelemetryUpsert(
     matchId,
     lowerNickname,
     platform,
-    tacticalResult
+    tacticalResult,
   );
-
-  await Promise.all([
-    uploadToR2(mapCachePath, JSON.stringify(mapData), 'application/json'),
-    supabase.from("processed_match_telemetry").upsert(
-      processedTelemetryRecord,
-      { onConflict: "match_id,platform,player_id" }
-    ),
-    supabase.from("match_master_telemetry").upsert({
-      match_id: matchId,
-      map_name: matchAttr.mapId,
-      game_mode: matchAttr.gameMode,
-      telemetry_version: Math.floor(TELEMETRY_VERSION),
-      storage_path: mapCachePath
-    }, { onConflict: 'match_id' })
-  ]);
+  await writeTelemetryMapCache(telemetryIdentity, telemetryPayload, {
+    isConfigured: isR2Configured,
+    download: downloadFromR2,
+    upload: uploadToR2,
+    sign: getPresignedUrlFromR2,
+    reserve: (row) => upsertTelemetryMapCacheReservation(supabase, row),
+    finalize: (row) => finalizeTelemetryMapCacheLifecycle(supabase, {
+      row,
+      mapName: matchAttr.mapId,
+      gameMode: matchAttr.gameMode,
+      processed: {
+        playerId: processedTelemetryRecord.player_id,
+        platform: processedTelemetryRecord.platform,
+        data: processedTelemetryRecord.data,
+        updatedAt: processedTelemetryRecord.updated_at,
+      },
+    }),
+    now: () => new Date(),
+  });
 
   try {
     const persistenceResult = await persistMatchAnalysis(supabase, {
@@ -539,7 +617,7 @@ async function reanalyzeAndSave(
     .slice(0, 5);
 
   return {
-    ...fullResult,
+    ...createTacticalResponse(tacticalResult),
     sampleParticipants
   };
 }

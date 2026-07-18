@@ -5,16 +5,16 @@ import Sidebar from "../Sidebar";
 import MobileBottomSheet from "./MobileBottomSheet";
 import MapView from "./MapView";
 import AdfitBanner from "../ads/AdfitBanner";
-import { X, Hammer, Map as MapIcon, Crosshair, Plane, AlertCircle, SlidersHorizontal, Menu, Flame, Grid, MapPin, Target } from 'lucide-react';
+import { X, Hammer, Map as MapIcon, Crosshair, AlertCircle, SlidersHorizontal, Menu, Flame, MapPin, Target } from 'lucide-react';
 import type { MapTab, MapMarker, AuthUser, PendingVehicle } from "../../types/map";
 import { useTelemetry } from "../../hooks/useTelemetry";
 import TelemetryPlayer from "./TelemetryPlayer";
 import KillFeed from "./KillFeed";
-import ZoneTimer from "./ZoneTimer";
 import HomeNotice from "./HomeNotice";
 import { TelemetrySidebar } from "./telemetry/TelemetrySidebar";
 import { SimulatorPanel } from "./SimulatorPanel";
 import { HeatmapLegend } from "./HeatmapLegend";
+import type { TelemetryMode, TelemetryPlatform } from "../../lib/pubg-analysis/telemetryIdentity";
 
 interface MapShellProps {
   activeMapId: string;
@@ -30,7 +30,6 @@ interface MapShellProps {
   onSetSidebarOpen: (isOpen: boolean) => void;
   onToggleFilter: (id: string) => void;
   onGetCount: (id: string) => number;
-  onEnableDefaultVehicleFilters?: () => void;
   currentUser: AuthUser | null;
   isAdmin?: boolean;
   pendingVehicles: PendingVehicle[];
@@ -57,19 +56,41 @@ const formatTime = (ms: number) => {
 const MapShell = memo(({
     activeMapId, currentMap, bounds, visibleVehicles, icons, imageHeight, imageWidth,
     isMobile, isSidebarOpen, filters, onSetSidebarOpen, onToggleFilter, onGetCount,
-    onEnableDefaultVehicleFilters, currentUser, isAdmin, pendingVehicles,
+    currentUser, isAdmin, pendingVehicles,
   }: MapShellProps) => {
     const router = useRouter();
     const searchParams = useSearchParams();
     const playbackId = searchParams?.get("playback") || null;
     const playbackNickname = searchParams?.get("nickname") || null;
+    const playbackPlatformParam = searchParams?.get("platform") || null;
+    const playbackModeParam = searchParams?.get("mode") ?? null;
+    const playbackPlatform: TelemetryPlatform | null =
+      playbackPlatformParam === "steam" || playbackPlatformParam === "kakao"
+        ? playbackPlatformParam
+        : null;
+    const playbackMode: TelemetryMode | null = playbackModeParam === null
+      ? "lite"
+      : playbackModeParam === "lite" || playbackModeParam === "full"
+        ? playbackModeParam
+        : null;
+    const playbackIdentityError = playbackId && !playbackNickname
+      ? "리플레이 nickname이 누락되었습니다."
+      : playbackId && !playbackPlatform
+        ? "리플레이 platform이 누락되었거나 지원되지 않습니다."
+        : playbackId && !playbackMode
+          ? "리플레이 mode가 지원되지 않습니다."
+          : null;
     
     const {
       events: telemetryEvents, loading: telemetryLoading, error: telemetryError,
       isPlaying, setIsPlaying, playbackSpeed, setPlaybackSpeed,
       currentTimeMs, setCurrentTimeMs, maxTimeMs, currentStates, teamNames, zoneEvents,
-      isFullMode, fetchTelemetry
-    } = useTelemetry(playbackId, playbackNickname, activeMapId);
+      isFullMode
+    } = useTelemetry(playbackId, playbackNickname, playbackPlatform, playbackMode, activeMapId);
+    const safeTelemetryEvents = playbackIdentityError ? [] : telemetryEvents;
+    const safeCurrentStates = playbackIdentityError ? {} : currentStates;
+    const safeTeamNames = playbackIdentityError ? [] : teamNames;
+    const safeZoneEvents = playbackIdentityError ? [] : zoneEvents;
 
     const [activeMode, setActiveMode] = useState<"none" | "mortar" | "flight" | "report" | "simulate">("none");
     const [isMortarDisclaimerOpen, setIsMortarDisclaimerOpen] = useState(false);
@@ -402,8 +423,8 @@ const MapShell = memo(({
               pendingVehicles={playbackId ? [] : pendingVehicles} filters={filters} isHotDropOn={isHotDropOn}
               isHighPrecision={isFullMode}
               telemetryData={{
-                isActive: !!playbackId, mapName: activeMapId || "Erangel", events: telemetryEvents, currentTimeMs, currentStates,
-                teamNames, zoneEvents, showZone, showCombatDots, showShotDots, hiddenPlayers, showPlayerNames, showFlightPath,
+                isActive: !!playbackId && !playbackIdentityError, mapName: activeMapId || "Erangel", events: safeTelemetryEvents, currentTimeMs, currentStates: safeCurrentStates,
+                teamNames: safeTeamNames, zoneEvents: safeZoneEvents, showZone, showCombatDots, showShotDots, hiddenPlayers, showPlayerNames, showFlightPath,
               }}
               simulatorStep={simulatorStep}
               simulatorPhases={simulatorPhases}
@@ -437,9 +458,9 @@ const MapShell = memo(({
                     </div>
                   )}
 
-                  {zoneEvents.length > 0 && (
+                  {safeZoneEvents.length > 0 && (
                     <div className={`bg-black/80 backdrop-blur-md ${isMobile ? 'px-3 py-0.5' : 'px-4 py-1'} rounded-full border border-white/10 shadow-2xl flex items-center gap-3 animate-fade-in`}>
-                       <ZoneStatus currentTimeMs={currentTimeMs} zoneEvents={zoneEvents} />
+                       <ZoneStatus currentTimeMs={currentTimeMs} zoneEvents={safeZoneEvents} />
                     </div>
                   )}
                   
@@ -452,7 +473,7 @@ const MapShell = memo(({
                     <div className="flex flex-col items-center">
                       <span className="text-[9px] text-[#F2A900] font-bold uppercase tracking-widest">Alive</span>
                       <span className={`${isMobile ? 'text-lg' : 'text-2xl'} font-mono font-bold text-[#F2A900] leading-none`}>
-                        {Object.values(currentStates || {}).filter((p: any) => !p.isDead).length}
+                        {Object.values(safeCurrentStates).filter((p: any) => !p.isDead).length}
                       </span>
                     </div>
                   </div>
@@ -486,21 +507,28 @@ const MapShell = memo(({
                 {/* 하단 플레이어 컨트롤러 */}
                 <div className={`absolute ${isMobile ? 'bottom-20' : 'bottom-6'} left-1/2 -translate-x-1/2 z-[1000] w-full max-w-2xl px-4`}>
                   <TelemetryPlayer
-                    events={telemetryEvents} teamNames={teamNames} isPlaying={isPlaying} setIsPlaying={setIsPlaying} playbackSpeed={playbackSpeed}
+                    events={safeTelemetryEvents} teamNames={safeTeamNames} isPlaying={isPlaying} setIsPlaying={setIsPlaying} playbackSpeed={playbackSpeed}
                     setPlaybackSpeed={setPlaybackSpeed} currentTimeMs={currentTimeMs} setCurrentTimeMs={setCurrentTimeMs}
-                    maxTimeMs={maxTimeMs} loading={telemetryLoading} error={telemetryError} showZone={showZone}
+                    maxTimeMs={maxTimeMs} loading={telemetryLoading} error={playbackIdentityError || telemetryError} showZone={showZone}
                     onToggleZone={() => setShowZone(!showZone)} showCombatDots={showCombatDots}
                     onToggleCombatDots={() => setShowCombatDots(!showCombatDots)} showShotDots={showShotDots}
                     onToggleShotDots={() => setShowShotDots(!showShotDots)} hiddenPlayers={hiddenPlayers}
                     onTogglePlayer={(n) => setHiddenPlayers(prev => prev.includes(n) ? prev.filter(x => x !== n) : [...prev, n])}
                     showPlayerNames={showPlayerNames} onTogglePlayerNames={() => setShowPlayerNames(!showPlayerNames)}
                     showFlightPath={showFlightPath} onToggleFlightPath={() => setShowFlightPath(!showFlightPath)}
-                    onClose={() => { const p = new URLSearchParams(searchParams?.toString() || ""); p.delete("playback"); p.delete("nickname"); router.push(`/?${p.toString()}`); }}
+                    onClose={() => {
+                      const p = new URLSearchParams(searchParams?.toString() || "");
+                      p.delete("playback");
+                      p.delete("nickname");
+                      p.delete("platform");
+                      p.delete("mode");
+                      router.push(`/?${p.toString()}`);
+                    }}
                   />
                 </div>
-                {telemetryEvents.length > 0 && (
+                {safeTelemetryEvents.length > 0 && (
                   <div className={isMobile ? "translate-y-[-60px]" : ""}>
-                    <KillFeed events={telemetryEvents} currentTimeMs={currentTimeMs} teamNames={teamNames} playbackSpeed={playbackSpeed} />
+                    <KillFeed events={safeTelemetryEvents} currentTimeMs={currentTimeMs} teamNames={safeTeamNames} playbackSpeed={playbackSpeed} />
                   </div>
                 )}
               </>
@@ -521,7 +549,7 @@ const MapShell = memo(({
                   onClick={() => setIsMenuOpen(false)}
                 />
               )}
-              <TelemetrySidebar currentStates={currentStates} teamNames={teamNames} />
+              <TelemetrySidebar currentStates={safeCurrentStates} teamNames={safeTeamNames} />
             </div>
           )}
         </div>
