@@ -816,7 +816,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, in
         status: "start"
       }
     });
-    router.push(`/maps/${mapId}?playback=${matchId}&nickname=${nickname}`);
+    router.push(`/maps/${mapId}?playback=${matchId}&nickname=${nickname}&platform=${encodeURIComponent(platform)}`);
   };
 
   const fetchFullMatch = useCallback(async () => {
@@ -2027,7 +2027,7 @@ export const MatchCard = ({ matchId, nickname, platform, isMobile, index = 0, in
                       status: "start"
                     }
                   });
-                  router.push(`/maps/${mapId}?playback=${matchId}&nickname=${nickname}&mode=full`);
+                  router.push(`/maps/${mapId}?playback=${matchId}&nickname=${nickname}&platform=${encodeURIComponent(platform)}&mode=full`);
                 }}
                 className="w-full text-left p-4 bg-white/3 hover:bg-white/5 border border-white/5 hover:border-white/10 rounded-2xl transition-all flex gap-3.5 items-center cursor-pointer group hover:scale-[1.01]"
               >

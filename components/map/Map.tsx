@@ -147,10 +147,6 @@ export default function Map({ initialMapId }: MapProps) {
   const getCount = (type: string) =>
     dbVehicles.filter((v) => v.mapId === activeMapId && v.type === type).length;
 
-  const enableDefaultVehicleFilters = () => {
-    setFilters((prev) => ({ ...prev, Esports: true, Garage: true }));
-  };
-
   const currentMap = MAP_LIST.find((m) => m.id === activeMapId) || MAP_LIST[0];
   const bounds: [[number, number], [number, number]] = [
     [0, 0],
@@ -197,7 +193,6 @@ export default function Map({ initialMapId }: MapProps) {
           onSetSidebarOpen={setSidebarOpen}
           onToggleFilter={toggleFilter}
           onGetCount={getCount}
-          onEnableDefaultVehicleFilters={enableDefaultVehicleFilters}
           currentUser={currentUser}
           isAdmin={isAdmin}
           pendingVehicles={pendingVehicles}

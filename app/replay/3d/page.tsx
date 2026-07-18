@@ -11,6 +11,11 @@ import ReplayHUD from "@/components/replay/ReplayHUD";
 import ReplaySidebar from "@/components/replay/ReplaySidebar";
 import ReplayTimeline from "@/components/replay/ReplayTimeline";
 import ReplayKillFeed from "@/components/replay/ReplayKillFeed";
+import { fetchTelemetryPayload } from "@/lib/pubg-analysis/fetchTelemetryPayload";
+import {
+  parseTelemetryPlatform,
+  type TelemetryPlatform,
+} from "@/lib/pubg-analysis/telemetryIdentity";
 
 // PUBG 맵 크기 상수 (cm)
 const THREE_MAP_SIZE = 100; // Three.js 공간 상의 가로세로 크기
@@ -20,6 +25,8 @@ const DESKTOP_TERRAIN_SEGMENTS = 256;
 const MOBILE_RENDER_FPS = 30;
 const DESKTOP_RENDER_FPS = 60;
 const UI_TIME_UPDATE_INTERVAL_MS = 120;
+const DEFAULT_NICKNAME = "KangHeeSung_";
+const DEFAULT_MATCH_ID = "c88f4f64-4f86-4f44-b40b-629bece6cdcf";
 
 type RenderProfile = {
   terrainSegments: number;
@@ -234,12 +241,12 @@ function Replay3DContent() {
   const searchParams = useSearchParams();
   const qNickname = searchParams.get("nickname");
   const qMatchId = searchParams.get("matchId");
-  const qPlatform = searchParams.get("platform") || "steam";
+  const qPlatform = searchParams.get("platform");
 
   // 상태 관리 (기본 검색값: KangHeeSung_의 스쿼드 미라마 8등 매치)
-  const [nickname, setNickname] = useState(qNickname || "KangHeeSung_");
-  const [matchId, setMatchId] = useState(qMatchId || "c88f4f64-4f86-4f44-b40b-629bece6cdcf");
-  const [platform, setPlatform] = useState(qPlatform);
+  const [nickname, setNickname] = useState(qNickname || DEFAULT_NICKNAME);
+  const [matchId, setMatchId] = useState(qMatchId || DEFAULT_MATCH_ID);
+  const [platform, setPlatform] = useState(qPlatform ?? "");
   
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -332,19 +339,24 @@ function Replay3DContent() {
   }, [currentTimeMs, players, zones, showBluezone, showTrajectories, altitudeScale, showEnemies, damageEvents, carePackages, trackingPlayer, hiddenPlayers, showNames]);
 
   // 1. 실시간 텔레메트리 API 호출 및 파싱
-  const fetchTelemetryData = async (targetMatchId: string, targetNickname: string) => {
+  const fetchTelemetryData = async (
+    targetMatchId: string,
+    targetNickname: string,
+    targetPlatform: TelemetryPlatform,
+    controller?: AbortController,
+  ) => {
     try {
       setIsLoading(true);
       setErrorMsg(null);
       setIsPlaying(false);
       setCurrentTimeMs(0);
-      
-      const res = await fetch(`/api/pubg/telemetry?matchId=${targetMatchId}&nickname=${encodeURIComponent(targetNickname)}&platform=${platform}&mode=full`);
-      if (!res.ok) {
-        throw new Error("텔레메트리 궤적 데이터를 불러오는 데 실패했습니다.");
-      }
-      
-      const data = await res.json();
+
+      const data = await fetchTelemetryPayload({
+        matchId: targetMatchId,
+        nickname: targetNickname,
+        platform: targetPlatform,
+        mode: "full",
+      }, controller ? { signal: controller.signal } : undefined);
       if (!data.events || data.events.length === 0) {
         throw new Error("데이터에 유효한 동선 이벤트가 존재하지 않습니다.");
       }
@@ -354,7 +366,7 @@ function Replay3DContent() {
       const normalizedMap = MAP_FOLDER_NAMES[rawMapName] || "Miramar";
       setSelectedMap(normalizedMap);
 
-      const events = data.events;
+      const events = data.events as any[];
       const teamNames = data.teamNames || [targetNickname];
 
       // 1) 전체 플레이어 이름 추출 및 적군/아군 동선 구분
@@ -448,7 +460,7 @@ function Replay3DContent() {
       });
 
       // 2) 자기장 이벤트 필터링
-      const zoneEvents = data.zoneEvents || [];
+      const zoneEvents = data.zoneEvents as any[];
       const parsedZones: ZoneState[] = zoneEvents.map((z: any) => ({
         t: z.relativeTimeMs,
         whiteX: z.whiteX ?? 408000,
@@ -502,23 +514,35 @@ function Replay3DContent() {
       setCarePackages(parsedCarePackages);
       setMaxTimeMs(finalMaxTime);
       
-    } catch (err: any) {
-      setErrorMsg(err.message || "오류가 발생했습니다.");
+    } catch (error: unknown) {
+      if (controller?.signal.aborted) return;
+      setErrorMsg(error instanceof Error ? error.message : "텔레메트리 요청에 실패했습니다.");
     } finally {
-      setIsLoading(false);
+      if (!controller?.signal.aborted) setIsLoading(false);
     }
   };
 
   // 마운트 및 쿼리 파라미터 변경 시 실전 데이터 땡기기
   useEffect(() => {
+    const controller = new AbortController();
+    let targetPlatform: TelemetryPlatform;
+    try {
+      targetPlatform = parseTelemetryPlatform(qPlatform);
+    } catch {
+      setErrorMsg("리플레이 platform이 누락되었거나 지원되지 않습니다.");
+      setIsLoading(false);
+      return () => controller.abort();
+    }
+
+    setPlatform(targetPlatform);
     if (qMatchId && qNickname) {
       setMatchId(qMatchId);
       setNickname(qNickname);
-      setPlatform(qPlatform);
-      fetchTelemetryData(qMatchId, qNickname);
+      void fetchTelemetryData(qMatchId, qNickname, targetPlatform, controller);
     } else {
-      fetchTelemetryData(matchId, nickname);
+      void fetchTelemetryData(DEFAULT_MATCH_ID, DEFAULT_NICKNAME, targetPlatform, controller);
     }
+    return () => controller.abort();
   }, [qMatchId, qNickname, qPlatform]);
 
   // 특정 X, Z 월드 좌표에서 하이트맵 고도 데이터를 기반으로 실제 지형 높이 Y를 계산하는 헬퍼 함수
@@ -2028,7 +2052,12 @@ function Replay3DContent() {
   };
 
   const handleFetchTelemetry = () => {
-    fetchTelemetryData(matchId.trim(), nickname.trim());
+    try {
+      const targetPlatform = parseTelemetryPlatform(platform);
+      void fetchTelemetryData(matchId.trim(), nickname.trim(), targetPlatform);
+    } catch {
+      setErrorMsg("리플레이 platform이 누락되었거나 지원되지 않습니다.");
+    }
   };
 
   // 플레이어 개별 토글 핸들러

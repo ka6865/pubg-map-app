@@ -1,6 +1,7 @@
 // BGMS Refreshed V2
 import { useState, useEffect, useRef, useCallback } from "react";
-import getApiUrl from "../lib/api-config";
+import { fetchTelemetryPayload } from "../lib/pubg-analysis/fetchTelemetryPayload";
+import type { TelemetryPlatform } from "../lib/pubg-analysis/telemetryIdentity";
 
 export interface TelemetryEvent {
   type: "position" | "enemy_position" | "ride" | "leave" | "kill" | "groggy" | "took_damage" | "shot" | "revive" | "create" | "throw" | "throw_explode" | "grenade" | "smoke" | "damage";
@@ -53,7 +54,12 @@ const TEAM_COLORS = [
   "#f97316", "#10b981", "#3b82f6", "#f43f5e", "#fbbf24", "#22c55e", "#6366f1", "#d946ef"
 ];
 
-export function useTelemetry(matchId: string | null, nickname: string | null, mapName: string) {
+export function useTelemetry(
+  matchId: string | null,
+  nickname: string | null,
+  playbackPlatform: TelemetryPlatform | null,
+  mapName: string,
+) {
   const [events, setEvents] = useState<TelemetryEvent[]>([]);
   const [teammates, setTeammates] = useState<string[]>([]);
   const [teamNames, setTeamNames] = useState<string[]>([]); 
@@ -68,31 +74,23 @@ export function useTelemetry(matchId: string | null, nickname: string | null, ma
   const [isFullMode, setIsFullMode] = useState(false);
   const teamColorMapRef = useRef<Record<number, string>>({});
 
-  const fetchTelemetry = useCallback(async (full: boolean = false) => {
-    if (!matchId || !nickname || !mapName) return;
+  const fetchTelemetry = useCallback(async (
+    full: boolean = false,
+    controller?: AbortController,
+  ) => {
+    if (!matchId || !nickname || !playbackPlatform || !mapName) return;
     setLoading(true);
     setError(null);
     try {
-      const modeParam = full ? "&mode=full" : "&mode=lite";
-      const apiUrl = getApiUrl(`/api/pubg/telemetry?matchId=${matchId}&nickname=${nickname}&mapName=${mapName}${modeParam}`);
-      const res = await fetch(apiUrl);
-      let data = await res.json();
-      
-      if (!res.ok) throw new Error(data.error || "Failed to fetch telemetry");
+      const data = await fetchTelemetryPayload({
+        matchId,
+        nickname,
+        platform: playbackPlatform,
+        mapName,
+        mode: full ? "full" : "lite",
+      }, controller ? { signal: controller.signal } : undefined);
 
-      // [V26.0] R2 Presigned URL 직배송 다운로드 대응
-      if (data.downloadUrl) {
-        const directRes = await fetch(data.downloadUrl);
-        if (!directRes.ok) throw new Error("R2에서 직접 텔레메트리 데이터를 로드하는데 실패했습니다.");
-        data = await directRes.json();
-      }
-
-      // 구버전 캐시 복원: mapName 필드가 누락된 경우 쿼리 파라미터 또는 기본값으로 보완
-      if (data && !data.mapName) {
-        data.mapName = mapName || "Erangel";
-      }
-
-      const evs = data.events || [];
+      const evs = data.events as TelemetryEvent[];
       setEvents(evs);
       setTeammates(data.teammates || []);
       setTeamNames(data.teamNames || []);
@@ -120,13 +118,13 @@ export function useTelemetry(matchId: string | null, nickname: string | null, ma
       } else {
         setMaxTimeMs(0);
       }
-    } catch (err: any) {
-      console.error("Telemetry fetch error:", err);
-      setError(err.message);
+    } catch (error: unknown) {
+      if (controller?.signal.aborted) return;
+      setError(error instanceof Error ? error.message : "텔레메트리 요청에 실패했습니다.");
     } finally {
-      setLoading(false);
+      if (!controller?.signal.aborted) setLoading(false);
     }
-  }, [matchId, nickname, mapName]);
+  }, [matchId, nickname, playbackPlatform, mapName]);
 
   // ✅ 시작 시점의 mode 파람리터를 ref로 고정하여 리렌더 시 불필요한 re-fetch 방지
   const initialModeRef = useRef<string | null>(
@@ -134,7 +132,9 @@ export function useTelemetry(matchId: string | null, nickname: string | null, ma
   );
 
   useEffect(() => {
-    fetchTelemetry(initialModeRef.current === "full");
+    const controller = new AbortController();
+    void fetchTelemetry(initialModeRef.current === "full", controller);
+    return () => controller.abort();
   }, [fetchTelemetry]);
 
   const lastUpdateRef = useRef<number>(0);
@@ -324,6 +324,5 @@ export function useTelemetry(matchId: string | null, nickname: string | null, ma
     maxTimeMs,
     currentStates,
     isFullMode,
-    fetchTelemetry,
   };
 }

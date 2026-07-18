@@ -5,16 +5,16 @@ import Sidebar from "../Sidebar";
 import MobileBottomSheet from "./MobileBottomSheet";
 import MapView from "./MapView";
 import AdfitBanner from "../ads/AdfitBanner";
-import { X, Hammer, Map as MapIcon, Crosshair, Plane, AlertCircle, SlidersHorizontal, Menu, Flame, Grid, MapPin, Target } from 'lucide-react';
+import { X, Hammer, Map as MapIcon, Crosshair, AlertCircle, SlidersHorizontal, Menu, Flame, MapPin, Target } from 'lucide-react';
 import type { MapTab, MapMarker, AuthUser, PendingVehicle } from "../../types/map";
 import { useTelemetry } from "../../hooks/useTelemetry";
 import TelemetryPlayer from "./TelemetryPlayer";
 import KillFeed from "./KillFeed";
-import ZoneTimer from "./ZoneTimer";
 import HomeNotice from "./HomeNotice";
 import { TelemetrySidebar } from "./telemetry/TelemetrySidebar";
 import { SimulatorPanel } from "./SimulatorPanel";
 import { HeatmapLegend } from "./HeatmapLegend";
+import type { TelemetryPlatform } from "../../lib/pubg-analysis/telemetryIdentity";
 
 interface MapShellProps {
   activeMapId: string;
@@ -30,7 +30,6 @@ interface MapShellProps {
   onSetSidebarOpen: (isOpen: boolean) => void;
   onToggleFilter: (id: string) => void;
   onGetCount: (id: string) => number;
-  onEnableDefaultVehicleFilters?: () => void;
   currentUser: AuthUser | null;
   isAdmin?: boolean;
   pendingVehicles: PendingVehicle[];
@@ -57,19 +56,27 @@ const formatTime = (ms: number) => {
 const MapShell = memo(({
     activeMapId, currentMap, bounds, visibleVehicles, icons, imageHeight, imageWidth,
     isMobile, isSidebarOpen, filters, onSetSidebarOpen, onToggleFilter, onGetCount,
-    onEnableDefaultVehicleFilters, currentUser, isAdmin, pendingVehicles,
+    currentUser, isAdmin, pendingVehicles,
   }: MapShellProps) => {
     const router = useRouter();
     const searchParams = useSearchParams();
     const playbackId = searchParams?.get("playback") || null;
     const playbackNickname = searchParams?.get("nickname") || null;
+    const playbackPlatformParam = searchParams?.get("platform") || null;
+    const playbackPlatform: TelemetryPlatform | null =
+      playbackPlatformParam === "steam" || playbackPlatformParam === "kakao"
+        ? playbackPlatformParam
+        : null;
+    const playbackPlatformError = playbackId && !playbackPlatform
+      ? "리플레이 platform이 누락되었거나 지원되지 않습니다."
+      : null;
     
     const {
       events: telemetryEvents, loading: telemetryLoading, error: telemetryError,
       isPlaying, setIsPlaying, playbackSpeed, setPlaybackSpeed,
       currentTimeMs, setCurrentTimeMs, maxTimeMs, currentStates, teamNames, zoneEvents,
-      isFullMode, fetchTelemetry
-    } = useTelemetry(playbackId, playbackNickname, activeMapId);
+      isFullMode
+    } = useTelemetry(playbackId, playbackNickname, playbackPlatform, activeMapId);
 
     const [activeMode, setActiveMode] = useState<"none" | "mortar" | "flight" | "report" | "simulate">("none");
     const [isMortarDisclaimerOpen, setIsMortarDisclaimerOpen] = useState(false);
@@ -488,14 +495,21 @@ const MapShell = memo(({
                   <TelemetryPlayer
                     events={telemetryEvents} teamNames={teamNames} isPlaying={isPlaying} setIsPlaying={setIsPlaying} playbackSpeed={playbackSpeed}
                     setPlaybackSpeed={setPlaybackSpeed} currentTimeMs={currentTimeMs} setCurrentTimeMs={setCurrentTimeMs}
-                    maxTimeMs={maxTimeMs} loading={telemetryLoading} error={telemetryError} showZone={showZone}
+                    maxTimeMs={maxTimeMs} loading={telemetryLoading} error={playbackPlatformError || telemetryError} showZone={showZone}
                     onToggleZone={() => setShowZone(!showZone)} showCombatDots={showCombatDots}
                     onToggleCombatDots={() => setShowCombatDots(!showCombatDots)} showShotDots={showShotDots}
                     onToggleShotDots={() => setShowShotDots(!showShotDots)} hiddenPlayers={hiddenPlayers}
                     onTogglePlayer={(n) => setHiddenPlayers(prev => prev.includes(n) ? prev.filter(x => x !== n) : [...prev, n])}
                     showPlayerNames={showPlayerNames} onTogglePlayerNames={() => setShowPlayerNames(!showPlayerNames)}
                     showFlightPath={showFlightPath} onToggleFlightPath={() => setShowFlightPath(!showFlightPath)}
-                    onClose={() => { const p = new URLSearchParams(searchParams?.toString() || ""); p.delete("playback"); p.delete("nickname"); router.push(`/?${p.toString()}`); }}
+                    onClose={() => {
+                      const p = new URLSearchParams(searchParams?.toString() || "");
+                      p.delete("playback");
+                      p.delete("nickname");
+                      p.delete("platform");
+                      p.delete("mode");
+                      router.push(`/?${p.toString()}`);
+                    }}
                   />
                 </div>
                 {telemetryEvents.length > 0 && (
