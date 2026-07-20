@@ -5,6 +5,7 @@ import { JsonLdProps } from '@/types/seo';
 import BoardDetailClient from '@/components/board/BoardDetailClient';
 import Link from 'next/link';
 import { CircleAlert, ChevronLeft } from 'lucide-react';
+import { maskIp } from '@/lib/board/ipUtils';
 
 // 🌟 캐시를 완전히 끄고 항상 실시간 데이터를 가져오도록 설정 (수정 사항 반영 확인용)
 export const revalidate = 0;
@@ -89,14 +90,12 @@ export default async function PostDetailPage({ params }: { params: Promise<{ pos
   }
 
   // 비회원(user_id가 null)은 profiles join이 없으므로 author를 그대로 유지하고 IP 마스킹
-  const maskIp = (ip: string | null) => ip ? ip.split('.').slice(0, 2).join('.') : null;
-
   const post = {
     ...postResult,
     author: postResult.user_id
       ? ((postResult as any).profiles?.nickname || postResult.author || '알 수 없음')
       : (postResult.author || '익명'),
-    ip_address: maskIp(postResult.ip_address),
+    ip_address: postResult.ip_address ? maskIp(postResult.ip_address) : null,
   };
 
   const comments = (commentResult || []).map((comment: any) => ({
@@ -104,7 +103,7 @@ export default async function PostDetailPage({ params }: { params: Promise<{ pos
     author: comment.user_id
       ? (comment.profiles?.nickname || comment.author || '알 수 없음')
       : (comment.author || '익명'),
-    ip_address: maskIp(comment.ip_address),
+    ip_address: comment.ip_address ? maskIp(comment.ip_address) : null,
   }));
 
   return (

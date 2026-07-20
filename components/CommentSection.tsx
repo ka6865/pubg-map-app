@@ -24,6 +24,23 @@ interface CommentSectionProps {
   formatTimeAgo: (dateString: string) => string;
 }
 
+const maskIp = (ip: string | null | undefined): string => {
+  if (!ip) return "";
+  if (ip.includes(".")) {
+    const parts = ip.split(".");
+    if (parts.length >= 2) {
+      return `${parts[0]}.${parts[1]}`;
+    }
+  }
+  if (ip.includes(":")) {
+    const parts = ip.split(":");
+    if (parts.length >= 2) {
+      return `${parts[0]}:${parts[1]}`;
+    }
+  }
+  return ip;
+};
+
 // 게시물 상세 화면 내 하위 댓글 및 대댓글 UI 출력 컴포넌트
 export default function CommentSection({
   comments,
@@ -88,7 +105,7 @@ export default function CommentSection({
               {/* 비회원 IP 배지 */}
               {!c.user_id && c.ip_address && (
                 <span className="text-[11px] text-white/30 font-mono">
-                  ({c.ip_address})
+                  ({maskIp(c.ip_address)})
                 </span>
               )}
               <span className="text-[11px] text-[#666]">

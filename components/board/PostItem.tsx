@@ -7,6 +7,23 @@ const ImageIcon = () => (
   <Image size={13} className="text-emerald-400 ml-[5px] shrink-0 inline-block" aria-label="이미지 포함" />
 );
 
+const maskIp = (ip: string | null | undefined): string => {
+  if (!ip) return "";
+  if (ip.includes(".")) {
+    const parts = ip.split(".");
+    if (parts.length >= 2) {
+      return `${parts[0]}.${parts[1]}`;
+    }
+  }
+  if (ip.includes(":")) {
+    const parts = ip.split(":");
+    if (parts.length >= 2) {
+      return `${parts[0]}:${parts[1]}`;
+    }
+  }
+  return ip;
+};
+
 interface PostItemProps {
   post: Post;
   isMobile: boolean;
@@ -49,7 +66,7 @@ export default function PostItem({ post, isMobile, onClickDesktop, formatTimeAgo
               <span className="text-white/50 font-medium">{post.author}</span>
               {/* 비회원 게시글 IP 배지 */}
               {!post.user_id && post.ip_address && (
-                <span className="text-[10px] text-white/25 font-mono">({post.ip_address})</span>
+                <span className="text-[10px] text-white/25 font-mono">({maskIp(post.ip_address)})</span>
               )}
             </div>
             <div className="flex items-center gap-2 text-white/30">
@@ -101,7 +118,7 @@ export default function PostItem({ post, isMobile, onClickDesktop, formatTimeAgo
           <span>{post.author}</span>
           {/* 비회원 게시글 IP 배지 */}
           {!post.user_id && post.ip_address && (
-            <span className="text-[11px] text-white/25 font-mono">({post.ip_address})</span>
+            <span className="text-[11px] text-white/25 font-mono">({maskIp(post.ip_address)})</span>
           )}
         </div>
       </td>

@@ -2,6 +2,7 @@ import { Metadata } from 'next';
 import { createClient } from '@/utils/supabase/server';
 import { getTabSeo } from '@/lib/seo-config';
 import BoardListClient from '@/components/board/BoardListClient';
+import { maskIp } from "@/lib/board/ipUtils";
 
 export async function generateMetadata(): Promise<Metadata> {
   return getTabSeo("Board");
@@ -64,6 +65,7 @@ export default async function BoardPage({
     posts = data.map((post: any) => ({
       ...post,
       author: post.profiles?.nickname || post.author || '알 수 없음',
+      ip_address: post.ip_address ? maskIp(post.ip_address) : null,
       comment_count: post.comments && post.comments[0] ? post.comments[0].count : 0,
     }));
   } else {
