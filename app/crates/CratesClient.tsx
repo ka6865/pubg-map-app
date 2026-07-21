@@ -635,9 +635,9 @@ export default function CratesClient({ initialCrates, exchangeRate = 1500 }: Cra
                 {/* 배경 그라데이션 광 효과 */}
                 <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(30,58,138,0.1)_0%,transparent_80%)] pointer-events-none" />
                 {/* 가챠 결과 카드 리스트 노출 */}
-                <div className="flex-1 flex flex-col justify-start space-y-6 my-4 z-10 w-full">
-                  <div className="flex justify-between items-center border-b border-slate-800 pb-2">
-                    <span className="text-[10px] text-slate-400 font-bold">개봉 결과 목록</span>
+                <div className="flex-1 flex flex-col justify-start space-y-6 my-4 z-10 w-full overflow-hidden">
+                  <div className="flex justify-between items-center border-b border-slate-800 pb-2 gap-4">
+                    <span className="text-[10px] sm:text-xs text-slate-400 font-bold whitespace-nowrap shrink-0">개봉 결과 목록</span>
                     <div className="flex gap-2 flex-wrap justify-end">
                       <button
                         onClick={handleRevealAllWrapper}
@@ -752,21 +752,23 @@ export default function CratesClient({ initialCrates, exchangeRate = 1500 }: Cra
                     </div>
                   </div>
 
-                  <div className={`grid gap-3 justify-center mt-2 ${
-                    drawnCards.length === 1 
-                      ? "grid-cols-1 max-w-[160px] mx-auto" 
-                      : "grid-cols-2 sm:grid-cols-5"
-                  }`}>
-                    {drawnCards.map((card, idx) => (
-                      <CrateCard
-                        key={card.id}
-                        card={card}
-                        isRevealed={revealedCards[idx]}
-                        onClick={() => handleCardClickWrapper(idx)}
-                        getRarityBadgeStyle={getRarityBadgeStyle}
-                        getCardBorderGlow={getCardBorderGlow}
-                      />
-                    ))}
+                  <div className="flex-1 overflow-y-auto w-full pr-1 max-h-[440px] sm:max-h-[480px] scrollbar-thin">
+                    <div className={`grid gap-3 justify-center mt-2 ${
+                      drawnCards.length === 1 
+                        ? "grid-cols-1 max-w-[160px] mx-auto" 
+                        : "grid-cols-2 sm:grid-cols-5"
+                    }`}>
+                      {drawnCards.map((card, idx) => (
+                        <CrateCard
+                          key={card.id}
+                          card={card}
+                          isRevealed={revealedCards[idx]}
+                          onClick={() => handleCardClickWrapper(idx)}
+                          getRarityBadgeStyle={getRarityBadgeStyle}
+                          getCardBorderGlow={getCardBorderGlow}
+                        />
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>
