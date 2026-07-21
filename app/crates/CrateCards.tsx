@@ -21,6 +21,11 @@ export const getKoreanRarityName = (rarity: string) => {
  */
 export function isSpecialFlipEffectItem(itemName: string): boolean {
   const targetItems = [
+    // 상상력 풀가동 - SLR 계열
+    "상상력 풀가동 - SLR (네이비 레드)",
+    "상상력 풀가동 - SLR",
+    // 글라시아 계열
+    "글라시아 도안",
     // 징글 벨 - 미니14 계열
     "징글 벨 - 미니14 (골드 블루)",
     "징글 벨 - 미니14",
