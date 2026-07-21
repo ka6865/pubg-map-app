@@ -91,9 +91,9 @@ const imaginationItems: CrateItemRaw[] = [
 
   // Schematic / Polymers (Reuse existing assets)
   { id: null, name: '도면 (Schematic)', rarity: 'LEGENDARY', prob: 0.009000, existingKey: 'schematic' },
-  { id: null, name: '폴리머 (Polymer) x200', rarity: 'SPECIAL', prob: 0.010000, existingKey: 'polymer', tokenCount: 200 },
-  { id: null, name: '폴리머 (Polymer) x100', rarity: 'SPECIAL', prob: 0.025000, existingKey: 'polymer', tokenCount: 100 },
-  { id: null, name: '폴리머 (Polymer) x50', rarity: 'SPECIAL', prob: 0.076300, existingKey: 'polymer', tokenCount: 50 }
+  { id: 'polymer_200', name: '폴리머 (Polymer) x200', rarity: 'SPECIAL', prob: 0.010000, tokenCount: 200 },
+  { id: 'polymer_100', name: '폴리머 (Polymer) x100', rarity: 'SPECIAL', prob: 0.025000, tokenCount: 100 },
+  { id: 'polymer_50', name: '폴리머 (Polymer) x50', rarity: 'SPECIAL', prob: 0.076300, tokenCount: 50 }
 ];
 
 const glasyaItems: CrateItemRaw[] = [
@@ -186,9 +186,9 @@ const glasyaItems: CrateItemRaw[] = [
   { id: '11010163', name: '사립학교 스웨터 (회색) 도안', rarity: 'SPECIAL', prob: 0.015000 },
 
   // Credits (Reuse existing asset)
-  { id: null, name: '크레딧 x1000', rarity: 'SPECIAL', prob: 0.056500, existingKey: 'credit', tokenCount: 1000 },
-  { id: null, name: '크레딧 x2000', rarity: 'SPECIAL', prob: 0.030000, existingKey: 'credit', tokenCount: 2000 },
-  { id: null, name: '크레딧 x3000', rarity: 'SPECIAL', prob: 0.016000, existingKey: 'credit', tokenCount: 3000 }
+  { id: 'credit_1000', name: '크레딧 x1000', rarity: 'SPECIAL', prob: 0.056500, tokenCount: 1000 },
+  { id: 'credit_2000', name: '크레딧 x2000', rarity: 'SPECIAL', prob: 0.030000, tokenCount: 2000 },
+  { id: 'credit_3000', name: '크레딧 x3000', rarity: 'SPECIAL', prob: 0.016000, tokenCount: 3000 }
 ];
 
 function normalizeName(str: string): string {
@@ -260,14 +260,25 @@ async function seed() {
   const allItems = [...imaginationItems, ...glasyaItems];
 
   allItems.forEach(item => {
-    if (item.existingKey) return; // Skip polymer, schematic, credit
+    if (item.existingKey) return; // Skip schematic (already exists)
     const normalized = normalizeName(item.name);
+    let imageUrl = `/api/images/crates/${item.id}.webp`;
+    let r2Key = `crates/${item.id}.webp`;
+
+    if (item.id && item.id.startsWith('polymer_')) {
+      imageUrl = '/images/crates/polymer.png';
+      r2Key = 'crates/polymer.png';
+    } else if (item.id && item.id.startsWith('credit_')) {
+      imageUrl = '/images/crates/credit.png';
+      r2Key = 'crates/credit.png';
+    }
+
     assetsToInsert.push({
       asset_key: item.id!,
       display_name: item.name,
       normalized_name: normalized,
-      r2_key: `crates/${item.id}.webp`,
-      image_url: `/api/images/crates/${item.id}.webp`,
+      r2_key: r2Key,
+      image_url: imageUrl,
       rarity: item.rarity
     });
   });
@@ -299,10 +310,10 @@ async function seed() {
   });
   console.log(`✓ Mapping loaded for ${assetMap.size} assets.`);
 
-  // 4. Delete old crate_items for these templates to refresh mapping cleanly
+  // 4. Delete old crate_item_relations for these templates to refresh mapping cleanly
   console.log("Cleaning up old relationships...");
   const { error: deleteError } = await supabase
-    .from('crate_items')
+    .from('crate_item_relations')
     .delete()
     .in('crate_template_id', [imaginationCrateId, glasyaCrateId]);
 
@@ -312,21 +323,18 @@ async function seed() {
   }
   console.log("✓ Old relationships cleared.");
 
-  // 5. Insert new Crate Items
+  // 5. Insert new Crate Items into relations
   console.log("Inserting new crate items with probability map...");
   const itemsToInsert: any[] = [];
 
   const addCrateItems = (crateId: string, list: CrateItemRaw[]) => {
     list.forEach(item => {
       let assetId: string | undefined;
-      let imageUrl: string = '';
 
       if (item.existingKey) {
         assetId = assetMap.get(item.existingKey);
-        // Find existing image_url from map if needed or leave empty (DB can handle it, or we can look it up)
       } else {
         assetId = assetMap.get(item.id!);
-        imageUrl = `/api/images/crates/${item.id}.webp`;
       }
 
       if (!assetId) {
@@ -336,12 +344,12 @@ async function seed() {
 
       itemsToInsert.push({
         crate_template_id: crateId,
-        name: item.name,
-        rarity: item.rarity,
+        asset_id: assetId,
+        drop_type: 'base',
         probability: item.prob,
-        image_url: imageUrl || null,
         token_count: item.tokenCount || 0,
-        asset_id: assetId
+        is_prime_parcel: false,
+        is_extra_crate: false
       });
     });
   };
@@ -350,14 +358,14 @@ async function seed() {
   addCrateItems(glasyaCrateId, glasyaItems);
 
   const { error: itemsError } = await supabase
-    .from('crate_items')
+    .from('crate_item_relations')
     .insert(itemsToInsert);
 
   if (itemsError) {
-    console.error("Error inserting crate items:", itemsError);
+    console.error("Error inserting crate items into relations:", itemsError);
     process.exit(1);
   }
-  console.log(`✓ Successfully seeded ${itemsToInsert.length} crate items.`);
+  console.log(`✓ Successfully seeded ${itemsToInsert.length} crate item relations.`);
   console.log("Remote database seeding completed successfully!");
 }
 

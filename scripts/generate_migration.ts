@@ -77,9 +77,9 @@ const imaginationItems: CrateItemRaw[] = [
 
   // Schematic / Polymers (Reuse existing assets)
   { id: null, name: '도면 (Schematic)', rarity: 'LEGENDARY', prob: 0.009000, existingKey: 'schematic' },
-  { id: null, name: '폴리머 (Polymer) x200', rarity: 'SPECIAL', prob: 0.010000, existingKey: 'polymer', tokenCount: 200 },
-  { id: null, name: '폴리머 (Polymer) x100', rarity: 'SPECIAL', prob: 0.025000, existingKey: 'polymer', tokenCount: 100 },
-  { id: null, name: '폴리머 (Polymer) x50', rarity: 'SPECIAL', prob: 0.076300, existingKey: 'polymer', tokenCount: 50 }
+  { id: 'polymer_200', name: '폴리머 (Polymer) x200', rarity: 'SPECIAL', prob: 0.010000, tokenCount: 200 },
+  { id: 'polymer_100', name: '폴리머 (Polymer) x100', rarity: 'SPECIAL', prob: 0.025000, tokenCount: 100 },
+  { id: 'polymer_50', name: '폴리머 (Polymer) x50', rarity: 'SPECIAL', prob: 0.076300, tokenCount: 50 }
 ];
 
 // 2. Items in Glasya Cargo Crate (글라시아 화물 상자)
@@ -173,9 +173,9 @@ const glasyaItems: CrateItemRaw[] = [
   { id: '11010163', name: '사립학교 스웨터 (회색) 도안', rarity: 'SPECIAL', prob: 0.015000 },
 
   // Credits (Reuse existing asset)
-  { id: null, name: '크레딧 x1000', rarity: 'SPECIAL', prob: 0.056500, existingKey: 'credit', tokenCount: 1000 },
-  { id: null, name: '크레딧 x2000', rarity: 'SPECIAL', prob: 0.030000, existingKey: 'credit', tokenCount: 2000 },
-  { id: null, name: '크레딧 x3000', rarity: 'SPECIAL', prob: 0.016000, existingKey: 'credit', tokenCount: 3000 }
+  { id: 'credit_1000', name: '크레딧 x1000', rarity: 'SPECIAL', prob: 0.056500, tokenCount: 1000 },
+  { id: 'credit_2000', name: '크레딧 x2000', rarity: 'SPECIAL', prob: 0.030000, tokenCount: 2000 },
+  { id: 'credit_3000', name: '크레딧 x3000', rarity: 'SPECIAL', prob: 0.016000, tokenCount: 3000 }
 ];
 
 // Helper to normalize names
@@ -225,9 +225,20 @@ function buildSQL() {
   const newAssets: string[] = [];
 
   const addAssetSQL = (item: CrateItemRaw) => {
-    if (item.existingKey) return; // Skip existing assets like schematic, polymer, credit
+    if (item.existingKey) return; // Skip schematic (already exists)
     const normalized = normalizeName(item.name);
-    newAssets.push(`  ('${item.id}', '${item.name.replace(/'/g, "''")}', '${normalized}', 'crates/${item.id}.webp', '/api/images/crates/${item.id}.webp', '${item.rarity}')`);
+    let imageUrl = `/api/images/crates/${item.id}.webp`;
+    let r2Key = `crates/${item.id}.webp`;
+
+    if (item.id && item.id.startsWith('polymer_')) {
+      imageUrl = '/images/crates/polymer.png';
+      r2Key = 'crates/polymer.png';
+    } else if (item.id && item.id.startsWith('credit_')) {
+      imageUrl = '/images/crates/credit.png';
+      r2Key = 'crates/credit.png';
+    }
+
+    newAssets.push(`  ('${item.id}', '${item.name.replace(/'/g, "''")}', '${normalized}', '${r2Key}', '${imageUrl}', '${item.rarity}')`);
   };
 
   imaginationItems.forEach(addAssetSQL);
@@ -243,11 +254,11 @@ function buildSQL() {
 
   // 3. Clear existing items to prevent duplicates in relationship map (just in case this script reruns)
   sql += `-- 3. CLEANUP OLD CRATE ITEMS RELATIONSHIPS\n`;
-  sql += `DELETE FROM public.crate_items WHERE crate_template_id IN ('${imaginationCrateId}', '${glasyaCrateId}');\n\n`;
+  sql += `DELETE FROM public.crate_item_relations WHERE crate_template_id IN ('${imaginationCrateId}', '${glasyaCrateId}');\n\n`;
 
   // 4. Insert Crate Items
-  sql += `-- 4. CRATE ITEMS\n`;
-  sql += `INSERT INTO public.crate_items (crate_template_id, name, rarity, probability, image_url, token_count, asset_id)\nVALUES\n`;
+  sql += `-- 4. CRATE ITEMS RELATIONSHIPS\n`;
+  sql += `INSERT INTO public.crate_item_relations (crate_template_id, asset_id, drop_type, probability, token_count, is_prime_parcel, is_extra_crate)\nVALUES\n`;
 
   const itemRows: string[] = [];
 
@@ -256,13 +267,9 @@ function buildSQL() {
       ? `(SELECT id FROM public.crate_item_assets WHERE asset_key = '${item.existingKey}' LIMIT 1)`
       : `(SELECT id FROM public.crate_item_assets WHERE asset_key = '${item.id}' LIMIT 1)`;
 
-    const imgUrl = item.existingKey
-      ? `(SELECT image_url FROM public.crate_item_assets WHERE asset_key = '${item.existingKey}' LIMIT 1)`
-      : `'/api/images/crates/${item.id}.webp'`;
-
     const tokenCountVal = item.tokenCount || 0;
 
-    itemRows.push(`  ('${crateId}', '${item.name.replace(/'/g, "''")}', '${item.rarity}', ${item.prob.toFixed(6)}, ${imgUrl}, ${tokenCountVal}, ${assetSelect})`);
+    itemRows.push(`  ('${crateId}', ${assetSelect}, 'base', ${item.prob.toFixed(6)}, ${tokenCountVal}, false, false)`);
   };
 
   imaginationItems.forEach(item => addCrateItemSQL(imaginationCrateId, item));
