@@ -146,9 +146,16 @@ export function CrateCard({ card, isRevealed, onClick, getRarityBadgeStyle, getC
         {/* 카드 앞면 (공개됨) */}
         <div className={`absolute inset-0 rounded-xl bg-slate-900 border-2 p-2 sm:p-2.5 flex flex-col justify-between items-center backface-hidden ${borderGlow}`}>
           <div className="flex justify-between w-full items-center">
-            {card.rarity !== "COMMON" && (
+            {card.rarity !== "COMMON" ? (
               <span className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded tracking-wide ${getRarityBadgeStyle(card.rarity)}`}>
                 {getKoreanRarityName(card.rarity)}
+              </span>
+            ) : (
+              <div />
+            )}
+            {card.probability !== undefined && card.probability > 0 && isRevealed && (
+              <span className="text-[8px] text-slate-400 font-extrabold bg-slate-950/60 px-1.5 py-0.5 rounded border border-slate-800/40 z-10 select-none">
+                {parseFloat((card.probability * 100).toFixed(4))}%
               </span>
             )}
           </div>
@@ -212,11 +219,7 @@ export function CrateCard({ card, isRevealed, onClick, getRarityBadgeStyle, getC
             </div>
           )}
 
-          {card.probability !== undefined && card.probability > 0 && isRevealed && (
-            <div className="absolute bottom-8.5 left-2 text-[8px] sm:text-[9px] text-slate-400 font-extrabold bg-slate-950/70 px-1 py-0.2 rounded border border-slate-800/40 z-10 select-none">
-              {parseFloat((card.probability * 100).toFixed(4))}%
-            </div>
-          )}
+          {/* 확률 표시 위치 상단 헤더로 이동 완료 */}
 
           {/* 보너스 오버레이 박스 (카드 뒤집혔을 때만 팝업 - 스포 차단) */}
           {card.bonus && isRevealed && (
