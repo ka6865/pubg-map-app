@@ -144,7 +144,7 @@ export function CrateCard({ card, isRevealed, onClick, getRarityBadgeStyle, getC
           : `transition-transform duration-500 ${isRevealed ? "" : "rotate-y-180"}`
       }`}>
         {/* 카드 앞면 (공개됨) */}
-        <div className={`absolute inset-0 rounded-xl bg-slate-900 border-2 p-2 sm:p-2.5 flex flex-col justify-between items-center backface-hidden ${borderGlow}`}>
+        <div className={`absolute inset-0 rounded-xl bg-slate-900 border-2 p-2 sm:p-2.5 flex flex-col justify-between items-center backface-hidden overflow-hidden ${borderGlow}`}>
           <div className="flex justify-between w-full items-center">
             {card.rarity !== "COMMON" ? (
               <span className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded tracking-wide ${getRarityBadgeStyle(card.rarity)}`}>
@@ -161,7 +161,7 @@ export function CrateCard({ card, isRevealed, onClick, getRarityBadgeStyle, getC
           </div>
           
           {!imageError && card.image_url ? (
-            <div className="w-20 h-20 sm:w-32 sm:h-32 flex items-center justify-center bg-slate-950/50 rounded-lg p-1 border border-slate-800/80 relative group-hover:scale-105 transition-transform">
+            <div className="w-full aspect-square max-h-[58%] sm:max-h-[60%] flex items-center justify-center bg-slate-950/50 rounded-lg p-1 border border-slate-800/80 relative group-hover:scale-105 transition-transform overflow-hidden">
               <Box className="w-8 h-8 text-slate-700 absolute inset-0 m-auto -z-10" />
               <img 
                 src={card.image_url} 
@@ -254,7 +254,7 @@ export function CrateCard({ card, isRevealed, onClick, getRarityBadgeStyle, getC
               </div>
 
               {!bonusImageError && card.bonus.image_url ? (
-                <div className="w-20 h-20 sm:w-32 sm:h-32 flex items-center justify-center bg-slate-900 rounded-lg p-1 border border-amber-500/20 relative">
+                <div className="w-full aspect-square max-h-[58%] sm:max-h-[60%] flex items-center justify-center bg-slate-900 rounded-lg p-1 border border-amber-500/20 relative overflow-hidden">
                   <img 
                     src={card.bonus.image_url} 
                     alt={card.bonus.name}
