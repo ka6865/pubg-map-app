@@ -53,7 +53,7 @@ describe("게시글 초안 승격 이미지 경계", () => {
   });
 
   it("revision 충돌에서는 Discord와 Storage를 호출하지 않고 409를 반환한다", async () => {
-    const admin = createAdmin([{ result_code: "revision_conflict", post_id: 20, revision: 4 }]);
+    const admin = createAdmin([{ result_code: "revision_conflict", post_id: 20, revision: 4, title: null, content: null, image_url: null }]);
     mocks.withAuthGuard.mockResolvedValue({ user: { id: "11111111-1111-4111-8111-111111111111" }, supabaseAdmin: admin });
 
     const response = await POST(request({ postId: 21, expectedParentRevision: 3 }));
@@ -61,6 +61,42 @@ describe("게시글 초안 승격 이미지 경계", () => {
     expect(response.status).toBe(409);
     expect(mocks.fetch).not.toHaveBeenCalled();
     expect(admin).not.toHaveProperty("storage");
+  });
+
+  it("성공 결과는 정확히 한 행이며 알림에 필요한 필드를 모두 갖추지 않으면 fail closed 한다", async () => {
+    const admin = createAdmin([{ result_code: "ok", post_id: 20, revision: 4, title: "승격 글", content: null, image_url: null }]);
+    mocks.withAuthGuard.mockResolvedValue({ user: { id: "11111111-1111-4111-8111-111111111111" }, supabaseAdmin: admin });
+
+    const response = await POST(request({ postId: 21, expectedParentRevision: 3 }));
+
+    expect(response.status).toBe(503);
+    expect(mocks.fetch).not.toHaveBeenCalled();
+  });
+
+  it("RPC가 복수 행을 반환하면 첫 행을 신뢰하지 않고 fail closed 한다", async () => {
+    const admin = createAdmin([
+      { result_code: "ok", post_id: 20, revision: 4, title: "승격 글", content: "본문", image_url: null },
+      { result_code: "ok", post_id: 21, revision: 5, title: "다른 글", content: "본문", image_url: null },
+    ]);
+    mocks.withAuthGuard.mockResolvedValue({ user: { id: "11111111-1111-4111-8111-111111111111" }, supabaseAdmin: admin });
+
+    const response = await POST(request({ postId: 21, expectedParentRevision: 3 }));
+
+    expect(response.status).toBe(503);
+    expect(mocks.fetch).not.toHaveBeenCalled();
+  });
+
+  it("DB 승격 후 Discord 전송이 실패해도 성공 응답을 유지한다", async () => {
+    const admin = createAdmin([{ result_code: "ok", post_id: 20, revision: 4, title: "승격 글", content: "본문", image_url: null }]);
+    mocks.withAuthGuard.mockResolvedValue({ user: { id: "11111111-1111-4111-8111-111111111111" }, supabaseAdmin: admin });
+    mocks.fetch.mockRejectedValue(new Error("Discord unavailable"));
+    vi.stubGlobal("fetch", mocks.fetch);
+    vi.stubEnv("DISCORD_WEBHOOK_URL", "https://discord.test/webhook");
+
+    const response = await POST(request({ postId: 21, expectedParentRevision: 3 }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.fetch).toHaveBeenCalledTimes(1);
   });
 
   it("관리형 ref 이전 RPC는 parent와 모든 sibling draft를 순서대로 잠그고 마지막 ref만 삭제 후보로 전이한다", () => {
@@ -81,5 +117,15 @@ describe("게시글 초안 승격 이미지 경계", () => {
 
     expect(source).not.toMatch(/oldImages|deletedImages|storage\.from\("images"\)|\.remove\(/);
     expect(source).not.toMatch(/console\.(log|warn|error)/);
+  });
+
+  it("shadow draft 승격은 서버가 조회한 실제 부모 revision을 전달하며, 조회 실패 시 승격을 막는다", () => {
+    const pageSource = readFileSync(new URL("../app/board/[postId]/page.tsx", import.meta.url), "utf8");
+    const clientSource = readFileSync(new URL("../components/board/BoardDetailClient.tsx", import.meta.url), "utf8");
+
+    expect(pageSource).toContain('select("revision")');
+    expect(pageSource).toContain("promoteExpectedParentRevision");
+    expect(clientSource).toContain("promoteExpectedParentRevision");
+    expect(clientSource).not.toContain("expectedParentRevision: (post as Post & { revision?: number }).revision ?? 0");
   });
 });

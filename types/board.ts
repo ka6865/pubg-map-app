@@ -39,8 +39,13 @@ export interface Post {
   clan_info?: ClanInfo | null; // 🌟 클랜 정보 첨부 필드 추가
   ip_address?: string | null;
   status?: "published" | "draft" | "hidden";
-  parent_id?: number | null;
+  revision: number;
+  parent_id: number | null;
   profiles?: { nickname: string } | null;
+}
+
+export interface BoardPostPromotionState {
+  expectedParentRevision: number | null;
 }
 
 export interface Report {

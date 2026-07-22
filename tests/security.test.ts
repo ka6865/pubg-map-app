@@ -80,7 +80,7 @@ describe("🔒 BGMS API Route Security Guard Tests", () => {
     // supabaseAdmin DB 쿼리 mock 설정
     mockSupabaseAdmin = {
       rpc: vi.fn(async () => ({
-        data: [{ result_code: "ok", post_id: 41, revision: 0 }],
+        data: [{ result_code: "ok", post_id: 41, revision: 0, title: "새 게시글", content: "본문", image_url: null }],
         error: null,
       })),
       from: vi.fn((table) => {
@@ -297,7 +297,7 @@ describe("🔒 BGMS API Route Security Guard Tests", () => {
       });
 
       mockSupabaseAdmin.rpc.mockResolvedValueOnce({
-        data: [{ result_code: "not_found", post_id: null, revision: null }],
+        data: [{ result_code: "not_found", post_id: null, revision: null, title: null, content: null, image_url: null }],
         error: null,
       });
 
@@ -325,7 +325,7 @@ describe("🔒 BGMS API Route Security Guard Tests", () => {
       });
 
       mockSupabaseAdmin.rpc.mockResolvedValueOnce({
-        data: [{ result_code: "already_promoted", post_id: 1, revision: 2 }],
+        data: [{ result_code: "already_promoted", post_id: 1, revision: 2, title: null, content: null, image_url: null }],
         error: null,
       });
 

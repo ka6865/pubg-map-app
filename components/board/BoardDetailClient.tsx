@@ -6,7 +6,7 @@ import DOMPurify from "dompurify";
 import "react-quill-new/dist/quill.snow.css";
 import Image from "next/image";
 import CommentSection from "../CommentSection";
-import { Post, Comment } from "@/types/board";
+import { BoardPostPromotionState, Post, Comment } from "@/types/board";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/components/AuthProvider";
 import { toast } from "sonner";
@@ -21,6 +21,7 @@ import { rewriteBoardImageUrls, toBoardImageProxyUrl } from "@/lib/board-image-p
 interface BoardDetailClientProps {
   initialPost: Post;
   initialComments: Comment[];
+  promoteExpectedParentRevision: BoardPostPromotionState["expectedParentRevision"];
 }
 
 const sanitizeHTML = (html: string, isMounted: boolean) => {
@@ -44,7 +45,8 @@ const sanitizeHTML = (html: string, isMounted: boolean) => {
 
 export default function BoardDetailClient({
   initialPost,
-  initialComments
+  initialComments,
+  promoteExpectedParentRevision,
 }: BoardDetailClientProps) {
   const router = useRouter();
   const { user } = useAuth();
@@ -116,6 +118,11 @@ export default function BoardDetailClient({
   // 초안 승격(실제 게시판 발행) 처리 함수
   const handlePromotePost = async () => {
     if (!isAdmin) return;
+    const expectedParentRevision = promoteExpectedParentRevision;
+    if (expectedParentRevision === null || !Number.isSafeInteger(expectedParentRevision) || expectedParentRevision < 0) {
+      toast.error("원본 게시글 버전을 확인하지 못했습니다. 새로고침 후 다시 시도해주세요.");
+      return;
+    }
     setIsPromoting(true);
     try {
       const response = await fetch("/api/posts/promote", {
@@ -123,7 +130,7 @@ export default function BoardDetailClient({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           postId: post.id,
-          expectedParentRevision: (post as Post & { revision?: number }).revision ?? 0,
+          expectedParentRevision,
         }),
       });
       const result = await response.json();
