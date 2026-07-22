@@ -10,6 +10,18 @@ export type PubgErrorStage =
 
 export type PubgClientKind = "browser" | "crawler" | "unknown";
 
+export type PubgAnalysisStep =
+  | "telemetry_cache_reserve"
+  | "telemetry_r2_read"
+  | "telemetry_download"
+  | "telemetry_parse"
+  | "telemetry_filter"
+  | "telemetry_r2_upload"
+  | "benchmark_lookup"
+  | "analysis_engine"
+  | "telemetry_payload"
+  | "telemetry_cache_finalize";
+
 export type PubgMatchErrorClassification = {
   errorCode: string;
   responseStatus: number;
@@ -32,6 +44,7 @@ export function createPubgIdentifierFingerprint(value: string | null | undefined
 
 export function classifyPubgMatchError(input: {
   stage: PubgErrorStage;
+  analysisStep?: PubgAnalysisStep | null;
   upstreamStatus?: number | null;
   error: unknown;
 }): PubgMatchErrorClassification {
@@ -56,7 +69,10 @@ export function classifyPubgMatchError(input: {
     return { errorCode: "PUBG_MATCH_PARTICIPANT_NOT_FOUND", responseStatus: 404 };
   }
   if (input.stage === "analysis") {
-    return { errorCode: "PUBG_MATCH_ANALYSIS_FAILED", responseStatus: 500 };
+    const suffix = input.analysisStep
+      ? input.analysisStep.toUpperCase()
+      : "UNKNOWN";
+    return { errorCode: `PUBG_MATCH_ANALYSIS_${suffix}`, responseStatus: 500 };
   }
   return { errorCode: "PUBG_MATCH_UNKNOWN", responseStatus: 500 };
 }

@@ -39,6 +39,20 @@ describe("PUBG API 오류 원인 컨텍스트", () => {
     expect(subject?.classifyClientKind("Mozilla/5.0")).toBe("browser");
   });
 
+  it("분석 단계 오류를 하위 처리 경계까지 구분한다", async () => {
+    const subject = await loadContextModule();
+
+    expect(subject).not.toBeNull();
+    expect(subject?.classifyPubgMatchError({
+      stage: "analysis",
+      analysisStep: "telemetry_download",
+      error: new Error("sanitized"),
+    })).toEqual({
+      errorCode: "PUBG_MATCH_ANALYSIS_TELEMETRY_DOWNLOAD",
+      responseStatus: 500,
+    });
+  });
+
   it("오류 관측 마이그레이션이 구조화 필드와 전역 알림 키를 제공한다", () => {
     expect(existsSync(MIGRATION_PATH)).toBe(true);
 
