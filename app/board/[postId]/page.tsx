@@ -6,7 +6,7 @@ import BoardDetailClient from '@/components/board/BoardDetailClient';
 import Link from 'next/link';
 import { CircleAlert, ChevronLeft } from 'lucide-react';
 import { maskIp } from '@/lib/board/ipUtils';
-import { BoardPostPromotionState } from '@/types/board';
+import { resolvePromoteExpectedParentRevision } from '@/lib/board/promotionRevision';
 
 // 🌟 캐시를 완전히 끄고 항상 실시간 데이터를 가져오도록 설정 (수정 사항 반영 확인용)
 export const revalidate = 0;
@@ -90,22 +90,14 @@ export default async function PostDetailPage({ params }: { params: Promise<{ pos
     );
   }
 
-  let promoteExpectedParentRevision: BoardPostPromotionState["expectedParentRevision"] = null;
-  if (Number.isSafeInteger(postResult.revision) && postResult.revision >= 0) {
-    promoteExpectedParentRevision = postResult.revision;
-  }
+  let promoteExpectedParentRevision = resolvePromoteExpectedParentRevision(postResult, null, null);
   if (postResult.parent_id !== null) {
     const { data: parentResult, error: parentError } = await supabase
       .from("posts")
       .select("revision")
       .eq("id", postResult.parent_id)
       .single();
-    promoteExpectedParentRevision = !parentError
-      && parentResult
-      && Number.isSafeInteger(parentResult.revision)
-      && parentResult.revision >= 0
-      ? parentResult.revision
-      : null;
+    promoteExpectedParentRevision = resolvePromoteExpectedParentRevision(postResult, parentResult, parentError);
   }
 
   // 비회원(user_id가 null)은 profiles join이 없으므로 author를 그대로 유지하고 IP 마스킹

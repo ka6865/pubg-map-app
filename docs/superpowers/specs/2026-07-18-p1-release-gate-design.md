@@ -22,7 +22,7 @@
 
 사용자 결정에 따라 2번을 채택한다. 위험을 줄이기 위해 P1은 한 덩어리로 구현하지 않고 기능별 테스트·한글 커밋·문서 갱신 단위로 나눈다.
 
-현재 상태는 8건 중 1번 게시판 Turnstile 코드·웹/모바일 원자 quota·로컬 PostgreSQL 권한/동시성·읽기 전용 브라우저 QA 완료, 미해결 7건이다. 운영 migration·preview test-key 쓰기 QA·실운영 QA는 배포 게이트로 남기며, P1 전체 완료 전에는 `main` PR을 생성하지 않는다.
+현재 상태는 게시판 Turnstile과 게시글 Storage 삭제 소유권·참조 검증의 코드·회귀 테스트가 완료되어, P1 코드 미해결은 6건이다. Storage 운영 활성화는 migration 선적용, `board-images-v2` bucket/policy 확인, Preview member signed upload·작성·수정·취소 QA, 기존 `images` 7개 보존 확인, cleanup workflow 수동 dry-run을 모두 마친 뒤에만 허용한다. 그 전에는 workflow job 조건을 명시적으로 false로 유지하며 P1 전체 완료 전에는 `main` PR을 생성하지 않는다.
 
 ## 3. 브랜치와 커밋 경계
 
@@ -40,7 +40,7 @@
 보안 영향과 무료 플랜 자원 보호를 기준으로 다음 순서를 사용한다.
 
 1. [x] 비회원 글·댓글 Turnstile 서버 결합과 요청 제한
-2. 게시글 Storage 삭제 소유권·참조 검증
+2. [x] 게시글 Storage 삭제 소유권·참조 검증
 3. 제보 알림 임계값 전이·중복 발송 원자화
 4. 관리자 승인 작업 원자적 claim·중복 실행 차단
 5. analytics 서버 권위 필드·batch 상한·요청 제한·보존 정책

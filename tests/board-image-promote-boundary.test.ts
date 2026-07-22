@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({ withAuthGuard: vi.fn(), fetch: vi.fn() }));
 vi.mock("../utils/supabase/guard", () => ({ withAuthGuard: mocks.withAuthGuard }));
 
 import { POST } from "../app/api/posts/promote/route";
+import { resolvePromoteExpectedParentRevision } from "../lib/board/promotionRevision";
 
 function createAdmin(result: unknown, error: unknown = null) {
   const rpc = vi.fn(async () => ({ data: result, error }));
@@ -155,5 +156,33 @@ describe("게시글 초안 승격 이미지 경계", () => {
     expect(pageSource).toContain("promoteExpectedParentRevision");
     expect(clientSource).toContain("promoteExpectedParentRevision");
     expect(clientSource).not.toContain("expectedParentRevision: (post as Post & { revision?: number }).revision ?? 0");
+  });
+
+  it("shadow 초안은 자신의 revision이 아니라 조회한 부모 revision만 승격 조건으로 사용한다", () => {
+    expect(resolvePromoteExpectedParentRevision(
+      { parent_id: 20, revision: 99 },
+      { revision: 4 },
+      null,
+    )).toBe(4);
+  });
+
+  it.each([
+    ["부모 조회 오류", { revision: 4 }, { code: "PGRST" }],
+    ["부모 누락", null, null],
+    ["부모 revision 비정상", { revision: -1 }, null],
+  ])("shadow 초안은 %s이면 승격 조건을 null로 막는다", (_caseName, parent, parentError) => {
+    expect(resolvePromoteExpectedParentRevision(
+      { parent_id: 20, revision: 99 },
+      parent,
+      parentError,
+    )).toBeNull();
+  });
+
+  it("신규 draft는 자신의 유효한 revision을 승격 조건으로 사용한다", () => {
+    expect(resolvePromoteExpectedParentRevision(
+      { parent_id: null, revision: 7 },
+      null,
+      null,
+    )).toBe(7);
   });
 });
