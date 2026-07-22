@@ -552,20 +552,34 @@ function numberEnv(name: string, fallback: number) {
 }
 
 async function fetchApiErrors(supabase: any, since: string) {
-  const { data, error } = await supabase
-    .from("pubg_api_errors")
-    .select("route, status, message, created_at")
-    .gte("created_at", since)
-    .order("created_at", { ascending: false })
-    .limit(200);
+  const [countResult, latestResult] = await Promise.all([
+    supabase
+      .from("pubg_api_errors")
+      .select("id", { count: "exact", head: true })
+      .gte("created_at", since),
+    supabase
+      .from("pubg_api_errors")
+      .select("route, status, message, created_at")
+      .gte("created_at", since)
+      .order("created_at", { ascending: false })
+      .limit(200)
+  ]);
 
-  if (error) return { total: 0, error: error.message };
+  if (countResult.error || latestResult.error) {
+    return { total: 0, error: countResult.error?.message || latestResult.error?.message };
+  }
+
+  const data = latestResult.data || [];
   const byStatus: Record<string, number> = {};
-  (data || []).forEach((row: any) => {
+  data.forEach((row: any) => {
     const key = String(row.status || "unknown");
     byStatus[key] = (byStatus[key] || 0) + 1;
   });
-  return { total: data?.length || 0, byStatus, latest: data?.slice(0, 5) || [] };
+  return {
+    total: typeof countResult.count === "number" ? countResult.count : data.length,
+    byStatus,
+    latest: data.slice(0, 5)
+  };
 }
 
 async function fetchAiUsage(supabase: any, since: string) {

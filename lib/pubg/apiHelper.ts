@@ -8,6 +8,28 @@ interface ApiErrorRecord {
   detail?: string;
 }
 
+export interface PubgApiErrorContext {
+  failureStage?: string;
+  errorCode?: string;
+  upstreamStatus?: number | null;
+  durationMs?: number | null;
+  platform?: string | null;
+  source?: string | null;
+  clientKind?: string | null;
+  requestId?: string | null;
+  matchFingerprint?: string | null;
+  nicknameFingerprint?: string | null;
+}
+
+export interface PubgApiErrorInput {
+  route: string;
+  status: number;
+  message: string;
+  detail?: string;
+  context?: PubgApiErrorContext;
+  notify?: boolean;
+}
+
 const supabaseAdmin = createSupabaseAdminClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
@@ -26,12 +48,10 @@ const ERROR_THRESHOLD = 10; // 임계값 10회
  * 빈도가 높아질 경우 즉각 디스코드로 경고 웹훅을 발송합니다.
  */
 export async function reportPubgApiError(
-  route: string,
-  status: number,
-  message: string,
-  detail?: string
+  input: PubgApiErrorInput,
 ) {
   const now = Date.now();
+  const { route, status, message, detail, context, notify = true } = input;
   errorQueue.push({ timestamp: now, route, status, message, detail });
 
   // DB에 비동기 에러 로그 적립
@@ -41,7 +61,17 @@ export async function reportPubgApiError(
       route,
       status,
       message,
-      detail: detail || null
+      detail: detail ?? null,
+      failure_stage: context?.failureStage ?? null,
+      error_code: context?.errorCode ?? null,
+      upstream_status: context?.upstreamStatus ?? null,
+      duration_ms: context?.durationMs ?? null,
+      platform: context?.platform ?? null,
+      source: context?.source ?? null,
+      client_kind: context?.clientKind ?? null,
+      request_id: context?.requestId ?? null,
+      match_fingerprint: context?.matchFingerprint ?? null,
+      nickname_fingerprint: context?.nicknameFingerprint ?? null,
     })
     .then(({ error }) => {
       if (error) {
@@ -56,10 +86,26 @@ export async function reportPubgApiError(
   console.warn(`[MONITORING] API Error Recorded - Route: ${route}, Status: ${status}, Message: ${message}`);
 
   // 5분 동안 발생한 에러 수가 임계치에 도달하고 쿨다운이 지난 경우 알림 전송
-  if (errorQueue.length >= ERROR_THRESHOLD && now - lastAlertSentAt > ALERT_COOLDOWN) {
-    lastAlertSentAt = now;
-    await sendAlertToDiscord(errorQueue.length, [...errorQueue]);
+  if (notify && errorQueue.length >= ERROR_THRESHOLD && now - lastAlertSentAt > ALERT_COOLDOWN) {
+    const alertKey = `${route}:${status}`;
+    if (await reserveDiscordAlertWindow(alertKey, now)) {
+      lastAlertSentAt = now;
+      await sendAlertToDiscord(errorQueue.length, [...errorQueue]);
+    }
   }
+}
+
+async function reserveDiscordAlertWindow(alertKey: string, timestamp: number): Promise<boolean> {
+  const windowStartedAt = new Date(Math.floor(timestamp / ALERT_COOLDOWN) * ALERT_COOLDOWN).toISOString();
+  const { error } = await supabaseAdmin
+    .from("pubg_api_alert_deliveries")
+    .insert({ alert_key: alertKey, window_started_at: windowStartedAt });
+
+  if (!error) return true;
+  if (error.code === "23505") return false;
+
+  console.error("[MONITORING ALERT RESERVATION FAIL]:", error.message);
+  return false;
 }
 
 /**

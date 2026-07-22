@@ -77,12 +77,12 @@ export async function POST(request: Request) {
       const message = masteryRes.status === 429
         ? "PUBG API 호출 한도가 일시적으로 초과되었습니다. 약 1분 후 다시 시도해 주세요."
         : `무기 숙련도 정보를 불러오지 못했습니다. (HTTP ${masteryRes.status})`;
-      await reportPubgApiError(
-        "/api/pubg/player/weapon-mastery",
-        masteryRes.status,
+      await reportPubgApiError({
+        route: "/api/pubg/player/weapon-mastery",
+        status: masteryRes.status,
         message,
-        `weapon_mastery failed for ${platform}:${cacheData.id}`
-      );
+        detail: "weapon_mastery upstream response failed",
+      });
       return NextResponse.json({ success: false, error: message }, { status: masteryRes.status });
     }
 
@@ -116,12 +116,12 @@ export async function POST(request: Request) {
       ? "PUBG API 호출 한도가 일시적으로 초과되었습니다. 약 1분 후 다시 시도해 주세요."
       : (error.message || "무기 숙련도 갱신 중 오류가 발생했습니다.");
 
-    await reportPubgApiError(
-      "/api/pubg/player/weapon-mastery",
+    await reportPubgApiError({
+      route: "/api/pubg/player/weapon-mastery",
       status,
-      errorMsg,
-      error.stack || error.message
-    );
+      message: errorMsg,
+      detail: error.stack || error.message,
+    });
 
     return NextResponse.json({ success: false, error: errorMsg }, { status });
   }

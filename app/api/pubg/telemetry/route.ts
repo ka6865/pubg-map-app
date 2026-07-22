@@ -182,12 +182,12 @@ export async function GET(request: Request) {
       { headers: { "Cache-Control": "no-store" } },
     );
   } catch {
-    await reportPubgApiError(
-      "/api/pubg/telemetry",
-      500,
-      "Telemetry request failed",
-      "Sanitized route error",
-    );
+    await reportPubgApiError({
+      route: "/api/pubg/telemetry",
+      status: 500,
+      message: "Telemetry request failed",
+      detail: "Sanitized route error",
+    });
     return NextResponse.json(
       { error: "텔레메트리를 처리할 수 없습니다." },
       { status: 500 },
