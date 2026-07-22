@@ -21,6 +21,11 @@ export const getKoreanRarityName = (rarity: string) => {
  */
 export function isSpecialFlipEffectItem(itemName: string): boolean {
   const targetItems = [
+    // 상상력 풀가동 - SLR 계열
+    "상상력 풀가동 - SLR (네이비 레드)",
+    "상상력 풀가동 - SLR",
+    // 글라시아 계열
+    "글라시아 도안",
     // 징글 벨 - 미니14 계열
     "징글 벨 - 미니14 (골드 블루)",
     "징글 벨 - 미니14",
@@ -139,17 +144,24 @@ export function CrateCard({ card, isRevealed, onClick, getRarityBadgeStyle, getC
           : `transition-transform duration-500 ${isRevealed ? "" : "rotate-y-180"}`
       }`}>
         {/* 카드 앞면 (공개됨) */}
-        <div className={`absolute inset-0 rounded-xl bg-slate-900 border-2 p-2 sm:p-2.5 flex flex-col justify-between items-center backface-hidden ${borderGlow}`}>
+        <div className={`absolute inset-0 rounded-xl bg-slate-900 border-2 p-2 sm:p-2.5 flex flex-col justify-between items-center backface-hidden overflow-hidden ${borderGlow}`}>
           <div className="flex justify-between w-full items-center">
-            {card.rarity !== "COMMON" && (
+            {card.rarity !== "COMMON" ? (
               <span className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded tracking-wide ${getRarityBadgeStyle(card.rarity)}`}>
                 {getKoreanRarityName(card.rarity)}
+              </span>
+            ) : (
+              <div />
+            )}
+            {card.probability !== undefined && card.probability > 0 && isRevealed && (
+              <span className="text-[8px] text-slate-400 font-extrabold bg-slate-950/60 px-1.5 py-0.5 rounded border border-slate-800/40 z-10 select-none">
+                {parseFloat((card.probability * 100).toFixed(4))}%
               </span>
             )}
           </div>
           
           {!imageError && card.image_url ? (
-            <div className="w-20 h-20 sm:w-32 sm:h-32 flex items-center justify-center bg-slate-950/50 rounded-lg p-1 border border-slate-800/80 relative group-hover:scale-105 transition-transform">
+            <div className="w-full aspect-square max-h-[58%] sm:max-h-[60%] flex items-center justify-center bg-slate-950/50 rounded-lg p-1 border border-slate-800/80 relative group-hover:scale-105 transition-transform overflow-hidden">
               <Box className="w-8 h-8 text-slate-700 absolute inset-0 m-auto -z-10" />
               <img 
                 src={card.image_url} 
@@ -207,11 +219,7 @@ export function CrateCard({ card, isRevealed, onClick, getRarityBadgeStyle, getC
             </div>
           )}
 
-          {card.probability !== undefined && card.probability > 0 && isRevealed && (
-            <div className="absolute bottom-8.5 left-2 text-[8px] sm:text-[9px] text-slate-400 font-extrabold bg-slate-950/70 px-1 py-0.2 rounded border border-slate-800/40 z-10 select-none">
-              {parseFloat((card.probability * 100).toFixed(4))}%
-            </div>
-          )}
+          {/* 확률 표시 위치 상단 헤더로 이동 완료 */}
 
           {/* 보너스 오버레이 박스 (카드 뒤집혔을 때만 팝업 - 스포 차단) */}
           {card.bonus && isRevealed && (
@@ -246,7 +254,7 @@ export function CrateCard({ card, isRevealed, onClick, getRarityBadgeStyle, getC
               </div>
 
               {!bonusImageError && card.bonus.image_url ? (
-                <div className="w-20 h-20 sm:w-32 sm:h-32 flex items-center justify-center bg-slate-900 rounded-lg p-1 border border-amber-500/20 relative">
+                <div className="w-full aspect-square max-h-[58%] sm:max-h-[60%] flex items-center justify-center bg-slate-900 rounded-lg p-1 border border-amber-500/20 relative overflow-hidden">
                   <img 
                     src={card.bonus.image_url} 
                     alt={card.bonus.name}
