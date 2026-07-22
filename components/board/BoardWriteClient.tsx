@@ -31,6 +31,7 @@ export default function BoardWriteClient() {
   const [guestNickname, setGuestNickname] = useState("");
   const [guestPassword, setGuestPassword] = useState("");
   const [thumbnailUrl, setThumbnailUrl] = useState("");
+  const [expectedRevision, setExpectedRevision] = useState<number | null>(null);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [turnstileGeneration, setTurnstileGeneration] = useState(0);
 
@@ -59,7 +60,7 @@ export default function BoardWriteClient() {
   // 수정 모드일 때 기존 데이터 페칭
   useEffect(() => {
     if (editPostId) {
-      supabase.from("posts").select("*").eq("id", editPostId).single().then(({ data }) => {
+      supabase.from("posts").select("*, revision").eq("id", editPostId).single().then(({ data }) => {
         if (data) {
           setNewTitle(data.title);
           setNewContent(data.content || "");
@@ -69,12 +70,13 @@ export default function BoardWriteClient() {
           setNewIsNotice(data.is_notice);
           setNewClanInfo(data.clan_info || null); // 🌟 추가
           setThumbnailUrl(data.image_url || ""); // 🌟 추가
+          setExpectedRevision(typeof data.revision === "number" ? data.revision : null);
         }
       });
     }
   }, [editPostId]);
 
-  const handleSavePost = async (): Promise<boolean> => {
+  const handleSavePost = async (images: { contentImageIds: string[]; thumbnailImageId: string | null }): Promise<boolean> => {
     const isGuest = !user;
     const validationError = validatePost(newTitle, newContent, user, isGuest, guestNickname, guestPassword);
     if (validationError) {
@@ -109,6 +111,9 @@ export default function BoardWriteClient() {
         discord_channel_id: newDiscordChannelId,
         clan_info: newClanInfo, // 🌟 추가
         turnstileToken: user || editPostId ? null : turnstileToken,
+        expectedRevision: editPostId ? expectedRevision : null,
+        contentImageIds: user ? images.contentImageIds : [],
+        thumbnailImageId: user ? images.thumbnailImageId : null,
       };
 
       const response = await fetch("/api/posts/write", {
@@ -386,8 +391,7 @@ function restoreAiSummaryHtml(content: string): string {
     finalHtml = finalHtml.replace("<!-- RESTORED_AI_SUMMARY -->", restoredLayout);
     
     return finalHtml;
-  } catch (err) {
-    console.error("AI 요약 HTML 복원 중 에러:", err);
+  } catch {
     return content;
   }
 }

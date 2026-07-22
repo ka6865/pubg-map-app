@@ -9,7 +9,7 @@
 
 ## 1. 결론
 
-최초 리뷰에서 P0 1건, P1 12건, P2 15건을 확인했다. P0은 공개 `/api/pubg/ingest` route를 제거하고 `/api/pubg/match`가 검증된 PUBG 분석 결과를 서버 저장 함수에 직접 전달하도록 전환해 해결했다. 최종 리뷰에서 확인한 `source=scraper`와 `force=true` 위조 경로도 서로 독립된 timing-safe header 인증으로 차단했다. P1은 Hotdrop 1건, 텔레메트리 3건, 게시판 Turnstile 1건을 해결해 실제 미해결 항목이 7건이다. P2는 보안 테스트 계약 복구와 리플레이 요청 전환 경쟁 2건을 해결해 실제 미해결 항목이 13건이다.
+최초 리뷰에서 P0 1건, P1 12건, P2 15건을 확인했다. P0은 공개 `/api/pubg/ingest` route를 제거하고 `/api/pubg/match`가 검증된 PUBG 분석 결과를 서버 저장 함수에 직접 전달하도록 전환해 해결했다. 최종 리뷰에서 확인한 `source=scraper`와 `force=true` 위조 경로도 서로 독립된 timing-safe header 인증으로 차단했다. P1은 Hotdrop 1건, 텔레메트리 3건, 게시판 Turnstile 1건, 게시글 Storage 삭제 소유권·참조 검증 1건을 해결해 실제 코드 미해결 항목이 6건이다. P2는 보안 테스트 계약 복구와 리플레이 요청 전환 경쟁 2건을 해결해 실제 미해결 항목이 13건이다.
 
 텔레메트리 공용 fetch SDK, 플레이어·플랫폼 cache identity, 2D/3D 소비자, registry cleanup 계약을 통합했다. 최종 재검토의 Important 5건은 identity sequence 최소 권한, reserve→upload→원자 finalize, cache hit registry 복구, registry-only inventory manifest, 2D mode·nickname fail-closed로 보완했다. 추가 재검토의 만료 pending 부분 삭제·finalize/cleanup 교착 문제는 정확한 lease 조건, 삭제 후 rollback postcondition, 공통 lock 순서로 보완했다. manifest upload 사이에 만료하는 lease는 앱과 RPC가 공유하는 `p_now` 기준시각으로 해당 run 전체에서 보호한다. 빈 `mode` query도 이제 유효하지 않다. 운영 DB migration과 cleanup은 실행하지 않았으며, 배포는 migration을 먼저 적용한 뒤 애플리케이션을 반영해야 한다.
 
@@ -133,6 +133,13 @@
 
 #### 6) 본인 글 수정을 이용한 타인 Storage 객체 삭제
 
+> 조치 상태: 해결됨 (운영 활성화 게이트 대기)
+>
+> - `board_image_objects`·`board_post_image_refs`와 service-role 전용 lease RPC로 소유권·참조를 원자 관리하고, HTML URL을 삭제 권한 근거로 사용하지 않음
+> - 전역 cleanup은 claim RPC만 20개씩 최대 5 batch·30초 내 순차 처리하며, Storage 성공·404만 finalize(true), 오류는 finalize(false)로 재시도 상태 복구
+> - cleanup GitHub Actions job은 daily maintenance와 독립·단일 concurrency·5분 timeout이며 운영 전 `if: ${{ false }}`로 비활성
+> - 운영 활성화 전 migration 선적용, `board-images-v2` bucket/policy 확인, Preview member signed upload·작성·수정·취소 QA, 기존 `images` 7개 보존 확인, 수동 dry-run이 필수
+
 - 근거: `app/api/posts/write/route.ts:134-179`
 - 영향: 자기 글 본문에 타인 이미지의 public URL을 넣었다가 제거하면, 본문에서 추출한 경로를 service-role로 삭제할 수 있다.
 - 조치: 업로드 객체에 `owner_id`, `post_id`, `storage_key`를 서버가 기록하고 삭제 전 소유권과 참조 수를 검증한다. 사용자 HTML을 삭제 권한 근거로 사용하지 않는다.
@@ -208,7 +215,7 @@
 | 시뮬레이터 | 실제 표본 수와 무관하게 `100+ matches` 표시 | `components/map/SimulatorPanel.tsx:201-206` | 실제 필터 후 표본 수·시즌·표본 부족 경고 표시 |
 | 텔레메트리 | 공개 cache-miss 경로에 비용 방어 없음 | `app/api/pubg/telemetry/route.ts:13-95` | rate limit, enum/길이 검증, single-flight 적용 |
 | 관리자 | 직접 system API가 Admin Agent 승인 정책 우회 | `app/api/admin/system/route.ts:5-85` | route가 승인 요청만 만들게 하고 executor를 단일화 |
-| 신고 | reports public INSERT RLS가 서버 통제 우회 가능 | `supabase/migrations/20260617000000_add_guest_and_moderation_tables.sql:45-57` | anon INSERT revoke, 공개 정책 제거, 서버 route만 허용 |
+| 신고 | reports public INSERT RLS가 서버 통제 우회 가능 | `supabase/migrations/20260616120024_add_guest_and_moderation_tables.sql:45-57` | anon INSERT revoke, 공개 정책 제거, 서버 route만 허용 |
 | cron | 패치노트 URL SSRF 및 query-string secret | `app/api/cron/patch-notes/route.ts:117-147` | Authorization만 사용, PUBG 도메인 allowlist, redirect/timeout/size 제한 |
 | Supabase | SECURITY DEFINER 함수의 search_path 미고정 | `supabase/migrations/20260526022000_auth_profiles_trigger.sql:2-23` | `SET search_path=''`, `public.profiles` 완전 한정 |
 | 테스트 | 해결됨: 보안 테스트 계약 복구 및 필수 admin 게이트 편입 | `tests/security.test.ts`, `package.json` | `verify:admin`에서 지속 회귀 검증 |
@@ -240,7 +247,7 @@
 1. [x] `/api/pubg/ingest` 공개 route 제거 및 `/api/pubg/match` 서버 내부 직접 저장 전환
 2. [x] Hotdrop 실행 경계를 GitHub Actions로 이전
 3. [x] Turnstile을 guest write에 서버 결합
-4. Storage 삭제 소유권 검증
+4. [x] Storage 삭제 소유권 검증
 5. 제보 notify 최신 임계값·원자성 검증
 
 ### 다음 배포

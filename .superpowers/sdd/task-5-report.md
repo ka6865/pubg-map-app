@@ -1,0 +1,39 @@
+# Task 5: 게시판 이미지 bounded cleanup 보고서
+
+## RED 증거
+
+- `npx vitest run tests/board-image-cleanup-job.test.ts tests/board-image-promote-boundary.test.ts`를 구현 전 실행했다.
+- 결과: cleanup script/workflow와 `promotionRevision` 모듈 부재로 cleanup 4건 실패, promote suite import 실패. 실패 원인은 요구한 산출물 부재였다.
+
+## 변경
+
+- `scripts/cleanup_board_images.ts`는 전역 `claim_board_image_deletions` RPC만 20개씩 호출하고 최대 5 batch, 시작 30초 뒤 신규 batch 금지, 순차 Storage remove/finalize를 구현했다.
+- Storage 성공과 not found/404만 finalize(true)이며 반환 오류·throw는 finalize(false)이다. claim/finalize RPC 오류와 계약 위반은 fail closed한다.
+- stdout은 배치·claim·finalize·deferred·backlog 안전 집계만 기록한다. key, lease token, 원본 오류, credential은 출력하지 않는다.
+- daily workflow에 `needs` 없는 독립 `board-image-cleanup` job을 추가했다. timeout 5분, 단일 concurrency, 기존 Supabase secrets만 사용하며 운영 활성화 전 `if: ${{ false }}`다.
+- Task 4 Minor 보강으로 부모 revision 선택을 순수 함수로 분리해 shadow parent revision, 부모 오류·누락·비정상 null, 신규 draft 자신의 revision을 행위 테스트했다.
+
+## 검증
+
+- 전용 Vitest: 2개 파일, 19개 테스트 통과
+- `npm run verify:admin`: 12개 파일, 263개 테스트 통과
+- 대상 ESLint: 오류 0, 경고 0
+- `npx tsc --noEmit --pretty false`: 통과
+- `git diff --check`: 통과
+
+## 배포 gate와 남은 위험
+
+- 운영 Supabase migration을 먼저 적용한다.
+- `board-images-v2` bucket/policy를 확인한다.
+- Preview에서 member signed upload·작성·수정·취소 QA를 수행한다.
+- 기존 `images` 객체 7개가 보존되는지 확인한다.
+- 비활성 job을 활성화하기 전에 수동 dry-run을 수행한다.
+- 운영 migration·Storage 삭제·workflow 실행은 이 작업에서 수행하지 않았다. 전체 통합 검증은 부모 작업에서 수행한다.
+
+## 보안 리뷰 Changes required 후속 조치
+
+- Important: cleanup worker가 RPC claim의 문자열 필드만 검사해 다른 bucket·key를 Storage에 전달할 수 있었다.
+  - RED: 다른 bucket, key 불일치, image/lease UUID 비정상, 중복 image ID claim을 추가해 모두 Storage/finalize 0회여야 함을 확인했고, 기존 구현에서 5건이 실패했다.
+  - GREEN: `BOARD_IMAGE_BUCKET`, `isUuid` 계약을 재사용하고 claim batch 전체를 Storage 이전에 검증했다. bucket은 고정값, key는 image ID와 동일, image/lease는 UUID, image ID는 batch 내 고유해야 한다. 하나라도 위반하면 `board-image-cleanup-claim-failed`로 fail closed한다.
+- Minor: 공식 공개 SDK 오류 형태의 `statusCode: "404"`를 실제형 테스트로 추가했다. 숫자 `statusCode: 404` 및 `status: 404` 호환도 유지한다.
+- 후속 관련 회귀: cleanup·promote·Storage API/migration 4개 파일 82/82 통과. workflow 비활성 조건과 안전 집계 로그 계약은 유지했다.

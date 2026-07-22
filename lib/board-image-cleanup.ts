@@ -1,10 +1,49 @@
-export function getUnusedUploadedBoardImagePaths(
-  uploadedPaths: string[],
+import { parseBoardImageSrcs } from "@/lib/board/imageHtml";
+import { canonicalizeManagedBoardImageUrl } from "@/lib/board/imageStorageContract";
+
+export type UploadedBoardImage = {
+  imageId: string;
+  publicUrl: string;
+};
+
+export type UploadedBoardImageClassification =
+  | {
+    ok: true;
+    contentImageIds: string[];
+    unusedImageIds: string[];
+  }
+  | { ok: false };
+
+/**
+ * 업로드된 이미지가 현재 본문 또는 대표 이미지에서 사용 중인지 한 번의 HTML 파싱으로 분류합니다.
+ * 파싱 실패는 빈 참조 목록과 구분해 저장 흐름을 중단할 수 있도록 전달합니다.
+ */
+export function classifyUploadedBoardImages(
+  uploadedImages: UploadedBoardImage[],
   content: string,
   thumbnailUrl = ""
-): string[] {
-  return uploadedPaths.filter((path) => {
-    if (!path) return false;
-    return !content.includes(path) && !thumbnailUrl.includes(path);
-  });
+): UploadedBoardImageClassification {
+  const contentImageSrcs = parseBoardImageSrcs(content);
+  if (!contentImageSrcs.ok) return { ok: false };
+  const contentUrls = new Set(contentImageSrcs.srcs);
+  const canonicalContentUrls = new Set(contentImageSrcs.srcs.map(canonicalizeManagedBoardImageUrl).filter((url): url is string => url !== null));
+  const canonicalThumbnailUrl = canonicalizeManagedBoardImageUrl(thumbnailUrl);
+  const contentImageIds = new Set<string>();
+  const unusedImageIds = new Set<string>();
+
+  for (const image of uploadedImages) {
+    if (!image.imageId || !image.publicUrl) continue;
+    const canonicalPublicUrl = canonicalizeManagedBoardImageUrl(image.publicUrl);
+    if (contentUrls.has(image.publicUrl) || (canonicalPublicUrl && canonicalContentUrls.has(canonicalPublicUrl))) {
+      contentImageIds.add(image.imageId);
+    } else if (thumbnailUrl !== image.publicUrl && (!canonicalPublicUrl || canonicalThumbnailUrl !== canonicalPublicUrl)) {
+      unusedImageIds.add(image.imageId);
+    }
+  }
+
+  return {
+    ok: true,
+    contentImageIds: [...contentImageIds],
+    unusedImageIds: [...unusedImageIds],
+  };
 }

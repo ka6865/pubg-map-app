@@ -371,7 +371,7 @@ Commit: `fix: 게시판 초안 승격 이미지 참조 원자화`
 - Consumes: Task 1 claim/finalize RPC
 - Produces: `npm run cleanup:board-images`; 최대 20개·30초 신규 batch 시작 제한·최대 5 batch
 
-- [ ] **Step 1: cleanup RED 테스트 작성**
+- [x] **Step 1: cleanup RED 테스트 작성**
 
 ```text
 한 RPC batch limit 20, 최대 5 batch, 30초 후 신규 batch 0
@@ -383,15 +383,15 @@ token/key/error 원문을 로그에 기록하지 않음
 workflow timeout-minutes가 있으며 무료 플랜에서 동시 cleanup 1개
 ```
 
-- [ ] **Step 2: RED 확인**
+- [x] **Step 2: RED 확인**
 
 Run: `npx vitest run tests/board-image-cleanup-job.test.ts`
 
-- [ ] **Step 3: bounded cleanup과 workflow 구현**
+- [x] **Step 3: bounded cleanup과 workflow 구현**
 
 별도 Vercel Cron을 만들지 않는다. 기존 GitHub Actions에 `needs` 없는 독립 job을 추가하고 repository secrets의 기존 Supabase server credentials만 사용한다. 운영 삭제는 migration 배포와 Preview 검증 후에만 workflow를 활성화하며 그 전에는 job 조건을 false로 유지한다.
 
-- [ ] **Step 4: 보고서와 계획 상태 갱신**
+- [x] **Step 4: 보고서와 계획 상태 갱신**
 
 P1 Storage 항목을 해결됨으로 표시하되 다음 배포 gate를 명시한다.
 

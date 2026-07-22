@@ -1,216 +1,168 @@
 import { NextResponse } from "next/server";
 import { withAuthGuard } from "@/utils/supabase/guard";
 
-async function sendDiscordNotification(postDraft: any, targetPostId: number) {
-  const patchNotesWebhookUrl = process.env.DISCORD_PATCH_NOTES_WEBHOOK_URL || 
-                              process.env.DISCORD_COMMUNITY_WEBHOOK_URL || 
-                              process.env.DISCORD_WEBHOOK_URL;
-                              
-  if (!patchNotesWebhookUrl) return;
+const DISCORD_NOTIFICATION_TIMEOUT_MS = 1_000;
 
+type PromoteSuccessResult = {
+  result_code: "ok";
+  post_id: number;
+  revision: number;
+  title: string;
+  content: string;
+  image_url: string | null;
+};
+
+type PromoteExistingPostFailureResult = {
+  result_code: "revision_conflict" | "forbidden" | "already_promoted";
+  post_id: number;
+  revision: number;
+  title: null;
+  content: null;
+  image_url: null;
+};
+
+type PromoteNotFoundResult = {
+  result_code: "not_found";
+  post_id: null;
+  revision: null;
+  title: null;
+  content: null;
+  image_url: null;
+};
+
+type PromoteResult = PromoteSuccessResult | PromoteExistingPostFailureResult | PromoteNotFoundResult;
+
+function isNonNegativeSafeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isPromoteResult(value: unknown): value is PromoteResult {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const row = value as Record<string, unknown>;
+  if (row.result_code === "ok") {
+    return Number.isSafeInteger(row.post_id) && (row.post_id as number) > 0
+      && isNonNegativeSafeInteger(row.revision)
+      && typeof row.title === "string"
+      && typeof row.content === "string"
+      && (typeof row.image_url === "string" || row.image_url === null);
+  }
+  if (row.result_code === "revision_conflict" || row.result_code === "forbidden" || row.result_code === "already_promoted") {
+    return Number.isSafeInteger(row.post_id) && (row.post_id as number) > 0
+      && isNonNegativeSafeInteger(row.revision)
+      && row.title === null
+      && row.content === null
+      && row.image_url === null;
+  }
+  return row.result_code === "not_found"
+    && row.post_id === null
+    && row.revision === null
+    && row.title === null
+    && row.content === null
+    && row.image_url === null;
+}
+
+function parseRequestBody(value: unknown): { postId: number; expectedParentRevision: number } | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const body = value as Record<string, unknown>;
+  const keys = Object.keys(body);
+  if (!keys.every((key) => key === "postId" || key === "expectedParentRevision")) return null;
+  if (!Number.isSafeInteger(body.postId) || (body.postId as number) < 1
+    || !Number.isSafeInteger(body.expectedParentRevision) || (body.expectedParentRevision as number) < 0) return null;
+  return { postId: body.postId as number, expectedParentRevision: body.expectedParentRevision as number };
+}
+
+async function sendDiscordNotification(post: PromoteSuccessResult) {
   try {
-    let desc = "새로운 배그 소식이 게시판에 등록되었습니다.";
-    const postContent = postDraft.content || "";
-    if (postContent) {
-      const cleanContent = postContent
-        .replace(/<li[^>]*>\s*<span[^>]*>✓<\/span>\s*([\s\S]*?)<\/li>/gi, "- $1\n")
-        .replace(/<strong[^>]*>([\s\S]*?)<\/strong>/gi, "**$1**")
-        .replace(/<[^>]+>/g, ""); // 나머지 태그 제거
-      
-      const summaryStart = cleanContent.indexOf("🤖 BGMS AI");
-      if (summaryStart !== -1) {
-        desc = cleanContent.substring(summaryStart).trim();
-      } else {
-        desc = cleanContent.substring(0, 1000).trim();
-      }
-    }
+    const webhookUrl = process.env.DISCORD_PATCH_NOTES_WEBHOOK_URL
+      || process.env.DISCORD_COMMUNITY_WEBHOOK_URL
+      || process.env.DISCORD_WEBHOOK_URL;
+    if (!webhookUrl) return;
 
-    const embed = {
-      title: `🆕 [배그 소식] ${postDraft.title}`,
-      description: desc.substring(0, 2000),
-      url: `${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/board/${targetPostId}`,
-      thumbnail: postDraft.image_url ? { url: postDraft.image_url } : undefined,
-      color: 0xf2a900,
-      footer: { text: "BGMS 통합 지도 봇 | 업데이트 알리미" },
-      timestamp: new Date().toISOString(),
-    };
-
-    await fetch(patchNotesWebhookUrl, {
+    const summary = post.content.replace(/<[^>]+>/g, "").trim().slice(0, 1000)
+      || "새로운 배그 소식이 게시판에 등록되었습니다.";
+    const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000").replace(/\/$/, "");
+    const controller = new AbortController();
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const notification = fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ embeds: [embed] }),
+      signal: controller.signal,
+      body: JSON.stringify({
+        embeds: [{
+          title: `🆕 [배그 소식] ${post.title}`,
+          description: summary.slice(0, 2000),
+          url: `${siteUrl}/board/${post.post_id}`,
+          thumbnail: post.image_url ? { url: post.image_url } : undefined,
+          color: 0xf2a900,
+          footer: { text: "BGMS 통합 지도 봇 | 업데이트 알리미" },
+          timestamp: new Date().toISOString(),
+        }],
+      }),
     });
-  } catch (err: any) {
-    console.error("❌ Discord send error on promote:", err.message || err);
+    const timeout = new Promise<void>((resolve) => {
+      timeoutId = setTimeout(() => {
+        controller.abort();
+        resolve();
+      }, DISCORD_NOTIFICATION_TIMEOUT_MS);
+    });
+    try {
+      await Promise.race([notification.catch(() => undefined), timeout]);
+    } finally {
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
+    }
+  } catch {
+    // Discord 전달 실패는 이미 커밋된 승격 결과를 되돌리지 않는다.
   }
 }
 
-
-/**
- * @fileoverview 게시판 초안(draft)을 실제 게시판에 승격 및 병합 처리하는 API입니다.
- * [보안] JWT 인증 가드 및 어드민 롤(admin role)을 반드시 검증합니다.
- */
-
 export async function POST(request: Request) {
-  try {
-    // 🔒 [보안] JWT 인증 가드 적용
-    const auth = await withAuthGuard();
-    if (auth.error) return auth.error;
-    const { user, supabaseAdmin } = auth;
+  const auth = await withAuthGuard();
+  if (auth.error) return auth.error;
+  const { user, supabaseAdmin } = auth;
 
-    // 🔒 [권한 확인] 어드민 롤 검증
-    const { data: requesterProfile } = await supabaseAdmin
+  let body: unknown;
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: "요청 형식이 올바르지 않습니다." }, { status: 400 });
+  }
+  const input = parseRequestBody(body);
+  if (!input) return NextResponse.json({ error: "필수 입력 데이터가 올바르지 않습니다." }, { status: 400 });
+
+  try {
+    const { data: profile, error: profileError } = await supabaseAdmin
       .from("profiles")
       .select("role")
       .eq("id", user.id)
       .single();
+    if (profileError) return NextResponse.json({ error: "게시글을 승격하지 못했습니다." }, { status: 503 });
+    if (profile?.role !== "admin") return NextResponse.json({ error: "어드민 권한이 필요합니다." }, { status: 403 });
 
-    if (requesterProfile?.role !== "admin") {
-      console.warn(`⚠️ [Permission Denied] Non-admin user ${user.id} tried to promote post`);
-      return NextResponse.json(
-        { error: "어드민 권한이 필요합니다." },
-        { status: 403 }
-      );
+    const { data, error } = await supabaseAdmin.rpc("merge_board_post_draft_with_images", {
+      p_draft_post_id: input.postId,
+      p_actor_user_id: user.id,
+      p_expected_parent_revision: input.expectedParentRevision,
+    });
+    if (error || !Array.isArray(data) || data.length !== 1 || !isPromoteResult(data[0])) {
+      return NextResponse.json({ error: "게시글을 승격하지 못했습니다." }, { status: 503 });
     }
-
-    const body = await request.json();
-    const { postId } = body;
-
-    if (!postId) {
-      return NextResponse.json(
-        { error: "필수 입력 데이터(postId)가 누락되었습니다." },
-        { status: 400 }
-      );
-    }
-
-    // 1. 초안 게시글 조회
-    const { data: postDraft, error: fetchError } = await supabaseAdmin
-      .from("posts")
-      .select("*")
-      .eq("id", postId)
-      .single();
-
-    if (fetchError || !postDraft) {
-      return NextResponse.json(
-        { error: "승격할 초안 게시글을 찾을 수 없습니다." },
-        { status: 404 }
-      );
-    }
-
-    if (postDraft.status !== "draft") {
-      return NextResponse.json(
-        { error: "이미 승격(발행)된 게시글입니다." },
-        { status: 400 }
-      );
-    }
-
-    // 2. 승격 및 병합(Merge) 분기 처리
-    if (postDraft.parent_id) {
-      // [Shadow Draft 병합] parent_id가 가리키는 원본 게시글을 초안 정보로 업데이트하고 초안 삭제
-      console.log(`🌿 [Shadow Draft Promote] Merging draft ${postId} into parent ${postDraft.parent_id}`);
-      
-      // 기존 원본 글의 content 획득 (이미지 대조 및 클린업용)
-      const { data: existingPost } = await supabaseAdmin
-        .from("posts")
-        .select("content")
-        .eq("id", postDraft.parent_id)
-        .single();
-
-      // 🌟 [서버사이드 이미지 정리] 원본에 병합 시 사용하지 않게 된 미사용 이미지 파일 스토리지 정리
-      if (existingPost) {
-        try {
-          const imgRegex = /<img[^>]+src\s*=\s*["']?([^"'\s>]+)["']?/g;
-          const oldImages = [...(existingPost.content || "").matchAll(imgRegex)].map(m => m[1]);
-          const newImages = [...(postDraft.content || "").matchAll(imgRegex)].map(m => m[1]);
-          const deletedImages = oldImages.filter(src => !newImages.includes(src));
-
-          const imagePathsToDelete = deletedImages
-            .map(src => {
-              if (src.includes("/storage/v1/object/public/images/")) {
-                const path = src.split("/storage/v1/object/public/images/")[1];
-                return path ? decodeURIComponent(path) : null;
-              }
-              return null;
-            })
-            .filter((path): path is string => path !== null);
-
-          if (imagePathsToDelete.length > 0) {
-            console.log("🧹 [Server Storage Cleanup]:", imagePathsToDelete);
-            await supabaseAdmin.storage.from("images").remove(imagePathsToDelete);
-          }
-        } catch (cleanupErr) {
-          console.error("⚠️ [Cleanup Error]:", cleanupErr);
-        }
+    const result = data[0];
+    if (result.result_code !== "ok") {
+      if (result.result_code === "revision_conflict") {
+        return NextResponse.json({ error: "게시글이 다른 곳에서 수정되었습니다." }, { status: 409 });
       }
-
-      // 원본 게시글 업데이트
-      const { error: mergeError } = await supabaseAdmin
-        .from("posts")
-        .update({
-          title: postDraft.title,
-          content: postDraft.content,
-          category: postDraft.category,
-          image_url: postDraft.image_url,
-          discord_url: postDraft.discord_url,
-          discord_channel_id: postDraft.discord_channel_id,
-          clan_info: postDraft.clan_info,
-          is_notice: postDraft.is_notice,
-          status: "published"
-        })
-        .eq("id", postDraft.parent_id);
-
-      if (mergeError) {
-        console.error("🚨 [Merge Error]:", mergeError);
-        throw mergeError;
-      }
-
-      // 해당 원본(parent_id)을 바라보고 생성되었던 모든 수정 임시 초안(Shadow Drafts) 일괄 삭제
-      const { error: deleteError } = await supabaseAdmin
-        .from("posts")
-        .delete()
-        .eq("parent_id", postDraft.parent_id);
-
-      if (deleteError) {
-        console.error("🚨 [Draft Delete Error]:", deleteError);
-      }
-
-      // 🌟 승인 완료 후 디스코드 알림 발송
-      sendDiscordNotification(postDraft, postDraft.parent_id);
-
-      return NextResponse.json({
-        success: true,
-        message: "수정 사항이 원본 게시글에 성공적으로 반영되었습니다.",
-        data: { id: postDraft.parent_id }
-      });
-    } else {
-      // [신규 초안 승격] parent_id가 없는 경우 status만 published로 수정
-      console.log(`🌿 [New Draft Promote] Promoting draft ${postId} to published status`);
-      
-      const { data, error: promoteError } = await supabaseAdmin
-        .from("posts")
-        .update({ status: "published" })
-        .eq("id", postId)
-        .select();
-
-      if (promoteError) {
-        console.error("🚨 [Promote Error]:", promoteError);
-        throw promoteError;
-      }
-
-      // 🌟 승인 완료 후 디스코드 알림 발송
-      sendDiscordNotification(postDraft, postId);
-
-      return NextResponse.json({
-        success: true,
-        message: "새 게시글이 성공적으로 발행되었습니다.",
-        data: data[0]
-      });
+      if (result.result_code === "forbidden") return NextResponse.json({ error: "어드민 권한이 필요합니다." }, { status: 403 });
+      if (result.result_code === "not_found") return NextResponse.json({ error: "승격할 초안 게시글을 찾을 수 없습니다." }, { status: 404 });
+      return NextResponse.json({ error: "이미 승격(발행)된 게시글입니다." }, { status: 409 });
     }
-  } catch (err: any) {
-    console.error("🚨 [Post Promote API Error]:", err);
-    return NextResponse.json(
-      { error: err.message || "서버 내부 오류가 발생했습니다." },
-      { status: 500 }
-    );
+
+    await sendDiscordNotification(result);
+    return NextResponse.json({
+      success: true,
+      message: "수정 사항이 원본 게시글에 성공적으로 반영되었습니다.",
+      data: { id: result.post_id, revision: result.revision },
+    });
+  } catch {
+    return NextResponse.json({ error: "게시글을 승격하지 못했습니다." }, { status: 503 });
   }
 }

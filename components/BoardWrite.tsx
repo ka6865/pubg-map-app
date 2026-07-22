@@ -8,7 +8,7 @@ import imageCompression from "browser-image-compression";
 import { toast } from "sonner";
 import { ClanInfo } from "@/types/board"; // 🌟 추가
 import ConfirmModal from "@/components/common/ConfirmModal";
-import { getUnusedUploadedBoardImagePaths } from "@/lib/board-image-cleanup";
+import { classifyUploadedBoardImages, type UploadedBoardImage } from "@/lib/board-image-cleanup";
 
 const ReactQuill = dynamic(() => import("react-quill-new"), {
   ssr: false,
@@ -20,6 +20,64 @@ const IMAGE_CONFIG = {
   COMPRESSION_MAX_SIZE_MB: 1.5,
   COMPRESSION_MAX_WIDTH_OR_HEIGHT: 1920,
 } as const;
+
+type BoardImageReservation = {
+  imageId: string;
+  bucketId: string;
+  storageKey: string;
+  token: string;
+};
+
+async function reserveBoardImage(file: File): Promise<BoardImageReservation> {
+  const response = await fetch("/api/board/images/reserve", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mimeType: file.type, byteSize: file.size }),
+  });
+  const payload: unknown = await response.json();
+  if (!response.ok || !isBoardImageReservation(payload)) {
+    throw new Error("이미지 업로드를 준비하지 못했습니다.");
+  }
+  return payload;
+}
+
+async function completeBoardImage(imageId: string): Promise<UploadedBoardImage> {
+  const response = await fetch("/api/board/images/complete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ imageId }),
+  });
+  const payload: unknown = await response.json();
+  if (!response.ok || !isUploadedBoardImage(payload)) {
+    throw new Error("이미지 업로드를 완료하지 못했습니다.");
+  }
+  return payload;
+}
+
+async function releaseBoardImages(imageIds: string[]): Promise<void> {
+  if (imageIds.length === 0) return;
+  const response = await fetch("/api/board/images/release", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ imageIds }),
+  });
+  if (!response.ok) throw new Error("이미지 정리를 요청하지 못했습니다.");
+}
+
+function isBoardImageReservation(value: unknown): value is BoardImageReservation {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return typeof record.imageId === "string"
+    && typeof record.bucketId === "string"
+    && typeof record.storageKey === "string"
+    && typeof record.token === "string";
+}
+
+function isUploadedBoardImage(value: unknown): value is UploadedBoardImage {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return typeof record.imageId === "string" && typeof record.publicUrl === "string";
+}
 
 const QuillGlobalStyles = (
   <style>{`
@@ -85,7 +143,7 @@ interface BoardWriteProps {
   setNewClanInfo: (clanInfo: ClanInfo | null) => void; // 🌟 추가
   thumbnailUrl: string; // 🌟 썸네일 수동 등록 추가
   setThumbnailUrl: (url: string) => void; // 🌟 썸네일 수동 등록 추가
-  handleSavePost: () => Promise<boolean>;
+  handleSavePost: (images: { contentImageIds: string[]; thumbnailImageId: string | null }) => Promise<boolean>;
   setIsWriting: (isWriting: boolean) => void;
   isAdmin: boolean;
   isLoading: boolean;
@@ -129,8 +187,7 @@ export default function BoardWrite({
   setGuestPassword,
 }: BoardWriteProps) {
   const quillRef = useRef<any>(null);
-  const uploadedImagesRef = useRef<string[]>([]);
-  const preserveUploadedImagesOnUnmountRef = useRef(false);
+  const uploadedImagesRef = useRef<UploadedBoardImage[]>([]);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [isCreatingRoom, setIsCreatingRoom] = useState(false); // 🌟 디스코드 방 생성 로딩 상태
   const [searchNickname, setSearchNickname] = useState(""); // 🌟 클랜 검색용 닉네임
@@ -147,6 +204,7 @@ export default function BoardWrite({
   }, [newContent]);
 
   const handleThumbnailUploadClick = () => {
+    if (isGuest) return;
     fileInputRef.current?.click();
   };
 
@@ -160,15 +218,14 @@ export default function BoardWrite({
     }
     const toastId = toast.loading("대표 이미지를 업로드하고 있습니다...");
     try {
-      const url = await uploadImage(file);
-      if (url) {
-        setThumbnailUrl(url);
+      const image = await uploadImage(file);
+      if (image) {
+        setThumbnailUrl(image.publicUrl);
         toast.success("대표 이미지가 업로드되었습니다.", { id: toastId });
       } else {
         toast.error("대표 이미지 업로드 실패", { id: toastId });
       }
-    } catch (err) {
-      console.error(err);
+    } catch {
       toast.error("대표 이미지 업로드 오류", { id: toastId });
     }
   };
@@ -207,7 +264,6 @@ export default function BoardWrite({
         toast.success("클랜 정보를 성공적으로 조회하고 첨부했습니다!", { id: toastId });
       }
     } catch (err: any) {
-      console.error("Clan Search Error:", err);
       toast.error(err.message || "클랜 조회 중 오류가 발생했습니다.", { id: toastId });
     } finally {
       setIsSearchingClan(false);
@@ -249,21 +305,12 @@ export default function BoardWrite({
 
       toast.success(`${type.toUpperCase()} 채널이 생성되었습니다!`, { id: toastId });
     } catch (err: any) {
-      console.error("🚨 [Room Create Error]:", err);
       toast.error(err.message || "채널 생성 중 오류가 발생했습니다.", { id: toastId });
     } finally {
       setIsCreatingRoom(false);
       setDiscordRoomType(null);
     }
   };
-
-  useEffect(() => {
-    return () => {
-      if (!preserveUploadedImagesOnUnmountRef.current && uploadedImagesRef.current.length > 0) {
-        supabase.storage.from("images").remove(uploadedImagesRef.current);
-      }
-    };
-  }, []);
 
   const uploadImage = useCallback(async (file: File) => {
     try {
@@ -274,28 +321,26 @@ export default function BoardWrite({
       };
 
       const compressedFile = await imageCompression(file, options);
-      const fileExt = compressedFile.name.split(".").pop() || "jpeg";
-      const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
-
+      const reservation = await reserveBoardImage(compressedFile);
       const { error } = await supabase.storage
-        .from("images")
-        .upload(fileName, compressedFile, {
+        .from(reservation.bucketId)
+        .uploadToSignedUrl(reservation.storageKey, reservation.token, compressedFile, {
+          contentType: compressedFile.type,
           cacheControl: "31536000",
           upsert: false,
         });
-
-      if (error) throw error;
-
-      uploadedImagesRef.current.push(fileName);
-      const { data } = supabase.storage.from("images").getPublicUrl(fileName);
-      return data.publicUrl;
-    } catch (error: any) {
-      console.error("Image upload/compression error:", error);
+      if (error) throw new Error("이미지 업로드에 실패했습니다.");
+      const completed = await completeBoardImage(reservation.imageId);
+      const image = { imageId: completed.imageId, publicUrl: completed.publicUrl };
+      uploadedImagesRef.current.push(image);
+      return image;
+    } catch {
       toast.error("이미지 업로드 중 오류가 발생했습니다.");
     }
   }, []);
 
   const imageHandler = useCallback(() => {
+    if (isGuest) return;
     const existingInputs = document.querySelectorAll(".quill-image-input");
     existingInputs.forEach((el) => el.remove());
 
@@ -333,22 +378,21 @@ export default function BoardWrite({
       try {
         setIsUploadingImage(true);
         editor.enable(false);
-        const url = await uploadImage(file);
-        if (url) {
-          editor.insertEmbed(range.index, "image", url);
+        const image = await uploadImage(file);
+        if (image) {
+          editor.insertEmbed(range.index, "image", image.publicUrl);
           editor.setSelection(range.index + 1);
         } else {
           toast.error("이미지 업로드 실패");
         }
-      } catch (e) {
-        console.error("Editor image insert error:", e);
+      } catch {
       } finally {
         editor.enable(true);
         setIsUploadingImage(false);
         if (document.body.contains(input)) document.body.removeChild(input);
       }
     };
-  }, [uploadImage]);
+  }, [isGuest, uploadImage]);
 
   const linkHandler = useCallback(() => {
     if (!quillRef.current) return;
@@ -414,6 +458,7 @@ export default function BoardWrite({
 
     const handleDrop = async (e: DragEvent) => {
       e.preventDefault();
+      if (isGuest) return;
       if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
         const file = e.dataTransfer.files[0];
         if (file.type.startsWith("image/")) {
@@ -427,9 +472,9 @@ export default function BoardWrite({
           try {
             setIsUploadingImage(true);
             editor.enable(false);
-            const url = await uploadImage(file);
-            if (url) {
-              editor.insertEmbed(range.index, "image", url);
+            const image = await uploadImage(file);
+            if (image) {
+              editor.insertEmbed(range.index, "image", image.publicUrl);
               editor.setSelection(range.index + 1);
             }
           } finally {
@@ -442,15 +487,16 @@ export default function BoardWrite({
 
     root.addEventListener("drop", handleDrop);
     return () => root.removeEventListener("drop", handleDrop);
-  }, [uploadImage]);
+  }, [isGuest, uploadImage]);
 
   const handleCancel = async () => {
     try {
       if (uploadedImagesRef.current.length > 0) {
-        await supabase.storage.from("images").remove(uploadedImagesRef.current);
+        await releaseBoardImages(uploadedImagesRef.current.map((image) => image.imageId));
+        uploadedImagesRef.current = [];
       }
-    } catch (err) {
-      console.error("Cancel cleanup error:", err);
+    } catch {
+      toast.error("업로드한 이미지 정리를 요청하지 못했습니다.");
     } finally {
       setIsWriting(false);
     }
@@ -461,21 +507,24 @@ export default function BoardWrite({
     if (isLoading || isUploadingImage) return;
 
     try {
-      const unusedImages = getUnusedUploadedBoardImagePaths(
+      const imageClassification = classifyUploadedBoardImages(
         uploadedImagesRef.current,
         newContent,
         thumbnailUrl
       );
+      if (!imageClassification.ok) {
+        toast.error("본문 이미지 정보를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+        return;
+      }
 
-      if (unusedImages.length > 0) {
-        // 이미지 삭제 중 오류가 나도 저장은 진행할 수 있도록 독립적 에러 핸들링
+      if (imageClassification.unusedImageIds.length > 0) {
         try {
-          await supabase.storage.from("images").remove(unusedImages);
+          await releaseBoardImages(imageClassification.unusedImageIds);
           uploadedImagesRef.current = uploadedImagesRef.current.filter(
-            (f) => !unusedImages.includes(f)
+            (image) => !imageClassification.unusedImageIds.includes(image.imageId)
           );
-        } catch (storageErr) {
-          console.error("Storage cleanup failed:", storageErr);
+        } catch {
+          toast.error("미사용 이미지 정리를 요청하지 못했습니다.");
         }
       }
 
@@ -488,17 +537,15 @@ export default function BoardWrite({
         }
       }
 
-      preserveUploadedImagesOnUnmountRef.current = true;
-      const saved = await handleSavePost();
+      const contentImageIds = imageClassification.contentImageIds;
+      const thumbnailImageId = uploadedImagesRef.current.find(
+        (image) => image.publicUrl === thumbnailUrl,
+      )?.imageId ?? null;
+      const saved = await handleSavePost({ contentImageIds, thumbnailImageId });
       if (saved) {
-        // 🌟 성공적으로 저장된 경우, 언마운트 시 자동 삭제되지 않도록 목록을 비워줍니다.
         uploadedImagesRef.current = [];
-      } else {
-        preserveUploadedImagesOnUnmountRef.current = false;
       }
-    } catch (err) {
-      preserveUploadedImagesOnUnmountRef.current = false;
-      console.error("onSaveClick fatal error:", err);
+    } catch {
       toast.error("저장을 준비하는 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.");
     }
   };
@@ -542,7 +589,7 @@ export default function BoardWrite({
         [{ header: [1, 2, false] }],
         ["bold", "italic", "underline", "strike", "blockquote"],
         [{ list: "ordered" }, { list: "bullet" }],
-        ["link", "image"],
+        ["link", ...(isGuest ? [] : ["image"])],
         ["clean"],
       ],
       handlers: { 
@@ -585,7 +632,7 @@ export default function BoardWrite({
         }]
       ]
     }
-  }), [imageHandler, linkHandler]);
+  }), [imageHandler, isGuest, linkHandler]);
 
   return (
     <div
@@ -670,11 +717,13 @@ export default function BoardWrite({
             ref={fileInputRef}
             onChange={handleThumbnailFileChange}
             accept="image/*"
+            disabled={isGuest || isUploadingImage}
             style={{ display: "none" }}
           />
           <button
             type="button"
             onClick={handleThumbnailUploadClick}
+            disabled={isGuest || isUploadingImage}
             style={{ padding: "8px 12px", backgroundColor: "#333", color: "#F2A900", border: "1px solid #F2A900", borderRadius: "4px", fontSize: "12px", fontWeight: "bold", cursor: "pointer" }}
           >
             이미지 업로드
