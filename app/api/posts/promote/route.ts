@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { withAuthGuard } from "@/utils/supabase/guard";
 
+const DISCORD_NOTIFICATION_TIMEOUT_MS = 1_000;
+
 type PromoteSuccessResult = {
   result_code: "ok";
   post_id: number;
@@ -79,9 +81,12 @@ async function sendDiscordNotification(post: PromoteSuccessResult) {
     const summary = post.content.replace(/<[^>]+>/g, "").trim().slice(0, 1000)
       || "새로운 배그 소식이 게시판에 등록되었습니다.";
     const siteUrl = (process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000").replace(/\/$/, "");
-    await fetch(webhookUrl, {
+    const controller = new AbortController();
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const notification = fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      signal: controller.signal,
       body: JSON.stringify({
         embeds: [{
           title: `🆕 [배그 소식] ${post.title}`,
@@ -94,6 +99,17 @@ async function sendDiscordNotification(post: PromoteSuccessResult) {
         }],
       }),
     });
+    const timeout = new Promise<void>((resolve) => {
+      timeoutId = setTimeout(() => {
+        controller.abort();
+        resolve();
+      }, DISCORD_NOTIFICATION_TIMEOUT_MS);
+    });
+    try {
+      await Promise.race([notification.catch(() => undefined), timeout]);
+    } finally {
+      if (timeoutId !== undefined) clearTimeout(timeoutId);
+    }
   } catch {
     // Discord 전달 실패는 이미 커밋된 승격 결과를 되돌리지 않는다.
   }

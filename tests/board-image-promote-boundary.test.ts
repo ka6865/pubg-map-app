@@ -27,6 +27,7 @@ function request(body: unknown) {
 
 describe("게시글 초안 승격 이미지 경계", () => {
   beforeEach(() => {
+    vi.useRealTimers();
     vi.clearAllMocks();
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
@@ -97,6 +98,33 @@ describe("게시글 초안 승격 이미지 경계", () => {
 
     expect(response.status).toBe(200);
     expect(mocks.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("Discord fetch가 영구 pending이어도 timeout 뒤 abort하고 승격 성공을 반환한다", async () => {
+    vi.useFakeTimers();
+    const admin = createAdmin([{ result_code: "ok", post_id: 20, revision: 4, title: "승격 글", content: "본문", image_url: null }]);
+    let signal: AbortSignal | undefined;
+    mocks.withAuthGuard.mockResolvedValue({ user: { id: "11111111-1111-4111-8111-111111111111" }, supabaseAdmin: admin });
+    mocks.fetch.mockImplementation((_input: RequestInfo | URL, init?: RequestInit) => {
+      signal = init?.signal ?? undefined;
+      return new Promise<Response>(() => undefined);
+    });
+    vi.stubGlobal("fetch", mocks.fetch);
+    vi.stubEnv("DISCORD_WEBHOOK_URL", "https://discord.test/webhook");
+
+    const responsePromise = POST(request({ postId: 21, expectedParentRevision: 3 }));
+    const resolution = Promise.race([
+      responsePromise.then((response) => ({ response })),
+      new Promise<{ timedOut: true }>((resolve) => setTimeout(() => resolve({ timedOut: true }), 1001)),
+    ]);
+
+    await vi.advanceTimersByTimeAsync(1001);
+    const result = await resolution;
+
+    expect(signal).toBeInstanceOf(AbortSignal);
+    expect(signal?.aborted).toBe(true);
+    expect(result).toHaveProperty("response");
+    expect((result as { response: Response }).response.status).toBe(200);
   });
 
   it("관리형 ref 이전 RPC는 parent와 모든 sibling draft를 순서대로 잠그고 마지막 ref만 삭제 후보로 전이한다", () => {
