@@ -36,7 +36,13 @@ import {
   type PubgPlatform,
 } from "@/lib/pubg-analysis/persistMatchAnalysis";
 import { reportPubgApiError } from "@/lib/pubg/apiHelper";
-import { classifyClientKind, classifyPubgMatchError, createPubgIdentifierFingerprint, type PubgErrorStage } from "@/lib/pubg/apiErrorContext";
+import {
+  classifyClientKind,
+  classifyPubgMatchError,
+  createPubgIdentifierFingerprint,
+  type PubgAnalysisStep,
+  type PubgErrorStage,
+} from "@/lib/pubg/apiErrorContext";
 
 // [ISR V1.0] force-dynamic 유지: PUBG API 호출, R2 업로드, DB Upsert 등 부수효과 보호
 // unstable_cache는 DB 읽기(캐시 조회) 전용 프록시로만 사용
@@ -141,6 +147,7 @@ function createTacticalResponse(result: any) {
 export async function GET(request: NextRequest) {
   const startedAt = Date.now();
   let failureStage: PubgErrorStage = "cache_lookup";
+  let analysisStep: PubgAnalysisStep | null = null;
   let upstreamStatus: number | null = null;
   const { searchParams } = request.nextUrl;
   const matchId = searchParams.get("matchId");
@@ -319,13 +326,20 @@ export async function GET(request: NextRequest) {
     const finalResponse = await reanalyzeAndSave(
       matchId, canonicalNickname, platform, lowerNickname, matchData, teamNames, teamAccountIds,
       myRosterId, myParticipant, myAccountId, teamStats, rankPct, matchAttr, rosters, participants,
-      shouldForce, source
+      shouldForce, source, (step) => {
+        analysisStep = step;
+      }
     );
 
     return NextResponse.json(finalResponse);
 
   } catch (err: unknown) {
-    const classification = classifyPubgMatchError({ stage: failureStage, upstreamStatus, error: err });
+    const classification = classifyPubgMatchError({
+      stage: failureStage,
+      analysisStep,
+      upstreamStatus,
+      error: err,
+    });
     const errorMsg = classification.responseStatus === 404
       ? "매치 데이터를 찾을 수 없습니다. 최근 14일 내 매치인지 확인해 주세요."
       : classification.responseStatus === 429
@@ -339,7 +353,7 @@ export async function GET(request: NextRequest) {
       detail: "Sanitized route error",
       notify: classification.responseStatus >= 500 || classification.responseStatus === 429,
       context: {
-        failureStage,
+        failureStage: analysisStep ? `analysis:${analysisStep}` : failureStage,
         errorCode: classification.errorCode,
         upstreamStatus,
         durationMs: Date.now() - startedAt,
@@ -376,8 +390,11 @@ async function reanalyzeAndSave(
   rosters: any[],
   participants: any[],
   force: boolean = false,
-  source: AnalysisSource = 'user'
+  source: AnalysisSource = 'user',
+  onAnalysisStep?: (step: PubgAnalysisStep) => void,
 ) {
+  const markAnalysisStep = (step: PubgAnalysisStep) => onAnalysisStep?.(step);
+  markAnalysisStep("telemetry_cache_reserve");
   const telemetryIdentity = createTelemetryIdentity({
     matchId,
     platform,
@@ -396,6 +413,7 @@ async function reanalyzeAndSave(
 
   if (telemetryAsset) {
     const analyzePath = `${matchId}_${lowerNickname}_v${TELEMETRY_VERSION}_analyze.json`;
+    markAnalysisStep("telemetry_r2_read");
     const fileText = force ? null : await downloadFromR2(analyzePath);
 
     let needsProcessing = !fileText;
@@ -410,10 +428,13 @@ async function reanalyzeAndSave(
     }
 
     if (needsProcessing) {
+      markAnalysisStep("telemetry_download");
       const telRes = await fetch(telemetryAsset.attributes.URL);
+      markAnalysisStep("telemetry_parse");
       const rawTel = await safeJsonParse(telRes);
 
       let posCount = 0;
+      markAnalysisStep("telemetry_filter");
       telData = rawTel.filter((e: any) => {
         if (e._T === "LogPlayerPosition") {
           const pName = normalizeName(e.character?.name || "");
@@ -483,6 +504,7 @@ async function reanalyzeAndSave(
         return slim;
       });
 
+      markAnalysisStep("telemetry_r2_upload");
       await uploadToR2(analyzePath, JSON.stringify(telData), 'application/json');
     }
   }
@@ -495,6 +517,7 @@ async function reanalyzeAndSave(
   };
   const matchTier = getMatchTier(rankPct);
 
+  markAnalysisStep("benchmark_lookup");
   const tierStats = await fetchTierBenchmarkStats(supabase, {
     gameMode: matchAttr.gameMode,
     matchType: matchAttr.matchType,
@@ -509,6 +532,7 @@ async function reanalyzeAndSave(
     myRosterId
   );
 
+  markAnalysisStep("analysis_engine");
   const result = engine.run(
     telData,
     matchAttr,
@@ -547,6 +571,7 @@ async function reanalyzeAndSave(
   };
 
   const { mapData, ...tacticalResult } = fullResult;
+  markAnalysisStep("telemetry_payload");
   const telemetryPayload = createTelemetryPayload({
     identity: buildTelemetryPublicIdentity(telemetryIdentity),
     startTime: matchAttr.createdAt,
@@ -562,6 +587,7 @@ async function reanalyzeAndSave(
     platform,
     tacticalResult,
   );
+  markAnalysisStep("telemetry_cache_finalize");
   await writeTelemetryMapCache(telemetryIdentity, telemetryPayload, {
     isConfigured: isR2Configured,
     download: downloadFromR2,
