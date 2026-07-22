@@ -596,8 +596,8 @@ async function reanalyzeAndSave(
     reserve: (row) => upsertTelemetryMapCacheReservation(supabase, row),
     finalize: (row) => finalizeTelemetryMapCacheLifecycle(supabase, {
       row,
-      mapName: matchAttr.mapId,
-      gameMode: matchAttr.gameMode,
+      mapName: matchAttr.mapName || matchAttr.mapId || "unknown",
+      gameMode: matchAttr.gameMode || "unknown",
       processed: {
         playerId: processedTelemetryRecord.player_id,
         platform: processedTelemetryRecord.platform,
