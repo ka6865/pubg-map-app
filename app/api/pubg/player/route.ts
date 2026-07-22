@@ -480,7 +480,12 @@ export async function GET(request: Request) {
       : (error.message || "오류가 발생했습니다.");
 
     // [MONITORING] PUBG API 에러 감지 및 기록
-    await reportPubgApiError("/api/pubg/player", status, errorMsg, error.stack || error.message);
+    await reportPubgApiError({
+      route: "/api/pubg/player",
+      status,
+      message: errorMsg,
+      detail: error.stack || error.message,
+    });
 
     return NextResponse.json(
       { error: errorMsg },
