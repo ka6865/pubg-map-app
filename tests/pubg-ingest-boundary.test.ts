@@ -116,7 +116,7 @@ const NICKNAME = "PlayerOne";
 const PLAYER_ID = "account-player-one";
 
 const matchAttr = {
-  mapId: "Baltic_Main",
+  mapName: "Baltic_Main",
   gameMode: "squad-fpp",
   matchType: "official",
   createdAt: "2026-07-15T00:00:00Z",
@@ -397,6 +397,8 @@ describe("PUBG match persistence behavior", () => {
       expect.objectContaining({
         p_match_id: MATCH_ID,
         p_platform: "steam",
+        p_map_name: "Baltic_Main",
+        p_game_mode: "squad-fpp",
         p_processed_platform: "steam",
         p_processed_player_id: NICKNAME.toLowerCase(),
         p_processed_data: {
