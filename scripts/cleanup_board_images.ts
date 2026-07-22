@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { BOARD_IMAGE_BUCKET, isUuid } from "../lib/board/imageStorageContract";
 
 export const BOARD_IMAGE_CLEANUP_BATCH_LIMIT = 20;
 export const BOARD_IMAGE_CLEANUP_MAX_BATCHES = 5;
@@ -35,16 +36,25 @@ export type BoardImageCleanupResult = {
 function isClaim(value: unknown): value is BoardImageClaim {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const claim = value as Record<string, unknown>;
-  return typeof claim.image_id === "string"
-    && typeof claim.bucket_id === "string"
-    && typeof claim.storage_key === "string"
-    && typeof claim.lease_token === "string";
+  return isUuid(claim.image_id)
+    && claim.bucket_id === BOARD_IMAGE_BUCKET
+    && claim.storage_key === claim.image_id
+    && isUuid(claim.lease_token);
+}
+
+function isValidClaimBatch(data: unknown[]): data is BoardImageClaim[] {
+  const imageIds = new Set<string>();
+  return data.every((claim) => {
+    if (!isClaim(claim) || imageIds.has(claim.image_id)) return false;
+    imageIds.add(claim.image_id);
+    return true;
+  });
 }
 
 function isNotFound(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const value = error as Record<string, unknown>;
-  return value.statusCode === 404 || value.status === 404;
+  return value.statusCode === 404 || value.statusCode === "404" || value.status === 404;
 }
 
 export async function cleanupBoardImages(
@@ -71,7 +81,7 @@ export async function cleanupBoardImages(
       p_now: claimNow.toISOString(),
       p_lease_seconds: BOARD_IMAGE_DELETION_LEASE_SECONDS,
     });
-    if (error || !Array.isArray(data) || data.length > BOARD_IMAGE_CLEANUP_BATCH_LIMIT || !data.every(isClaim)) {
+    if (error || !Array.isArray(data) || data.length > BOARD_IMAGE_CLEANUP_BATCH_LIMIT || !isValidClaimBatch(data)) {
       throw new Error("board-image-cleanup-claim-failed");
     }
     if (data.length === 0) break;

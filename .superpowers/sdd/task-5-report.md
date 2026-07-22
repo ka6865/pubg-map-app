@@ -29,3 +29,11 @@
 - 기존 `images` 객체 7개가 보존되는지 확인한다.
 - 비활성 job을 활성화하기 전에 수동 dry-run을 수행한다.
 - 운영 migration·Storage 삭제·workflow 실행은 이 작업에서 수행하지 않았다. 전체 통합 검증은 부모 작업에서 수행한다.
+
+## 보안 리뷰 Changes required 후속 조치
+
+- Important: cleanup worker가 RPC claim의 문자열 필드만 검사해 다른 bucket·key를 Storage에 전달할 수 있었다.
+  - RED: 다른 bucket, key 불일치, image/lease UUID 비정상, 중복 image ID claim을 추가해 모두 Storage/finalize 0회여야 함을 확인했고, 기존 구현에서 5건이 실패했다.
+  - GREEN: `BOARD_IMAGE_BUCKET`, `isUuid` 계약을 재사용하고 claim batch 전체를 Storage 이전에 검증했다. bucket은 고정값, key는 image ID와 동일, image/lease는 UUID, image ID는 batch 내 고유해야 한다. 하나라도 위반하면 `board-image-cleanup-claim-failed`로 fail closed한다.
+- Minor: 공식 공개 SDK 오류 형태의 `statusCode: "404"`를 실제형 테스트로 추가했다. 숫자 `statusCode: 404` 및 `status: 404` 호환도 유지한다.
+- 후속 관련 회귀: cleanup·promote·Storage API/migration 4개 파일 82/82 통과. workflow 비활성 조건과 안전 집계 로그 계약은 유지했다.

@@ -33,7 +33,7 @@ describe("게시판 이미지 전역 cleanup 작업", () => {
     const batch = Array.from({ length: 20 }, (_, index) => ({
       image_id: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
       bucket_id: "board-images-v2",
-      storage_key: `safe-${index}`,
+      storage_key: `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`,
       lease_token: `00000000-0000-4000-9000-${String(index).padStart(12, "0")}`,
     }));
     rpc.mockImplementation((name) => Promise.resolve({
@@ -62,22 +62,24 @@ describe("게시판 이미지 전역 cleanup 작업", () => {
     expect(migration).toMatch(/claim_board_image_deletions\([\s\S]*WHERE \(\(object_row\.status = 'delete_pending'[\s\S]*NOT EXISTS \([\s\S]*ref_row\.image_id = object_row\.id/);
   });
 
-  it("Storage 성공과 not found는 finalize(true), 반환 오류와 throw는 finalize(false)로 순차 처리한다", async () => {
+  it("Storage 성공과 number·string 404 not found는 finalize(true), 반환 오류와 throw는 finalize(false)로 순차 처리한다", async () => {
     const cleanup = await import("../scripts/cleanup_board_images");
     const claims = [
-      { image_id: "10000000-0000-4000-8000-000000000001", bucket_id: "board-images-v2", storage_key: "success", lease_token: "20000000-0000-4000-8000-000000000001" },
-      { image_id: "10000000-0000-4000-8000-000000000002", bucket_id: "board-images-v2", storage_key: "missing", lease_token: "20000000-0000-4000-8000-000000000002" },
-      { image_id: "10000000-0000-4000-8000-000000000003", bucket_id: "board-images-v2", storage_key: "error", lease_token: "20000000-0000-4000-8000-000000000003" },
-      { image_id: "10000000-0000-4000-8000-000000000004", bucket_id: "board-images-v2", storage_key: "throw", lease_token: "20000000-0000-4000-8000-000000000004" },
+      { image_id: "10000000-0000-4000-8000-000000000001", bucket_id: "board-images-v2", storage_key: "10000000-0000-4000-8000-000000000001", lease_token: "20000000-0000-4000-8000-000000000001" },
+      { image_id: "10000000-0000-4000-8000-000000000002", bucket_id: "board-images-v2", storage_key: "10000000-0000-4000-8000-000000000002", lease_token: "20000000-0000-4000-8000-000000000002" },
+      { image_id: "10000000-0000-4000-8000-000000000003", bucket_id: "board-images-v2", storage_key: "10000000-0000-4000-8000-000000000003", lease_token: "20000000-0000-4000-8000-000000000003" },
+      { image_id: "10000000-0000-4000-8000-000000000004", bucket_id: "board-images-v2", storage_key: "10000000-0000-4000-8000-000000000004", lease_token: "20000000-0000-4000-8000-000000000004" },
+      { image_id: "10000000-0000-4000-8000-000000000005", bucket_id: "board-images-v2", storage_key: "10000000-0000-4000-8000-000000000005", lease_token: "20000000-0000-4000-8000-000000000005" },
     ];
     const rpc = vi.fn((name: string) => {
       if (name === "claim_board_image_deletions") return Promise.resolve({ data: claims, error: null });
       return Promise.resolve({ data: true, error: null });
     });
     const remove = vi.fn(async (keys: string[]) => {
-      if (keys[0] === "missing") return { error: { statusCode: 404 } };
-      if (keys[0] === "error") return { error: { statusCode: 500 } };
-      if (keys[0] === "throw") throw new Error("raw-storage-error");
+      if (keys[0] === claims[1].storage_key) return { error: { statusCode: 404 } };
+      if (keys[0] === claims[2].storage_key) return { error: { statusCode: "404" } };
+      if (keys[0] === claims[3].storage_key) return { error: { statusCode: 500 } };
+      if (keys[0] === claims[4].storage_key) throw new Error("raw-storage-error");
       return { error: null };
     });
 
@@ -86,14 +88,68 @@ describe("게시판 이미지 전역 cleanup 작업", () => {
       nowMs: () => 0,
     });
 
-    expect(remove).toHaveBeenCalledTimes(4);
+    expect(remove).toHaveBeenCalledTimes(5);
     const finalizeCalls = rpc.mock.calls as unknown as Array<[string, Record<string, unknown>]>;
     expect(finalizeCalls.filter(([name]) => name === "finalize_board_image_deletion").map(([, args]) => args)).toEqual([
       { p_image_id: claims[0].image_id, p_lease_token: claims[0].lease_token, p_deleted: true },
       { p_image_id: claims[1].image_id, p_lease_token: claims[1].lease_token, p_deleted: true },
-      { p_image_id: claims[2].image_id, p_lease_token: claims[2].lease_token, p_deleted: false },
+      { p_image_id: claims[2].image_id, p_lease_token: claims[2].lease_token, p_deleted: true },
       { p_image_id: claims[3].image_id, p_lease_token: claims[3].lease_token, p_deleted: false },
+      { p_image_id: claims[4].image_id, p_lease_token: claims[4].lease_token, p_deleted: false },
     ]);
+  });
+
+  it.each([
+    ["다른 bucket", { bucket_id: "other-bucket" }],
+    ["key 불일치", { storage_key: "30000000-0000-4000-8000-000000000099" }],
+    ["image UUID 비정상", { image_id: "not-a-uuid" }],
+    ["lease token UUID 비정상", { lease_token: "not-a-uuid" }],
+  ])("claim batch에 %s이 있으면 Storage와 finalize 없이 전체를 fail closed한다", async (_caseName, invalidFields) => {
+    const cleanup = await import("../scripts/cleanup_board_images");
+    const validClaim = {
+      image_id: "30000000-0000-4000-8000-000000000001",
+      bucket_id: "board-images-v2",
+      storage_key: "30000000-0000-4000-8000-000000000001",
+      lease_token: "40000000-0000-4000-8000-000000000001",
+    };
+    const rpc = vi.fn((name: string) => Promise.resolve({
+      data: name === "claim_board_image_deletions" ? [validClaim, { ...validClaim, ...invalidFields }] : true,
+      error: null,
+    }));
+    const remove = vi.fn();
+    const from = vi.fn(() => ({ remove }));
+
+    await expect(cleanup.cleanupBoardImages({ rpc, storage: { from } } as never, {
+      now: () => new Date("2026-07-22T00:00:00.000Z"),
+      nowMs: () => 0,
+    })).rejects.toThrow("board-image-cleanup-claim-failed");
+    expect(from).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+    expect(rpc.mock.calls.filter(([name]) => name === "finalize_board_image_deletion")).toHaveLength(0);
+  });
+
+  it("claim batch의 중복 image ID는 Storage와 finalize 없이 전체를 fail closed한다", async () => {
+    const cleanup = await import("../scripts/cleanup_board_images");
+    const claim = {
+      image_id: "30000000-0000-4000-8000-000000000001",
+      bucket_id: "board-images-v2",
+      storage_key: "30000000-0000-4000-8000-000000000001",
+      lease_token: "40000000-0000-4000-8000-000000000001",
+    };
+    const rpc = vi.fn((name: string) => Promise.resolve({
+      data: name === "claim_board_image_deletions" ? [claim, { ...claim, lease_token: "40000000-0000-4000-8000-000000000002" }] : true,
+      error: null,
+    }));
+    const remove = vi.fn();
+    const from = vi.fn(() => ({ remove }));
+
+    await expect(cleanup.cleanupBoardImages({ rpc, storage: { from } } as never, {
+      now: () => new Date("2026-07-22T00:00:00.000Z"),
+      nowMs: () => 0,
+    })).rejects.toThrow("board-image-cleanup-claim-failed");
+    expect(from).not.toHaveBeenCalled();
+    expect(remove).not.toHaveBeenCalled();
+    expect(rpc.mock.calls.filter(([name]) => name === "finalize_board_image_deletion")).toHaveLength(0);
   });
 
   it("RPC 오류는 fail closed하며 안전 집계 로그에 key, token, raw error를 포함하지 않는다", async () => {
