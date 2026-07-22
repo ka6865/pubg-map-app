@@ -138,6 +138,10 @@ async function verifyAclAndOwnership(): Promise<void> {
       equal(await scalar(`SELECT has_function_privilege(${quote(role)}, ${quote(signature)}, 'EXECUTE')::text`, label), "false", label);
     }
     for (const signature of signatures) equal(await scalar(`SELECT has_function_privilege('service_role', ${quote(signature)}, 'EXECUTE')::text`, "service-role-execute"), "true", "service-role-execute");
+    const orphanTriggerSignature = "public.transition_board_image_orphans_before_post_delete()";
+    equal(await scalar(`SELECT function_row.prosecdef::text FROM pg_proc AS function_row WHERE function_row.oid = to_regprocedure(${quote(orphanTriggerSignature)})`, "post-delete-trigger-security-definer"), "true", "post-delete-trigger-security-definer");
+    equal(await scalar(`SELECT count(*)::text FROM pg_proc AS function_row CROSS JOIN LATERAL aclexplode(COALESCE(function_row.proacl, acldefault('f', function_row.proowner))) AS acl_row WHERE function_row.oid = to_regprocedure(${quote(orphanTriggerSignature)}) AND acl_row.grantee = 0 AND acl_row.privilege_type = 'EXECUTE'`, "post-delete-trigger-public-denied"), "0", "post-delete-trigger-public-denied");
+    equal(await scalar(`SELECT count(*)::text FROM pg_proc AS function_row WHERE function_row.oid = to_regprocedure(${quote(orphanTriggerSignature)}) AND 'search_path=""' = ANY(COALESCE(function_row.proconfig, ARRAY[]::text[]))`, "post-delete-trigger-empty-search-path"), "1", "post-delete-trigger-empty-search-path");
     const pending = await reserve(fixture, "other-owner");
     equal(await scalar(`SET ROLE service_role; SELECT public.complete_board_image_upload(${quote(pending.imageId)}::uuid, '00000000-0000-0000-0000-000000000002'::uuid)::text`, "other-owner-complete"), "false", "other-owner-complete");
   });
@@ -214,6 +218,30 @@ async function verifyReadyTtlClaiming(): Promise<void> {
     await writePost(fixture, [attachedReady]);
     equal(await scalar(`SELECT (image_row.expires_at IS NULL)::text FROM public.board_image_objects AS image_row WHERE image_row.id = ${quote(attachedReady)}::uuid`, "attached-ready-ttl-removed"), "true", "attached-ready-ttl-removed");
     equal(await scalar(`SET ROLE service_role; SELECT count(*)::text FROM public.claim_board_image_deletions(20, now(), 300) AS result WHERE result.image_id = ${quote(attachedReady)}::uuid`, "attached-ready-global-claim-excluded"), "0", "attached-ready-global-claim-excluded");
+  });
+}
+
+async function verifyPostDeleteOrphanTransition(): Promise<void> {
+  await withFixture("post-delete-orphan", async (fixture) => {
+    const lastRefImage = await reserveReady(fixture, "last-ref");
+    const lastRefPost = await writePost(fixture, [lastRefImage]);
+    await sql(`SET ROLE service_role; DELETE FROM public.posts AS post_row WHERE post_row.id = ${lastRefPost.postId};`);
+    equal(await scalar(`SELECT count(*)::text FROM public.board_post_image_refs AS ref_row WHERE ref_row.post_id = ${lastRefPost.postId}`, "post-delete-last-ref-count"), "0", "post-delete-last-ref-count");
+    equal(await imageStatus(lastRefImage, "post-delete-last-ref-pending"), "delete_pending", "post-delete-last-ref-pending");
+
+    const sharedImage = await reserveReady(fixture, "shared");
+    const sharedPostA = await writePost(fixture, [sharedImage]);
+    const sharedPostB = await writePost(fixture, [sharedImage]);
+    await sql(`SET ROLE service_role; DELETE FROM public.posts AS post_row WHERE post_row.id = ${sharedPostA.postId};`);
+    equal(await imageStatus(sharedImage, "post-delete-shared-ready"), "ready", "post-delete-shared-ready");
+    await sql(`SET ROLE service_role; DELETE FROM public.posts AS post_row WHERE post_row.id = ${sharedPostB.postId};`);
+    equal(await imageStatus(sharedImage, "post-delete-shared-last-ref-pending"), "delete_pending", "post-delete-shared-last-ref-pending");
+
+    const rollbackImage = await reserveReady(fixture, "rollback");
+    const rollbackPost = await writePost(fixture, [rollbackImage]);
+    await sql(`SET ROLE service_role; BEGIN; DELETE FROM public.posts AS post_row WHERE post_row.id = ${rollbackPost.postId}; ROLLBACK;`);
+    equal(await scalar(`SELECT count(*)::text FROM public.posts AS post_row WHERE post_row.id = ${rollbackPost.postId}`, "post-delete-rollback-post-preserved"), "1", "post-delete-rollback-post-preserved");
+    equal(await imageStatus(rollbackImage, "post-delete-rollback-ready"), "ready", "post-delete-rollback-ready");
   });
 }
 
@@ -343,6 +371,7 @@ async function runAllScenarios(): Promise<void> {
   await verifyReservationQuota();
   await verifyUploadValidationAndReferences();
   await verifyReadyTtlClaiming();
+  await verifyPostDeleteOrphanTransition();
   await verifyRevisionAndAttachDetachRace();
   await verifyOwnerScopedReleaseClaims();
   await verifyClaimsAndRecovery();

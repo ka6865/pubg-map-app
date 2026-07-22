@@ -524,6 +524,42 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.transition_board_image_orphans_before_post_delete()
+RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+DECLARE
+  v_image_ids uuid[];
+BEGIN
+  SELECT array_agg(DISTINCT ref_row.image_id ORDER BY ref_row.image_id) INTO v_image_ids
+  FROM public.board_post_image_refs AS ref_row
+  WHERE ref_row.post_id = OLD.id;
+
+  PERFORM image_row.id
+  FROM public.board_image_objects AS image_row
+  WHERE image_row.id = ANY(COALESCE(v_image_ids, ARRAY[]::uuid[]))
+  ORDER BY image_row.id
+  FOR UPDATE;
+
+  UPDATE public.board_image_objects AS image_row
+  SET status = 'delete_pending', delete_after = now(), delete_lease_until = NULL,
+      delete_lease_token = NULL, updated_at = now()
+  WHERE image_row.id = ANY(COALESCE(v_image_ids, ARRAY[]::uuid[]))
+    AND image_row.status = 'ready'
+    AND image_row.status <> 'legacy_retained'
+    AND NOT EXISTS (
+      SELECT 1 FROM public.board_post_image_refs AS ref_row
+      WHERE ref_row.image_id = image_row.id AND ref_row.post_id <> OLD.id
+    );
+  RETURN OLD;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS transition_board_image_orphans_before_post_delete ON public.posts;
+CREATE TRIGGER transition_board_image_orphans_before_post_delete
+BEFORE DELETE ON public.posts
+FOR EACH ROW EXECUTE FUNCTION public.transition_board_image_orphans_before_post_delete();
+
 DO $$
 BEGIN
   INSERT INTO public.board_image_objects (bucket_id, storage_key, status)
@@ -561,6 +597,7 @@ REVOKE ALL ON FUNCTION public.claim_board_image_deletions(integer, timestamptz, 
 REVOKE ALL ON FUNCTION public.claim_board_image_deletions_for_owner(uuid, uuid[], timestamptz, integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.finalize_board_image_deletion(uuid, uuid, boolean) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.merge_board_post_draft_with_images(bigint, uuid, bigint) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.transition_board_image_orphans_before_post_delete() FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.reserve_board_image_upload(uuid, text, bigint) TO service_role;
 GRANT EXECUTE ON FUNCTION public.complete_board_image_upload(uuid, uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.write_board_post_with_images(bigint, uuid, bigint, text, text, text, text, boolean, text, uuid, text, text, text, text, jsonb, uuid[], uuid) TO service_role;

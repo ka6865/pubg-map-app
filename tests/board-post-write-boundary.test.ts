@@ -505,6 +505,55 @@ describe("게시글 쓰기 Turnstile 저장 경계", () => {
     }
   });
 
+  it("수정은 기존 managed v2 URL의 query와 hash를 제거해 ref 범위 안에서만 보존한다", async () => {
+    const imageId = "22222222-2222-4222-8222-222222222222";
+    const baseUrl = "https://example.supabase.co";
+    const imageUrl = `${baseUrl}/storage/v1/object/public/board-images-v2/${imageId}`;
+    const admin = createWriteAdmin({
+      existingRefs: [{ image_id: imageId, usage: "content", board_image_objects: { bucket_id: "board-images-v2", storage_key: imageId, status: "ready" } }],
+    });
+    const previousBaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    process.env.NEXT_PUBLIC_SUPABASE_URL = baseUrl;
+    mocks.withOptionalAuth.mockResolvedValue({ user: { id: "user-a" }, supabaseAdmin: admin.supabaseAdmin });
+    try {
+      const response = await postsWritePOST(makePostRequest({
+        editingPostId: 41, expectedRevision: 0, author: "회원", password: null, user_id: "user-a",
+        content: `<img src="${imageUrl}?v=2#preview">`, image_url: null,
+      }));
+      expect(response.status).toBe(200);
+      expect(admin.rpc).toHaveBeenCalledWith("write_board_post_with_images", expect.objectContaining({
+        p_content_image_ids: [imageId],
+      }));
+    } finally {
+      if (previousBaseUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+      else process.env.NEXT_PUBLIC_SUPABASE_URL = previousBaseUrl;
+    }
+  });
+
+  it("수정은 다른 origin·bucket·key URL을 기존 managed ref로 보존하지 않는다", async () => {
+    const imageId = "22222222-2222-4222-8222-222222222222";
+    const baseUrl = "https://example.supabase.co";
+    const admin = createWriteAdmin({
+      existingRefs: [{ image_id: imageId, usage: "content", board_image_objects: { bucket_id: "board-images-v2", storage_key: imageId, status: "ready" } }],
+    });
+    const previousBaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    process.env.NEXT_PUBLIC_SUPABASE_URL = baseUrl;
+    mocks.withOptionalAuth.mockResolvedValue({ user: { id: "user-a" }, supabaseAdmin: admin.supabaseAdmin });
+    try {
+      const response = await postsWritePOST(makePostRequest({
+        editingPostId: 41, expectedRevision: 0, author: "회원", password: null, user_id: "user-a",
+        content: `<img src="https://evil.example/storage/v1/object/public/board-images-v2/${imageId}?v=2">`, image_url: null,
+      }));
+      expect(response.status).toBe(200);
+      expect(admin.rpc).toHaveBeenCalledWith("write_board_post_with_images", expect.objectContaining({
+        p_content_image_ids: [],
+      }));
+    } finally {
+      if (previousBaseUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+      else process.env.NEXT_PUBLIC_SUPABASE_URL = previousBaseUrl;
+    }
+  });
+
   it("수정에서 기존 managed URL을 제거하면 기존 ID를 payload에 넣지 않아 RPC가 detach한다", async () => {
     const contentImageId = "22222222-2222-4222-8222-222222222222";
     const admin = createWriteAdmin({

@@ -35,3 +35,19 @@ export function isUuid(value: unknown): value is string {
 export function hasOnlyKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
   return Object.keys(value).every((key) => keys.includes(key));
 }
+
+export function canonicalizeManagedBoardImageUrl(value: string): string | null {
+  const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim();
+  if (!baseUrl) return null;
+  try {
+    const origin = new URL(baseUrl).origin;
+    const url = new URL(value);
+    const pathPrefix = `/storage/v1/object/public/${BOARD_IMAGE_BUCKET}/`;
+    if (url.origin !== origin || !url.pathname.startsWith(pathPrefix)) return null;
+    const storageKey = decodeURIComponent(url.pathname.slice(pathPrefix.length));
+    if (!isUuid(storageKey) || storageKey.includes("/")) return null;
+    return `${origin}${pathPrefix}${encodeURIComponent(storageKey)}`;
+  } catch {
+    return null;
+  }
+}

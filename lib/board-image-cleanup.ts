@@ -1,4 +1,5 @@
 import { parseBoardImageSrcs } from "@/lib/board/imageHtml";
+import { canonicalizeManagedBoardImageUrl } from "@/lib/board/imageStorageContract";
 
 export type UploadedBoardImage = {
   imageId: string;
@@ -25,14 +26,17 @@ export function classifyUploadedBoardImages(
   const contentImageSrcs = parseBoardImageSrcs(content);
   if (!contentImageSrcs.ok) return { ok: false };
   const contentUrls = new Set(contentImageSrcs.srcs);
+  const canonicalContentUrls = new Set(contentImageSrcs.srcs.map(canonicalizeManagedBoardImageUrl).filter((url): url is string => url !== null));
+  const canonicalThumbnailUrl = canonicalizeManagedBoardImageUrl(thumbnailUrl);
   const contentImageIds = new Set<string>();
   const unusedImageIds = new Set<string>();
 
   for (const image of uploadedImages) {
     if (!image.imageId || !image.publicUrl) continue;
-    if (contentUrls.has(image.publicUrl)) {
+    const canonicalPublicUrl = canonicalizeManagedBoardImageUrl(image.publicUrl);
+    if (contentUrls.has(image.publicUrl) || (canonicalPublicUrl && canonicalContentUrls.has(canonicalPublicUrl))) {
       contentImageIds.add(image.imageId);
-    } else if (thumbnailUrl !== image.publicUrl) {
+    } else if (thumbnailUrl !== image.publicUrl && (!canonicalPublicUrl || canonicalThumbnailUrl !== canonicalPublicUrl)) {
       unusedImageIds.add(image.imageId);
     }
   }

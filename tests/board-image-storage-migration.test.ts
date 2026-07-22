@@ -134,6 +134,19 @@ describe("게시판 이미지 Storage 소유권 마이그레이션", () => {
     expect(sql).toContain("CREATE INDEX IF NOT EXISTS board_image_objects_claim_idx");
   });
 
+  it("게시글 삭제는 DB trigger에서 마지막 ready ref만 delete_pending으로 전이한다", () => {
+    const sql = readMigrationSql();
+
+    expect(sql).toContain("CREATE OR REPLACE FUNCTION public.transition_board_image_orphans_before_post_delete()");
+    expect(sql).toContain("BEFORE DELETE ON public.posts");
+    expect(sql).toContain("FOR EACH ROW EXECUTE FUNCTION public.transition_board_image_orphans_before_post_delete()");
+    expect(sql).toContain("ORDER BY image_row.id");
+    expect(sql).toContain("FOR UPDATE");
+    expect(sql).toContain("image_row.status = 'ready'");
+    expect(sql).toContain("image_row.status <> 'legacy_retained'");
+    expect(sql).toContain("REVOKE ALL ON FUNCTION public.transition_board_image_orphans_before_post_delete() FROM PUBLIC, anon, authenticated");
+  });
+
   it("격리 DB 검증 스크립트가 운영 URL을 거부하고 핵심 행위를 검사한다", () => {
     const script = readFileSync(resolve(process.cwd(), "scripts/verify_board_image_storage_migration.ts"), "utf8");
 
@@ -145,6 +158,10 @@ describe("게시판 이미지 Storage 소유권 마이그레이션", () => {
     expect(script).toContain("attach-detach-result");
     expect(script).toContain("concurrent-worker-claim");
     expect(script).toContain("legacy-canonical-ref-count");
+    expect(script).toContain("verifyPostDeleteOrphanTransition");
+    expect(script).toContain("post-delete-last-ref-pending");
+    expect(script).toContain("post-delete-shared-ready");
+    expect(script).toContain("post-delete-rollback-ready");
   });
 
   it("검증 fixture는 성공 revision과 실제 경쟁 결과를 보존하고 finally에서 정리한다", () => {
@@ -254,6 +271,15 @@ describe("게시판 이미지 Storage 소유권 마이그레이션", () => {
     expect(script).toContain("to_regprocedure(${quote(signature)})");
     expect(script).not.toContain('has_function_privilege(${quote("PUBLIC")}');
     expect(script).not.toContain('["PUBLIC", "public-rpc-denied"]');
+  });
+
+  it("게시글 삭제 trigger의 보안 정의자·empty search_path·PUBLIC 실행 차단을 실제 fixture에서 검증한다", () => {
+    const script = readFileSync(resolve(process.cwd(), "scripts/verify_board_image_storage_migration.ts"), "utf8");
+
+    expect(script).toContain("post-delete-trigger-security-definer");
+    expect(script).toContain("post-delete-trigger-empty-search-path");
+    expect(script).toContain("post-delete-trigger-public-denied");
+    expect(script).toContain("transition_board_image_orphans_before_post_delete()");
   });
 
   it("psql은 quiet tuples-only 모드로 command tag 오염 없이 scalar를 반환한다", () => {

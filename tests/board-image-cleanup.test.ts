@@ -27,15 +27,51 @@ describe("board image cleanup", () => {
     });
   });
 
-  it("일반 텍스트·링크·query prefix는 본문 이미지 참조로 오인하지 않는다", () => {
+  it("일반 텍스트·링크는 본문 이미지 참조로 오인하지 않는다", () => {
     const image = { imageId: "11111111-1111-4111-8111-111111111111", publicUrl: "https://example.test/used.jpeg" };
-    const content = `<p>${image.publicUrl}</p><a href="${image.publicUrl}">링크</a><img src="${image.publicUrl}?v=2">`;
+    const content = `<p>${image.publicUrl}</p><a href="${image.publicUrl}">링크</a>`;
 
-    expect(classifyUploadedBoardImages([image], content, `${image.publicUrl}?thumb=2`)).toEqual({
+    expect(classifyUploadedBoardImages([image], content)).toEqual({
       ok: true,
       contentImageIds: [],
       unusedImageIds: [image.imageId],
     });
+  });
+
+  it("관리형 Supabase URL의 query와 hash는 제거해 본문·대표 이미지 참조를 보존한다", () => {
+    const previousBaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const imageId = "11111111-1111-4111-8111-111111111111";
+    const publicUrl = `https://example.supabase.co/storage/v1/object/public/board-images-v2/${imageId}`;
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co";
+    try {
+      expect(classifyUploadedBoardImages(
+        [{ imageId, publicUrl }],
+        `<p>${publicUrl}</p><a href="${publicUrl}">링크</a><img src="${publicUrl}?v=2#preview">`,
+        `${publicUrl}?thumb=2#preview`,
+      )).toEqual({ ok: true, contentImageIds: [imageId], unusedImageIds: [] });
+    } finally {
+      if (previousBaseUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+      else process.env.NEXT_PUBLIC_SUPABASE_URL = previousBaseUrl;
+    }
+  });
+
+  it("다른 origin·bucket·key의 query URL은 관리형 참조로 승격하지 않는다", () => {
+    const previousBaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const imageId = "11111111-1111-4111-8111-111111111111";
+    const publicUrl = `https://example.supabase.co/storage/v1/object/public/board-images-v2/${imageId}`;
+    process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co";
+    try {
+      for (const src of [
+        `https://evil.example/storage/v1/object/public/board-images-v2/${imageId}?v=2`,
+        `https://example.supabase.co/storage/v1/object/public/images/${imageId}?v=2`,
+        "https://example.supabase.co/storage/v1/object/public/board-images-v2/not-a-uuid?v=2",
+      ]) expect(classifyUploadedBoardImages([{ imageId, publicUrl }], `<img src="${src}">`, src)).toEqual({
+        ok: true, contentImageIds: [], unusedImageIds: [imageId],
+      });
+    } finally {
+      if (previousBaseUrl === undefined) delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+      else process.env.NEXT_PUBLIC_SUPABASE_URL = previousBaseUrl;
+    }
   });
 
   it("실제 img src의 정확 URL만 content ID로 반환하고 thumbnail과 중복해도 ID는 한 번만 반환한다", () => {

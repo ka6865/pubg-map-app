@@ -5,7 +5,7 @@ import { checkProfanity } from "@/lib/board/profanityFilter";
 import { consumeBoardWriteQuota } from "@/lib/board/writeQuota.server";
 import { verifyTurnstileToken } from "@/lib/board/turnstile.server";
 import { TURNSTILE_ACTIONS } from "@/lib/board/turnstileContract";
-import { isUuid } from "@/lib/board/imageStorageContract";
+import { canonicalizeManagedBoardImageUrl, isUuid } from "@/lib/board/imageStorageContract";
 import { parseBoardImageSrcs } from "@/lib/board/imageHtml";
 import type { ClanInfo } from "@/types/board";
 import bcrypt from "bcryptjs";
@@ -607,7 +607,7 @@ async function getRetainedImageIds(input: {
     if (result.error || !Array.isArray(result.data)) {
       return NextResponse.json({ error: "게시글을 저장하지 못했습니다." }, { status: 503 });
     }
-    const contentUrls = new Set(parsedContentImageSrcs.srcs);
+    const contentUrls = new Set(parsedContentImageSrcs.srcs.map(canonicalizeManagedBoardImageUrl).filter((url): url is string => url !== null));
     const contentImageIds: string[] = [];
     let thumbnailImageId: string | null = null;
     for (const row of result.data) {
@@ -616,7 +616,7 @@ async function getRetainedImageIds(input: {
       if (ref.kind === "legacy") continue;
       const canonicalUrl = toBoardImagePublicUrl(ref.storageKey);
       if (contentUrls.has(canonicalUrl)) contentImageIds.push(ref.imageId);
-      if (input.imageUrl === canonicalUrl) thumbnailImageId = ref.imageId;
+      if (canonicalizeManagedBoardImageUrl(input.imageUrl ?? "") === canonicalUrl) thumbnailImageId = ref.imageId;
     }
     return { contentImageIds: [...new Set(contentImageIds)], thumbnailImageId };
   } catch {
