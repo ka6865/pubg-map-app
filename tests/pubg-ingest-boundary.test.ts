@@ -593,6 +593,24 @@ describe("PUBG match query boundary", () => {
     }
   });
 
+  it("찾을 수 없는 PUBG 매치를 404와 구조화 오류 컨텍스트로 반환한다", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 404 })));
+
+    const response = await GET(createMatchRequest());
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({
+      error: "매치 데이터를 찾을 수 없습니다. 최근 14일 내 매치인지 확인해 주세요.",
+    });
+    expect(mockReportPubgApiError).toHaveBeenCalledWith(expect.objectContaining({
+      route: "/api/pubg/match",
+      status: 404,
+      message: "PUBG_MATCH_NOT_FOUND",
+      notify: false,
+      context: expect.objectContaining({ failureStage: "match_fetch", upstreamStatus: 404 }),
+    }));
+  });
+
   it.each([72, 71])("R2 미설정에서도 v%s 유효 분석 캐시를 외부 호출 없이 반환한다", async (version) => {
     mockIsR2Configured.mockReturnValue(false);
     mockProcessedTelemetryMaybeSingle.mockResolvedValue({
@@ -669,12 +687,12 @@ describe("PUBG match query boundary", () => {
     const backgroundWork = mockAfter.mock.calls[0]?.[0];
     expect(backgroundWork).toEqual(expect.any(Function));
     await backgroundWork();
-    expect(mockReportPubgApiError).toHaveBeenCalledWith(
-      "/api/pubg/match/revalidate",
-      500,
-      "Background match reanalysis failed",
-      "Sanitized background error",
-    );
+    expect(mockReportPubgApiError).toHaveBeenCalledWith({
+      route: "/api/pubg/match/revalidate",
+      status: 500,
+      message: "Background match reanalysis failed",
+      detail: "Sanitized background error",
+    });
     const serializedReport = JSON.stringify(mockReportPubgApiError.mock.calls);
     for (const sensitiveValue of ["background private", NICKNAME, PLAYER_ID, MATCH_ID]) {
       expect(serializedReport).not.toContain(sensitiveValue);

@@ -36,6 +36,7 @@ import {
   type PubgPlatform,
 } from "@/lib/pubg-analysis/persistMatchAnalysis";
 import { reportPubgApiError } from "@/lib/pubg/apiHelper";
+import { classifyClientKind, classifyPubgMatchError, createPubgIdentifierFingerprint, type PubgErrorStage } from "@/lib/pubg/apiErrorContext";
 
 // [ISR V1.0] force-dynamic 유지: PUBG API 호출, R2 업로드, DB Upsert 등 부수효과 보호
 // unstable_cache는 DB 읽기(캐시 조회) 전용 프록시로만 사용
@@ -120,12 +121,12 @@ function getBearerToken(request: NextRequest): string | null {
 
 async function reportBackgroundReanalysisFailure(): Promise<void> {
   try {
-    await reportPubgApiError(
-      "/api/pubg/match/revalidate",
-      500,
-      "Background match reanalysis failed",
-      "Sanitized background error",
-    );
+    await reportPubgApiError({
+      route: "/api/pubg/match/revalidate",
+      status: 500,
+      message: "Background match reanalysis failed",
+      detail: "Sanitized background error",
+    });
   } catch {
     console.error("[MATCH] 백그라운드 오류 기록 실패");
   }
@@ -138,6 +139,9 @@ function createTacticalResponse(result: any) {
 }
 
 export async function GET(request: NextRequest) {
+  const startedAt = Date.now();
+  let failureStage: PubgErrorStage = "cache_lookup";
+  let upstreamStatus: number | null = null;
   const { searchParams } = request.nextUrl;
   const matchId = searchParams.get("matchId");
   const nickname = searchParams.get("nickname");
@@ -221,28 +225,26 @@ export async function GET(request: NextRequest) {
     }
 
     const apiKey = (process.env.PUBG_API_KEY || "").split(" ")[0];
+    failureStage = "match_fetch";
     const res = await fetch(`https://api.pubg.com/shards/${platform}/matches/${matchId}`, {
       headers: { Authorization: `Bearer ${apiKey}`, Accept: "application/vnd.api+json" },
       cache: "no-store",
       signal: AbortSignal.timeout(15000)
     });
+    upstreamStatus = res.status;
     trackPubgRateLimit(res.headers);
 
     if (!res.ok) {
-      if (res.status === 429) {
-        return NextResponse.json(
-          { error: "PUBG API 호출 한도가 일시적으로 초과되었습니다. 약 1분 후 다시 시도해 주세요." },
-          { status: 429 }
-        );
-      }
       throw new Error(`PUBG API Match Load Failed: ${res.status}`);
     }
+    failureStage = "match_parse";
     const matchData = await safeJsonParse(res);
     const matchAttr = matchData.data.attributes;
 
     const participants = matchData.included.filter((it: any) => it.type === "participant");
     const rosters = matchData.included.filter((it: any) => it.type === "roster");
 
+    failureStage = "participant_lookup";
     const myParticipant = participants.find((p: any) => normalizeName(p.attributes.stats.name) === lowerNickname);
     if (!myParticipant) throw new Error(`Player ${nickname} not found in match participants`);
 
@@ -313,6 +315,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 캐시가 없거나 강제 업데이트가 필요한 경우 동기식 분석 실행
+    failureStage = "analysis";
     const finalResponse = await reanalyzeAndSave(
       matchId, canonicalNickname, platform, lowerNickname, matchData, teamNames, teamAccountIds,
       myRosterId, myParticipant, myAccountId, teamStats, rankPct, matchAttr, rosters, participants,
@@ -321,22 +324,35 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json(finalResponse);
 
-  } catch (err: any) {
-    const isRateLimit = err.message?.includes("429") || err.status === 429;
-    const status = isRateLimit ? 429 : 500;
-    const errorMsg = isRateLimit
-      ? "PUBG API 호출 한도가 일시적으로 초과되었습니다. 약 1분 후 다시 시도해 주세요."
-      : "매치 데이터를 처리할 수 없습니다.";
+  } catch (err: unknown) {
+    const classification = classifyPubgMatchError({ stage: failureStage, upstreamStatus, error: err });
+    const errorMsg = classification.responseStatus === 404
+      ? "매치 데이터를 찾을 수 없습니다. 최근 14일 내 매치인지 확인해 주세요."
+      : classification.responseStatus === 429
+        ? "PUBG API 호출 한도가 일시적으로 초과되었습니다. 약 1분 후 다시 시도해 주세요."
+        : "매치 데이터를 처리할 수 없습니다.";
 
-    // [MONITORING] PUBG API 에러 감지 및 기록
-    await reportPubgApiError(
-      "/api/pubg/match",
-      status,
-      isRateLimit ? "PUBG API rate limited" : "PUBG match request failed",
-      "Sanitized route error",
-    );
+    await reportPubgApiError({
+      route: "/api/pubg/match",
+      status: classification.responseStatus,
+      message: classification.errorCode,
+      detail: "Sanitized route error",
+      notify: classification.responseStatus >= 500 || classification.responseStatus === 429,
+      context: {
+        failureStage,
+        errorCode: classification.errorCode,
+        upstreamStatus,
+        durationMs: Date.now() - startedAt,
+        platform,
+        source,
+        clientKind: classifyClientKind(request.headers.get("user-agent")),
+        requestId: request.headers.get("x-vercel-id"),
+        matchFingerprint: createPubgIdentifierFingerprint(matchId),
+        nicknameFingerprint: createPubgIdentifierFingerprint(nickname),
+      },
+    });
 
-    return NextResponse.json({ error: errorMsg }, { status });
+    return NextResponse.json({ error: errorMsg }, { status: classification.responseStatus });
   }
 }
 
