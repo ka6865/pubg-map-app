@@ -43,10 +43,10 @@ export function canonicalizeManagedBoardImageUrl(value: string): string | null {
     const origin = new URL(baseUrl).origin;
     const url = new URL(value);
     const pathPrefix = `/storage/v1/object/public/${BOARD_IMAGE_BUCKET}/`;
-    if (url.origin !== origin || !url.pathname.startsWith(pathPrefix)) return null;
-    const storageKey = decodeURIComponent(url.pathname.slice(pathPrefix.length));
-    if (!isUuid(storageKey) || storageKey.includes("/")) return null;
-    return `${origin}${pathPrefix}${encodeURIComponent(storageKey)}`;
+    if (url.origin !== origin || url.username || url.password || !url.pathname.startsWith(pathPrefix)) return null;
+    const storageKey = url.pathname.slice(pathPrefix.length);
+    if (!isUuid(storageKey) || storageKey !== storageKey.toLowerCase()) return null;
+    return `${origin}${pathPrefix}${storageKey}`;
   } catch {
     return null;
   }

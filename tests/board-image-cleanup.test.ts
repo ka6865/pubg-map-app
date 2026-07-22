@@ -65,6 +65,8 @@ describe("board image cleanup", () => {
         `https://evil.example/storage/v1/object/public/board-images-v2/${imageId}?v=2`,
         `https://example.supabase.co/storage/v1/object/public/images/${imageId}?v=2`,
         "https://example.supabase.co/storage/v1/object/public/board-images-v2/not-a-uuid?v=2",
+        `https://user:pass@example.supabase.co/storage/v1/object/public/board-images-v2/${imageId}?v=2`,
+        `https://example.supabase.co/storage/v1/object/public/board-images-v2/%31${imageId.slice(1)}?v=2`,
       ]) expect(classifyUploadedBoardImages([{ imageId, publicUrl }], `<img src="${src}">`, src)).toEqual({
         ok: true, contentImageIds: [], unusedImageIds: [imageId],
       });

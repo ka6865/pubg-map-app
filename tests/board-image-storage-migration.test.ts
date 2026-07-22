@@ -147,6 +147,41 @@ describe("게시판 이미지 Storage 소유권 마이그레이션", () => {
     expect(sql).toContain("REVOKE ALL ON FUNCTION public.transition_board_image_orphans_before_post_delete() FROM PUBLIC, anon, authenticated");
   });
 
+  it("게시글 삭제와 참조 변경은 statement 시작 전 같은 transaction advisory lock으로 직렬화한다", () => {
+    const sql = readMigrationSql();
+    const lockCall = "pg_catalog.pg_advisory_xact_lock(42117, 1)";
+
+    expect(sql).toContain("CREATE OR REPLACE FUNCTION public.serialize_board_post_image_delete()");
+    expect(sql).toContain("BEFORE DELETE ON public.posts");
+    expect(sql).toContain("FOR EACH STATEMENT EXECUTE FUNCTION public.serialize_board_post_image_delete()");
+    expect(sql.match(new RegExp(lockCall.replace(/[().]/g, "\\$&"), "g"))).toHaveLength(5);
+
+    for (const functionName of [
+      "write_board_post_with_images",
+      "claim_board_image_deletions",
+      "claim_board_image_deletions_for_owner",
+      "merge_board_post_draft_with_images",
+    ]) {
+      const start = sql.indexOf(`CREATE OR REPLACE FUNCTION public.${functionName}`);
+      const nextFunction = sql.indexOf("CREATE OR REPLACE FUNCTION public.", start + 1);
+      const body = sql.slice(start, nextFunction === -1 ? undefined : nextFunction);
+      expect(body.indexOf(lockCall)).toBeGreaterThan(body.indexOf("BEGIN"));
+      expect(body.indexOf(lockCall)).toBeLessThan(body.indexOf("FOR UPDATE") === -1 ? body.indexOf("RETURN QUERY") : body.indexOf("FOR UPDATE"));
+    }
+  });
+
+  it("SECURITY DEFINER trigger 함수 owner와 실행 권한을 명시적으로 고정한다", () => {
+    const sql = readMigrationSql();
+
+    for (const functionName of [
+      "serialize_board_post_image_delete",
+      "transition_board_image_orphans_before_post_delete",
+    ]) {
+      expect(sql).toContain(`ALTER FUNCTION public.${functionName}() OWNER TO postgres`);
+      expect(sql).toContain(`REVOKE ALL ON FUNCTION public.${functionName}() FROM PUBLIC, anon, authenticated`);
+    }
+  });
+
   it("격리 DB 검증 스크립트가 운영 URL을 거부하고 핵심 행위를 검사한다", () => {
     const script = readFileSync(resolve(process.cwd(), "scripts/verify_board_image_storage_migration.ts"), "utf8");
 
@@ -162,6 +197,8 @@ describe("게시판 이미지 Storage 소유권 마이그레이션", () => {
     expect(script).toContain("post-delete-last-ref-pending");
     expect(script).toContain("post-delete-shared-ready");
     expect(script).toContain("post-delete-rollback-ready");
+    expect(script).toContain("post-delete-reverse-order-no-deadlock");
+    expect(script).toContain("trigger-function-owner-postgres");
   });
 
   it("검증 fixture는 성공 revision과 실제 경쟁 결과를 보존하고 finally에서 정리한다", () => {

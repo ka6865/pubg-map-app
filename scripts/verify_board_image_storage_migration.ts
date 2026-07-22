@@ -138,10 +138,16 @@ async function verifyAclAndOwnership(): Promise<void> {
       equal(await scalar(`SELECT has_function_privilege(${quote(role)}, ${quote(signature)}, 'EXECUTE')::text`, label), "false", label);
     }
     for (const signature of signatures) equal(await scalar(`SELECT has_function_privilege('service_role', ${quote(signature)}, 'EXECUTE')::text`, "service-role-execute"), "true", "service-role-execute");
-    const orphanTriggerSignature = "public.transition_board_image_orphans_before_post_delete()";
-    equal(await scalar(`SELECT function_row.prosecdef::text FROM pg_proc AS function_row WHERE function_row.oid = to_regprocedure(${quote(orphanTriggerSignature)})`, "post-delete-trigger-security-definer"), "true", "post-delete-trigger-security-definer");
-    equal(await scalar(`SELECT count(*)::text FROM pg_proc AS function_row CROSS JOIN LATERAL aclexplode(COALESCE(function_row.proacl, acldefault('f', function_row.proowner))) AS acl_row WHERE function_row.oid = to_regprocedure(${quote(orphanTriggerSignature)}) AND acl_row.grantee = 0 AND acl_row.privilege_type = 'EXECUTE'`, "post-delete-trigger-public-denied"), "0", "post-delete-trigger-public-denied");
-    equal(await scalar(`SELECT count(*)::text FROM pg_proc AS function_row WHERE function_row.oid = to_regprocedure(${quote(orphanTriggerSignature)}) AND 'search_path=""' = ANY(COALESCE(function_row.proconfig, ARRAY[]::text[]))`, "post-delete-trigger-empty-search-path"), "1", "post-delete-trigger-empty-search-path");
+    const triggerSignatures = [
+      "public.serialize_board_post_image_delete()",
+      "public.transition_board_image_orphans_before_post_delete()",
+    ];
+    for (const triggerSignature of triggerSignatures) {
+      equal(await scalar(`SELECT function_row.prosecdef::text FROM pg_proc AS function_row WHERE function_row.oid = to_regprocedure(${quote(triggerSignature)})`, "post-delete-trigger-security-definer"), "true", "post-delete-trigger-security-definer");
+      equal(await scalar(`SELECT count(*)::text FROM pg_proc AS function_row CROSS JOIN LATERAL aclexplode(COALESCE(function_row.proacl, acldefault('f', function_row.proowner))) AS acl_row WHERE function_row.oid = to_regprocedure(${quote(triggerSignature)}) AND acl_row.grantee = 0 AND acl_row.privilege_type = 'EXECUTE'`, "post-delete-trigger-public-denied"), "0", "post-delete-trigger-public-denied");
+      equal(await scalar(`SELECT count(*)::text FROM pg_proc AS function_row WHERE function_row.oid = to_regprocedure(${quote(triggerSignature)}) AND 'search_path=""' = ANY(COALESCE(function_row.proconfig, ARRAY[]::text[]))`, "post-delete-trigger-empty-search-path"), "1", "post-delete-trigger-empty-search-path");
+      equal(await scalar(`SELECT (function_row.proowner = 'postgres'::regrole)::text FROM pg_proc AS function_row WHERE function_row.oid = to_regprocedure(${quote(triggerSignature)})`, "trigger-function-owner-postgres"), "true", "trigger-function-owner-postgres");
+    }
     const pending = await reserve(fixture, "other-owner");
     equal(await scalar(`SET ROLE service_role; SELECT public.complete_board_image_upload(${quote(pending.imageId)}::uuid, '00000000-0000-0000-0000-000000000002'::uuid)::text`, "other-owner-complete"), "false", "other-owner-complete");
   });
@@ -242,6 +248,21 @@ async function verifyPostDeleteOrphanTransition(): Promise<void> {
     await sql(`SET ROLE service_role; BEGIN; DELETE FROM public.posts AS post_row WHERE post_row.id = ${rollbackPost.postId}; ROLLBACK;`);
     equal(await scalar(`SELECT count(*)::text FROM public.posts AS post_row WHERE post_row.id = ${rollbackPost.postId}`, "post-delete-rollback-post-preserved"), "1", "post-delete-rollback-post-preserved");
     equal(await imageStatus(rollbackImage, "post-delete-rollback-ready"), "ready", "post-delete-rollback-ready");
+
+    const reverseImageA = await reserveReady(fixture, "reverse-a");
+    const reverseImageB = await reserveReady(fixture, "reverse-b");
+    const reversePostB1 = await writePost(fixture, [reverseImageB]);
+    const reversePostA1 = await writePost(fixture, [reverseImageA]);
+    const reversePostA2 = await writePost(fixture, [reverseImageA]);
+    const reversePostB2 = await writePost(fixture, [reverseImageB]);
+    const [firstDelete, secondDelete] = await Promise.all([
+      sql(`SET ROLE service_role; BEGIN; DELETE FROM public.posts WHERE id = ${reversePostB1.postId}; SELECT pg_sleep(0.2); DELETE FROM public.posts WHERE id = ${reversePostA1.postId}; COMMIT; SELECT 'first';`),
+      sql(`SET ROLE service_role; BEGIN; DELETE FROM public.posts WHERE id = ${reversePostA2.postId}; DELETE FROM public.posts WHERE id = ${reversePostB2.postId}; COMMIT; SELECT 'second';`),
+    ]);
+    equal(firstDelete.split(/\r?\n/).at(-1) ?? "", "first", "post-delete-reverse-order-no-deadlock");
+    equal(secondDelete.split(/\r?\n/).at(-1) ?? "", "second", "post-delete-reverse-order-no-deadlock");
+    equal(await imageStatus(reverseImageA, "post-delete-reverse-a-pending"), "delete_pending", "post-delete-reverse-a-pending");
+    equal(await imageStatus(reverseImageB, "post-delete-reverse-b-pending"), "delete_pending", "post-delete-reverse-b-pending");
   });
 }
 

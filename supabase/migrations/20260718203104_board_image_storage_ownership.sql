@@ -174,6 +174,8 @@ DECLARE
   v_requested_image_ids uuid[];
   v_image_id uuid;
 BEGIN
+  -- post/ref/image mutation은 게시글 삭제와 같은 transaction 잠금으로 직렬화한다.
+  PERFORM pg_catalog.pg_advisory_xact_lock(42117, 1);
   IF p_post_id IS NOT NULL THEN
     SELECT post_row.* INTO v_post
     FROM public.posts AS post_row WHERE post_row.id = p_post_id FOR UPDATE;
@@ -290,6 +292,7 @@ BEGIN
   IF p_limit IS NULL OR p_limit < 1 OR p_lease_seconds <> 300 THEN
     RAISE EXCEPTION 'invalid_board_image_deletion_claim';
   END IF;
+  PERFORM pg_catalog.pg_advisory_xact_lock(42117, 1);
   RETURN QUERY
   WITH candidates AS (
     SELECT object_row.id
@@ -333,6 +336,8 @@ BEGIN
     OR p_lease_seconds IS NULL OR p_lease_seconds <> 300 THEN
     RAISE EXCEPTION 'invalid_owner_board_image_deletion_claim';
   END IF;
+
+  PERFORM pg_catalog.pg_advisory_xact_lock(42117, 1);
 
   RETURN QUERY
   WITH requested_ids AS (
@@ -407,6 +412,8 @@ BEGIN
     RETURN QUERY SELECT 'not_found'::text, NULL::bigint, NULL::bigint, NULL::text, NULL::text, NULL::text;
     RETURN;
   END IF;
+
+  PERFORM pg_catalog.pg_advisory_xact_lock(42117, 1);
 
   -- 부모와 선택 초안을 같은 순서로 잠가, 서로 다른 shadow 초안 승격도 직렬화한다.
   FOR v_parent IN
@@ -524,6 +531,24 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.serialize_board_post_image_delete()
+RETURNS trigger
+LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
+AS $$
+BEGIN
+  -- statement row lock이 시작되기 전에 잠그므로 다중 post 삭제의 역순 image lock을 막는다.
+  PERFORM pg_catalog.pg_advisory_xact_lock(42117, 1);
+  RETURN NULL;
+END;
+$$;
+
+ALTER FUNCTION public.serialize_board_post_image_delete() OWNER TO postgres;
+
+DROP TRIGGER IF EXISTS serialize_board_post_image_delete ON public.posts;
+CREATE TRIGGER serialize_board_post_image_delete
+BEFORE DELETE ON public.posts
+FOR EACH STATEMENT EXECUTE FUNCTION public.serialize_board_post_image_delete();
+
 CREATE OR REPLACE FUNCTION public.transition_board_image_orphans_before_post_delete()
 RETURNS trigger
 LANGUAGE plpgsql SECURITY DEFINER SET search_path = ''
@@ -554,6 +579,8 @@ BEGIN
   RETURN OLD;
 END;
 $$;
+
+ALTER FUNCTION public.transition_board_image_orphans_before_post_delete() OWNER TO postgres;
 
 DROP TRIGGER IF EXISTS transition_board_image_orphans_before_post_delete ON public.posts;
 CREATE TRIGGER transition_board_image_orphans_before_post_delete
@@ -597,6 +624,7 @@ REVOKE ALL ON FUNCTION public.claim_board_image_deletions(integer, timestamptz, 
 REVOKE ALL ON FUNCTION public.claim_board_image_deletions_for_owner(uuid, uuid[], timestamptz, integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.finalize_board_image_deletion(uuid, uuid, boolean) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.merge_board_post_draft_with_images(bigint, uuid, bigint) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.serialize_board_post_image_delete() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.transition_board_image_orphans_before_post_delete() FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.reserve_board_image_upload(uuid, text, bigint) TO service_role;
 GRANT EXECUTE ON FUNCTION public.complete_board_image_upload(uuid, uuid) TO service_role;

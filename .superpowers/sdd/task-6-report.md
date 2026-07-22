@@ -34,3 +34,13 @@
 ## 남은 위험
 
 - 로컬 PostgreSQL fixture 실행은 지시대로 수행하지 않았다. 부모 통합 단계에서 `npm run verify:board-image-storage`를 로컬 격리 DB에 재실행해야 한다.
+
+## 보안 리뷰 후속 보완
+
+- 다중 post 삭제의 행 단위 image lock 역전 가능성을 RED 정적 계약으로 재현했다.
+- `BEFORE DELETE FOR EACH STATEMENT`, write, promote, global claim, owner claim이 모두 같은 transaction advisory lock을 post/image 행 잠금 전에 획득하도록 통일했다. claim RPC가 반환되면 잠금은 해제되므로 Storage 네트워크 삭제 시간은 직렬화하지 않는다.
+- 역순 다중 삭제 경쟁 fixture, trigger function `OWNER TO postgres`, SECURITY DEFINER, empty search path, public 실행 차단 검증을 추가했다.
+- URL의 credentials와 percent-encoded UUID path를 차단하고 lowercase raw UUID 단일 path에서 query/hash만 제거하도록 계약을 좁혔다.
+- GREEN: 전용 117/117, admin 265/265, ESLint, TypeScript, diff check 통과.
+- 로컬 PostgreSQL에 현재 migration을 재적용하고 역순 경쟁을 포함한 전체 fixture를 내부 2회 반복해 통과했다.
+- 최종 보안 재리뷰: Critical 0, Important 0, Minor 0, 승인.
