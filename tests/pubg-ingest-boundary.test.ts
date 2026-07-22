@@ -109,6 +109,7 @@ import { GET as GET_TELEMETRY } from "../app/api/pubg/telemetry/route";
 const MATCH_ROUTE_PATH = resolve("app/api/pubg/match/route.ts");
 const PERSIST_MODULE_PATH = resolve("lib/pubg-analysis/persistMatchAnalysis.ts");
 const SCRAPER_PATH = resolve("scripts/scrape_elite.ts");
+const DAILY_TASKS_WORKFLOW_PATH = resolve(".github/workflows/daily-tasks.yml");
 const SOURCE_ROOTS = ["actions", "app", "components", "hooks", "lib"];
 const MATCH_ID = "match-behavior-1";
 const NICKNAME = "PlayerOne";
@@ -690,6 +691,17 @@ describe("PUBG match query boundary", () => {
 });
 
 describe("elite scraper caller contract", () => {
+  it("daily scraper job은 내부 scraper와 admin 재검증 secret을 모두 전달한다", () => {
+    const workflow = readFileSync(DAILY_TASKS_WORKFLOW_PATH, "utf8");
+    const scraperStep = workflow.slice(
+      workflow.indexOf("- name: Run Smart Scraper"),
+      workflow.indexOf("- name: Extract Bluezone Statistics"),
+    );
+
+    expect(scraperStep).toContain("PUBG_SCRAPER_INTERNAL_TOKEN: ${{ secrets.PUBG_SCRAPER_INTERNAL_TOKEN }}");
+    expect(scraperStep).toContain("ADMIN_REVALIDATE_TOKEN: ${{ secrets.ADMIN_REVALIDATE_TOKEN }}");
+  });
+
   it("query token을 사용하지 않고 주 매치와 sample을 scraper Bearer로 호출한다", () => {
     const source = readFileSync(SCRAPER_PATH, "utf8");
 
