@@ -134,6 +134,26 @@ describe("게시판 이미지 Storage 소유권 마이그레이션", () => {
     expect(sql).toContain("CREATE INDEX IF NOT EXISTS board_image_objects_claim_idx");
   });
 
+  it("cleanup audit RPC는 claim과 동일한 후보를 상태별로 집계하고 service-role에만 공개한다", () => {
+    const sql = readMigrationSql();
+    const start = sql.indexOf("CREATE OR REPLACE FUNCTION public.inspect_board_image_deletion_candidates(");
+    const end = sql.indexOf("CREATE OR REPLACE FUNCTION public.claim_board_image_deletions(", start);
+    const auditFunction = sql.slice(start, end);
+
+    expect(start).toBeGreaterThan(-1);
+    expect(auditFunction).toContain("p_now timestamptz");
+    expect(auditFunction).toContain("RETURNS TABLE(candidate_status text, candidate_count bigint)");
+    expect(auditFunction).toContain("LANGUAGE sql SECURITY INVOKER SET search_path = ''");
+    expect(auditFunction).toContain("object_row.status = 'delete_pending' AND object_row.delete_after <= p_now");
+    expect(auditFunction).toContain("object_row.status = 'deleting' AND object_row.delete_lease_until <= p_now");
+    expect(auditFunction).toContain("object_row.status IN ('pending', 'ready') AND object_row.expires_at <= p_now");
+    expect(auditFunction).toMatch(/NOT EXISTS \([\s\S]*ref_row\.image_id = object_row\.id/);
+    expect(auditFunction).toContain("GROUP BY object_row.status");
+    expect(auditFunction).not.toMatch(/\bUPDATE\b|\bDELETE\b|FOR UPDATE|pg_advisory/);
+    expect(sql).toContain("REVOKE ALL ON FUNCTION public.inspect_board_image_deletion_candidates(timestamptz) FROM PUBLIC, anon, authenticated");
+    expect(sql).toContain("GRANT EXECUTE ON FUNCTION public.inspect_board_image_deletion_candidates(timestamptz) TO service_role");
+  });
+
   it("게시글 삭제는 DB trigger에서 마지막 ready ref만 delete_pending으로 전이한다", () => {
     const sql = readMigrationSql();
 
@@ -288,6 +308,16 @@ describe("게시판 이미지 Storage 소유권 마이그레이션", () => {
     expect(script).toContain("anon-rpc-denied");
     expect(script).toContain("authenticated-rpc-denied");
     expect(script).toContain("service-role-execute");
+  });
+
+  it("cleanup audit fixture는 참조 후보를 제외하고 조회 전후 DB 상태를 보존한다", () => {
+    const script = readFileSync(resolve(process.cwd(), "scripts/verify_board_image_storage_migration.ts"), "utf8");
+
+    expect(script).toContain("public.inspect_board_image_deletion_candidates(timestamptz)");
+    expect(script).toContain("verifyCleanupAuditReadOnly");
+    expect(script).toContain("cleanup-audit-pending-count");
+    expect(script).toContain("cleanup-audit-referenced-excluded");
+    expect(script).toContain("cleanup-audit-state-preserved");
   });
 
   it("legacy retained 참조는 직접 삭제하지 않고 게시글 RPC detach로 제거한다", () => {

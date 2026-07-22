@@ -215,7 +215,7 @@
 | 시뮬레이터 | 실제 표본 수와 무관하게 `100+ matches` 표시 | `components/map/SimulatorPanel.tsx:201-206` | 실제 필터 후 표본 수·시즌·표본 부족 경고 표시 |
 | 텔레메트리 | 공개 cache-miss 경로에 비용 방어 없음 | `app/api/pubg/telemetry/route.ts:13-95` | rate limit, enum/길이 검증, single-flight 적용 |
 | 관리자 | 직접 system API가 Admin Agent 승인 정책 우회 | `app/api/admin/system/route.ts:5-85` | route가 승인 요청만 만들게 하고 executor를 단일화 |
-| 신고 | reports public INSERT RLS가 서버 통제 우회 가능 | `supabase/migrations/20260617000000_add_guest_and_moderation_tables.sql:45-57` | anon INSERT revoke, 공개 정책 제거, 서버 route만 허용 |
+| 신고 | reports public INSERT RLS가 서버 통제 우회 가능 | `supabase/migrations/20260616120024_add_guest_and_moderation_tables.sql:45-57` | anon INSERT revoke, 공개 정책 제거, 서버 route만 허용 |
 | cron | 패치노트 URL SSRF 및 query-string secret | `app/api/cron/patch-notes/route.ts:117-147` | Authorization만 사용, PUBG 도메인 allowlist, redirect/timeout/size 제한 |
 | Supabase | SECURITY DEFINER 함수의 search_path 미고정 | `supabase/migrations/20260526022000_auth_profiles_trigger.sql:2-23` | `SET search_path=''`, `public.profiles` 완전 한정 |
 | 테스트 | 해결됨: 보안 테스트 계약 복구 및 필수 admin 게이트 편입 | `tests/security.test.ts`, `package.json` | `verify:admin`에서 지속 회귀 검증 |

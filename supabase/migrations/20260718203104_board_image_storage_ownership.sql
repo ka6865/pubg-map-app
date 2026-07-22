@@ -282,6 +282,24 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION public.inspect_board_image_deletion_candidates(p_now timestamptz)
+RETURNS TABLE(candidate_status text, candidate_count bigint)
+LANGUAGE sql SECURITY INVOKER SET search_path = ''
+AS $$
+  SELECT object_row.status, count(*)::bigint
+  FROM public.board_image_objects AS object_row
+  WHERE p_now IS NOT NULL
+    AND ((object_row.status = 'delete_pending' AND object_row.delete_after <= p_now)
+      OR (object_row.status = 'deleting' AND object_row.delete_lease_until <= p_now)
+      OR (object_row.status IN ('pending', 'ready') AND object_row.expires_at <= p_now))
+    AND NOT EXISTS (
+      SELECT 1 FROM public.board_post_image_refs AS ref_row
+      WHERE ref_row.image_id = object_row.id
+    )
+  GROUP BY object_row.status
+  ORDER BY object_row.status;
+$$;
+
 CREATE OR REPLACE FUNCTION public.claim_board_image_deletions(
   p_limit integer, p_now timestamptz, p_lease_seconds integer
 )
@@ -620,6 +638,7 @@ $$;
 REVOKE ALL ON FUNCTION public.reserve_board_image_upload(uuid, text, bigint) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.complete_board_image_upload(uuid, uuid) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.write_board_post_with_images(bigint, uuid, bigint, text, text, text, text, boolean, text, uuid, text, text, text, text, jsonb, uuid[], uuid) FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.inspect_board_image_deletion_candidates(timestamptz) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.claim_board_image_deletions(integer, timestamptz, integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.claim_board_image_deletions_for_owner(uuid, uuid[], timestamptz, integer) FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.finalize_board_image_deletion(uuid, uuid, boolean) FROM PUBLIC, anon, authenticated;
@@ -629,6 +648,7 @@ REVOKE ALL ON FUNCTION public.transition_board_image_orphans_before_post_delete(
 GRANT EXECUTE ON FUNCTION public.reserve_board_image_upload(uuid, text, bigint) TO service_role;
 GRANT EXECUTE ON FUNCTION public.complete_board_image_upload(uuid, uuid) TO service_role;
 GRANT EXECUTE ON FUNCTION public.write_board_post_with_images(bigint, uuid, bigint, text, text, text, text, boolean, text, uuid, text, text, text, text, jsonb, uuid[], uuid) TO service_role;
+GRANT EXECUTE ON FUNCTION public.inspect_board_image_deletion_candidates(timestamptz) TO service_role;
 GRANT EXECUTE ON FUNCTION public.claim_board_image_deletions(integer, timestamptz, integer) TO service_role;
 GRANT EXECUTE ON FUNCTION public.claim_board_image_deletions_for_owner(uuid, uuid[], timestamptz, integer) TO service_role;
 GRANT EXECUTE ON FUNCTION public.finalize_board_image_deletion(uuid, uuid, boolean) TO service_role;

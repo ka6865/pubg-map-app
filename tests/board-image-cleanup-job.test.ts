@@ -12,6 +12,97 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 describe("게시판 이미지 전역 cleanup 작업", () => {
+  it("dry-run은 후보 집계 RPC만 호출하고 claim·Storage·finalize를 호출하지 않는다", async () => {
+    const cleanup = await import("../scripts/cleanup_board_images");
+    const rpc = vi.fn().mockResolvedValue({
+      data: [
+        { candidate_status: "pending", candidate_count: 2 },
+        { candidate_status: "delete_pending", candidate_count: 1 },
+      ],
+      error: null,
+    });
+    const from = vi.fn();
+
+    const result = await cleanup.auditBoardImageCleanup({ rpc, storage: { from } } as never, {
+      now: () => new Date("2026-07-22T00:00:00.000Z"),
+    });
+
+    expect(result).toEqual({
+      candidates: 3,
+      byStatus: { pending: 2, ready: 0, delete_pending: 1, deleting: 0 },
+    });
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith("inspect_board_image_deletion_candidates", {
+      p_now: "2026-07-22T00:00:00.000Z",
+    });
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["허용되지 않은 상태", [{ candidate_status: "deleted", candidate_count: 1 }]],
+    ["음수 개수", [{ candidate_status: "pending", candidate_count: -1 }]],
+    ["정수가 아닌 개수", [{ candidate_status: "pending", candidate_count: 1.5 }]],
+    ["중복 상태", [
+      { candidate_status: "pending", candidate_count: 1 },
+      { candidate_status: "pending", candidate_count: 2 },
+    ]],
+  ])("dry-run 집계에 %s가 있으면 fail closed한다", async (_caseName, data) => {
+    const cleanup = await import("../scripts/cleanup_board_images");
+    const rpc = vi.fn().mockResolvedValue({ data, error: null });
+
+    await expect(cleanup.auditBoardImageCleanup({ rpc } as never, {
+      now: () => new Date("2026-07-22T00:00:00.000Z"),
+    })).rejects.toThrow("board-image-cleanup-audit-failed");
+  });
+
+  it("runBoardImageCleanup dry-run은 안전 집계만 기록하고 실제 cleanup을 시작하지 않는다", async () => {
+    const cleanup = await import("../scripts/cleanup_board_images");
+    const write = vi.fn();
+    const rpc = vi.fn().mockResolvedValue({
+      data: [{ candidate_status: "ready", candidate_count: 2 }],
+      error: null,
+    });
+    const remove = vi.fn();
+    const createServiceClient = vi.fn(() => ({
+      rpc,
+      storage: { from: vi.fn(() => ({ remove })) },
+    }));
+
+    await expect(cleanup.runBoardImageCleanup({
+      dryRun: true,
+      env: {
+        NEXT_PUBLIC_SUPABASE_URL: "https://example.supabase.co",
+        SUPABASE_SERVICE_ROLE_KEY: "service-role-secret",
+      },
+      createServiceClient: createServiceClient as never,
+      now: () => new Date("2026-07-22T00:00:00.000Z"),
+      write,
+    })).resolves.toEqual({
+      candidates: 2,
+      byStatus: { pending: 0, ready: 2, delete_pending: 0, deleting: 0 },
+    });
+
+    expect(rpc).toHaveBeenCalledTimes(1);
+    expect(remove).not.toHaveBeenCalled();
+    expect(write).toHaveBeenCalledWith(
+      "board-image-cleanup dry-run candidates=2 pending=0 ready=2 delete_pending=0 deleting=0",
+    );
+    expect(write.mock.calls.flat().join(" ")).not.toContain("service-role-secret");
+  });
+
+  it("CLI는 인자 없음과 --dry-run만 허용하고 나머지 인자를 차단한다", async () => {
+    const cleanup = await import("../scripts/cleanup_board_images");
+
+    expect(cleanup.resolveBoardImageCleanupMode([])).toBe("apply");
+    expect(cleanup.resolveBoardImageCleanupMode(["--dry-run"])).toBe("dry-run");
+    expect(() => cleanup.resolveBoardImageCleanupMode(["--apply"])).toThrow(
+      "board-image-cleanup-invalid-arguments",
+    );
+    expect(() => cleanup.resolveBoardImageCleanupMode(["--dry-run", "extra"])).toThrow(
+      "board-image-cleanup-invalid-arguments",
+    );
+  });
+
   it("전역 claim RPC만 20개씩 최대 5 batch 호출하고 30초 뒤 새 batch를 시작하지 않는다", async () => {
     const scriptPath = resolve("scripts/cleanup_board_images.ts");
     expect(existsSync(scriptPath)).toBe(true);

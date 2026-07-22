@@ -130,7 +130,7 @@ async function verifyAclAndOwnership(): Promise<void> {
     await rejected("SET ROLE authenticated; SELECT * FROM public.board_image_reservation_rate_limits", "authenticated-rate-limit-table-denied");
     equal(await scalar("SET ROLE service_role; SELECT count(*)::text FROM public.board_image_reservation_rate_limits", "service-role-rate-limit-table-allowed"), "0", "service-role-rate-limit-table-allowed");
     equal(await scalar("SELECT count(*)::text FROM pg_constraint AS constraint_row WHERE constraint_row.conrelid = 'public.board_image_reservation_rate_limits'::regclass AND constraint_row.contype = 'f'", "rate-limit-owner-no-fk"), "0", "rate-limit-owner-no-fk");
-    const signatures = ["public.reserve_board_image_upload(uuid,text,bigint)", "public.complete_board_image_upload(uuid,uuid)", "public.write_board_post_with_images(bigint,uuid,bigint,text,text,text,text,boolean,text,uuid,text,text,text,text,jsonb,uuid[],uuid)", "public.claim_board_image_deletions(integer,timestamptz,integer)", "public.claim_board_image_deletions_for_owner(uuid,uuid[],timestamptz,integer)", "public.finalize_board_image_deletion(uuid,uuid,boolean)"];
+    const signatures = ["public.reserve_board_image_upload(uuid,text,bigint)", "public.complete_board_image_upload(uuid,uuid)", "public.write_board_post_with_images(bigint,uuid,bigint,text,text,text,text,boolean,text,uuid,text,text,text,text,jsonb,uuid[],uuid)", "public.inspect_board_image_deletion_candidates(timestamptz)", "public.claim_board_image_deletions(integer,timestamptz,integer)", "public.claim_board_image_deletions_for_owner(uuid,uuid[],timestamptz,integer)", "public.finalize_board_image_deletion(uuid,uuid,boolean)"];
     for (const signature of signatures) {
       equal(await scalar(`SELECT count(*)::text FROM pg_proc AS function_row CROSS JOIN LATERAL aclexplode(COALESCE(function_row.proacl, acldefault('f', function_row.proowner))) AS acl_row WHERE function_row.oid = to_regprocedure(${quote(signature)}) AND acl_row.grantee = 0 AND acl_row.privilege_type = 'EXECUTE'`, "public-rpc-denied"), "0", "public-rpc-denied");
     }
@@ -335,6 +335,22 @@ async function verifyOwnerScopedReleaseClaims(): Promise<void> {
   });
 }
 
+async function verifyCleanupAuditReadOnly(): Promise<void> {
+  await withFixture("cleanup-audit", async (fixture) => {
+    const expiredPending = (await reserve(fixture, "expired-pending")).imageId;
+    await sql(`SET ROLE service_role; UPDATE public.board_image_objects AS image_row SET expires_at = now() - interval '1 minute' WHERE image_row.id = ${quote(expiredPending)}::uuid;`);
+    const referencedReady = await reserveReady(fixture, "referenced-ready");
+    await writePost(fixture, [referencedReady]);
+    const before = await scalar(`SELECT string_agg(image_row.id::text || ':' || image_row.status || ':' || image_row.delete_attempts::text || ':' || coalesce(image_row.delete_lease_token::text, 'null'), ',' ORDER BY image_row.id) FROM public.board_image_objects AS image_row WHERE image_row.id = ANY(${uuidArray([expiredPending, referencedReady])})`, "cleanup-audit-before-state");
+
+    equal(await scalar("SET ROLE service_role; SELECT coalesce(max(result.candidate_count) FILTER (WHERE result.candidate_status = 'pending'), 0)::text FROM public.inspect_board_image_deletion_candidates(now()) AS result", "cleanup-audit-pending-count"), "1", "cleanup-audit-pending-count");
+    equal(await scalar("SET ROLE service_role; SELECT coalesce(sum(result.candidate_count), 0)::text FROM public.inspect_board_image_deletion_candidates(now()) AS result", "cleanup-audit-referenced-excluded"), "1", "cleanup-audit-referenced-excluded");
+
+    const after = await scalar(`SELECT string_agg(image_row.id::text || ':' || image_row.status || ':' || image_row.delete_attempts::text || ':' || coalesce(image_row.delete_lease_token::text, 'null'), ',' ORDER BY image_row.id) FROM public.board_image_objects AS image_row WHERE image_row.id = ANY(${uuidArray([expiredPending, referencedReady])})`, "cleanup-audit-after-state");
+    equal(after, before, "cleanup-audit-state-preserved");
+  });
+}
+
 async function verifyClaimsAndRecovery(): Promise<void> {
   await withFixture("claims", async (fixture) => {
     const makeCandidate = async (suffix: string, status: "pending" | "delete_pending" | "deleting"): Promise<string> => {
@@ -395,6 +411,7 @@ async function runAllScenarios(): Promise<void> {
   await verifyPostDeleteOrphanTransition();
   await verifyRevisionAndAttachDetachRace();
   await verifyOwnerScopedReleaseClaims();
+  await verifyCleanupAuditReadOnly();
   await verifyClaimsAndRecovery();
   await verifyLegacyBackfill();
 }

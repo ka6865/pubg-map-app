@@ -11,6 +11,7 @@ export const BOARD_IMAGE_DELETION_LEASE_SECONDS = 300;
 type BoardImageCleanupClient = Pick<SupabaseClient, "rpc" | "storage">;
 
 type CleanupDependencies = {
+  dryRun?: boolean;
   env?: Record<string, string | undefined>;
   createServiceClient?: (url: string, serviceRoleKey: string) => SupabaseClient;
   now?: () => Date;
@@ -31,6 +32,22 @@ export type BoardImageCleanupResult = {
   finalized: number;
   deferred: number;
   hasRemaining: boolean;
+};
+
+const BOARD_IMAGE_CLEANUP_AUDIT_STATUSES = ["pending", "ready", "delete_pending", "deleting"] as const;
+
+type BoardImageCleanupAuditStatus = typeof BOARD_IMAGE_CLEANUP_AUDIT_STATUSES[number];
+
+export type BoardImageCleanupAuditResult = {
+  candidates: number;
+  byStatus: Record<BoardImageCleanupAuditStatus, number>;
+};
+
+export type BoardImageCleanupMode = "apply" | "dry-run";
+
+type BoardImageCleanupAuditRow = {
+  candidate_status: BoardImageCleanupAuditStatus;
+  candidate_count: number;
 };
 
 function isClaim(value: unknown): value is BoardImageClaim {
@@ -55,6 +72,61 @@ function isNotFound(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const value = error as Record<string, unknown>;
   return value.statusCode === 404 || value.statusCode === "404" || value.status === 404;
+}
+
+export function resolveBoardImageCleanupMode(args: string[]): BoardImageCleanupMode {
+  if (args.length === 0) return "apply";
+  if (args.length === 1 && args[0] === "--dry-run") return "dry-run";
+  throw new Error("board-image-cleanup-invalid-arguments");
+}
+
+function isAuditRow(value: unknown): value is BoardImageCleanupAuditRow {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const row = value as Record<string, unknown>;
+  return typeof row.candidate_status === "string"
+    && BOARD_IMAGE_CLEANUP_AUDIT_STATUSES.includes(row.candidate_status as BoardImageCleanupAuditStatus)
+    && typeof row.candidate_count === "number"
+    && Number.isSafeInteger(row.candidate_count)
+    && row.candidate_count >= 0;
+}
+
+export async function auditBoardImageCleanup(
+  supabaseAdmin: Pick<BoardImageCleanupClient, "rpc">,
+  dependencies: Pick<CleanupDependencies, "now" | "write"> = {},
+): Promise<BoardImageCleanupAuditResult> {
+  const now = dependencies.now ?? (() => new Date());
+  const auditNow = now();
+  if (!Number.isFinite(auditNow.getTime())) throw new Error("board-image-cleanup-audit-failed");
+  const { data, error } = await supabaseAdmin.rpc("inspect_board_image_deletion_candidates", {
+    p_now: auditNow.toISOString(),
+  });
+  if (error || !Array.isArray(data) || data.length > BOARD_IMAGE_CLEANUP_AUDIT_STATUSES.length) {
+    throw new Error("board-image-cleanup-audit-failed");
+  }
+
+  const byStatus: Record<BoardImageCleanupAuditStatus, number> = {
+    pending: 0,
+    ready: 0,
+    delete_pending: 0,
+    deleting: 0,
+  };
+  const seenStatuses = new Set<BoardImageCleanupAuditStatus>();
+  for (const row of data) {
+    if (!isAuditRow(row) || seenStatuses.has(row.candidate_status)) {
+      throw new Error("board-image-cleanup-audit-failed");
+    }
+    seenStatuses.add(row.candidate_status);
+    byStatus[row.candidate_status] = row.candidate_count;
+  }
+  const candidates = Object.values(byStatus).reduce((total, count) => total + count, 0);
+  if (!Number.isSafeInteger(candidates)) throw new Error("board-image-cleanup-audit-failed");
+  dependencies.write?.(
+    `board-image-cleanup dry-run candidates=${candidates} pending=${byStatus.pending} ready=${byStatus.ready} delete_pending=${byStatus.delete_pending} deleting=${byStatus.deleting}`,
+  );
+  return {
+    candidates,
+    byStatus,
+  };
 }
 
 export async function cleanupBoardImages(
@@ -115,7 +187,7 @@ export async function cleanupBoardImages(
 
 export async function runBoardImageCleanup(
   dependencies: CleanupDependencies = {},
-): Promise<BoardImageCleanupResult> {
+): Promise<BoardImageCleanupResult | BoardImageCleanupAuditResult> {
   const env = dependencies.env ?? process.env;
   const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL?.trim();
   const serviceRoleKey = env.SUPABASE_SERVICE_ROLE_KEY?.trim();
@@ -123,13 +195,23 @@ export async function runBoardImageCleanup(
   const createServiceClient = dependencies.createServiceClient ?? ((url, key) => createClient(url, key, {
     auth: { autoRefreshToken: false, persistSession: false },
   }));
-  return cleanupBoardImages(createServiceClient(supabaseUrl, serviceRoleKey), dependencies);
+  const supabaseAdmin = createServiceClient(supabaseUrl, serviceRoleKey);
+  if (dependencies.dryRun) return auditBoardImageCleanup(supabaseAdmin, dependencies);
+  return cleanupBoardImages(supabaseAdmin, dependencies);
 }
 
 const isDirectRun = process.argv[1] && pathToFileURL(resolve(process.argv[1])).href === import.meta.url;
 
 if (isDirectRun) {
-  runBoardImageCleanup({ write: (message) => process.stdout.write(`${message}\n`) })
+  const runFromCli = async () => {
+    const mode = resolveBoardImageCleanupMode(process.argv.slice(2));
+    return runBoardImageCleanup({
+      dryRun: mode === "dry-run",
+      write: (message) => process.stdout.write(`${message}\n`),
+    });
+  };
+
+  runFromCli()
     .catch(() => {
       process.stderr.write("Board image cleanup failed.\n");
       process.exitCode = 1;
