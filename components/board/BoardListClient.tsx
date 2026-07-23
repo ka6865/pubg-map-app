@@ -43,30 +43,6 @@ export default function BoardListClient({
   const [searchInput, setSearchInput] = useState(currentSearchQuery);
   const [searchOption, setSearchOption] = useState(currentSearchOption);
 
-  // 사이드바 배너 고정/절대 위치 스크롤 스위칭 로직 (푸터 침범 방지)
-  const [isAdAbsolute, setIsAdAbsolute] = useState(false);
-
-  useEffect(() => {
-    const handleAdScroll = () => {
-      const footerElement = document.querySelector("footer");
-      if (!footerElement) return;
-
-      const footerRect = footerElement.getBoundingClientRect();
-      
-      // 광고 배너 높이 600px + 상단 여백 80px = 680px
-      // 푸터 상단 경계선이 680px 이하로 좁혀지면 absolute로 전환하여 푸터 가림 방지
-      if (footerRect.top <= 700) {
-        setIsAdAbsolute(true);
-      } else {
-        setIsAdAbsolute(false);
-      }
-    };
-
-    window.addEventListener("scroll", handleAdScroll, { passive: true });
-    handleAdScroll();
-    return () => window.removeEventListener("scroll", handleAdScroll);
-  }, []);
-
   useEffect(() => {
     if (!user) {
       setIsAdmin(false);
@@ -144,9 +120,9 @@ export default function BoardListClient({
 
   return (
     <div className="w-full flex justify-center pb-20">
-      <div className="w-full max-w-[900px] px-4 relative">
+      <div className="w-full max-w-[1280px] px-4 xl:grid xl:grid-cols-[160px_minmax(0,900px)_160px] xl:justify-center xl:gap-5">
         {/* 본문 영역 */}
-        <div className="w-full min-w-0">
+        <div className="w-full min-w-0 xl:col-start-2">
           {/* 상단 필터 및 글쓰기 버튼 */}
           <div className="flex justify-between items-center mb-6 gap-4">
             <div className="flex gap-2 overflow-x-auto no-scrollbar flex-1 py-1 px-1">
@@ -252,48 +228,16 @@ export default function BoardListClient({
           </div>
         </div>
 
-        {/* 데스크톱 사이드바 광고 — xl 이상에서만 표시 */}
-        {isAdAbsolute ? (
-          <>
-            <aside className="hidden xl:block w-[160px] absolute bottom-0 right-[calc(100%+20px)]">
-              <div className="h-[600px] w-[160px]">
-                <AdSenseBanner
-                  client="ca-pub-3993032200487955"
-                  slot="7728921550"
-                />
-              </div>
-            </aside>
-            <aside className="hidden xl:block w-[160px] absolute bottom-0 left-[calc(100%+20px)]">
-              <div className="h-[600px] w-[160px]">
-                <AdfitBanner
-                  adUnit="DAN-RjyosR2uf8eSsVIC"
-                  adWidth={160}
-                  adHeight={600}
-                />
-              </div>
-            </aside>
-          </>
-        ) : (
-          <>
-            <aside className="hidden xl:block w-[160px] fixed top-20 left-1/2 -translate-x-[630px] z-50">
-              <div className="h-[600px] w-[160px]">
-                <AdSenseBanner
-                  client="ca-pub-3993032200487955"
-                  slot="7728921550"
-                />
-              </div>
-            </aside>
-            <aside className="hidden xl:block w-[160px] fixed top-20 right-1/2 translate-x-[630px] z-50">
-              <div className="h-[600px] w-[160px]">
-                <AdfitBanner
-                  adUnit="DAN-RjyosR2uf8eSsVIC"
-                  adWidth={160}
-                  adHeight={600}
-                />
-              </div>
-            </aside>
-          </>
-        )}
+        <aside className="hidden xl:block xl:col-start-1 xl:row-start-1 self-start" aria-label="광고">
+          <div className="sticky top-20 h-[600px] w-[160px]">
+            <AdSenseBanner client="ca-pub-3993032200487955" slot="7728921550" />
+          </div>
+        </aside>
+        <aside className="hidden xl:block xl:col-start-3 xl:row-start-1 self-start" aria-label="광고">
+          <div className="sticky top-20 h-[600px] w-[160px]">
+            <AdfitBanner adUnit="DAN-RjyosR2uf8eSsVIC" adWidth={160} adHeight={600} />
+          </div>
+        </aside>
       </div>
     </div>
   );

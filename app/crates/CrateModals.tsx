@@ -3,7 +3,7 @@ import { Coins, Box, Award, Ticket, Sparkles, History, AlertTriangle, Layers } f
 import type { CrateTemplate } from "@/types/crates";
 import { HistoryItem } from "./types";
 import { VaultCard, HistoryCard, getKoreanRarityName } from "./CrateCards";
-import { useLockBodyScroll } from "@/hooks/useLockBodyScroll";
+import { AppModal } from "@/components/common/AppModal";
 
 function getOwnedCount(obtainedSkins: Record<string, number>, item: { name: string; asset_key?: string | null }) {
   return obtainedSkins[item.asset_key || item.name] || obtainedSkins[item.name] || 0;
@@ -20,17 +20,14 @@ interface ChargeModalProps {
 }
 
 export function ChargeModal({ isOpen, onClose, onCharge, exchangeRate = 1500 }: ChargeModalProps) {
-  useLockBodyScroll(isOpen);
-
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md animate-[fadeIn_0.2s_ease-out]">
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-xl mx-4 space-y-6 shadow-2xl relative max-h-[90vh] flex flex-col">
+    <AppModal isOpen={isOpen} title="가상 G코인 충전소" onClose={onClose} panelClassName="max-w-xl">
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full space-y-6 shadow-2xl relative max-h-[90vh] flex flex-col">
         
         {/* 닫기 버튼 */}
         <button
           onClick={onClose}
+          aria-label="닫기"
           className="absolute top-4 right-4 text-slate-400 hover:text-white font-bold text-lg cursor-pointer px-2 py-1 rounded-lg hover:bg-slate-800 transition-all z-10"
         >
           ✕
@@ -91,7 +88,7 @@ export function ChargeModal({ isOpen, onClose, onCharge, exchangeRate = 1500 }: 
           </p>
         </div>
       </div>
-    </div>
+    </AppModal>
   );
 }
 
@@ -117,17 +114,14 @@ export function QuantityModal({
   paymentMethod,
   onConfirm
 }: QuantityModalProps) {
-  useLockBodyScroll(isOpen);
-
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md animate-[fadeIn_0.2s_ease-out]">
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-sm mx-4 space-y-6 shadow-2xl relative max-h-[90vh] overflow-y-auto">
+    <AppModal isOpen={isOpen} title={`${crateName ?? '상자'} 구매`} onClose={onClose} panelClassName="max-w-sm">
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full space-y-6 shadow-2xl relative max-h-[90vh] overflow-y-auto">
         
         {/* 닫기 버튼 */}
         <button
           onClick={onClose}
+          aria-label="닫기"
           className="absolute top-4 right-4 text-slate-400 hover:text-white font-bold text-lg cursor-pointer px-2 py-1 rounded-lg hover:bg-slate-800 transition-all"
         >
           ✕
@@ -211,7 +205,7 @@ export function QuantityModal({
           구매 확정
         </button>
       </div>
-    </div>
+    </AppModal>
   );
 }
 
@@ -239,17 +233,14 @@ export function RefillModal({
   onRefill,
   onRefillInfinite
 }: RefillModalProps) {
-  useLockBodyScroll(isOpen);
-
-  if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md animate-[fadeIn_0.2s_ease-out]">
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full max-w-md mx-4 space-y-6 shadow-2xl relative max-h-[90vh] flex flex-col">
+    <AppModal isOpen={isOpen} title="이벤트 재화 보충기" onClose={onClose} panelClassName="max-w-md">
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 w-full space-y-6 shadow-2xl relative max-h-[90vh] flex flex-col">
         
         {/* 닫기 버튼 */}
         <button
           onClick={onClose}
+          aria-label="닫기"
           className="absolute top-4 right-4 text-slate-400 hover:text-white font-bold text-lg cursor-pointer px-2 py-1 rounded-lg hover:bg-slate-800 transition-all"
         >
           ✕
@@ -348,7 +339,7 @@ export function RefillModal({
           )}
         </div>
       </div>
-    </div>
+    </AppModal>
   );
 }
 
@@ -499,10 +490,6 @@ interface CraftingModalProps {
 export function CraftingModal({ isOpen, onClose, tokens, obtainedSkins, onCraft, craftableItems }: CraftingModalProps) {
   const [activeSubTab, setActiveSubTab] = useState<string>("전체");
   
-  useLockBodyScroll(isOpen);
-
-  if (!isOpen) return null;
-
   const filteredItems = activeSubTab === "전체" 
     ? craftableItems 
     : craftableItems.filter(item => item.category === activeSubTab);
@@ -510,8 +497,8 @@ export function CraftingModal({ isOpen, onClose, tokens, obtainedSkins, onCraft,
   const categories = ["전체", ...Array.from(new Set(craftableItems.map(item => item.category)))];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-md animate-[fadeIn_0.2s_ease-out]">
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-6xl h-[90vh] flex flex-col shadow-2xl relative overflow-hidden">
+    <AppModal isOpen={isOpen} title="제작소 특수 제작" onClose={onClose} panelClassName="max-w-6xl">
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full h-[90dvh] flex flex-col shadow-2xl relative overflow-hidden">
         
         {/* 헤더 */}
         <header className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-900/60 shrink-0">
@@ -536,6 +523,7 @@ export function CraftingModal({ isOpen, onClose, tokens, obtainedSkins, onCraft,
             
             <button
               onClick={onClose}
+              aria-label="닫기"
               className="text-slate-400 hover:text-white font-bold text-lg px-3 py-2 rounded-lg hover:bg-slate-800 transition-all cursor-pointer"
             >
               ✕ 닫기
@@ -637,7 +625,7 @@ export function CraftingModal({ isOpen, onClose, tokens, obtainedSkins, onCraft,
           <span>※ 획득하신 이벤트 토큰은 시즌 종료 시점까지 사용 가능합니다. 기간 만료 시 소멸되며 타 상품으로 환불 및 교환이 불가능합니다.</span>
         </footer>
       </div>
-    </div>
+    </AppModal>
   );
 }
 
@@ -666,13 +654,11 @@ export function DetailModal({
   const [activeTab, setActiveTab] = useState<"vault" | "history" | "stats">("vault");
   const [probSubTab, setProbSubTab] = useState<"base" | "prime" | "bonus">("base");
 
-  useLockBodyScroll(isOpen);
-
-  if (!isOpen || !activeCrate) return null;
+  if (!activeCrate) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md animate-[fadeIn_0.2s_ease-out]">
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-5xl h-[85vh] flex flex-col shadow-2xl relative overflow-hidden">
+    <AppModal isOpen={isOpen} title={`${activeCrate.name} 세부 정보`} onClose={onClose} panelClassName="max-w-5xl">
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full h-[92dvh] sm:h-[85dvh] flex flex-col shadow-2xl relative overflow-hidden">
         
         {/* 헤더 */}
         <header className="p-6 border-b border-slate-800 flex justify-between items-center bg-slate-900/60 shrink-0">
@@ -687,6 +673,7 @@ export function DetailModal({
           </div>
           <button
             onClick={onClose}
+            aria-label="닫기"
             className="text-slate-400 hover:text-white font-bold text-lg px-3 py-2 rounded-lg hover:bg-slate-800 transition-all cursor-pointer"
           >
             ✕ 닫기
@@ -694,10 +681,10 @@ export function DetailModal({
         </header>
 
         {/* 탭 네비게이션 */}
-        <div className="flex border-b border-slate-800 gap-1 bg-slate-950/60 p-2 shrink-0">
+        <div className="flex border-b border-slate-800 gap-1 overflow-x-auto bg-slate-950/60 p-2 shrink-0">
           <button
             onClick={() => setActiveTab("vault")}
-            className={`flex-1 py-3 px-4 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+            className={`min-w-[128px] flex-1 py-3 px-4 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
               activeTab === "vault"
                 ? "bg-amber-500 text-slate-950 shadow-md font-bold"
                 : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40"
@@ -708,7 +695,7 @@ export function DetailModal({
           </button>
           <button
             onClick={() => setActiveTab("history")}
-            className={`flex-1 py-3 px-4 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+            className={`min-w-[112px] flex-1 py-3 px-4 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
               activeTab === "history"
                 ? "bg-amber-500 text-slate-950 shadow-md font-bold"
                 : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40"
@@ -719,7 +706,7 @@ export function DetailModal({
           </button>
           <button
             onClick={() => setActiveTab("stats")}
-            className={`flex-1 py-3 px-4 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+            className={`min-w-[112px] flex-1 py-3 px-4 rounded-xl text-xs sm:text-sm font-black transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
               activeTab === "stats"
                 ? "bg-amber-500 text-slate-950 shadow-md font-bold"
                 : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/40"
@@ -829,8 +816,8 @@ export function DetailModal({
                 </div>
               )}
 
-              <div className="border border-slate-850 rounded-xl overflow-hidden bg-slate-950/60">
-                <table className="min-w-full divide-y divide-slate-850">
+              <div className="overflow-x-auto border border-slate-850 rounded-xl bg-slate-950/60">
+                <table className="min-w-[560px] w-full divide-y divide-slate-850">
                   <thead className="bg-slate-900/60">
                     <tr>
                       <th className="px-4 py-3 text-left text-[11px] font-extrabold text-slate-400 uppercase tracking-wider">아이템 이름</th>
@@ -907,6 +894,6 @@ export function DetailModal({
 
         </div>
       </div>
-    </div>
+    </AppModal>
   );
 }

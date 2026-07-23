@@ -17,6 +17,7 @@ import { TURNSTILE_ACTIONS } from "@/lib/board/turnstileContract";
 import AdfitBanner from "@/components/ads/AdfitBanner";
 import AdSenseBanner from "@/components/ads/AdSenseBanner";
 import { rewriteBoardImageUrls, toBoardImageProxyUrl } from "@/lib/board-image-proxy";
+import { AppModal } from "@/components/common/AppModal";
 
 interface BoardDetailClientProps {
   initialPost: Post;
@@ -90,30 +91,6 @@ export default function BoardDetailClient({
     description: '',
     onConfirm: () => {},
   });
-
-  // 사이드바 배너 고정/절대 위치 스크롤 스위칭 로직 (푸터 침범 방지)
-  const [isAdAbsolute, setIsAdAbsolute] = useState(false);
-
-  useEffect(() => {
-    const handleAdScroll = () => {
-      const footerElement = document.querySelector("footer");
-      if (!footerElement) return;
-
-      const footerRect = footerElement.getBoundingClientRect();
-      
-      // 광고 배너 높이 600px + 상단 여백 80px = 680px
-      // 푸터 상단 경계선이 680px 이하로 좁혀지면 absolute로 전환하여 푸터 가림 방지
-      if (footerRect.top <= 700) {
-        setIsAdAbsolute(true);
-      } else {
-        setIsAdAbsolute(false);
-      }
-    };
-
-    window.addEventListener("scroll", handleAdScroll, { passive: true });
-    handleAdScroll();
-    return () => window.removeEventListener("scroll", handleAdScroll);
-  }, []);
 
   // 초안 승격(실제 게시판 발행) 처리 함수
   const handlePromotePost = async () => {
@@ -486,9 +463,9 @@ export default function BoardDetailClient({
 
   return (
     <div className="w-full flex justify-center pb-20">
-      <div className="w-full max-w-[900px] px-4 relative">
+      <div className="w-full max-w-[1280px] px-4 xl:grid xl:grid-cols-[160px_minmax(0,900px)_160px] xl:justify-center xl:gap-5">
         {/* 본문 영역 */}
-        <div className="w-full min-w-0">
+        <div className="w-full min-w-0 xl:col-start-2">
         {/* 🌟 어드민 승인 대기 초안 프리뷰 배너 렌더링 */}
         {post.status === 'draft' && isAdmin && (
           <div className="w-full bg-[#1e1e1e] border border-[#F2A900]/30 rounded-xl p-5 mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-[0_0_20px_rgba(242,169,0,0.1)]">
@@ -722,8 +699,7 @@ export default function BoardDetailClient({
       </div>
 
       {/* 🌟 AI 피드백 전달 모달 창 */}
-      {showFeedbackModal && (
-        <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+      <AppModal isOpen={showFeedbackModal} title="AI 재수정 피드백" onClose={() => { setShowFeedbackModal(false); setFeedbackText(""); }} panelClassName="max-w-lg">
           <div className="bg-[#1a1a1a] border border-[#333] rounded-2xl max-w-lg w-full p-6 shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200">
             <div>
               <h3 className="text-lg font-black text-white">AI 재수정 피드백</h3>
@@ -755,8 +731,7 @@ export default function BoardDetailClient({
               </button>
             </div>
           </div>
-        </div>
-      )}
+      </AppModal>
       <ConfirmModal
         isOpen={confirmModal.isOpen}
         title={confirmModal.title}
@@ -768,8 +743,7 @@ export default function BoardDetailClient({
       />
 
       {/* 비회원 게시글/댓글 삭제 비밀번호 확인 모달 */}
-      {guestDeleteModal?.isOpen && (
-        <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
+      <AppModal isOpen={Boolean(guestDeleteModal?.isOpen)} title="비밀번호 확인" onClose={() => setGuestDeleteModal(null)} panelClassName="max-w-sm">
           <div className="bg-[#1a1a1a] border border-[#333] rounded-2xl max-w-sm w-full p-6 shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200">
             <h3 className="text-lg font-black text-white">비밀번호 확인</h3>
             <p className="text-white/60 text-sm">작성 시 등록한 비밀번호를 입력하세요.</p>
@@ -797,12 +771,10 @@ export default function BoardDetailClient({
               </button>
             </div>
           </div>
-        </div>
-      )}
+      </AppModal>
 
       {/* 비회원 댓글 Turnstile 보안 인증 모달 */}
-      {showCaptcha && (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm">
+      <AppModal isOpen={showCaptcha} title="보안 인증" onClose={() => setShowCaptcha(false)} panelClassName="max-w-sm">
           <div className="bg-[#1a1a1a] border border-[#333] rounded-2xl max-w-sm w-full p-6 shadow-2xl flex flex-col gap-4 animate-in fade-in zoom-in-95 duration-200">
             <div>
               <h3 className="text-base font-black text-white">보안 인증</h3>
@@ -827,50 +799,17 @@ export default function BoardDetailClient({
               취소
             </button>
           </div>
+      </AppModal>
+      <aside className="hidden xl:block xl:col-start-1 xl:row-start-1 self-start" aria-label="광고">
+        <div className="sticky top-20 h-[600px] w-[160px]">
+          <AdSenseBanner client="ca-pub-3993032200487955" slot="7728921550" />
         </div>
-      )}
-      {/* 데스크톱 사이드바 광고 — xl 이상에서만 표시 */}
-      {isAdAbsolute ? (
-        <>
-          <aside className="hidden xl:block w-[160px] absolute bottom-0 right-[calc(100%+20px)]">
-            <div className="h-[600px] w-[160px]">
-              <AdSenseBanner
-                client="ca-pub-3993032200487955"
-                slot="7728921550"
-              />
-            </div>
-          </aside>
-          <aside className="hidden xl:block w-[160px] absolute bottom-0 left-[calc(100%+20px)]">
-            <div className="h-[600px] w-[160px]">
-              <AdfitBanner
-                adUnit="DAN-RjyosR2uf8eSsVIC"
-                adWidth={160}
-                adHeight={600}
-              />
-            </div>
-          </aside>
-        </>
-      ) : (
-        <>
-          <aside className="hidden xl:block w-[160px] fixed top-20 left-1/2 -translate-x-[630px] z-50">
-            <div className="h-[600px] w-[160px]">
-              <AdSenseBanner
-                client="ca-pub-3993032200487955"
-                slot="7728921550"
-              />
-            </div>
-          </aside>
-          <aside className="hidden xl:block w-[160px] fixed top-20 right-1/2 translate-x-[630px] z-50">
-            <div className="h-[600px] w-[160px]">
-              <AdfitBanner
-                adUnit="DAN-RjyosR2uf8eSsVIC"
-                adWidth={160}
-                adHeight={600}
-              />
-            </div>
-          </aside>
-        </>
-      )}
+      </aside>
+      <aside className="hidden xl:block xl:col-start-3 xl:row-start-1 self-start" aria-label="광고">
+        <div className="sticky top-20 h-[600px] w-[160px]">
+          <AdfitBanner adUnit="DAN-RjyosR2uf8eSsVIC" adWidth={160} adHeight={600} />
+        </div>
+      </aside>
     </div>
   </div>
   );
