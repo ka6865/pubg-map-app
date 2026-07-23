@@ -6,6 +6,9 @@ on:
     - cron: '0 18 * * *'
   workflow_dispatch: # 수동 실행 버튼 추가
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: 'true'
+
 jobs:
   board-image-cleanup:
     # migration·Preview Storage QA·수동 dry-run 완료 전에는 운영 객체 삭제를 시작하지 않는다.

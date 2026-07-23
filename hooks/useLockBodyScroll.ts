@@ -1,19 +1,40 @@
 import { useEffect } from "react";
+import { getBodyScrollLockStyles } from "@/lib/ui/scroll-lock";
 
-// 모달 활성화 시 바디 스크롤을 막아주는 커스텀 훅
+let lockCount = 0;
+let scrollY = 0;
+let originalStyles: Pick<CSSStyleDeclaration, "position" | "top" | "width" | "overflow" | "paddingRight"> | null = null;
+
 export function useLockBodyScroll(locked: boolean) {
   useEffect(() => {
     if (!locked) return;
 
-    // 기존 body의 overflow 스타일 값을 기억
-    const originalOverflow = document.body.style.overflow;
-    
-    // 스크롤 막기
-    document.body.style.overflow = "hidden";
+    const body = document.body;
 
-    // 언마운트 또는 locked 상태 해제 시 원래 스타일로 복원
+    if (lockCount === 0) {
+      scrollY = window.scrollY;
+      originalStyles = {
+        position: body.style.position,
+        top: body.style.top,
+        width: body.style.width,
+        overflow: body.style.overflow,
+        paddingRight: body.style.paddingRight,
+      };
+
+      const scrollbarWidth = window.innerWidth - document.documentElement.clientWidth;
+      Object.assign(body.style, getBodyScrollLockStyles(scrollY, scrollbarWidth));
+    }
+
+    lockCount += 1;
+
     return () => {
-      document.body.style.overflow = originalOverflow;
+      lockCount = Math.max(0, lockCount - 1);
+
+      if (lockCount !== 0 || !originalStyles) return;
+
+      Object.assign(body.style, originalStyles);
+      originalStyles = null;
+      window.scrollTo(0, scrollY);
     };
   }, [locked]);
 }
